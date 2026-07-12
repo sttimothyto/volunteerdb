@@ -84,6 +84,7 @@ class TeamOut(ORMModel):
     parent_team_id: int | None
     description: str | None
     is_active: bool
+    workload_weight: float | None = None  # capacity weight; null = unweighted
 
 
 class TeamWithPath(TeamOut):
@@ -94,6 +95,7 @@ class TeamIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     parent_team_id: int | None = None
     description: str | None = None
+    workload_weight: float | None = None
 
 
 class TeamPatch(BaseModel):
@@ -102,6 +104,8 @@ class TeamPatch(BaseModel):
     clear_parent: bool = False  # set true to move a sub-team to top level
     description: str | None = None
     is_active: bool | None = None
+    workload_weight: float | None = None
+    clear_workload_weight: bool = False  # set true to unweight the team
 
 
 # --- memberships ---
@@ -130,6 +134,31 @@ class RosterEntry(BaseModel):
     role: TeamRole
     role_label: str
     joined_on: date | None
+
+
+# --- capacity ---
+
+
+class BandOut(BaseModel):
+    label: str
+    color: str
+    upper: float | None  # inclusive threshold; null = unbounded (last band)
+
+
+class CapacityConfigOut(BaseModel):
+    multipliers: dict[TeamRole, float]
+    bands: list[BandOut]
+
+
+class CapacityConfigIn(CapacityConfigOut):
+    pass
+
+
+class CapacityScoreOut(BaseModel):
+    volunteer_id: int
+    score: float
+    band: str
+    color: str
 
 
 # --- reports ---

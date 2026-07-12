@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..history import entity
 from ..models import Membership, Team, TeamRole, Volunteer
 from ..permissions import Actor
+from . import capacity as capacity_service
 from . import teams as team_service
 
 
@@ -40,6 +41,23 @@ async def elements(
         )
     ).all() if visible_ids else []
 
+    # capacity colouring: the permission check needs each volunteer's FULL team
+    # set (the visible edges above are only a subset), and the score is global
+    volunteer_ids = {v_id for _, _, v_id, _, _ in rows}
+    team_sets: dict[int, set[int]] = {v_id: set() for v_id in volunteer_ids}
+    if volunteer_ids:
+        all_memberships = await session.execute(
+            sa.select(M.volunteer_id, M.team_id).where(M.volunteer_id.in_(volunteer_ids))
+        )
+        for v_id, t_id in all_memberships:
+            team_sets[v_id].add(t_id)
+    capacity_bands = {
+        v_id: band
+        for v_id, (_score, band) in (
+            await capacity_service.visible_scores(session, actor, team_sets, at=at)
+        ).items()
+    }
+
     nodes = [
         {
             "data": {
@@ -57,16 +75,17 @@ async def elements(
     for m_team_id, role, v_id, first, last in rows:
         if v_id not in seen_volunteers:
             seen_volunteers.add(v_id)
-            nodes.append(
-                {
-                    "data": {
-                        "id": f"v{v_id}",
-                        "label": f"{first} {last}",
-                        "type": "volunteer",
-                        "volunteer_id": v_id,
-                    }
-                }
-            )
+            data = {
+                "id": f"v{v_id}",
+                "label": f"{first} {last}",
+                "type": "volunteer",
+                "volunteer_id": v_id,
+            }
+            band = capacity_bands.get(v_id)
+            if band is not None:  # viewers without capacity rights keep grey dots
+                data["band"] = band.label
+                data["color"] = band.color
+            nodes.append({"data": data})
         edges.append(
             {
                 "data": {

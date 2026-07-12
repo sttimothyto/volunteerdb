@@ -39,6 +39,11 @@ export default {
           },
         },
         {
+          // capacity colouring; nodes without a color datum keep the grey above
+          selector: 'node[type="volunteer"][color]',
+          style: { "background-color": "data(color)" },
+        },
+        {
           selector: "edge",
           style: {
             width: 1,

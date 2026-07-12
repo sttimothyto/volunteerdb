@@ -52,6 +52,12 @@ class Actor:
             return True
         return bool(self.full_view_team_ids & volunteer_team_ids)
 
+    def can_view_capacity(self, volunteer_team_ids: set[int]) -> bool:
+        """Capacity band/score: admins, or leaders/seconds of one of the
+        volunteer's teams. Deliberately excludes core members AND the
+        volunteer themself — capacity is a leadership planning signal."""
+        return self.is_admin or bool(self.managed_team_ids & volunteer_team_ids)
+
 
 async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
     roles_by_team: dict[int, TeamRole] = {}

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from fastapi import APIRouter
 
 from ..permissions import require
@@ -7,6 +9,12 @@ from .schemas import RosterEntry, TeamIn, TeamOut, TeamPatch, TeamWithPath, Volu
 from .volunteers import redacted
 
 router = APIRouter(prefix="/teams", tags=["teams"])
+
+
+def _weight_to_decimal(fields: dict) -> None:
+    """asyncpg's numeric codec wants Decimal, not the float pydantic gives us."""
+    if fields.get("workload_weight") is not None:
+        fields["workload_weight"] = Decimal(str(fields["workload_weight"]))
 
 
 @router.get("")
@@ -20,7 +28,9 @@ async def list_teams(ctx: CtxDep, as_of: AsOf) -> list[TeamWithPath]:
 @router.post("", status_code=201)
 async def create_team(ctx: CtxDep, data: TeamIn) -> TeamOut:
     require(ctx.actor.is_admin, "only admins create teams")
-    team = await service.create(ctx.session, **data.model_dump())
+    fields = data.model_dump()
+    _weight_to_decimal(fields)
+    team = await service.create(ctx.session, **fields)
     return TeamOut.model_validate(team)
 
 
@@ -38,6 +48,10 @@ async def update_team(ctx: CtxDep, team_id: int, data: TeamPatch) -> TeamOut:
     fields = data.model_dump(exclude_unset=True)
     if fields.pop("clear_parent", False):
         fields["parent_team_id"] = None
+    if fields.pop("clear_workload_weight", False):
+        fields["workload_weight"] = None
+    else:
+        _weight_to_decimal(fields)
     team = await service.update(ctx.session, team_id, **fields)
     return TeamOut.model_validate(team)
 

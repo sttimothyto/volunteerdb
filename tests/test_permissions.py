@@ -101,3 +101,25 @@ async def test_contact_edit_rights(parish):
     admin = await _actor(accounts, "admin")
     assert admin.can_edit_volunteer(ids["outsider_vid"], outsider_teams)
     assert admin.can_manage_team(ids["hospitality"])
+
+
+async def test_capacity_view_rights(parish):
+    accounts, ids = parish
+    async with db_session() as session:
+        member_teams = await volunteer_team_ids(session, ids["member_vid"])
+        outsider_teams = await volunteer_team_ids(session, ids["outsider_vid"])
+
+    for name in ("leader", "second"):
+        actor = await _actor(accounts, name)
+        assert actor.can_view_capacity(member_teams), f"{name} sees their people's capacity"
+        assert not actor.can_view_capacity(outsider_teams), "not other ministries' people"
+
+    core = await _actor(accounts, "core")
+    assert not core.can_view_capacity(member_teams), "core members never see capacity"
+
+    member = await _actor(accounts, "member")
+    assert not member.can_view_capacity(member_teams), "not even one's own capacity"
+
+    admin = await _actor(accounts, "admin")
+    assert admin.can_view_capacity(member_teams)
+    assert admin.can_view_capacity(outsider_teams)

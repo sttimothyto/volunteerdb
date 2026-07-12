@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,8 +72,14 @@ async def create(
     name: str,
     parent_team_id: int | None = None,
     description: str | None = None,
+    workload_weight: Decimal | None = None,
 ) -> Team:
-    team = Team(name=name.strip(), parent_team_id=parent_team_id, description=description)
+    team = Team(
+        name=name.strip(),
+        parent_team_id=parent_team_id,
+        description=description,
+        workload_weight=workload_weight,
+    )
     session.add(team)
     await session.flush()
     return team
@@ -86,6 +93,7 @@ async def update(
     parent_team_id: int | None | object = _UNSET,
     description: str | None | object = _UNSET,
     is_active: bool | None = None,
+    workload_weight: Decimal | None | object = _UNSET,
 ) -> Team:
     team = await get(session, team_id)
     if team is None:
@@ -99,6 +107,10 @@ async def update(
         team.description = description  # type: ignore[assignment]
     if is_active is not None:
         team.is_active = is_active
+    if workload_weight is not _UNSET:
+        if workload_weight is not None and workload_weight < 0:  # type: ignore[operator]
+            raise ValueError("workload weight must not be negative")
+        team.workload_weight = workload_weight  # type: ignore[assignment]
     await session.flush()
     return team
 

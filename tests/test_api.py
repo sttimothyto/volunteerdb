@@ -189,3 +189,62 @@ async def test_custom_fields_flow(client, seeded):
     assert r.status_code == 403
     r = await client.delete(f"/api/custom-fields/{field['id']}", headers=admin)
     assert r.status_code == 204
+
+
+async def test_capacity_flow(client, seeded):
+    admin = await _token(client, "admin@example.org", "secret-pw")
+    member = await _token(client, "member@example.org", "member-pw")
+
+    # weight the team (team edits are admin-only across the board)
+    r = await client.patch(
+        f"/api/teams/{seeded['team_id']}", json={"workload_weight": 3}, headers=member
+    )
+    assert r.status_code == 403
+    r = await client.patch(
+        f"/api/teams/{seeded['team_id']}", json={"workload_weight": 3}, headers=admin
+    )
+    assert r.status_code == 200 and r.json()["workload_weight"] == 3.0
+
+    # promote Maria to leader: score = 3 (weight) × 3 (leader multiplier) = 9 -> red
+    r = await client.post(
+        "/api/memberships",
+        json={"volunteer_id": seeded["volunteer_id"], "team_id": seeded["team_id"], "role": "leader"},
+        headers=admin,
+    )
+    assert r.status_code == 201
+
+    r = await client.get("/api/capacity/scores", headers=admin)
+    assert r.status_code == 200
+    (row,) = [s for s in r.json() if s["volunteer_id"] == seeded["volunteer_id"]]
+    assert row["score"] == 9.0 and row["band"] == "red"
+
+    # Maria leads the team now; the actor is rebuilt per request, so her
+    # existing token immediately gains leader rights: she sees her people's
+    # capacity and may read the config
+    r = await client.get("/api/capacity/scores", headers=member)
+    assert r.status_code == 200
+    assert {s["volunteer_id"] for s in r.json()} == {seeded["volunteer_id"]}
+    r = await client.get("/api/capacity/config", headers=member)
+    assert r.status_code == 200
+
+    # config writes are admin-only, and invalid configs are rejected
+    good = {
+        "multipliers": {"leader": 2, "second": 2, "core": 1, "member": 1},
+        "bands": [
+            {"label": "ok", "color": "#4caf50", "upper": 6},
+            {"label": "over", "color": "#e53935", "upper": None},
+        ],
+    }
+    r = await client.put("/api/capacity/config", json=good, headers=member)
+    assert r.status_code == 403
+    r = await client.put("/api/capacity/config", json=good, headers=admin)
+    assert r.status_code == 200
+
+    bad = {**good, "bands": [{"label": "only", "color": "#000", "upper": 5}]}
+    r = await client.put("/api/capacity/config", json=bad, headers=admin)
+    assert r.status_code == 422
+
+    # new config applies: 3 × 2 = 6 -> "ok" band now
+    r = await client.get("/api/capacity/scores", headers=admin)
+    (row,) = [s for s in r.json() if s["volunteer_id"] == seeded["volunteer_id"]]
+    assert row["score"] == 6.0 and row["band"] == "ok"
