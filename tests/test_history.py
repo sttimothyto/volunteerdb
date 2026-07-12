@@ -2,12 +2,13 @@
 
 import asyncio
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import sqlalchemy as sa
 
 from volunteerdb.db import db_session
-from volunteerdb.models import Volunteer, volunteer_history
-from volunteerdb.services import volunteers
+from volunteerdb.models import Volunteer, team_history, volunteer_history
+from volunteerdb.services import teams, volunteers
 
 
 async def _now() -> datetime:
@@ -79,3 +80,51 @@ async def test_rolled_back_changes_leave_no_history(database):
             await session.execute(sa.select(sa.func.count()).select_from(volunteer_history))
         ).scalar()
         assert count == 0
+
+
+# The next two tests guard the 0002 twin rebuilds: if volunteer_history/team_history
+# column order ever drifts from live-order + (changed_by, op), the trigger's
+# positional INSERT breaks and these fail on the first UPDATE.
+
+
+async def test_custom_values_are_versioned(database):
+    async with db_session(user_id=42) as session:
+        v = await volunteers.create(session, "Custom", "Carrier")
+        vid = v.id
+        v.custom = {"shirt_size": "M"}
+    t_medium = await _now()
+
+    async with db_session(user_id=42) as session:
+        v = await session.get(Volunteer, vid)
+        v.custom = {"shirt_size": "L"}
+
+    async with db_session() as session:
+        assert (await volunteers.get(session, vid)).custom == {"shirt_size": "L"}
+        old = await volunteers.get(session, vid, at=t_medium)
+        assert old.custom == {"shirt_size": "M"}
+        row = (
+            (await session.execute(sa.select(volunteer_history).order_by(volunteer_history.c.sys_period.desc())))
+            .mappings()
+            .first()
+        )
+        assert row["custom"] == {"shirt_size": "M"}
+        assert row["changed_by"] == 42 and row["op"] == "U"
+
+
+async def test_workload_weight_is_versioned(database):
+    async with db_session(user_id=9) as session:
+        t = await teams.create(session, "Liturgy")
+        tid = t.id
+    t_unweighted = await _now()
+
+    async with db_session(user_id=9) as session:
+        team = await teams.get(session, tid)
+        team.workload_weight = Decimal("2.50")
+
+    async with db_session() as session:
+        assert (await teams.get(session, tid)).workload_weight == Decimal("2.50")
+        old = await teams.get(session, tid, at=t_unweighted)
+        assert old.workload_weight is None
+        row = (await session.execute(sa.select(team_history))).mappings().one()
+        assert row["workload_weight"] is None
+        assert row["changed_by"] == 9 and row["op"] == "U"

@@ -27,6 +27,8 @@ ALL_TABLES = (
     "app_user",
     "volunteer",
     "team",
+    "custom_field_def",
+    "app_setting",
 )
 
 
