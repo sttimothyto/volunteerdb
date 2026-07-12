@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from nicegui import ui
 
 from ..models import ROLE_LABELS, TeamRole
@@ -7,6 +9,7 @@ from ..services import volunteers as volunteer_service
 from ..sheets import exporter
 from .context import action_session, asof_banner, notify_errors, page_session, parse_as_of
 from .layout import frame
+from .volunteer_panel import VolunteerPanel
 
 ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
@@ -53,6 +56,13 @@ def _team_dialog(all_teams, team=None) -> None:
         description = ui.textarea(
             "Description", value=(team.description or "") if team else ""
         ).props("outlined dense").classes("w-full")
+        weight = ui.number(
+            "Workload weight (capacity, optional)",
+            value=float(team.workload_weight) if team is not None and team.workload_weight is not None else None,
+            min=0,
+            step=0.5,
+        ).props("outlined dense clearable").classes("w-full")
+        weight.tooltip("How work-heavy this ministry is; leave empty to exclude it from capacity")
 
         @notify_errors
         async def save() -> None:
@@ -61,9 +71,14 @@ def _team_dialog(all_teams, team=None) -> None:
 
                 require(actor.is_admin, "only admins manage teams")
                 parent_id = parent.value or None
+                weight_value = Decimal(str(weight.value)) if weight.value is not None else None
                 if team is None:
                     created = await team_service.create(
-                        session, name.value, parent_id, description.value or None
+                        session,
+                        name.value,
+                        parent_id,
+                        description.value or None,
+                        workload_weight=weight_value,
                     )
                     team_id = created.id
                 else:
@@ -73,6 +88,7 @@ def _team_dialog(all_teams, team=None) -> None:
                         name=name.value,
                         parent_team_id=parent_id,
                         description=description.value or None,
+                        workload_weight=weight_value,
                     )
                     team_id = team.id
             dialog.close()
@@ -106,6 +122,7 @@ async def team_detail(team_id: int, as_of: str = ""):
             else {}
         )
 
+    panel = VolunteerPanel(as_of)
     with frame(paths.get(team_id, team.name), actor):
         asof_banner(at, f"/teams/{team_id}")
         if team.description:
@@ -150,9 +167,9 @@ async def team_detail(team_id: int, as_of: str = ""):
         else:
             for membership, volunteer in roster:
                 with ui.row().classes("w-full items-center gap-3 p-2 rounded hover:bg-gray-100"):
-                    ui.link(
-                        volunteer.full_name, f"/volunteers/{volunteer.id}"
-                    ).classes("font-medium w-48")
+                    ui.label(volunteer.full_name).classes(
+                        "font-medium w-48 cursor-pointer text-primary hover:underline"
+                    ).on("click", lambda _, vid=volunteer.id: panel.open(vid))
                     if can_manage:
                         role_select = ui.select(
                             ROLE_OPTIONS, value=membership.role.value

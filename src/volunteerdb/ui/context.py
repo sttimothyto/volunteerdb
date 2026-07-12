@@ -56,6 +56,8 @@ def notify_errors(handler: Callable) -> Callable:
             ui.notify(str(exc), color="negative")
         except IntegrityError:
             ui.notify("conflicts with existing data (duplicate?)", color="negative")
+        except ValueError as exc:
+            ui.notify(str(exc), color="warning")
 
     return wrapper
 

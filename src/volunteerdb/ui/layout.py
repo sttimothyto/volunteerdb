@@ -25,6 +25,12 @@ def frame(title: str, actor: Actor):
             ui.button("Accounts", on_click=lambda: ui.navigate.to("/admin/users")).props(
                 "flat color=white dense"
             )
+            ui.button("Fields", on_click=lambda: ui.navigate.to("/admin/fields")).props(
+                "flat color=white dense"
+            )
+            ui.button("Capacity", on_click=lambda: ui.navigate.to("/admin/capacity")).props(
+                "flat color=white dense"
+            )
         ui.space()
         ui.label(actor.user.email).classes("text-sm opacity-80")
         ui.button(icon="logout", on_click=_logout).props("flat color=white dense").tooltip(

@@ -1,36 +1,62 @@
 from nicegui import ui
 
-from ..models import ROLE_LABELS, TeamRole
+from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import require, volunteer_team_ids
+from ..services import capacity as capacity_service
+from ..services import custom_fields as custom_field_service
 from ..services import memberships as membership_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from .context import action_session, asof_banner, notify_errors, page_session, parse_as_of
 from .layout import frame
+from .volunteer_panel import VolunteerPanel, format_custom
 
 ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
 
 @ui.page("/volunteers")
-async def volunteers_page(q: str = "", as_of: str = ""):
+async def volunteers_page(q: str = "", as_of: str = "", band: str = ""):
     at = parse_as_of(as_of)
     async with page_session() as (session, actor):
         found = await volunteer_service.search(session, q, at=at, include_inactive=actor.is_admin)
-        # one query for all listed volunteers' team memberships (drives redaction)
+        # one query for all listed volunteers' team memberships (drives redaction + capacity)
         team_sets: dict[int, set[int]] = {}
         for v in found:
             team_sets[v.id] = await volunteer_team_ids(session, v.id) if at is None else set()
+        list_defs = [d for d in await custom_field_service.list_defs(session) if d.show_in_list]
+        config = await capacity_service.get_config(session)
+        cap = await capacity_service.visible_scores(session, actor, team_sets, at=at)
 
+    shows_capacity = actor.is_admin or bool(actor.managed_team_ids)
+    if band:
+        # filtering happens strictly within the permitted set — no capacity leak
+        found = [v for v in found if v.id in cap and cap[v.id][1].label == band]
+
+    panel = VolunteerPanel(as_of)
     with frame("Volunteers", actor):
         asof_banner(at, "/volunteers")
         with ui.row().classes("items-center gap-2 w-full"):
+            band_select: ui.select | None = None
             search = ui.input("Search by name or email…", value=q).props(
                 "outlined dense clearable"
             ).classes("w-72")
-            search.on("keydown.enter", lambda: ui.navigate.to(f"/volunteers?q={search.value or ''}"))
-            ui.button(
-                "Search", on_click=lambda: ui.navigate.to(f"/volunteers?q={search.value or ''}")
-            ).props("dense")
+
+            def go() -> None:
+                target = f"/volunteers?q={search.value or ''}"
+                if band_select is not None and band_select.value:
+                    target += f"&band={band_select.value}"
+                ui.navigate.to(target)
+
+            search.on("keydown.enter", go)
+            ui.button("Search", on_click=go).props("dense")
+            if shows_capacity:
+                band_select = ui.select(
+                    {b.label: b.label for b in config.bands},
+                    label="Capacity",
+                    value=band or None,
+                    clearable=True,
+                ).props("outlined dense").classes("w-40")
+                band_select.on_value_change(go)
             ui.space()
             if actor.is_admin and at is None:
                 ui.button("New volunteer", icon="person_add", on_click=_new_volunteer_dialog).props(
@@ -41,22 +67,50 @@ async def volunteers_page(q: str = "", as_of: str = ""):
             {"name": "name", "label": "Name", "field": "name", "align": "left", "sortable": True},
             {"name": "email", "label": "Email", "field": "email", "align": "left"},
             {"name": "phone", "label": "Phone", "field": "phone", "align": "left"},
-            {"name": "status", "label": "", "field": "status"},
         ]
+        if shows_capacity:
+            columns.append(
+                {"name": "capacity", "label": "Capacity", "field": "capacity", "align": "left"}
+            )
+        for d in list_defs:
+            columns.append(
+                {"name": f"cf_{d.key}", "label": d.label, "field": f"cf_{d.key}", "align": "left"}
+            )
+        columns.append({"name": "status", "label": "", "field": "status"})
+
         rows = []
         for v in found:
             visible = actor.can_view_volunteer(v.id, team_sets.get(v.id, set()))
-            rows.append(
-                {
-                    "id": v.id,
-                    "name": v.full_name,
-                    "email": (v.email or "") if visible else "•••",
-                    "phone": (v.phone or "") if visible else "•••",
-                    "status": "" if v.is_active else "inactive",
-                }
-            )
+            row = {
+                "id": v.id,
+                "name": v.full_name,
+                "email": (v.email or "") if visible else "•••",
+                "phone": (v.phone or "") if visible else "•••",
+                "status": "" if v.is_active else "inactive",
+            }
+            if shows_capacity:
+                score_band = cap.get(v.id)
+                row["capacity"] = score_band[1].label if score_band else ""
+                row["capacity_color"] = score_band[1].color if score_band else ""
+                row["capacity_score"] = f"{float(score_band[0]):g}" if score_band else ""
+            for d in list_defs:
+                value = (v.custom or {}).get(d.key)
+                row[f"cf_{d.key}"] = format_custom(d, value, missing="") if visible else "•••"
+            rows.append(row)
         table = ui.table(columns=columns, rows=rows, row_key="id", pagination=20).classes("w-full")
-        table.on("rowClick", lambda e: ui.navigate.to(f"/volunteers/{e.args[1]['id']}"))
+        if shows_capacity:
+            table.add_slot(
+                "body-cell-capacity",
+                """
+                <q-td key="capacity" :props="props">
+                    <q-badge v-if="props.row.capacity"
+                             :style="{backgroundColor: props.row.capacity_color}">
+                        {{ props.row.capacity }} · {{ props.row.capacity_score }}
+                    </q-badge>
+                </q-td>
+                """,
+            )
+        table.on("rowClick", lambda e: panel.open(e.args[1]["id"]))
         ui.label(f"{len(rows)} volunteer{'s' if len(rows) != 1 else ''}").classes(
             "text-sm text-gray-500"
         )
@@ -102,6 +156,8 @@ async def volunteer_detail(volunteer_id: int, as_of: str = ""):
         team_ids = await volunteer_team_ids(session, volunteer_id)
         can_view = actor.can_view_volunteer(volunteer_id, team_ids)
         can_edit = actor.can_edit_volunteer(volunteer_id, team_ids) and at is None
+        field_defs = await custom_field_service.list_defs(session)
+        cap = await capacity_service.visible_scores(session, actor, {volunteer_id: team_ids}, at=at)
         assignments = await volunteer_service.assignments(session, volunteer_id, at=at)
         impact = (
             await volunteer_service.impact(session, volunteer_id, at=at) if can_view else []
@@ -122,10 +178,17 @@ async def volunteer_detail(volunteer_id: int, as_of: str = ""):
                 ui.label(volunteer.full_name).classes("text-lg font-medium")
                 if not volunteer.is_active:
                     ui.badge("inactive", color="grey")
+                if volunteer_id in cap:
+                    score, band = cap[volunteer_id]
+                    ui.badge(f"capacity: {band.label} · {float(score):g}").style(
+                        f"background-color: {band.color}"
+                    ).tooltip("Workload score: team weights × role multipliers, all ministries")
                 ui.space()
                 if can_edit:
                     ui.button(
-                        "Edit", icon="edit", on_click=lambda: _edit_dialog(volunteer, actor.is_admin)
+                        "Edit",
+                        icon="edit",
+                        on_click=lambda: _edit_dialog(volunteer, actor.is_admin, field_defs),
                     ).props("dense outline")
                 if actor.is_admin and at is None:
                     ui.button(
@@ -134,6 +197,11 @@ async def volunteer_detail(volunteer_id: int, as_of: str = ""):
             if can_view:
                 ui.label(f"Email: {volunteer.email or '—'}").classes("text-sm text-gray-700")
                 ui.label(f"Phone: {volunteer.phone or '—'}").classes("text-sm text-gray-700")
+                for defn in field_defs:
+                    value = (volunteer.custom or {}).get(defn.key)
+                    ui.label(f"{defn.label}: {format_custom(defn, value)}").classes(
+                        "text-sm text-gray-700"
+                    )
                 if can_edit and volunteer.notes:
                     ui.label(f"Notes: {volunteer.notes}").classes("text-sm text-gray-700")
             else:
@@ -205,7 +273,34 @@ async def volunteer_detail(volunteer_id: int, as_of: str = ""):
                 ui.button("Add", icon="group_add", on_click=add).props("dense")
 
 
-def _edit_dialog(volunteer, is_admin: bool) -> None:
+def _custom_widget(defn: CustomFieldDef, value):
+    """One editing widget per admin-defined field, matched to its type."""
+    match FieldType(defn.field_type):
+        case FieldType.number:
+            return ui.number(defn.label, value=value).props("outlined dense clearable").classes(
+                "w-full"
+            )
+        case FieldType.select:
+            options = list(defn.options or [])
+            return ui.select(
+                options,
+                label=defn.label,
+                value=value if value in options else None,
+                clearable=True,
+            ).props("outlined dense").classes("w-full")
+        case FieldType.date:
+            return ui.input(defn.label, value=value or "", placeholder="YYYY-MM-DD").props(
+                "outlined dense clearable"
+            ).classes("w-full")
+        case FieldType.checkbox:
+            return ui.switch(defn.label, value=bool(value))
+        case _:  # text
+            return ui.input(defn.label, value=value or "").props("outlined dense").classes(
+                "w-full"
+            )
+
+
+def _edit_dialog(volunteer, is_admin: bool, field_defs: list[CustomFieldDef] = ()) -> None:
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label(f"Edit {volunteer.full_name}").classes("text-lg font-medium")
         first = ui.input("First name", value=volunteer.first_name).props("outlined dense").classes("w-full")
@@ -213,10 +308,20 @@ def _edit_dialog(volunteer, is_admin: bool) -> None:
         email = ui.input("Email", value=volunteer.email or "").props("outlined dense").classes("w-full")
         phone = ui.input("Phone", value=volunteer.phone or "").props("outlined dense").classes("w-full")
         notes = ui.textarea("Notes", value=volunteer.notes or "").props("outlined dense").classes("w-full")
+        custom_widgets = {
+            defn.key: _custom_widget(defn, (volunteer.custom or {}).get(defn.key))
+            for defn in field_defs
+        }
         active = ui.switch("Active", value=volunteer.is_active) if is_admin else None
 
         @notify_errors
         async def save() -> None:
+            values = {}
+            for key, widget in custom_widgets.items():
+                raw = widget.value
+                if isinstance(raw, str):
+                    raw = raw.strip() or None  # blank clears the field
+                values[key] = raw
             async with action_session() as (session, actor):
                 ids = await volunteer_team_ids(session, volunteer.id)
                 require(actor.can_edit_volunteer(volunteer.id, ids), "edit this volunteer")
@@ -230,6 +335,8 @@ def _edit_dialog(volunteer, is_admin: bool) -> None:
                     notes=notes.value or None,
                     is_active=active.value if active is not None else None,
                 )
+                if values:
+                    await custom_field_service.set_values(session, volunteer.id, values)
             dialog.close()
             ui.navigate.reload()
 
