@@ -6,17 +6,32 @@ Idempotent-ish: refuses to run if any volunteers already exist.
 Deliberate demo shapes:
 - 'Hospitality' has no leader (shows up in the coverage report)
 - Maria Alvarez is sole leader of two teams (dramatic impact report)
+- Only some teams carry workload weights, and Maria lands deep in the red
+  capacity band (colour-coding demo); two custom fields come pre-defined
 """
 
 import asyncio
 import os
 import sys
+from decimal import Decimal
 
 import sqlalchemy as sa
 
 from volunteerdb.db import db_session
-from volunteerdb.models import TeamRole, Volunteer
-from volunteerdb.services import memberships, teams, users, volunteers
+from volunteerdb.models import FieldType, TeamRole, Volunteer
+from volunteerdb.services import custom_fields, memberships, teams, users, volunteers
+
+# optional capacity weights; unlisted teams stay unweighted (count 0)
+WEIGHTS: dict[str, Decimal] = {
+    "Liturgy": Decimal("3"),
+    "Faith Formation": Decimal("2"),
+    "Music Ministry": Decimal("2"),
+    "Youth Group": Decimal("2"),
+    "Altar Servers": Decimal("1.5"),
+    "Altar Society": Decimal("1.5"),
+    "Catechists": Decimal("1.5"),
+    "Hospitality": Decimal("1"),
+}
 
 TEAMS: dict[str, list[str]] = {
     "Liturgy": ["Altar Servers", "Lectors", "Music Ministry", "Sacristans"],
@@ -72,10 +87,14 @@ async def seed() -> None:
 
         team_ids: dict[str, int] = {}
         for parent_name, subs in TEAMS.items():
-            parent = await teams.create(session, parent_name)
+            parent = await teams.create(
+                session, parent_name, workload_weight=WEIGHTS.get(parent_name)
+            )
             team_ids[parent_name] = parent.id
             for sub in subs:
-                child = await teams.create(session, sub, parent_team_id=parent.id)
+                child = await teams.create(
+                    session, sub, parent_team_id=parent.id, workload_weight=WEIGHTS.get(sub)
+                )
                 team_ids[sub] = child.id
 
         volunteer_ids: dict[str, int] = {}
@@ -84,6 +103,25 @@ async def seed() -> None:
             volunteer_ids[f"{first} {last}"] = v.id
             for team_name, role in assignments:
                 await memberships.assign(session, v.id, team_ids[team_name], role)
+
+        # demo custom fields (admin-extensible volunteer properties)
+        await custom_fields.create_def(
+            session, "Safeguarding training", FieldType.date, show_in_list=True
+        )
+        await custom_fields.create_def(
+            session, "Preferred contact", FieldType.select, options=["Email", "Phone", "Post"]
+        )
+        await custom_fields.set_values(
+            session,
+            volunteer_ids["Maria Alvarez"],
+            {"safeguarding_training": "2025-09-14", "preferred_contact": "Email"},
+        )
+        await custom_fields.set_values(
+            session, volunteer_ids["Felix Garcia"], {"preferred_contact": "Phone"}
+        )
+        await custom_fields.set_values(
+            session, volunteer_ids["Agnes Mbeki"], {"safeguarding_training": "2026-01-20"}
+        )
 
         admin_password = os.environ.get("VDB_SEED_ADMIN_PASSWORD", "changeme")
         await users.create(session, "admin@sttimothy.example", is_admin=True, password=admin_password)
@@ -104,6 +142,7 @@ async def seed() -> None:
 
     print("Seeded:")
     print(f"  {sum(len(s) + 1 for s in TEAMS.values())} teams, {len(VOLUNTEERS)} volunteers")
+    print(f"  {len(WEIGHTS)} weighted teams + 2 custom fields (capacity/fields demo)")
     print(f"  admin login:  admin@sttimothy.example / {admin_password}")
     print("  leader login: maria.alvarez@example.org / volunteer")
     print("  member login: felix.garcia@example.org / volunteer")
