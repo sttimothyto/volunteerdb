@@ -1,0 +1,31 @@
+services:
+  db:
+    image: docker.io/library/postgres:17
+    environment:
+      POSTGRES_USER: volunteerdb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-volunteerdb}
+      POSTGRES_DB: volunteerdb
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U volunteerdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  app:
+    profiles: ["app"]
+    build: .
+    environment:
+      VDB_DATABASE_URL: postgresql+asyncpg://volunteerdb:${POSTGRES_PASSWORD:-volunteerdb}@db:5432/volunteerdb
+      VDB_STORAGE_SECRET: ${VDB_STORAGE_SECRET:?set in .env}
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
