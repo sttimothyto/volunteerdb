@@ -5,8 +5,8 @@ from io import BytesIO
 from openpyxl import load_workbook
 
 from volunteerdb.db import db_session
-from volunteerdb.models import TeamRole
-from volunteerdb.services import memberships, teams, volunteers
+from volunteerdb.models import FieldType, TeamRole
+from volunteerdb.services import custom_fields, memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import MEMBERSHIP_SHEET, VOLUNTEER_SHEET
 
@@ -104,3 +104,31 @@ async def test_dry_run_writes_nothing(database):
 
     async with db_session() as session:
         assert await volunteers.search(session, "Eve") == []
+
+
+async def test_export_includes_custom_columns_and_reimport_ignores_them(database):
+    async with db_session() as session:
+        _, _, anna, _ = await _setup(session)
+        await custom_fields.create_def(session, "Shirt size", FieldType.text)
+        await custom_fields.create_def(session, "Trained", FieldType.checkbox)
+        await custom_fields.set_values(
+            session, anna.id, {"shirt_size": "M", "trained": True}
+        )
+        content = await exporter.export_workbook(session)
+
+    vs = load_workbook(BytesIO(content))[VOLUNTEER_SHEET]
+    headers = [c.value for c in vs[1]]
+    assert headers[-2:] == ["Shirt size", "Trained"]
+    anna_row = next(r for r in vs.iter_rows(min_row=2, values_only=True) if r[0] == "Anna")
+    assert anna_row[6] == "M" and anna_row[7] == "yes"
+
+    # round-trip stays safe: the extra columns are ignored with a warning
+    report = await importer.run_import(content, dry_run=False, user_id=None)
+    assert not report.has_errors
+    assert report.applied
+    assert report.volunteers_updated == 0
+    assert any("custom" in w.message for w in report.warnings)
+
+    async with db_session() as session:
+        (found,) = await volunteers.search(session, "Anna")
+        assert found.custom == {"shirt_size": "M", "trained": True}, "values untouched"

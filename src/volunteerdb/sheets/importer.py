@@ -18,7 +18,7 @@ from ..db import db_session
 from ..models import Team, Volunteer
 from ..services import memberships as membership_service
 from ..services import teams as team_service
-from .common import MEMBERSHIP_SHEET, VOLUNTEER_SHEET, parse_role
+from .common import MEMBERSHIP_SHEET, VOLUNTEER_HEADERS, VOLUNTEER_SHEET, parse_role
 
 
 @dataclass
@@ -119,6 +119,18 @@ async def _apply(session: AsyncSession, workbook, report: ImportReport) -> None:
 
     # --- Volunteers sheet ---
     if VOLUNTEER_SHEET in workbook.sheetnames:
+        header = next(
+            workbook[VOLUNTEER_SHEET].iter_rows(min_row=1, max_row=1, values_only=True), ()
+        )
+        if sum(1 for cell in header if cell is not None) > len(VOLUNTEER_HEADERS):
+            report.warnings.append(
+                Issue(
+                    VOLUNTEER_SHEET,
+                    1,
+                    "extra columns (custom fields) are ignored — custom values "
+                    "are not imported yet",
+                )
+            )
         for row_num, row in enumerate(
             workbook[VOLUNTEER_SHEET].iter_rows(min_row=2, values_only=True), start=2
         ):

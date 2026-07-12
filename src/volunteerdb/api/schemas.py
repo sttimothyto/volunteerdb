@@ -1,8 +1,9 @@
 from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from ..models import ROLE_LABELS, TeamRole
+from ..models import ROLE_LABELS, FieldType, TeamRole
 
 
 class ORMModel(BaseModel):
@@ -21,6 +22,8 @@ class VolunteerOut(ORMModel):
     phone: str | None = None
     notes: str | None = None
     is_active: bool
+    # admin-defined custom field values; nulled like contact details
+    custom: dict[str, Any] | None = None
 
 
 class VolunteerIn(BaseModel):
@@ -37,6 +40,38 @@ class VolunteerPatch(BaseModel):
     email: str | None = None
     phone: str | None = None
     notes: str | None = None
+    is_active: bool | None = None
+    # partial merge of custom field values; a null value clears that key
+    custom: dict[str, Any] | None = None
+
+
+# --- custom fields ---
+
+
+class CustomFieldDefOut(ORMModel):
+    id: int
+    key: str
+    label: str
+    field_type: str
+    options: list[str] | None
+    show_in_list: bool
+    position: int
+    is_active: bool
+
+
+class CustomFieldDefIn(BaseModel):
+    label: str = Field(min_length=1, max_length=100)
+    field_type: FieldType
+    options: list[str] | None = None
+    show_in_list: bool = False
+    position: int = 0
+
+
+class CustomFieldDefPatch(BaseModel):
+    label: str | None = None
+    options: list[str] | None = None
+    show_in_list: bool | None = None
+    position: int | None = None
     is_active: bool | None = None
 
 

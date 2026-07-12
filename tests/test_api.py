@@ -11,6 +11,7 @@ from volunteerdb.api import api_router
 from volunteerdb.api.deps import install_exception_handlers
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
+from volunteerdb.services import custom_fields as custom_fields_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
 
@@ -139,3 +140,52 @@ async def test_as_of_time_travel(client, seeded):
     )
     assert r.status_code == 200
     assert r.json()["first_name"] == "Maria", "as-of sees the pre-rename state"
+
+
+async def test_custom_fields_flow(client, seeded):
+    admin = await _token(client, "admin@example.org", "secret-pw")
+    member = await _token(client, "member@example.org", "member-pw")
+
+    # only admins define fields
+    body = {"label": "Preferred contact", "field_type": "select", "options": ["Email", "Phone"]}
+    r = await client.post("/api/custom-fields", json=body, headers=member)
+    assert r.status_code == 403
+    r = await client.post("/api/custom-fields", json=body, headers=admin)
+    assert r.status_code == 201
+    field = r.json()
+    assert field["key"] == "preferred_contact"
+
+    # anyone signed in can read the definitions
+    r = await client.get("/api/custom-fields", headers=member)
+    assert r.status_code == 200 and r.json()[0]["key"] == "preferred_contact"
+
+    # invalid value -> 422; valid -> stored
+    vid = seeded["volunteer_id"]
+    r = await client.patch(
+        f"/api/volunteers/{vid}", json={"custom": {"preferred_contact": "Fax"}}, headers=admin
+    )
+    assert r.status_code == 422
+    r = await client.patch(
+        f"/api/volunteers/{vid}", json={"custom": {"preferred_contact": "Email"}}, headers=admin
+    )
+    assert r.status_code == 200
+    assert r.json()["custom"] == {"preferred_contact": "Email"}
+
+    # a plain member sees another volunteer's name but not their custom values
+    async with db_session() as session:
+        other = await volunteers.create(session, "Other", "Person")
+        await memberships.assign(session, other.id, seeded["team_id"], TeamRole.member)
+        await custom_fields_service.set_values(
+            session, other.id, {"preferred_contact": "Phone"}
+        )
+    r = await client.get(f"/api/volunteers/{other.id}", headers=member)
+    assert r.status_code == 200
+    assert r.json()["custom"] is None, "custom values are redacted like contact details"
+    r = await client.get(f"/api/volunteers/{other.id}", headers=admin)
+    assert r.json()["custom"] == {"preferred_contact": "Phone"}
+
+    # member cannot edit/delete definitions
+    r = await client.patch(f"/api/custom-fields/{field['id']}", json={"label": "X"}, headers=member)
+    assert r.status_code == 403
+    r = await client.delete(f"/api/custom-fields/{field['id']}", headers=admin)
+    assert r.status_code == 204

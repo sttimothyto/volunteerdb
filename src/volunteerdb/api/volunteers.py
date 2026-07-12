@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..history import entity
 from ..models import Membership, Volunteer
 from ..permissions import Actor, require, volunteer_team_ids
+from ..services import custom_fields as custom_field_service
 from ..services import volunteers as service
 from .deps import AsOf, CtxDep
 from .schemas import (
@@ -35,10 +36,10 @@ async def _team_ids_map(
 
 
 def redacted(actor: Actor, volunteer: Volunteer, team_ids: set[int]) -> VolunteerOut:
-    """Everyone may see names; contact details and notes need closer ties."""
+    """Everyone may see names; contact details, notes and custom values need closer ties."""
     out = VolunteerOut.model_validate(volunteer)
     if not actor.can_view_volunteer(volunteer.id, team_ids):
-        out.email = out.phone = out.notes = None
+        out.email = out.phone = out.notes = out.custom = None
     elif not actor.can_edit_volunteer(volunteer.id, team_ids):
         out.notes = None
     return out
@@ -76,7 +77,10 @@ async def update_volunteer(ctx: CtxDep, volunteer_id: int, data: VolunteerPatch)
     fields = data.model_dump(exclude_unset=True)
     if "is_active" in fields:
         require(ctx.actor.is_admin, "only admins archive volunteers")
+    custom = fields.pop("custom", None)
     volunteer = await service.update(ctx.session, volunteer_id, **fields)
+    if custom is not None:
+        volunteer = await custom_field_service.set_values(ctx.session, volunteer_id, custom)
     return redacted(ctx.actor, volunteer, team_ids)
 
 

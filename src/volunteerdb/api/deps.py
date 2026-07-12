@@ -71,3 +71,9 @@ def install_exception_handlers(app: FastAPI) -> None:
         from fastapi.responses import JSONResponse
 
         return JSONResponse(status_code=409, content={"detail": "conflicts with existing data"})
+
+    @app.exception_handler(ValueError)
+    async def _unprocessable(request: Request, exc: ValueError):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(status_code=422, content={"detail": str(exc)})

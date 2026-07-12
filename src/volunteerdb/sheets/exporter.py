@@ -9,16 +9,17 @@ from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
-from ..models import ROLE_LABELS, Membership, Team, TeamRole, Volunteer
+from ..models import ROLE_LABELS, CustomFieldDef, FieldType, Membership, Team, TeamRole, Volunteer
+from ..services import custom_fields as custom_field_service
 from ..services import teams as team_service
 from .common import MEMBERSHIP_HEADERS, MEMBERSHIP_SHEET, VOLUNTEER_HEADERS, VOLUNTEER_SHEET
 
 
-def _workbook() -> tuple[Workbook, Worksheet, Worksheet]:
+def _workbook(custom_defs: list[CustomFieldDef] = ()) -> tuple[Workbook, Worksheet, Worksheet]:
     wb = Workbook()
     vs = wb.active
     vs.title = VOLUNTEER_SHEET
-    vs.append(VOLUNTEER_HEADERS)
+    vs.append([*VOLUNTEER_HEADERS, *(d.label for d in custom_defs)])
     ms = wb.create_sheet(MEMBERSHIP_SHEET)
     ms.append(MEMBERSHIP_HEADERS)
     bold = Font(bold=True)
@@ -34,6 +35,14 @@ def _workbook() -> tuple[Workbook, Worksheet, Worksheet]:
     ms.add_data_validation(role_validation)
     role_validation.add("D2:D1000")
     return wb, vs, ms
+
+
+def _custom_cell(defn: CustomFieldDef, value):
+    if value is None:
+        return None
+    if defn.field_type == FieldType.checkbox.value:
+        return "yes" if value else "no"
+    return value
 
 
 def _to_bytes(wb: Workbook) -> bytes:
@@ -88,9 +97,20 @@ async def export_workbook(
                 volunteers.append(v)
         volunteers.sort(key=lambda v: (v.last_name.lower(), v.first_name.lower()))
 
-    wb, vs, ms = _workbook()
+    custom_defs = await custom_field_service.list_defs(session)
+    wb, vs, ms = _workbook(custom_defs)
     for v in volunteers:
-        vs.append([v.first_name, v.last_name, v.email, v.phone, v.notes, "yes" if v.is_active else "no"])
+        vs.append(
+            [
+                v.first_name,
+                v.last_name,
+                v.email,
+                v.phone,
+                v.notes,
+                "yes" if v.is_active else "no",
+                *(_custom_cell(d, (v.custom or {}).get(d.key)) for d in custom_defs),
+            ]
+        )
     by_path = sorted(
         membership_rows, key=lambda row: (paths[row[0].team_id].lower(), row[1].last_name.lower())
     )
