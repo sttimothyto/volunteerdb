@@ -8,17 +8,50 @@ export default {
     this.cy = cytoscape({
       container: this.$el,
       elements: this.elements,
-      style: [
+      style: this.styleFor(this.themeColors()),
+      layout: this.layoutOptions(),
+      wheelSensitivity: 0.2,
+    });
+    this.cy.on("tap", "node", (e) => this.$emit("node_click", e.target.data()));
+    // Quasar's dark toggle flips body.body--dark; restyle in place
+    this.themeObserver = new MutationObserver(() => {
+      if (this.cy) this.cy.style(this.styleFor(this.themeColors()));
+    });
+    this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  },
+  beforeUnmount() {
+    if (this.themeObserver) this.themeObserver.disconnect();
+    if (this.cy) this.cy.destroy();
+  },
+  methods: {
+    themeColors() {
+      const styles = getComputedStyle(document.body);
+      const read = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
+      return {
+        team: read("--vdb-graph-team", "#a5573e"),
+        teamLabel: read("--vdb-graph-team-label", "#fdf6e3"),
+        node: read("--vdb-graph-node", "#9e9e9e"),
+        label: read("--vdb-graph-label", "#333333"),
+        edge: read("--vdb-graph-edge", "#d8c9a3"),
+        leader: read("--vdb-graph-leader", "#b07d2b"),
+        hier: read("--vdb-graph-hier", "#8a7550"),
+        selected: read("--vdb-graph-selected", "#2e5e7e"),
+      };
+    },
+    styleFor(c) {
+      const serif = 'Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif';
+      return [
         {
           selector: 'node[type="team"]',
           style: {
             shape: "round-rectangle",
-            "background-color": "#1976d2",
+            "background-color": c.team,
             label: "data(label)",
-            color: "#fff",
+            color: c.teamLabel,
             "text-valign": "center",
             "text-halign": "center",
-            "font-size": "11px",
+            "font-size": "12px",
+            "font-family": serif,
             "font-weight": "bold",
             width: "label",
             height: "28px",
@@ -29,9 +62,11 @@ export default {
           selector: 'node[type="volunteer"]',
           style: {
             shape: "ellipse",
-            "background-color": "#9e9e9e",
+            "background-color": c.node,
             label: "data(label)",
-            "font-size": "9px",
+            color: c.label,
+            "font-size": "10px",
+            "font-family": serif,
             "text-valign": "bottom",
             "text-margin-y": "4px",
             width: "16px",
@@ -39,7 +74,7 @@ export default {
           },
         },
         {
-          // capacity colouring; nodes without a color datum keep the grey above
+          // capacity colouring; nodes without a color datum keep the neutral above
           selector: 'node[type="volunteer"][color]',
           style: { "background-color": "data(color)" },
         },
@@ -47,39 +82,31 @@ export default {
           selector: "edge",
           style: {
             width: 1,
-            "line-color": "#cfd8dc",
+            "line-color": c.edge,
             "curve-style": "haystack",
           },
         },
         {
           selector: "edge[?leadership]",
-          style: { width: 2.5, "line-color": "#ef6c00" },
+          style: { width: 2.5, "line-color": c.leader },
         },
         {
           selector: "edge[?hierarchy]",
           style: {
             width: 2,
-            "line-color": "#1976d2",
+            "line-color": c.hier,
             "line-style": "dashed",
             "curve-style": "bezier",
             "target-arrow-shape": "triangle",
-            "target-arrow-color": "#1976d2",
+            "target-arrow-color": c.hier,
           },
         },
         {
           selector: "node:selected",
-          style: { "border-width": 3, "border-color": "#d32f2f" },
+          style: { "border-width": 3, "border-color": c.selected },
         },
-      ],
-      layout: this.layoutOptions(),
-      wheelSensitivity: 0.2,
-    });
-    this.cy.on("tap", "node", (e) => this.$emit("node_click", e.target.data()));
-  },
-  beforeUnmount() {
-    if (this.cy) this.cy.destroy();
-  },
-  methods: {
+      ];
+    },
     layoutOptions() {
       return { name: "cose", animate: false, nodeOverlap: 8, idealEdgeLength: 60 };
     },

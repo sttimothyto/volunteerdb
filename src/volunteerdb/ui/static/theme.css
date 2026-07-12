@@ -1,0 +1,212 @@
+/* VolunteerDB neo-greco theme.
+ *
+ * Loaded unlayered after NiceGUI's layered CSS (@layer theme..quasar_importants),
+ * so plain declarations here beat layered Tailwind/Quasar rules without !important.
+ * Quasar brand colors are inline styles on <body>, so the dark-mode --q-* re-tints
+ * below are the one place !important is required. */
+
+/* ---------- font ---------- */
+
+@font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/cinzel-v11-latin-regular.woff2") format("woff2");
+}
+
+/* ---------- tokens ---------- */
+
+:root {
+  --vdb-serif: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --vdb-display: "Cinzel", Palatino, "Palatino Linotype", Georgia, serif;
+
+  --vdb-bg: #fdf6e3;
+  --vdb-surface: #fffbee;
+  --vdb-ink: #333333;
+  --vdb-ink-muted: #6b6255;
+  --vdb-heading: #a5573e;
+  --vdb-accent: #f5deb3;
+  --vdb-rule: #d8c9a3;
+  --vdb-link: #2e5e7e;
+  --vdb-selection: #d6edff;
+  --vdb-header-bg: #a5573e;
+
+  --vdb-graph-team: #a5573e;
+  --vdb-graph-team-label: #fdf6e3;
+  --vdb-graph-node: #9e9e9e;
+  --vdb-graph-label: #333333;
+  --vdb-graph-edge: #d8c9a3;
+  --vdb-graph-leader: #b07d2b;
+  --vdb-graph-hier: #8a7550;
+  --vdb-graph-selected: #2e5e7e;
+}
+
+body.body--dark {
+  --vdb-bg: #1c1917;
+  --vdb-surface: #2a2622;
+  --vdb-ink: #e8e0ce;
+  --vdb-ink-muted: #a89e8f;
+  --vdb-heading: #c97b5d;
+  --vdb-accent: #d9c48f;
+  --vdb-rule: #4a443c;
+  --vdb-link: #9dc1d9;
+  --vdb-selection: #3a4a5a;
+  --vdb-header-bg: #2a2622;
+
+  --vdb-graph-team: #c97b5d;
+  --vdb-graph-team-label: #1c1917;
+  --vdb-graph-node: #78716c;
+  --vdb-graph-label: #e8e0ce;
+  --vdb-graph-edge: #4a443c;
+  --vdb-graph-leader: #d9a662;
+  --vdb-graph-hier: #a8916b;
+  --vdb-graph-selected: #9dc1d9;
+
+  /* brand vars are inline on <body>; author-!important beats inline-normal */
+  --q-primary: #c97b5d !important;
+  --q-secondary: #a8916b !important;
+  --q-accent: #d9c48f !important;
+  --q-positive: #7e9c5b !important;
+  --q-negative: #c25b49 !important;
+  --q-warning: #d9a662 !important;
+  --q-info: #6e93a8 !important;
+}
+
+/* ---------- base typography & readability ---------- */
+
+body {
+  font-family: var(--vdb-serif);
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--vdb-ink);
+  background-color: var(--vdb-bg);
+}
+
+::selection {
+  background: var(--vdb-selection);
+}
+
+:focus-visible {
+  outline: 2px solid var(--vdb-heading);
+  outline-offset: 2px;
+}
+
+a,
+.nicegui-link {
+  color: var(--vdb-link);
+  text-decoration: none;
+}
+
+a:hover,
+.nicegui-link:hover {
+  border-bottom: 1px dotted currentColor;
+}
+
+/* ---------- display faces ---------- */
+
+.vdb-brand {
+  font-family: var(--vdb-display);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+}
+
+.vdb-page-title {
+  font-family: var(--vdb-display);
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  color: var(--vdb-heading);
+}
+
+.q-header .q-btn {
+  font-family: var(--vdb-display);
+  letter-spacing: 0.06em;
+}
+
+/* ---------- header & neo-greco accents ---------- */
+
+.vdb-header {
+  background-color: var(--vdb-header-bg);
+  border-bottom: 5px double var(--vdb-accent);
+}
+
+/* restrained Greek-key meander under page titles; mask keeps it recolorable */
+.vdb-page-title::after {
+  content: "";
+  display: block;
+  width: 9rem;
+  height: 8px;
+  margin-top: 4px;
+  background-color: var(--vdb-heading);
+  opacity: 0.55;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='8'%3E%3Cpath d='M0 7h13V1H5v4h4V3' fill='none' stroke='black'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='8'%3E%3Cpath d='M0 7h13V1H5v4h4V3' fill='none' stroke='black'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+}
+
+/* ---------- component tuning ---------- */
+
+.q-card,
+.q-dialog .q-card,
+.q-drawer {
+  background-color: var(--vdb-surface);
+  border: 1px solid var(--vdb-rule);
+}
+
+.q-table {
+  font-family: var(--vdb-serif);
+}
+
+.q-table th {
+  font-family: var(--vdb-display);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  color: var(--vdb-heading);
+  border-bottom: 2px solid var(--vdb-rule);
+}
+
+.q-table td {
+  font-size: 15px;
+}
+
+.q-table tbody td {
+  border-color: var(--vdb-rule);
+}
+
+.q-field,
+.q-item,
+.q-tree {
+  font-family: var(--vdb-serif);
+}
+
+.q-tooltip {
+  background-color: #4a443c;
+  color: #f5efdd;
+  font-family: var(--vdb-serif);
+}
+
+.q-separator {
+  background: var(--vdb-rule);
+}
+
+/* keeps white badge text legible on admin-picked capacity colors */
+.q-badge {
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+
+/* ---------- dark-mode remaps for fixed Tailwind tints ---------- */
+
+body.body--dark .text-gray-400 { color: #8a8072; }
+body.body--dark .text-gray-500 { color: #a89e8f; }
+body.body--dark .text-gray-600 { color: #c4b9a8; }
+body.body--dark .text-gray-700 { color: #d6cdbf; }
+body.body--dark .bg-gray-50 { background-color: #262220; }
+body.body--dark .bg-gray-100 { background-color: #2e2925; }
+body.body--dark .hover\:bg-gray-100:hover { background-color: #322d28; }
+body.body--dark .bg-amber-50 { background-color: #33291c; }
+body.body--dark .bg-amber-100 { background-color: #3a2e1e; }
+body.body--dark .text-amber-700 { color: #d9a662; }
+body.body--dark .text-amber-900 { color: #e5c08a; }
+body.body--dark .bg-red-50 { background-color: #362222; }
+body.body--dark .bg-blue-50 { background-color: #26303a; }

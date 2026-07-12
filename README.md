@@ -1,4 +1,4 @@
-# VolunteerDB — St. Timothy Parish
+# VolunteerDB (VDB) — St. Timothy Parish
 
 Who serves where? ~500 volunteers across ~50 ministry teams (with sub-teams),
 each volunteer holding a role per team. Built to answer the priest's question

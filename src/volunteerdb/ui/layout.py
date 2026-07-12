@@ -3,12 +3,14 @@ from contextlib import contextmanager
 from nicegui import app, ui
 
 from ..permissions import Actor
+from .theme import apply_theme
 
 
 @contextmanager
 def frame(title: str, actor: Actor):
-    with ui.header().classes("items-center bg-primary text-white px-4"):
-        ui.label("St. Timothy VolunteerDB").classes("text-lg font-bold cursor-pointer").on(
+    dark = apply_theme()
+    with ui.header().classes("items-center text-white px-4 vdb-header"):
+        ui.label("VDB").classes("text-lg cursor-pointer vdb-brand").on(
             "click", lambda: ui.navigate.to("/")
         )
         ui.space()
@@ -33,14 +35,19 @@ def frame(title: str, actor: Actor):
             )
         ui.space()
         ui.label(actor.user.email).classes("text-sm opacity-80")
+        ui.button(icon="dark_mode", on_click=dark.toggle).props(
+            "flat color=white dense round"
+        ).bind_icon_from(dark, "value", lambda v: "light_mode" if v else "dark_mode").tooltip(
+            "Toggle dark mode"
+        )
         ui.button(icon="logout", on_click=_logout).props("flat color=white dense").tooltip(
             "Sign out"
         )
     with ui.column().classes("w-full max-w-5xl mx-auto p-4 gap-4"):
-        ui.label(title).classes("text-2xl font-semibold")
+        ui.label(title).classes("text-2xl vdb-page-title")
         yield
 
 
 def _logout() -> None:
-    app.storage.user.clear()
+    app.storage.user.pop("user_id", None)  # keep e.g. the dark-mode pref
     ui.navigate.to("/login")

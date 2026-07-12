@@ -29,6 +29,23 @@ def create_app() -> None:
     install_exception_handlers(app)
     app.include_router(api_router)
     app.add_static_files("/static", str(Path(__file__).parent / "ui" / "static"))
+    app.colors(
+        primary="#A5573E",
+        secondary="#8A7550",
+        accent="#B08D57",
+        dark="#2A2622",
+        dark_page="#1C1917",
+        positive="#5F7A3D",
+        negative="#9B3B30",
+        warning="#B07D2B",
+        info="#4C7086",
+    )
+    ui.add_head_html(
+        '<link rel="preload" href="/static/fonts/cinzel-v11-latin-regular.woff2" '
+        'as="font" type="font/woff2" crossorigin>',
+        shared=True,
+    )
+    ui.add_head_html('<link rel="stylesheet" href="/static/theme.css">', shared=True)
     app.add_middleware(AuthMiddleware)
     register_pages()
 
@@ -39,7 +56,7 @@ def run() -> None:
     ui.run(
         host=s.host,
         port=s.port,
-        title="St. Timothy VolunteerDB",
+        title="VolunteerDB",
         favicon="⛪",
         storage_secret=s.storage_secret,
         reload=s.reload,

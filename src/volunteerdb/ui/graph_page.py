@@ -40,8 +40,8 @@ async def graph_page(as_of: str = ""):
             team_filter.on_value_change(refilter)
             ui.space()
             ui.label(
-                "teams = blue boxes · volunteers = dots, coloured by capacity where "
-                "you may see it · orange = leadership"
+                "teams = terracotta boxes · volunteers = dots, coloured by capacity where "
+                "you may see it · gold = leadership"
             ).classes("text-xs text-gray-500")
 
         async def on_node_click(e) -> None:

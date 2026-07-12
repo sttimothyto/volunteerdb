@@ -34,7 +34,7 @@ async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
     async with db_session(session_user_id()) as session:
         actor = await get_actor(session)
         if actor is None:
-            app.storage.user.clear()
+            app.storage.user.pop("user_id", None)  # keep e.g. the dark-mode pref
             ui.navigate.to("/login")
             raise Forbidden("not signed in")
         yield session, actor

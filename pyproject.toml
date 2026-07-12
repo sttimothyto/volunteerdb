@@ -1,7 +1,7 @@
 [project]
 name = "volunteerdb"
 version = "0.1.0"
-description = "St. Timothy parish volunteer/ministry database"
+description = "Church volunteer/ministry database"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
