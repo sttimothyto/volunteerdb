@@ -49,21 +49,12 @@ async def graph_page(as_of: str = ""):
             if data.get("type") == "volunteer":
                 await panel.open(data["volunteer_id"])
                 return
-            detail_card.clear()
-            with detail_card:
-                with ui.row().classes("items-center gap-2"):
-                    ui.icon("groups")
-                    ui.label(data.get("path", data.get("label", ""))).classes("font-medium")
-                    ui.button(
-                        "Open team",
-                        on_click=lambda: ui.navigate.to(f"/teams/{data['team_id']}"),
-                    ).props("dense outline")
+            suffix = f"?as_of={as_of}" if as_of else ""
+            ui.navigate.to(f"/teams/{data['team_id']}{suffix}")
 
         graph = CytoscapeGraph(elements, on_node_click=on_node_click).classes(
             "w-full border rounded"
         )
-        detail_card = ui.row().classes("w-full min-h-10 items-center")
-        with detail_card:
-            ui.label(
-                "Click a team for details here; click a volunteer to open their side panel."
-            ).classes("text-sm text-gray-400")
+        ui.label(
+            "Click a team to open its page; click a volunteer to open their side panel."
+        ).classes("text-sm text-gray-400")
