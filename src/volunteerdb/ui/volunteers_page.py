@@ -1,4 +1,4 @@
-from nicegui import ui
+from nicegui import app, ui
 
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import require, volunteer_team_ids
@@ -7,34 +7,33 @@ from ..services import custom_fields as custom_field_service
 from ..services import memberships as membership_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
-from .context import action_session, asof_banner, notify_errors, page_session, parse_as_of
+from .context import action_session, notify_errors, page_session
 from .layout import frame
+from .timeline_chart import timeline_chart
 from .volunteer_panel import VolunteerPanel, format_custom
 
 ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
 
 @ui.page("/volunteers")
-async def volunteers_page(q: str = "", as_of: str = "", band: str = ""):
-    at = parse_as_of(as_of)
+async def volunteers_page(q: str = "", band: str = ""):
     async with page_session() as (session, actor):
-        found = await volunteer_service.search(session, q, at=at, include_inactive=actor.is_admin)
+        found = await volunteer_service.search(session, q, include_inactive=actor.is_admin)
         # one query for all listed volunteers' team memberships (drives redaction + capacity)
         team_sets: dict[int, set[int]] = {}
         for v in found:
-            team_sets[v.id] = await volunteer_team_ids(session, v.id) if at is None else set()
+            team_sets[v.id] = await volunteer_team_ids(session, v.id)
         list_defs = [d for d in await custom_field_service.list_defs(session) if d.show_in_list]
         config = await capacity_service.get_config(session)
-        cap = await capacity_service.visible_scores(session, actor, team_sets, at=at)
+        cap = await capacity_service.visible_scores(session, actor, team_sets)
 
     shows_capacity = actor.is_admin or bool(actor.managed_team_ids)
     if band:
         # filtering happens strictly within the permitted set — no capacity leak
         found = [v for v in found if v.id in cap and cap[v.id][1].label == band]
 
-    panel = VolunteerPanel(as_of)
+    panel = VolunteerPanel()
     with frame("Volunteers", actor):
-        asof_banner(at, "/volunteers")
         with ui.row().classes("items-center gap-2 w-full"):
             band_select: ui.select | None = None
             search = ui.input("Search by name or email…", value=q).props(
@@ -58,7 +57,7 @@ async def volunteers_page(q: str = "", as_of: str = "", band: str = ""):
                 ).props("outlined dense").classes("w-40")
                 band_select.on_value_change(go)
             ui.space()
-            if actor.is_admin and at is None:
+            if actor.is_admin:
                 ui.button("New volunteer", icon="person_add", on_click=_new_volunteer_dialog).props(
                     "dense"
                 )
@@ -145,33 +144,28 @@ def _new_volunteer_dialog() -> None:
 
 
 @ui.page("/volunteers/{volunteer_id}")
-async def volunteer_detail(volunteer_id: int, as_of: str = ""):
-    at = parse_as_of(as_of)
+async def volunteer_detail(volunteer_id: int):
     async with page_session() as (session, actor):
-        volunteer = await volunteer_service.get(session, volunteer_id, at=at)
+        volunteer = await volunteer_service.get(session, volunteer_id)
         if volunteer is None:
             with frame("Volunteer not found", actor):
-                ui.label(f"No volunteer with id {volunteer_id} at this time.")
+                ui.label(f"No volunteer with id {volunteer_id}.")
             return
         team_ids = await volunteer_team_ids(session, volunteer_id)
         can_view = actor.can_view_volunteer(volunteer_id, team_ids)
-        can_edit = actor.can_edit_volunteer(volunteer_id, team_ids) and at is None
+        can_edit = actor.can_edit_volunteer(volunteer_id, team_ids)
         field_defs = await custom_field_service.list_defs(session)
-        cap = await capacity_service.visible_scores(session, actor, {volunteer_id: team_ids}, at=at)
-        assignments = await volunteer_service.assignments(session, volunteer_id, at=at)
+        cap = await capacity_service.visible_scores(session, actor, {volunteer_id: team_ids})
+        assignments = await volunteer_service.assignments(session, volunteer_id)
         impact = (
-            await volunteer_service.impact(session, volunteer_id, at=at) if can_view else []
+            await volunteer_service.impact(session, volunteer_id) if can_view else []
         )
+        spells = await volunteer_service.timeline(session, volunteer_id)
         all_teams = await team_service.list_all(session)
         paths = team_service.team_paths(all_teams)
-        assignable = (
-            {t.id: paths[t.id] for t in all_teams if actor.can_manage_team(t.id)}
-            if at is None
-            else {}
-        )
+        assignable = {t.id: paths[t.id] for t in all_teams if actor.can_manage_team(t.id)}
 
     with frame(volunteer.full_name, actor):
-        asof_banner(at, f"/volunteers/{volunteer_id}")
         with ui.card().classes("w-full gap-1 p-4"):
             with ui.row().classes("items-center gap-2"):
                 ui.icon("person").classes("text-2xl")
@@ -190,7 +184,7 @@ async def volunteer_detail(volunteer_id: int, as_of: str = ""):
                         icon="edit",
                         on_click=lambda: _edit_dialog(volunteer, actor.is_admin, field_defs),
                     ).props("dense outline")
-                if actor.is_admin and at is None:
+                if actor.is_admin:
                     ui.button(
                         "Delete", icon="delete", on_click=lambda: _delete_volunteer(volunteer_id)
                     ).props("dense outline color=negative")
@@ -221,11 +215,14 @@ async def volunteer_detail(volunteer_id: int, as_of: str = ""):
                     ui.label(f"since {membership.joined_on.isoformat()}").classes(
                         "text-xs text-gray-400"
                     )
-                if actor.can_manage_team(team.id) and at is None:
+                if actor.can_manage_team(team.id):
                     ui.button(
                         icon="person_remove",
                         on_click=notify_errors(lambda _, mid=membership.id: _unassign(mid)),
                     ).props("dense flat color=negative").tooltip("Remove from team")
+
+        ui.label("Service timeline").classes("text-lg font-medium")
+        timeline_chart(spells, paths, dark=app.storage.user.get("dark_mode", False))
 
         if can_view:
             ui.label("If they leave, what holes appear?").classes("text-lg font-medium")

@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, time
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
-from ..models import Membership, Team, TeamRole, Volunteer
+from ..models import Membership, Team, TeamRole, Volunteer, membership_history, team_history
 
 _UNSET: object = object()
 
@@ -143,3 +143,93 @@ async def impact(
     # most critical first: the fewer leaders remain, the higher it sorts
     result.sort(key=lambda r: (r.leadership_left, r.leaders_left, r.team.name.lower()))
     return result
+
+
+@dataclass
+class RoleSegment:
+    role: TeamRole
+    start: datetime  # tz-aware
+    end: datetime | None  # None = ongoing
+
+
+@dataclass
+class MembershipSpell:
+    team_id: int
+    team_name: str  # current name; latest historical name if the team is gone
+    team_deleted: bool
+    role: TeamRole  # final role held in this spell
+    start: date  # joined_on if recorded, else when the record was created
+    end: date | None  # when the membership record was deleted; None = ongoing
+    segments: list[RoleSegment]  # consecutive role stretches within the spell
+
+
+async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipSpell]:
+    """Membership spells over all time, stitched from the audit trail.
+
+    A spell is one continuous stretch on a team. Row versions of a single
+    membership abut exactly (the trigger closes and reopens sys_period at the
+    same instant), so a gap between versions of the same (volunteer, team)
+    means leave-then-rejoin under a fresh membership id — a new spell. The
+    start prefers the operator-entered joined_on; the end is the system time
+    the record was deleted, which trails the real-world leave by however long
+    the operator waited. A delete recreated in the same instant (e.g. by an
+    importer) shows as two abutting spells.
+    """
+    mh = membership_history
+    cols = ("id", "team_id", "role", "joined_on", "sys_period")
+    hist = sa.select(*[mh.c[n] for n in cols], mh.c.op).where(mh.c.volunteer_id == volunteer_id)
+    live = sa.select(
+        *[Membership.__table__.c[n] for n in cols],
+        sa.literal(None, sa.CHAR(1)).label("op"),
+    ).where(Membership.volunteer_id == volunteer_id)
+    versions = (await session.execute(hist.union_all(live))).all()
+
+    runs: list[list[sa.Row]] = []
+    prev_key: tuple[int, datetime | None] | None = None
+    for row in sorted(versions, key=lambda r: (r.team_id, r.sys_period.lower)):
+        prev_team, prev_upper = prev_key or (None, None)
+        if row.team_id != prev_team or prev_upper is None or row.sys_period.lower > prev_upper:
+            runs.append([])
+        runs[-1].append(row)
+        prev_key = (row.team_id, row.sys_period.upper)
+
+    team_ids = {run[0].team_id for run in runs}
+    names: dict[int, str] = {}
+    if team_ids:
+        stmt = sa.select(Team.id, Team.name).where(Team.id.in_(team_ids))
+        names = dict((await session.execute(stmt)).all())  # type: ignore[arg-type]
+    gone = team_ids - names.keys()
+    if gone:
+        stmt = (
+            sa.select(team_history.c.id, team_history.c.name)
+            .where(team_history.c.id.in_(gone))
+            .order_by(team_history.c.id, team_history.c.sys_period.desc())
+            .distinct(team_history.c.id)
+        )
+        names |= dict((await session.execute(stmt)).all())  # type: ignore[arg-type]
+
+    spells = []
+    for run in runs:
+        first, last = run[0], run[-1]
+        ended = last.op == "D"
+        start = last.joined_on or first.sys_period.lower.astimezone().date()
+        segments: list[RoleSegment] = []
+        for row in run:
+            if segments and segments[-1].role == row.role:
+                segments[-1].end = row.sys_period.upper  # notes/joined_on-only edit
+            else:
+                segments.append(RoleSegment(row.role, row.sys_period.lower, row.sys_period.upper))
+        segments[0].start = datetime.combine(start, time.min).astimezone()
+        spells.append(
+            MembershipSpell(
+                team_id=first.team_id,
+                team_name=names.get(first.team_id, "unknown team"),
+                team_deleted=first.team_id in gone,
+                role=last.role,
+                start=start,
+                end=last.sys_period.upper.astimezone().date() if ended else None,
+                segments=segments,
+            )
+        )
+    spells.sort(key=lambda s: (s.start, s.team_name.lower()))
+    return spells

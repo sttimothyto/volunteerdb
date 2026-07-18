@@ -50,3 +50,15 @@ async def test_panel_opens_from_team_roster_table_and_graph(database):
             "node_click", args={"type": "volunteer", "volunteer_id": maria_id}
         )
         await user.should_see("Email: maria@example.org")
+
+        # volunteer detail: Gantt timeline replaced the as-of box
+        await user.open(f"/volunteers/{maria_id}")
+        await user.should_see("Service timeline")
+        user.find(kind=ui.echart)
+        await user.should_not_see("View as of (YYYY-MM-DD)")
+
+        # the list page lost the box too; the teams page keeps it
+        await user.open("/volunteers")
+        await user.should_not_see("View as of (YYYY-MM-DD)")
+        await user.open(f"/teams/{team_id}")
+        await user.should_see("View as of (YYYY-MM-DD)")

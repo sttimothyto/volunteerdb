@@ -179,6 +179,24 @@ class ImpactOut(BaseModel):
     leadership_left: int
 
 
+class TimelineSegmentOut(BaseModel):
+    role: TeamRole
+    role_label: str
+    start: datetime
+    end: datetime | None  # null = ongoing
+
+
+class TimelineSpellOut(BaseModel):
+    team_id: int
+    team_name: str
+    team_deleted: bool
+    role: TeamRole
+    role_label: str
+    start: date
+    end: date | None  # null = ongoing
+    segments: list[TimelineSegmentOut]
+
+
 class CoverageOut(BaseModel):
     team_id: int
     path: str

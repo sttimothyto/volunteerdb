@@ -11,6 +11,8 @@ from .deps import AsOf, CtxDep
 from .schemas import (
     AssignmentOut,
     ImpactOut,
+    TimelineSegmentOut,
+    TimelineSpellOut,
     VolunteerIn,
     VolunteerOut,
     VolunteerPatch,
@@ -99,6 +101,34 @@ async def volunteer_assignments(ctx: CtxDep, volunteer_id: int, as_of: AsOf) -> 
             membership_id=m.id, team=t, role=m.role, role_label=role_label(m.role)
         )
         for m, t in rows
+    ]
+
+
+@router.get("/{volunteer_id}/timeline")
+async def volunteer_timeline(ctx: CtxDep, volunteer_id: int) -> list[TimelineSpellOut]:
+    """Membership spells over all time, stitched from the audit trail.
+
+    Inherently all-time, so no as_of param. Visible to all signed-in users,
+    like /assignments.
+    """
+    spells = await service.timeline(ctx.session, volunteer_id)
+    return [
+        TimelineSpellOut(
+            team_id=s.team_id,
+            team_name=s.team_name,
+            team_deleted=s.team_deleted,
+            role=s.role,
+            role_label=role_label(s.role),
+            start=s.start,
+            end=s.end,
+            segments=[
+                TimelineSegmentOut(
+                    role=seg.role, role_label=role_label(seg.role), start=seg.start, end=seg.end
+                )
+                for seg in s.segments
+            ],
+        )
+        for s in spells
     ]
 
 

@@ -96,6 +96,7 @@ class VolunteerPanel:
             ui.button(
                 "Full profile",
                 icon="open_in_new",
-                on_click=lambda: ui.navigate.to(f"/volunteers/{volunteer_id}{self._asof_query}"),
+                # the detail page is live-only now: no as-of query to carry over
+                on_click=lambda: ui.navigate.to(f"/volunteers/{volunteer_id}"),
             ).props("dense outline").classes("mt-3")
         self.drawer.show()

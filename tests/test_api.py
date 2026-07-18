@@ -142,6 +142,30 @@ async def test_as_of_time_travel(client, seeded):
     assert r.json()["first_name"] == "Maria", "as-of sees the pre-rename state"
 
 
+async def test_volunteer_timeline(client, seeded):
+    headers = await _token(client, "member@example.org", "member-pw")
+    vid = seeded["volunteer_id"]
+
+    # leave and rejoin so the timeline has one closed and one open spell
+    async with db_session() as session:
+        m = await memberships.find(session, vid, seeded["team_id"])
+        await memberships.remove(session, m.id)
+    async with db_session() as session:
+        await memberships.assign(session, vid, seeded["team_id"], TeamRole.core)
+
+    r = await client.get(f"/api/volunteers/{vid}/timeline", headers=headers)
+    assert r.status_code == 200
+    first, second = r.json()
+    assert first["team_name"] == "Liturgy" and first["team_deleted"] is False
+    assert first["end"] is not None and first["role"] == "member"
+    assert second["end"] is None and second["role"] == "core"
+    assert second["role_label"] == "Core team member"
+    assert first["segments"] and first["segments"][0]["start"]
+
+    r = await client.get("/api/volunteers/999999/timeline", headers=headers)
+    assert r.status_code == 200 and r.json() == []
+
+
 async def test_custom_fields_flow(client, seeded):
     admin = await _token(client, "admin@example.org", "secret-pw")
     member = await _token(client, "member@example.org", "member-pw")

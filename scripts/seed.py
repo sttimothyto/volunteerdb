@@ -8,11 +8,15 @@ Deliberate demo shapes:
 - Maria Alvarez is sole leader of two teams (dramatic impact report)
 - Only some teams carry workload weights, and Maria lands deep in the red
   capacity band (colour-coding demo); two custom fields come pre-defined
+- Backdated joins plus a few ended/rejoined memberships feed the service
+  timeline chart (Maria's ended Youth Group spell, Grace's split Music
+  Ministry spells, Peter's mid-spell promotion)
 """
 
 import asyncio
 import os
 import sys
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -79,6 +83,37 @@ VOLUNTEERS: list[tuple[str, str, str | None, list[tuple[str, TeamRole]]]] = [
     ("Leo", "Brennan", "leo.brennan@example.org", [("St. Vincent de Paul", M), ("Finance Council", M)]),
 ]
 
+# real-world join dates for some current memberships (varied bar lengths)
+JOINED: dict[tuple[str, str], date] = {
+    ("Maria Alvarez", "Liturgy"): date(2015, 9, 1),
+    ("Maria Alvarez", "Altar Society"): date(2018, 3, 12),
+    ("Maria Alvarez", "Hospitality"): date(2021, 6, 1),
+    ("James Okafor", "Music Ministry"): date(2016, 1, 15),
+    ("James Okafor", "Liturgy"): date(2019, 11, 3),
+    ("Rose Nguyen", "Lectors"): date(2017, 5, 20),
+    ("Peter Kowalski", "Altar Servers"): date(2020, 9, 1),
+    ("Peter Kowalski", "Youth Group"): date(2022, 2, 14),
+    ("Agnes Mbeki", "Faith Formation"): date(2014, 8, 24),
+    ("Agnes Mbeki", "Catechists"): date(2016, 10, 2),
+    ("Thomas Lindqvist", "Maintenance"): date(2019, 4, 6),
+    ("Lucia Fernandez", "St. Vincent de Paul"): date(2013, 2, 11),
+    ("Grace Kim", "Music Ministry"): date(2022, 8, 1),  # rejoined; earlier spell below
+    ("Emmanuel Diallo", "Youth Group"): date(2023, 9, 10),
+    ("Felix Garcia", "Altar Servers"): date(2024, 1, 8),
+    ("Beatrice Laurent", "Lectors"): date(2025, 3, 30),
+}
+
+# ended memberships: (person, team, role, joined, left) — created and removed
+# through the service layer so the versioning trigger archives them
+PAST_SPELLS: list[tuple[str, str, TeamRole, date, date]] = [
+    ("Maria Alvarez", "Youth Group", L, date(2019, 5, 1), date(2023, 6, 30)),
+    ("Grace Kim", "Music Ministry", M, date(2017, 2, 1), date(2020, 11, 15)),
+    ("Frank Novak", "Hospitality", M, date(2015, 4, 1), date(2018, 8, 1)),
+]
+
+# assigned as member first, then promoted (mid-spell role change demo)
+PROMOTED = ("Peter Kowalski", "Altar Servers")
+
 
 async def seed() -> None:
     async with db_session() as session:
@@ -98,11 +133,53 @@ async def seed() -> None:
                 team_ids[sub] = child.id
 
         volunteer_ids: dict[str, int] = {}
-        for first, last, email, assignments in VOLUNTEERS:
+        for first, last, email, _assignments in VOLUNTEERS:
             v = await volunteers.create(session, first, last, email, phone="555-0100")
             volunteer_ids[f"{first} {last}"] = v.id
+
+        # historical churn BEFORE current memberships: assign is an upsert on
+        # (volunteer, team), so an ended spell must be gone before the current
+        # one exists (that's what makes Grace's rejoin a separate spell)
+        for name, team_name, role, joined, left in PAST_SPELLS:
+            m = await memberships.assign(
+                session, volunteer_ids[name], team_ids[team_name], role, joined_on=joined
+            )
+            mid = m.id
+            await memberships.remove(session, mid)
+            # demo-only backdating of the archived interval; real deployments
+            # accumulate genuine history and never touch the twin tables
+            await session.execute(
+                sa.text(
+                    "UPDATE membership_history SET sys_period = tstzrange(:joined, :left)"
+                    " WHERE id = :mid AND op = 'D'"
+                ),
+                {
+                    "joined": datetime(joined.year, joined.month, joined.day, 9, tzinfo=UTC),
+                    "left": datetime(left.year, left.month, left.day, 17, tzinfo=UTC),
+                    "mid": mid,
+                },
+            )
+
+        for first, last, _email, assignments in VOLUNTEERS:
+            name = f"{first} {last}"
             for team_name, role in assignments:
-                await memberships.assign(session, v.id, team_ids[team_name], role)
+                if (name, team_name) == PROMOTED:
+                    continue  # created below, member-first
+                await memberships.assign(
+                    session,
+                    volunteer_ids[name],
+                    team_ids[team_name],
+                    role,
+                    joined_on=JOINED.get((name, team_name)),
+                )
+
+        # a mid-spell promotion (op='U' history row): Peter served as a plain
+        # Altar Server before taking over as leader — two-color timeline bar
+        await memberships.assign(
+            session, volunteer_ids[PROMOTED[0]], team_ids[PROMOTED[1]], M,
+            joined_on=JOINED[PROMOTED],
+        )
+        await memberships.assign(session, volunteer_ids[PROMOTED[0]], team_ids[PROMOTED[1]], L)
 
         # demo custom fields (admin-extensible volunteer properties)
         await custom_fields.create_def(
@@ -143,6 +220,10 @@ async def seed() -> None:
     print("Seeded:")
     print(f"  {sum(len(s) + 1 for s in TEAMS.values())} teams, {len(VOLUNTEERS)} volunteers")
     print(f"  {len(WEIGHTS)} weighted teams + 2 custom fields (capacity/fields demo)")
+    print(
+        f"  {len(PAST_SPELLS)} ended spells, {len(JOINED)} backdated joins,"
+        " 1 promotion (timeline demo)"
+    )
     print(f"  admin login:  admin@sttimothy.example / {admin_password}")
     print("  leader login: maria.alvarez@example.org / volunteer")
     print("  member login: felix.garcia@example.org / volunteer")
