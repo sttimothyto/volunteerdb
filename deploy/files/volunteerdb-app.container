@@ -1,0 +1,26 @@
+[Unit]
+Description=VolunteerDB (NiceGUI)
+# Quadlet does not translate names here - reference the GENERATED units:
+Requires=volunteerdb-db.service
+After=volunteerdb-db.service
+
+[Container]
+Image=localhost/volunteerdb:latest
+ContainerName=volunteerdb-app
+Network=volunteerdb.network
+EnvironmentFile=/etc/volunteerdb/env
+PublishPort=127.0.0.1:8090:8080
+# NiceGUI session storage - the app's only persistent disk state.
+Volume=volunteerdb-nicegui:/app/.nicegui
+NoNewPrivileges=true
+HealthCmd=python /app/healthcheck.py
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=20s
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

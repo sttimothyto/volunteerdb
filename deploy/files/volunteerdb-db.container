@@ -1,0 +1,25 @@
+[Unit]
+Description=VolunteerDB PostgreSQL
+
+[Container]
+Image=docker.io/library/postgres:17
+ContainerName=volunteerdb-db
+Network=volunteerdb.network
+EnvironmentFile=/etc/volunteerdb/db.env
+Volume=volunteerdb-pgdata:/var/lib/postgresql/data
+# No PublishPort: reachable only on the volunteerdb network (DNS: volunteerdb-db).
+HealthCmd=pg_isready -U volunteerdb -d volunteerdb
+HealthInterval=10s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=15s
+# systemd start blocks until the healthcheck passes, so After= on this unit
+# means "DB accepting connections" and the deploy needs no wait loop.
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

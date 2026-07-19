@@ -1,0 +1,7 @@
+[Network]
+# Explicit name so one-shot `podman run --network volunteerdb ...` (migrations,
+# admin bootstrap) resolves it; the default would be "systemd-volunteerdb".
+NetworkName=volunteerdb
+
+[Install]
+WantedBy=multi-user.target
