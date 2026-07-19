@@ -145,6 +145,10 @@ class AppUser(Base):
     is_admin: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     api_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
     invite_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
+    otp_hash: Mapped[str | None] = mapped_column(sa.String(255))
+    otp_sent_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    otp_expires_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    otp_attempts: Mapped[int] = mapped_column(default=0, server_default=sa.text("0"))
     is_active: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
     last_login_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

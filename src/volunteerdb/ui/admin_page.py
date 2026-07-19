@@ -2,6 +2,7 @@ from fastapi import Request
 from nicegui import ui
 
 from ..permissions import require
+from ..services import mail
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from .context import action_session, notify_errors, page_session
@@ -23,14 +24,27 @@ async def users_page(request: Request):
     def invite_url(token: str) -> str:
         return f"{base_url}/invite/{token}"
 
-    def show_invite(token: str, email: str) -> None:
+    async def email_invite(address: str, token: str) -> bool:
+        return await mail.send_email(address, *mail.invite_email(invite_url(token)))
+
+    def show_invite(token: str, email: str, sent: bool | None = None) -> None:
         with ui.dialog() as dialog, ui.card().classes("gap-2 w-[34rem]"):
             ui.label(f"Invite link for {email}").classes("font-medium")
             url = invite_url(token)
             ui.input(value=url).props("readonly outlined dense").classes("w-full")
-            ui.label("Hand this link to the volunteer (email, print, or in person).").classes(
-                "text-sm text-gray-500"
-            )
+            if sent is None:
+                note, color = (
+                    "Hand this link to the volunteer (email, print, or in person).",
+                    "text-gray-500",
+                )
+            elif sent:
+                note, color = f"Invite email sent to {email}. Backup link above.", "text-gray-500"
+            else:
+                note, color = (
+                    "Couldn't send the invite email — hand this link out instead.",
+                    "text-negative",
+                )
+            ui.label(note).classes(f"text-sm {color}")
             with ui.row().classes("justify-end w-full gap-2"):
                 ui.button(
                     "Copy",
@@ -44,11 +58,32 @@ async def users_page(request: Request):
 
             @notify_errors
             async def provision() -> None:
+                with ui.dialog() as confirm_dialog, ui.card().classes("w-96 gap-3"):
+                    ui.label(
+                        "Create accounts for every active volunteer with an email "
+                        "address and send each of them an invite email?"
+                    )
+                    with ui.row().classes("justify-end w-full gap-2"):
+                        ui.button("Cancel", on_click=lambda: confirm_dialog.submit(False)).props(
+                            "flat"
+                        )
+                        ui.button(
+                            "Create and email invites",
+                            on_click=lambda: confirm_dialog.submit(True),
+                        )
+                if not await confirm_dialog:
+                    return
                 async with action_session() as (session, actor):
                     require(actor.is_admin, "manage accounts")
                     report = await user_service.bulk_provision(session)
+                    created = [(u.email, u.invite_token) for _, u in report.created]
+                    skipped = len(report.skipped)
+                emailed = sum([await email_invite(addr, token) for addr, token in created])
+                failed = len(created) - emailed
                 ui.notify(
-                    f"Created {len(report.created)} accounts, skipped {len(report.skipped)}",
+                    f"Created {len(created)} accounts ({emailed} invites emailed"
+                    + (f", {failed} failed" if failed else "")
+                    + f"), skipped {skipped}",
                     color="positive",
                 )
                 ui.navigate.reload()
@@ -84,9 +119,10 @@ async def users_page(request: Request):
                             volunteer_id=link.value or None,
                             is_admin=admin_flag.value,
                         )
-                        token = user.invite_token
+                        token, addr = user.invite_token, user.email
                     dialog.close()
-                    show_invite(token, email.value)
+                    sent = await email_invite(addr, token)
+                    show_invite(token, addr, sent)
 
                 with ui.row().classes("justify-end w-full gap-2"):
                     ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -110,11 +146,15 @@ async def users_page(request: Request):
                 ui.space()
                 if not account.is_active:
                     ui.badge("disabled", color="grey")
-                elif account.password_hash is None and account.invite_token:
+                elif account.invite_token:
                     ui.badge("invite pending", color="warning").classes("cursor-pointer").on(
                         "click",
                         lambda _, t=account.invite_token, m=account.email: show_invite(t, m),
                     ).tooltip("Show invite link")
+                elif account.password_hash is None:
+                    ui.badge("email-code sign-in", color="info").tooltip(
+                        "No password set — signs in with a one-time code emailed each time"
+                    )
                 if account.last_login_at:
                     ui.label(f"last login {account.last_login_at:%Y-%m-%d}").classes(
                         "text-xs text-gray-400"
@@ -135,11 +175,12 @@ async def users_page(request: Request):
                     ui.navigate.reload()
 
                 @notify_errors
-                async def reinvite(_, uid=account.id, mail=account.email) -> None:
+                async def reinvite(_, uid=account.id, addr=account.email) -> None:
                     async with action_session() as (session, actor):
                         require(actor.is_admin, "manage accounts")
                         token = await user_service.reissue_invite(session, uid)
-                    show_invite(token, mail)
+                    sent = await email_invite(addr, token)
+                    show_invite(token, addr, sent)
 
                 ui.button(icon="key_off" if account.is_admin else "key", on_click=toggle_admin).props(
                     "dense flat"

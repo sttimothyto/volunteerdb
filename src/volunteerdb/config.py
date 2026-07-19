@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
     reload: bool = False
+    smtp2go_api_key: str = ""  # empty: emails are printed to the log, not sent
+    mail_from: str = "no-reply@sttimothyto.org"
+    mail_from_name: str = "VolunteerDB"
 
 
 @lru_cache

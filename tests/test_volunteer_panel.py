@@ -1,10 +1,11 @@
-"""Headless UI test: the volunteer side panel opens from all three pages.
+"""Headless UI test: email-code login flow, then the volunteer side panel.
 
 Single test function by design: page routes register when the ui modules are
 first imported, which must happen inside the simulation's reset context (see
 ui_sim_main.py) — a second simulation in the same process would find no pages.
 """
 
+import re
 from pathlib import Path
 
 from nicegui import ui
@@ -12,13 +13,21 @@ from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
-from volunteerdb.services import memberships, teams, users, volunteers
+from volunteerdb.services import mail, memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
-async def test_panel_opens_from_team_roster_table_and_graph(database):
+async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatch):
+    sent: list[tuple[str, str, str]] = []
+
+    async def fake_send(to: str, subject: str, body: str) -> bool:
+        sent.append((to, subject, body))
+        return True
+
+    monkeypatch.setattr(mail, "send_email", fake_send)
+
     async with db_session() as session:
         liturgy = await teams.create(session, "Liturgy")
         maria = await volunteers.create(
@@ -26,9 +35,38 @@ async def test_panel_opens_from_team_roster_table_and_graph(database):
         )
         await memberships.assign(session, maria.id, liturgy.id, TeamRole.leader)
         admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        await users.create(session, "felix@example.org")  # passwordless -> email-code login
         team_id, maria_id, admin_id = liturgy.id, maria.id, admin.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
+        # unknown address: neutral code step is shown, but NO email is sent
+        await user.open("/login")
+        await user.should_see("Password (optional)")
+        await user.should_see("Keep me signed in")
+        user.find(kind=ui.input, content="Email").type("stranger@example.org")
+        user.find(kind=ui.input, content="Password (optional)").trigger("keydown.enter")
+        await user.should_see("Enter the 6-digit code emailed to stranger@example.org")
+        assert sent == []
+
+        # OTP login: blank password emails a 6-digit code
+        await user.open("/login")
+        user.find(kind=ui.input, content="Email").type("felix@example.org")
+        user.find(kind=ui.input, content="Password (optional)").trigger("keydown.enter")
+        await user.should_see("Enter the 6-digit code emailed to felix@example.org")
+        assert sent and sent[-1][0] == "felix@example.org"
+        code = re.search(r"\b(\d{6})\b", sent[-1][1]).group(1)
+
+        wrong = "000000" if code != "000000" else "111111"
+        user.find(kind=ui.input, content="6-digit code").type(wrong)
+        user.find(kind=ui.input, content="6-digit code").trigger("keydown.enter")
+        await user.should_see("That code didn't work")
+
+        user.find(kind=ui.input, content="6-digit code").clear()
+        user.find(kind=ui.input, content="6-digit code").type(code)
+        user.find(kind=ui.input, content="6-digit code").trigger("keydown.enter")
+        await user.should_see("Volunteers")  # framed page = signed in
+
+        # switch to the admin for the panel checks
         await user.open(f"/login-dev/{admin_id}")
         await user.should_see("dev-login ok")
 

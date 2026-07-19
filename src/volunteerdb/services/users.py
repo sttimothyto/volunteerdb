@@ -1,10 +1,15 @@
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import hash_password, new_token, verify_password
+from ..auth import hash_password, new_otp_code, new_token, verify_password
 from ..models import AppUser, Volunteer
+
+OTP_TTL = timedelta(minutes=10)
+OTP_RESEND_INTERVAL = timedelta(seconds=60)
+OTP_MAX_ATTEMPTS = 5
 
 
 async def get(session: AsyncSession, user_id: int) -> AppUser | None:
@@ -50,7 +55,7 @@ async def create(
     password: str | None = None,
 ) -> AppUser:
     """Create an account. Without a password it gets an invite token instead,
-    to be redeemed via the invite link (no SMTP required — hand out the link)."""
+    to be redeemed via the invite link (emailed to the user, or handed out)."""
     user = AppUser(
         email=email.strip().lower(),
         volunteer_id=volunteer_id,
@@ -83,7 +88,11 @@ async def reissue_invite(session: AsyncSession, user_id: int) -> str:
     return user.invite_token
 
 
-async def redeem_invite(session: AsyncSession, token: str, password: str) -> AppUser | None:
+async def redeem_invite(
+    session: AsyncSession, token: str, password: str | None
+) -> AppUser | None:
+    """Complete account setup. The password is optional: without one the
+    account stays passwordless and signs in with emailed one-time codes."""
     if not token:
         return None
     user = (
@@ -91,8 +100,60 @@ async def redeem_invite(session: AsyncSession, token: str, password: str) -> App
     ).scalar_one_or_none()
     if user is None or not user.is_active:
         return None
-    user.password_hash = hash_password(password)
+    if password:
+        user.password_hash = hash_password(password)
     user.invite_token = None
+    await session.flush()
+    return user
+
+
+async def start_otp_login(
+    session: AsyncSession, email: str
+) -> tuple[AppUser, str | None] | None:
+    """Begin an email one-time-code login.
+
+    Returns None for an unknown or inactive account (callers stay neutral to
+    avoid enumeration), (user, None) when a live code was sent moments ago
+    (throttled — don't resend), or (user, code) with a fresh code to email.
+    Only the argon2 hash of the code is stored."""
+    user = await get_by_email(session, email)
+    if user is None or not user.is_active:
+        return None
+    now = datetime.now(UTC)
+    if (
+        user.otp_sent_at is not None
+        and now - user.otp_sent_at < OTP_RESEND_INTERVAL
+        and user.otp_expires_at is not None
+        and user.otp_expires_at > now
+    ):
+        return user, None
+    code = new_otp_code()
+    user.otp_hash = hash_password(code)
+    user.otp_sent_at = now
+    user.otp_expires_at = now + OTP_TTL
+    user.otp_attempts = 0
+    await session.flush()
+    return user, code
+
+
+async def verify_otp(session: AsyncSession, email: str, code: str) -> AppUser | None:
+    user = await get_by_email(session, email)
+    if user is None or not user.is_active or user.otp_hash is None:
+        return None
+    if user.otp_expires_at is None or user.otp_expires_at < datetime.now(UTC):
+        return None
+    if user.otp_attempts >= OTP_MAX_ATTEMPTS:
+        return None
+    if not verify_password(user.otp_hash, (code or "").strip()):
+        user.otp_attempts += 1
+        await session.flush()
+        return None
+    user.otp_hash = None
+    user.otp_sent_at = None
+    user.otp_expires_at = None
+    user.otp_attempts = 0
+    user.invite_token = None  # possession of the email proves the invite
+    user.last_login_at = sa.func.now()
     await session.flush()
     return user
 

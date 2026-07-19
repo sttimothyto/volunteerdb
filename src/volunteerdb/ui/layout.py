@@ -1,8 +1,9 @@
 from contextlib import contextmanager
 
-from nicegui import app, ui
+from nicegui import ui
 
 from ..permissions import Actor
+from .context import clear_session
 from .theme import apply_theme
 
 
@@ -49,5 +50,5 @@ def frame(title: str, actor: Actor):
 
 
 def _logout() -> None:
-    app.storage.user.pop("user_id", None)  # keep e.g. the dark-mode pref
+    clear_session()
     ui.navigate.to("/login")

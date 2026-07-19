@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from functools import wraps
 
 from nicegui import app, ui
@@ -13,9 +13,44 @@ from ..db import db_session
 from ..permissions import Actor, Forbidden, load_actor
 from ..services import users as user_service
 
+SESSION_REMEMBER = timedelta(days=90)
+SESSION_SHORT = timedelta(days=1)
+
+
+def establish_session(user_id: int, *, remember: bool) -> None:
+    app.storage.user["user_id"] = user_id
+    app.storage.user["session_expires_at"] = (
+        datetime.now(UTC) + (SESSION_REMEMBER if remember else SESSION_SHORT)
+    ).isoformat()
+
+
+def clear_session() -> None:
+    """Sign out; keeps e.g. the dark-mode pref."""
+    app.storage.user.pop("user_id", None)
+    app.storage.user.pop("session_expires_at", None)
+
+
+def session_expired(raw: str | None) -> bool:
+    if not raw:
+        return True
+    try:
+        return datetime.fromisoformat(raw) < datetime.now(UTC)
+    except ValueError:
+        return True
+
 
 def session_user_id() -> int | None:
-    return app.storage.user.get("user_id")
+    """The signed-in user, or None once the session has run out.
+
+    This is the primary expiry check: websocket-delivered actions from open
+    tabs never pass through AuthMiddleware, but they all come through here."""
+    user_id = app.storage.user.get("user_id")
+    if user_id is None:
+        return None
+    if session_expired(app.storage.user.get("session_expires_at")):
+        clear_session()
+        return None
+    return user_id
 
 
 async def get_actor(session: AsyncSession) -> Actor | None:
@@ -34,7 +69,7 @@ async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
     async with db_session(session_user_id()) as session:
         actor = await get_actor(session)
         if actor is None:
-            app.storage.user.pop("user_id", None)  # keep e.g. the dark-mode pref
+            clear_session()
             ui.navigate.to("/login")
             raise Forbidden("not signed in")
         yield session, actor

@@ -17,11 +17,16 @@ you can't log in with curl directly. Solution: a scratchpad launcher that
 wires the real app (`volunteerdb.main.create_app()`) plus one extra route:
 
 ```python
-@ui.page("/login-dev/{user_id}")           # path MUST start with /login —
-def dev_login(user_id: int):               # it rides the AuthMiddleware
-    app.storage.user["user_id"] = user_id  # UNRESTRICTED_PREFIXES exemption
+from volunteerdb.ui.context import establish_session
+
+@ui.page("/login-dev/{user_id}")              # path MUST start with /login —
+def dev_login(user_id: int):                  # it rides the AuthMiddleware
+    establish_session(user_id, remember=True)  # UNRESTRICTED_PREFIXES exemption
     ui.label(f"dev-login ok: user {user_id}")
 ```
+
+(A raw `app.storage.user["user_id"] = ...` write is NOT enough — sessions
+without a `session_expires_at` read as expired.)
 
 then `ui.run(host="127.0.0.1", port=8123, storage_secret=settings().storage_secret,
 reload=False, show=False)`. Run it with `uv run python <launcher>` in the
@@ -50,3 +55,6 @@ background; ready when `curl http://127.0.0.1:8123/login` returns 200.
 - The dashboard is `/`; anonymous GETs redirect to `/login`.
 - Websocket-only flows (dialog saves, button handlers) can't be driven by
   curl — cover those via `/api` equivalents and say so in the report.
+- Email: with `VDB_SMTP2GO_API_KEY` unset (dev default), outbound mail is
+  printed to the launcher's stdout as `[MAIL]` lines — invite links and login
+  OTP codes can be read from there.

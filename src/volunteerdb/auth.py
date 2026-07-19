@@ -19,3 +19,7 @@ def verify_password(password_hash: str, password: str) -> bool:
 
 def new_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def new_otp_code() -> str:
+    return f"{secrets.randbelow(1_000_000):06d}"

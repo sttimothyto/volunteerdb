@@ -9,8 +9,15 @@ from .api import api_router
 from .api.deps import install_exception_handlers
 from .config import settings
 from .ui import register_pages
+from .ui.context import session_user_id
 
 UNRESTRICTED_PREFIXES = ("/login", "/invite/", "/api/", "/_nicegui", "/static/", "/favicon")
+ASSET_PREFIXES = ("/_nicegui", "/static/", "/favicon", "/api/")
+
+# Cookie inactivity bound. Real session lifetime is enforced app-side via
+# session_expires_at (see ui/context.py); 92 days covers every case where the
+# 90-day "keep me signed in" window could still be valid.
+SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 92
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -19,8 +26,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+        if "id" in request.session and not any(path.startswith(p) for p in ASSET_PREFIXES):
+            # Starlette only re-issues the session cookie when the session dict
+            # was modified, so without this touch it would hard-expire max_age
+            # after the FIRST visit, even for active users.
+            request.session["id"] = request.session["id"]
         if not any(path.startswith(p) for p in UNRESTRICTED_PREFIXES):
-            if not app.storage.user.get("user_id"):
+            if session_user_id() is None:
                 return RedirectResponse(f"/login?redirect_to={path}")
         return await call_next(request)
 
@@ -59,6 +71,7 @@ def run() -> None:
         title="VolunteerDB",
         favicon="⛪",
         storage_secret=s.storage_secret,
+        session_middleware_kwargs={"max_age": SESSION_COOKIE_MAX_AGE},
         reload=s.reload,
         show=False,
         fastapi_docs=True,

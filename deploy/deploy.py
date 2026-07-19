@@ -6,6 +6,10 @@ Usage (from the pyinfra checkout):
     uv run pyinfra sttimothyto-prod /home/ben/volunteerdb/deploy/deploy.py --dry
     VDB_ADMIN_PASSWORD='...' uv run pyinfra sttimothyto-prod /home/ben/volunteerdb/deploy/deploy.py
 
+Outbound email (SMTP2GO): pass VDB_SMTP2GO_API_KEY='api-...' on the first
+deploy after the mail feature; it is read back from the remote env file on
+later runs (env var wins, so passing it again rotates the key).
+
 Architecture — one process per container:
   volunteerdb-db.service   quadlet: docker.io/library/postgres:17, named volume
                            volunteerdb-pgdata. No published port; reachable only
@@ -90,6 +94,11 @@ def _remote_env() -> dict[str, str]:
 _existing = _remote_env()
 storage_secret = _existing.get("VDB_STORAGE_SECRET") or pysecrets.token_hex(32)
 db_password = _existing.get("VDB_DB_PASSWORD") or pysecrets.token_hex(24)
+smtp2go_api_key = (
+    os.environ.get("VDB_SMTP2GO_API_KEY") or _existing.get("VDB_SMTP2GO_API_KEY") or ""
+)
+if not smtp2go_api_key:
+    print("NOTE: VDB_SMTP2GO_API_KEY not set - emails will be logged, not sent.")
 database_url = f"postgresql+asyncpg://{DB_USER}:{db_password}@volunteerdb-db:5432/{DB_NAME}"
 
 # First containerized run against a host still serving the native deploy?
@@ -155,6 +164,7 @@ files.template(
     group="root",
     database_url=database_url,
     storage_secret=storage_secret,
+    smtp2go_api_key=smtp2go_api_key,
     db_password=db_password,
     port=APP_PORT,
 )
