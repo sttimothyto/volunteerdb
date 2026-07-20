@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Response, UploadFile
+from fastapi import APIRouter, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from ..permissions import require
@@ -8,6 +8,7 @@ from .deps import AsOf, CtxDep
 router = APIRouter(tags=["import/export"])
 
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+MAX_IMPORT_BYTES = 10_000_000  # same cap the UI upload enforces
 
 
 def _xlsx(content: bytes, filename: str) -> Response:
@@ -57,7 +58,9 @@ class ImportReportOut(BaseModel):
 async def import_workbook(ctx: CtxDep, file: UploadFile, dry_run: bool = False) -> ImportReportOut:
     """Upload a filled-in template. All-or-nothing; use dry_run=true to preview."""
     require(ctx.actor.is_admin, "import spreadsheets")
-    content = await file.read()
+    content = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(413, "workbook larger than 10 MB")
     report = await importer.run_import(content, dry_run=dry_run, user_id=ctx.actor.user.id)
     return ImportReportOut(
         applied=report.applied,

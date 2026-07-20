@@ -45,6 +45,14 @@ def _custom_cell(defn: CustomFieldDef, value):
     return value
 
 
+def _safe(value):
+    """Strings starting with '=' would become live formulas in the workbook;
+    prefix a quote (stripped again by the importer on round-trip)."""
+    if isinstance(value, str) and value.startswith("="):
+        return "'" + value
+    return value
+
+
 def _to_bytes(wb: Workbook) -> bytes:
     buffer = BytesIO()
     wb.save(buffer)
@@ -102,13 +110,16 @@ async def export_workbook(
     for v in volunteers:
         vs.append(
             [
-                v.first_name,
-                v.last_name,
-                v.email,
-                v.phone,
-                v.notes,
-                "yes" if v.is_active else "no",
-                *(_custom_cell(d, (v.custom or {}).get(d.key)) for d in custom_defs),
+                _safe(c)
+                for c in (
+                    v.first_name,
+                    v.last_name,
+                    v.email,
+                    v.phone,
+                    v.notes,
+                    "yes" if v.is_active else "no",
+                    *(_custom_cell(d, (v.custom or {}).get(d.key)) for d in custom_defs),
+                )
             ]
         )
     by_path = sorted(
@@ -117,12 +128,15 @@ async def export_workbook(
     for m, v in by_path:
         ms.append(
             [
-                v.email,
-                f"{v.first_name} {v.last_name}",
-                paths[m.team_id],
-                ROLE_LABELS[m.role],
-                m.joined_on.isoformat() if m.joined_on else None,
-                m.notes,
+                _safe(c)
+                for c in (
+                    v.email,
+                    f"{v.first_name} {v.last_name}",
+                    paths[m.team_id],
+                    ROLE_LABELS[m.role],
+                    m.joined_on.isoformat() if m.joined_on else None,
+                    m.notes,
+                )
             ]
         )
     return _to_bytes(wb)

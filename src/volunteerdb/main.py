@@ -1,4 +1,7 @@
+import logging
+import secrets
 from pathlib import Path
+from urllib.parse import quote
 
 from nicegui import app, ui
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -33,7 +36,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.session["id"] = request.session["id"]
         if not any(path.startswith(p) for p in UNRESTRICTED_PREFIXES):
             if session_user_id() is None:
-                return RedirectResponse(f"/login?redirect_to={path}")
+                return RedirectResponse(f"/login?redirect_to={quote(path)}")
         return await call_next(request)
 
 
@@ -65,13 +68,22 @@ def create_app() -> None:
 def run() -> None:
     create_app()
     s = settings()
+    secret = s.storage_secret
+    if not secret or secret in ("dev-secret-change-me", "change-me-to-a-long-random-string"):
+        secret = secrets.token_hex(32)  # never serve forgeable sessions
+        logging.getLogger(__name__).warning(
+            "VDB_STORAGE_SECRET unset — using an ephemeral secret; sessions reset on restart"
+        )
     ui.run(
         host=s.host,
         port=s.port,
         title="VolunteerDB",
         favicon="⛪",
-        storage_secret=s.storage_secret,
-        session_middleware_kwargs={"max_age": SESSION_COOKIE_MAX_AGE},
+        storage_secret=secret,
+        session_middleware_kwargs={
+            "max_age": SESSION_COOKIE_MAX_AGE,
+            "https_only": s.cookie_secure,
+        },
         reload=s.reload,
         show=False,
         fastapi_docs=True,

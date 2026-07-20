@@ -52,6 +52,8 @@ def _clean(value) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
+    if text.startswith("'="):
+        text = text[1:]  # undo the exporter's formula-injection escape
     return text or None
 
 

@@ -1,10 +1,11 @@
+import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import hash_password, new_otp_code, new_token, verify_password
+from ..auth import burn_password_check, hash_password, new_otp_code, new_token, verify_password
 from ..models import AppUser, Volunteer
 
 OTP_TTL = timedelta(minutes=10)
@@ -29,6 +30,7 @@ async def list_all(session: AsyncSession) -> list[AppUser]:
 async def authenticate(session: AsyncSession, email: str, password: str) -> AppUser | None:
     user = await get_by_email(session, email)
     if user is None or not user.is_active or user.password_hash is None:
+        burn_password_check(password)  # uniform timing: no account-existence oracle
         return None
     if not verify_password(user.password_hash, password):
         return None
@@ -37,11 +39,17 @@ async def authenticate(session: AsyncSession, email: str, password: str) -> AppU
     return user
 
 
+def _token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 async def authenticate_token(session: AsyncSession, token: str) -> AppUser | None:
     if not token:
         return None
     user = (
-        await session.execute(sa.select(AppUser).where(AppUser.api_token == token))
+        await session.execute(
+            sa.select(AppUser).where(AppUser.api_token == _token_digest(token))
+        )
     ).scalar_one_or_none()
     return user if user is not None and user.is_active else None
 
@@ -162,9 +170,10 @@ async def issue_api_token(session: AsyncSession, user_id: int) -> str:
     user = await get(session, user_id)
     if user is None:
         raise LookupError(f"user {user_id} not found")
-    user.api_token = new_token()
+    token = new_token()
+    user.api_token = _token_digest(token)  # only the digest is stored
     await session.flush()
-    return user.api_token
+    return token
 
 
 async def set_flags(

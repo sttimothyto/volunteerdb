@@ -1,9 +1,11 @@
 import secrets
 
 from argon2 import PasswordHasher
-from argon2.exceptions import VerificationError
+from argon2.exceptions import InvalidHashError, VerificationError
 
 _hasher = PasswordHasher()
+# verified against when the account doesn't exist, so both paths cost one argon2 pass
+_DUMMY_HASH = _hasher.hash(secrets.token_urlsafe(16))
 
 
 def hash_password(password: str) -> str:
@@ -13,8 +15,13 @@ def hash_password(password: str) -> str:
 def verify_password(password_hash: str, password: str) -> bool:
     try:
         return _hasher.verify(password_hash, password)
-    except VerificationError:
+    except (VerificationError, InvalidHashError):
         return False
+
+
+def burn_password_check(password: str) -> None:
+    """Timing equalizer for unknown/passwordless accounts (enumeration resistance)."""
+    verify_password(_DUMMY_HASH, password)
 
 
 def new_token() -> str:

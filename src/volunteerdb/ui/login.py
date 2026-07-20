@@ -1,6 +1,7 @@
 from fastapi import Request
 from nicegui import ui
 
+from .. import throttle
 from ..db import db_session
 from ..services import mail
 from ..services import users as user_service
@@ -9,14 +10,17 @@ from .theme import apply_theme
 
 
 @ui.page("/login")
-def login_page(redirect_to: str = "/"):
+def login_page(request: Request, redirect_to: str = "/"):
     apply_theme()
 
     pending_email = ""
+    ip = request.client.host if request.client else "unknown"
 
     def finish(user_id: int) -> None:
         establish_session(user_id, remember=remember.value)
-        ui.navigate.to(redirect_to if redirect_to.startswith("/") else "/")
+        # "//host" and "/\host" are scheme-relative URLs, not same-origin paths
+        safe = redirect_to.startswith("/") and not redirect_to.startswith(("//", "/\\"))
+        ui.navigate.to(redirect_to if safe else "/")
 
     async def submit() -> None:
         addr = (email.value or "").strip()
@@ -24,9 +28,18 @@ def login_page(redirect_to: str = "/"):
             ui.notify("Enter your email address", color="warning")
             return
         if password.value:
+            keys = (f"pw:{addr.lower()}", f"pw-ip:{ip}")
+            if throttle.blocked(keys[0], 5, 900) or throttle.blocked(keys[1], 30, 900):
+                ui.notify(
+                    "Too many failed attempts — try again in a few minutes.",
+                    color="negative",
+                )
+                return
             async with db_session() as session:
                 user = await user_service.authenticate(session, addr, password.value)
             if user is None:
+                for key in keys:
+                    throttle.hit(key)
                 ui.notify("Invalid email or password", color="negative")
                 return
             finish(user.id)
@@ -36,6 +49,13 @@ def login_page(redirect_to: str = "/"):
     async def send_code() -> None:
         nonlocal pending_email
         addr = (email.value or "").strip()
+        if throttle.blocked(f"otp-ip:{ip}", 10, 3600):
+            ui.notify(
+                "Too many code requests from this device — try again later.",
+                color="negative",
+            )
+            return
+        throttle.hit(f"otp-ip:{ip}")
         async with db_session() as session:
             result = await user_service.start_otp_login(session, addr)
         if result is not None:
