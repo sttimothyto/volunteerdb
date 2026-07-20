@@ -121,3 +121,13 @@ async def token_admin(client, seeded) -> dict:
 @pytest.fixture
 async def token_member(client, seeded) -> dict:
     return await _token(client, "member@example.org", "member-pw")
+
+
+@pytest.fixture
+async def token_leader(client, seeded) -> dict:
+    """A leader of the seeded Liturgy team (not an admin)."""
+    async with db_session() as session:
+        lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
+        await memberships.assign(session, lena.id, seeded["team_id"], TeamRole.leader)
+        await users.create(session, "lena@example.org", volunteer_id=lena.id, password="leader-pw")
+    return await _token(client, "lena@example.org", "leader-pw")

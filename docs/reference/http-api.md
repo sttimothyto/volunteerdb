@@ -113,9 +113,14 @@ authenticated account.
 | Method & path | Permission | Notes |
 |---|---|---|
 | `GET /api/export/template.xlsx` | signed in | Empty workbook with headers + role dropdown |
+| `GET /api/export/template/{sheet}.csv` | signed in | Headers only; `{sheet}` is `volunteers` or `memberships` |
 | `GET /api/export/parish.xlsx` | admin | Full export, `as_of=` |
+| `GET /api/export/parish/{sheet}.csv` | admin | One sheet as CSV, `as_of=` |
 | `GET /api/export/team/{team_id}.xlsx` | full roster on the team | Roster export, `as_of=` |
-| `POST /api/import` | admin | Multipart `file=`; `dry_run=`; all-or-nothing; 10 MB cap |
+| `GET /api/export/team/{team_id}/{sheet}.csv` | full roster on the team | One sheet as CSV, `as_of=` |
+| `GET /api/export/my-teams.xlsx` | leads/seconds any team | Union of managed teams, `as_of=` |
+| `GET /api/export/my-teams/{sheet}.csv` | leads/seconds any team | One sheet as CSV, `as_of=` |
+| `POST /api/import` | admin or leader/second (rows scoped) | Multipart `file=` (`.xlsx` or `.csv`); `dry_run=`; all-or-nothing; 10 MB cap |
 
 Workbook layout: see the [spreadsheet format](spreadsheets.md).
 

@@ -141,13 +141,22 @@ async def team_detail(team_id: int, as_of: str = ""):
                     "dense outline color=negative"
                 )
             if can_full:
+                slug = team.name.lower().replace(" ", "-")
 
-                async def export() -> None:
+                async def export_xlsx() -> None:
                     async with action_session() as (session, _):
                         content = await exporter.export_workbook(session, team_id=team_id, at=at)
-                    ui.download(content, f"{team.name.lower().replace(' ', '-')}.xlsx")
+                    ui.download(content, f"{slug}.xlsx")
 
-                ui.button("Export roster", icon="download", on_click=export).props("dense outline")
+                async def export_csv(sheet: str) -> None:
+                    async with action_session() as (session, _):
+                        content = await exporter.export_csv(session, sheet, team_id=team_id, at=at)
+                    ui.download(content, f"{slug}-{sheet}.csv")
+
+                with ui.dropdown_button("Export roster", icon="download").props("dense outline"):
+                    ui.item("Excel workbook (.xlsx)", on_click=export_xlsx)
+                    ui.item("volunteers.csv", on_click=lambda: export_csv("volunteers"))
+                    ui.item("memberships.csv", on_click=lambda: export_csv("memberships"))
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")

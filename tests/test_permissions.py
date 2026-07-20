@@ -103,6 +103,16 @@ async def test_contact_edit_rights(parish):
     assert admin.can_manage_team(ids["hospitality"])
 
 
+async def test_import_export_rights(parish):
+    accounts, _ = parish
+    for name in ("leader", "second", "admin"):
+        actor = await _actor(accounts, name)
+        assert actor.can_import_export, f"{name} may import/export"
+    for name in ("core", "member", "outsider"):
+        actor = await _actor(accounts, name)
+        assert not actor.can_import_export, f"{name} may not import/export"
+
+
 async def test_capacity_view_rights(parish):
     accounts, ids = parish
     async with db_session() as session:

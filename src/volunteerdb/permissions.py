@@ -1,9 +1,11 @@
 """Authorization: global admin flag + per-team fourfold roles.
 
 Rules (team roles cascade down to sub-teams):
-- admin                 — everything, including team/user management and imports
+- admin                 — everything, including team/user management and
+                          parish-wide spreadsheet import/export
 - leader / second of T  — manage roster of T and its sub-teams; edit contact
-                          info of volunteers on those teams
+                          info of volunteers on those teams; spreadsheet
+                          import/export scoped to those teams
 - core of T             — view full roster (incl. contact details) of T + sub-teams
 - member of T           — view roster names of T (no contact details)
 - any signed-in user    — browse the team directory, see/edit own profile
@@ -33,6 +35,13 @@ class Actor:
 
     def can_manage_team(self, team_id: int) -> bool:
         return self.is_admin or team_id in self.managed_team_ids
+
+    @property
+    def can_import_export(self) -> bool:
+        """Import/Export page and POST /api/import: admins, plus anyone who
+        leads (or seconds) a team. Non-admin imports are scoped row-by-row
+        to managed teams inside the importer."""
+        return self.is_admin or bool(self.managed_team_ids)
 
     def can_view_full_roster(self, team_id: int) -> bool:
         return self.is_admin or team_id in self.full_view_team_ids

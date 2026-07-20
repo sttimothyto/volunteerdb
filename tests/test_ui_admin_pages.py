@@ -6,7 +6,8 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
-from volunteerdb.services import users, volunteers
+from volunteerdb.models import TeamRole
+from volunteerdb.services import memberships, teams, users, volunteers
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -42,7 +43,23 @@ async def test_admin_pages_render(database):
         await user.open("/admin/users")
         await user.should_see("Admins only.")
         await user.open("/import")
-        await user.should_see("Only admins can import or export the whole parish.")
+        await user.should_see("Import/Export is available to admins and to team leaders/seconds.")
+
+
+async def test_leader_import_page_scoped(database):
+    async with db_session() as session:
+        liturgy = await teams.create(session, "Liturgy")
+        lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
+        await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
+        leader = await users.create(session, "lena@example.org", volunteer_id=lena.id, password="pw")
+        leader_id = leader.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{leader_id}")
+        await user.should_see("dev-login ok")
+        await user.open("/import")
+        await user.should_see("My teams export")
+        await user.should_see("Import/Export")  # nav link visible to leaders
 
 
 async def test_admin_users_provision_button(database, monkeypatch):

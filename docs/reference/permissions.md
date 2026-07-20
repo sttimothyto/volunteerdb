@@ -17,6 +17,7 @@ GUI and the API. For the rationale, see
 |---|---|---|---|---|---|
 | Manage roster (add/remove/change roles), their teams | ✓ | ✓ | | | |
 | Edit contact info of volunteers on their teams | ✓ | ✓ | | | |
+| Spreadsheet import/export, their teams | ✓ | ✓ | | | |
 | See capacity scores/bands (all volunteers) | ✓ | | | | |
 | View full roster incl. contact details, their teams | ✓ | ✓ | ✓ | | |
 | View full volunteer profiles (shared team) | ✓ | ✓ | ✓ | | |
@@ -26,7 +27,8 @@ GUI and the API. For the rationale, see
 | Coverage report | ✓ | their teams | | | |
 | Create/edit/delete teams | ✓ | | | | |
 | Create/delete volunteers; toggle active | ✓ | | | | |
-| Accounts, custom fields, capacity config, imports | ✓ | | | | |
+| Parish-wide import/export | ✓ | | | | |
+| Accounts, custom fields, capacity config | ✓ | | | | |
 
 Additional rules:
 
@@ -53,11 +55,12 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/volunteers` | Volunteer list, search; capacity filter for admins | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
 | `/graph` | Cytoscape ministry graph, as-of picker | signed in |
-| `/import` | Spreadsheet import/export | admin |
+| `/import` | Spreadsheet import/export | admin or leader/second (scoped to their teams) |
 | `/manual` | This documentation (book icon in the header) | signed in |
 | `/admin/users` | Accounts: create, invite, bulk provision | admin |
 | `/admin/fields` | Custom field definitions | admin |
 | `/admin/capacity` | Capacity multipliers, bands, team weights | admin |
 
-The header nav shows Import/Export, Accounts, Fields, and Capacity entries
-to admins only; direct navigation by non-admins is rejected server-side.
+The header nav shows Import/Export to admins and team leaders/seconds, and
+Accounts, Fields, and Capacity entries to admins only; direct navigation
+without the required role is rejected server-side.

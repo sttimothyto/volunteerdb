@@ -21,10 +21,11 @@ def frame(title: str, actor: Actor):
             "flat color=white dense"
         )
         ui.button("Graph", on_click=lambda: ui.navigate.to("/graph")).props("flat color=white dense")
-        if actor.is_admin:
+        if actor.can_import_export:
             ui.button("Import/Export", on_click=lambda: ui.navigate.to("/import")).props(
                 "flat color=white dense"
             )
+        if actor.is_admin:
             ui.button("Accounts", on_click=lambda: ui.navigate.to("/admin/users")).props(
                 "flat color=white dense"
             )
