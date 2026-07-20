@@ -31,6 +31,15 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=6.0",
 ]
+docs = [
+    "sphinx>=9.1",
+    "myst-parser>=5.0",
+    "furo>=2025.12",
+    "sphinx-copybutton>=0.5.2",
+]
+
+[tool.uv.sources]
+sphinx = { path = "/home/ben/sphinx", editable = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

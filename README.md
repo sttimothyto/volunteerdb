@@ -14,6 +14,16 @@ to fill?"**
 - Spreadsheet **import/export** (.xlsx) that round-trips
 - **Cytoscape.js graph** of volunteers ↔ teams
 
+## Documentation
+
+Full documentation lives in [`docs/`](docs/index.md), organized as
+tutorials, how-to guides, explanation, and reference
+([Diátaxis](https://documentation.divio.com/)). Build it with:
+
+```sh
+uv run --group docs sphinx-build -W -b html docs docs/_build/html
+```
+
 ## Quick start
 
 Requires [uv](https://docs.astral.sh/uv/) and podman (`sudo apt install podman podman-compose`).
@@ -86,9 +96,12 @@ mirrored on its `_history` twin (the trigger inserts positionally).
 | browse team directory, edit own profile | ✓ | ✓ | ✓ | ✓ |
 | create/edit teams, accounts, imports | ✓ | | | |
 
-Accounts are provisioned without email infrastructure: the admin generates
-**invite links** (Accounts page → bulk or per person) and hands them out; the
-volunteer opens the link and sets their password.
+(Authoritative, finer-grained matrix: [docs/reference/permissions.md](docs/reference/permissions.md).)
+
+Accounts are admin-provisioned via **invite links** (Accounts page → bulk or
+per person), emailed automatically when `VDB_SMTP2GO_API_KEY` is set and
+always available to hand out by other means. The volunteer opens the link
+and sets a password — or skips it and signs in with emailed one-time codes.
 
 ## JSON API
 
