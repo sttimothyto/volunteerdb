@@ -3,43 +3,12 @@
 import asyncio
 from datetime import UTC, datetime
 
-import httpx
-import pytest
-from fastapi import FastAPI
-
-from volunteerdb.api import api_router
-from volunteerdb.api.deps import install_exception_handlers
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import custom_fields as custom_fields_service
-from volunteerdb.services import memberships, teams, users, volunteers
+from volunteerdb.services import memberships, volunteers
 
-
-@pytest.fixture
-async def client(database):
-    app = FastAPI()
-    install_exception_handlers(app)
-    app.include_router(api_router)
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-
-
-@pytest.fixture
-async def seeded(database):
-    async with db_session() as session:
-        team = await teams.create(session, "Liturgy")
-        v = await volunteers.create(session, "Maria", "Alvarez", "maria@example.org")
-        await memberships.assign(session, v.id, team.id, TeamRole.member)
-        await users.create(session, "admin@example.org", is_admin=True, password="secret-pw")
-        await users.create(session, "member@example.org", volunteer_id=v.id, password="member-pw")
-        return {"team_id": team.id, "volunteer_id": v.id}
-
-
-async def _token(client, email, password) -> dict:
-    r = await client.post("/api/auth/login", json={"email": email, "password": password})
-    assert r.status_code == 200, r.text
-    return {"Authorization": f"Bearer {r.json()['token']}"}
+from tests.conftest import _token
 
 
 async def test_login_and_me(client, seeded):

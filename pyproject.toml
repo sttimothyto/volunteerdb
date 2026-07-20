@@ -29,6 +29,7 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=6.0",
 ]
 
 [tool.pytest.ini_options]
@@ -36,3 +37,10 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["volunteerdb"]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true

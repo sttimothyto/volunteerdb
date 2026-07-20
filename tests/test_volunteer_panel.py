@@ -1,8 +1,11 @@
 """Headless UI test: email-code login flow, then the volunteer side panel.
 
-Single test function by design: page routes register when the ui modules are
-first imported, which must happen inside the simulation's reset context (see
-ui_sim_main.py) — a second simulation in the same process would find no pages.
+Page routes register when the ui modules are imported, which must happen inside
+the simulation's reset context (see ui_sim_main.py). On nicegui >= 3.14 that
+works for multiple simulations per process: nicegui_reset_globals pops the page
+modules from sys.modules after each one, so the next runpy of ui_sim_main.py
+re-registers them. It skips modules named tests.* — tests/__init__.py must stay,
+or the test modules themselves would be popped too.
 """
 
 import re
