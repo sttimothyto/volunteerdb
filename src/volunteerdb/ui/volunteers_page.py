@@ -27,7 +27,7 @@ async def volunteers_page(q: str = "", band: str = ""):
         config = await capacity_service.get_config(session)
         cap = await capacity_service.visible_scores(session, actor, team_sets)
 
-    shows_capacity = actor.is_admin or bool(actor.managed_team_ids)
+    shows_capacity = actor.is_admin
     if band:
         # filtering happens strictly within the permitted set — no capacity leak
         found = [v for v in found if v.id in cap and cap[v.id][1].label == band]

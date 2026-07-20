@@ -211,14 +211,14 @@ async def test_capacity_flow(client, seeded):
     (row,) = [s for s in r.json() if s["volunteer_id"] == seeded["volunteer_id"]]
     assert row["score"] == 9.0 and row["band"] == "red"
 
-    # Maria leads the team now; the actor is rebuilt per request, so her
-    # existing token immediately gains leader rights: she sees her people's
-    # capacity and may read the config
+    # Maria leads the team now, but capacity is admin-only: leadership grants
+    # neither the scores (empty list, not 403 — the endpoint filters) nor the
+    # config (hard 403)
     r = await client.get("/api/capacity/scores", headers=member)
     assert r.status_code == 200
-    assert {s["volunteer_id"] for s in r.json()} == {seeded["volunteer_id"]}
+    assert r.json() == []
     r = await client.get("/api/capacity/config", headers=member)
-    assert r.status_code == 200
+    assert r.status_code == 403
 
     # config writes are admin-only, and invalid configs are rejected
     good = {

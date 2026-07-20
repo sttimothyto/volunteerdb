@@ -33,8 +33,9 @@ minutes.)
 
 Header → **Teams** → *Liturgy*. Because Maria leads it:
 
-- The roster shows every member **with contact details**, their role, and a
-  capacity badge per volunteer.
+- The roster shows every member **with contact details** and their role.
+  (Administrators additionally see a capacity badge per volunteer —
+  [capacity](../explanation/capacity.md) is admin-only.)
 - Sub-teams (*Altar Servers*, *Lectors*, *Music Ministry*, *Sacristans*)
   are listed — Maria's leadership covers them too.
 - **Add a member:** pick any volunteer, role *Member*. **Change a role:**
@@ -72,19 +73,21 @@ This is the app's core question, answerable for anyone, as of any date.
 
 ## 7. See the whole parish as a graph
 
-Header → **Graph**. Volunteers and teams as a network: dot colors are
-capacity bands, gold edges mark leadership. Use the team filter to focus on
-*Liturgy* and click a team node to jump to its page. Maria's dot is red —
-three weighted ministries, two of them led. That red dot is *why* capacity
-exists: it's what the next "could you also…?" conversation should know.
+Header → **Graph**. Volunteers and teams as a network: gold edges mark
+leadership. Use the team filter to focus on *Liturgy* and click a team node
+to jump to its page. To an administrator the dots are also colored by
+capacity band — Maria's would be red: three weighted ministries, two of
+them led. That red dot is *why* capacity exists: it's what the next "could
+you also…?" conversation should know. As a coordinator, Maria herself sees
+plain grey dots.
 
 ## 8. Know what you can't see
 
 Sign out (header menu) and sign in as `felix.garcia@example.org` /
 `volunteer` — a plain member of Altar Servers and Youth Group. The same
 pages now show less: rosters list names but contact details are `•••`, no
-capacity badges, no holes report, no admin menu entries. Same data, same
-pages — access follows the fourfold role, as laid out in the
+holes report, no roster editing. Same data, same pages — access follows
+the fourfold role, as laid out in the
 [permission matrix](../reference/permissions.md#permission-matrix).
 
 ## Where next

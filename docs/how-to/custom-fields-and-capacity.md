@@ -47,8 +47,8 @@ capacity coloring, and profile badges all recompute on next load.
 
 ## Verify
 
-Give a test team a weight, then check a leader of that team on
-`/volunteers`: their capacity badge should reflect
-weight × role multiplier, in the band your thresholds put it in. Remember
-capacity is visible only to admins and to leaders/seconds of the
-volunteer's teams.
+Give a test team a weight, then check a member of that team on
+`/volunteers` while signed in as an admin: their capacity badge should
+reflect weight × role multiplier, in the band your thresholds put it in.
+Remember capacity is visible to admins only — team leaders and seconds do
+not see it.

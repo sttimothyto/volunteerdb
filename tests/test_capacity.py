@@ -116,16 +116,24 @@ async def test_visible_scores_respects_permissions(database):
         await memberships.assign(session, follower.id, garden.id, TeamRole.leader)
         await memberships.assign(session, outsider.id, garden.id, TeamRole.member)
 
-        account = await users.create(session, "lead@example.org", volunteer_id=lead.id)
-        actor = await load_actor(session, account)
+        lead_actor = await load_actor(
+            session, await users.create(session, "lead@example.org", volunteer_id=lead.id)
+        )
+        admin_actor = await load_actor(
+            session, await users.create(session, "admin@example.org", is_admin=True)
+        )
 
         team_sets = {
             lead.id: {liturgy.id},
             follower.id: {liturgy.id, garden.id},
             outsider.id: {garden.id},
         }
-        visible = await capacity.visible_scores(session, actor, team_sets)
-        assert set(visible) == {lead.id, follower.id}, "outsider's capacity is hidden"
+        # capacity is admin-only: leading a team grants no visibility at all
+        visible = await capacity.visible_scores(session, lead_actor, team_sets)
+        assert visible == {}
+
+        visible = await capacity.visible_scores(session, admin_actor, team_sets)
+        assert set(visible) == {lead.id, follower.id, outsider.id}
         follower_score, follower_band = visible[follower.id]
         assert follower_score == Decimal("5"), "2×1 (member of Liturgy) + 1×3 (leads Garden)"
         assert follower_band.label == "amber"
@@ -150,6 +158,9 @@ async def test_graph_colors_only_permitted_nodes(database):
         core_actor = await load_actor(
             session, await users.create(session, "core@example.org", volunteer_id=watcher.id)
         )
+        admin_actor = await load_actor(
+            session, await users.create(session, "admin@example.org", is_admin=True)
+        )
 
         def volunteer_nodes(elements):
             return {
@@ -158,16 +169,17 @@ async def test_graph_colors_only_permitted_nodes(database):
                 if n["data"]["type"] == "volunteer"
             }
 
-        # the leader sees bands on their people; follower's band reflects the
-        # Garden team too, even when the graph is focused on Liturgy only
+        # an admin sees bands; follower's band reflects the Garden team too,
+        # even when the graph is focused on Liturgy only
         graph = volunteer_nodes(
-            await graph_service.elements(session, lead_actor, team_id=liturgy.id)
+            await graph_service.elements(session, admin_actor, team_id=liturgy.id)
         )
         assert graph[follower.id]["band"] == "amber", "2×1 + 1×3 = 5, includes unseen Garden"
         assert graph[follower.id]["color"] == "#ffb300"
         assert graph[lead.id]["band"] == "amber", "leader of weight-2 team: 2×3 = 6"
 
-        # a core member sees the same people but never their capacity
-        graph = volunteer_nodes(await graph_service.elements(session, core_actor))
-        assert follower.id in graph and lead.id in graph
-        assert all("color" not in data and "band" not in data for data in graph.values())
+        # leaders and core members see the same people but never their capacity
+        for actor in (lead_actor, core_actor):
+            graph = volunteer_nodes(await graph_service.elements(session, actor))
+            assert follower.id in graph and lead.id in graph
+            assert all("color" not in d and "band" not in d for d in graph.values())

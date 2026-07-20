@@ -111,7 +111,7 @@ async def test_capacity_view_rights(parish):
 
     for name in ("leader", "second"):
         actor = await _actor(accounts, name)
-        assert actor.can_view_capacity(member_teams), f"{name} sees their people's capacity"
+        assert not actor.can_view_capacity(member_teams), f"{name} no longer sees capacity"
         assert not actor.can_view_capacity(outsider_teams), "not other ministries' people"
 
     core = await _actor(accounts, "core")

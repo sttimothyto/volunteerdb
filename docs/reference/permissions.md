@@ -17,7 +17,7 @@ GUI and the API. For the rationale, see
 |---|---|---|---|---|---|
 | Manage roster (add/remove/change roles), their teams | ✓ | ✓ | | | |
 | Edit contact info of volunteers on their teams | ✓ | ✓ | | | |
-| See capacity scores/bands of volunteers on their teams | ✓ | ✓ | | | |
+| See capacity scores/bands (all volunteers) | ✓ | | | | |
 | View full roster incl. contact details, their teams | ✓ | ✓ | ✓ | | |
 | View full volunteer profiles (shared team) | ✓ | ✓ | ✓ | | |
 | View roster names (no contact details), own team | ✓ | ✓ | ✓ | ✓ | |
@@ -32,9 +32,9 @@ Additional rules:
 
 - Volunteers may always view and edit their **own** contact info, whatever
   their roles.
-- Capacity is deliberately hidden from core members *and from the volunteer
-  themself* — it is a leadership planning signal
-  (`Actor.can_view_capacity`).
+- Capacity is admin-only — deliberately hidden from team leaders, core
+  members, *and the volunteer themself*; it is a parish-wide planning
+  signal (`Actor.can_view_capacity`).
 - Redaction, not denial: lists and rosters show `•••` for contact fields the
   viewer may not see.
 
@@ -50,7 +50,7 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/invite/{token}` | Redeem invite, optionally set password | public (valid token) |
 | `/teams` | Team tree browser | signed in ("New team": admin) |
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export | signed in; roster per matrix |
-| `/volunteers` | Volunteer list, search, capacity filter | signed in; fields redacted per matrix |
+| `/volunteers` | Volunteer list, search; capacity filter for admins | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
 | `/graph` | Cytoscape ministry graph, as-of picker | signed in |
 | `/import` | Spreadsheet import/export | admin |

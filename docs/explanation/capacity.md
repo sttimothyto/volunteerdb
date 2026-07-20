@@ -37,17 +37,16 @@ fine. (The first is exactly the seeded demo's Maria Alvarez.)
 
 ## Two deliberate choices
 
-**Scores are global, not per-team.** A leader viewing their roster sees each
-volunteer's *total* load across the whole parish — including ministries the
-leader has nothing to do with. That is the feature: the Youth Group leader
-about to ask Maria for one more favor should see that *other* commitments
-already have her in the red. (Only the score is global; who may see it is
-still gated.)
+**Scores are global, not per-team.** An admin viewing any roster sees each
+volunteer's *total* load across the whole parish — every weighted ministry
+counts. That is the feature: whoever is about to ask Maria for one more
+favor should see that *other* commitments already have her in the red.
+(Only the score is global; who may see it is still gated.)
 
-**Visibility is leadership-only.** Admins and the leaders/seconds of the
-volunteer's own teams see capacity; core members don't, and neither does
-the volunteer themself. It is a planning signal for the people doing the
-asking — not a leaderboard, and not a number to feel guilty about. The
+**Visibility is admin-only.** Only admins see capacity; team leaders and
+seconds don't, core members don't, and neither does the volunteer themself.
+It is a planning signal for the people overseeing the whole parish — not a
+leaderboard, and not a number to feel guilty about. The
 [permission matrix](../reference/permissions.md#permission-matrix) encodes
 this.
 

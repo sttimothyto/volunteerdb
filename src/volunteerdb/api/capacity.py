@@ -26,8 +26,8 @@ def _config_out(config: service.CapacityConfig) -> CapacityConfigOut:
 
 @router.get("/config")
 async def get_config(ctx: CtxDep) -> CapacityConfigOut:
-    """Multipliers and band colors/thresholds; leaders need them to render capacity."""
-    require(ctx.actor.is_admin or bool(ctx.actor.managed_team_ids), "view capacity config")
+    """Multipliers and band colors/thresholds; admin-only like the scores themselves."""
+    require(ctx.actor.is_admin, "view capacity config")
     return _config_out(await service.get_config(ctx.session))
 
 
