@@ -4,12 +4,16 @@ Build:  uv run --group docs sphinx-build -W --keep-going -b html docs docs/_buil
 Links:  uv run --group docs sphinx-build -b linkcheck docs docs/_build/linkcheck
 """
 
-from importlib.metadata import version as _version
+import tomllib
+from pathlib import Path
 
 project = "VolunteerDB"
 author = "St. Timothy Parish"
 copyright = "2026 St. Timothy Parish"
-release = version = _version("volunteerdb")
+# From pyproject.toml, not importlib.metadata: the container's docs build
+# stage runs sphinx via uvx without the volunteerdb package installed.
+_pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+release = version = tomllib.loads(_pyproject.read_text())["project"]["version"]
 
 extensions = [
     "myst_parser",

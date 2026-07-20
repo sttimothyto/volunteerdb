@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     smtp2go_api_key: str = ""  # empty: emails are printed to the log, not sent
     mail_from: str = "no-reply@sttimothyto.org"
     mail_from_name: str = "VolunteerDB"
+    # Built HTML manual served at /manual (signed-in users). Relative paths
+    # resolve against the cwd (repo root in dev); the container bakes the
+    # docs in and sets VDB_DOCS_DIR=/app/docs-html.
+    docs_dir: str = "docs/_build/html"
 
 
 @lru_cache

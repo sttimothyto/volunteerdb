@@ -18,7 +18,9 @@ to fill?"**
 
 Full documentation lives in [`docs/`](docs/index.md), organized as
 tutorials, how-to guides, explanation, and reference
-([Diátaxis](https://documentation.divio.com/)). Build it with:
+([Diátaxis](https://documentation.divio.com/)). A running instance serves
+it at **`/manual`** (signed-in users; book icon in the header) — the
+container image builds it in. Build locally with:
 
 ```sh
 uv run --group docs sphinx-build -W -b html docs docs/_build/html

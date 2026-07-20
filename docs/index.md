@@ -26,8 +26,9 @@ date*.
   [database schema](reference/schema.md), and more.
 
 Quick links: production instance at <https://vdb.sttimothyto.org> ·
-interactive OpenAPI docs at `/docs` on any running instance · terse quick
-start in the repository `README.md`.
+this documentation at `/manual` on any running instance (signed in) ·
+interactive OpenAPI docs at `/docs` · terse quick start in the repository
+`README.md`.
 
 ```{toctree}
 :hidden:

@@ -39,7 +39,9 @@ multi-stage Containerfile (uv dependency layer cached separately from the
 source layer) keeps rebuilds fast. One image serves three jobs — web
 process (default `CMD`), migration runner, and admin bootstrap — run as
 one-shot containers during deploy, so schema upgrades use exactly the code
-and environment of the release they belong to.
+and environment of the release they belong to. A separate build stage also
+renders this manual into the image, so `/manual` always documents the
+release that is actually running.
 
 ## Secrets manage themselves
 

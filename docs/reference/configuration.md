@@ -46,6 +46,13 @@ ignored. Copy `.env.example` as a starting point.
 `VDB_MAIL_FROM_NAME`
 : Sender display name. Default: `VolunteerDB`.
 
+`VDB_DOCS_DIR`
+: Directory of built documentation HTML served at `/manual` (signed-in
+  users). Default: `docs/_build/html`, resolved against the working
+  directory — in development, build the docs and they appear. The container
+  image bakes the manual in and sets `/app/docs-html`. If the directory is
+  missing, `/manual` returns a hint instead.
+
 ## Variables read by scripts (not the app)
 
 `VDB_ADMIN_EMAIL`, `VDB_ADMIN_PASSWORD`

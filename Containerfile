@@ -12,12 +12,26 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 
+# ---- docs stage ----
+# Builds the Sphinx manual served at /manual. Uses PyPI sphinx (the dev
+# workflow's local-checkout uv source is not available in the container);
+# conf.py reads the version from pyproject.toml, so nothing is installed.
+FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim AS docs
+WORKDIR /build
+COPY pyproject.toml ./
+COPY docs ./docs
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uvx --from 'sphinx>=9,<10' --with myst-parser --with furo --with sphinx-copybutton \
+    sphinx-build -W --keep-going -b html docs docs/_build/html
+
 # ---- runtime stage ----
 # Must share the builder's Debian base so the venv's interpreter symlink resolves.
 FROM docker.io/library/python:3.13-slim-trixie
 RUN useradd --system --uid 10001 --create-home app
 # /app carries the venv plus alembic.ini, migrations/, create_admin.py.
 COPY --from=builder --chown=app:app /app /app
+COPY --from=docs --chown=app:app /build/docs/_build/html /app/docs-html
+ENV VDB_DOCS_DIR=/app/docs-html
 # NiceGUI writes session storage to .nicegui/ in the cwd; pre-create the
 # mountpoint so the named volume's copy-up inherits app's uid.
 RUN mkdir -p /app/.nicegui && chown app:app /app/.nicegui

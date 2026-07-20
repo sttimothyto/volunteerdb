@@ -142,12 +142,13 @@ files.sync(
         "tests",
         "scripts",
         "deploy",
+        "docs/_build",  # the image's docs stage builds fresh HTML itself
         "__pycache__",
         "*/__pycache__",
     ],
 )
-# Synced: src/, migrations/, alembic.ini, pyproject.toml, uv.lock, README.md,
-#         .python-version, Containerfile, .containerignore
+# Synced: src/, migrations/, docs/, alembic.ini, pyproject.toml, uv.lock,
+#         README.md, .python-version, Containerfile, .containerignore
 
 files.put(
     name="Upload create_admin.py (baked into the image)",

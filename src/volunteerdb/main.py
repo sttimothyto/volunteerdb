@@ -6,7 +6,8 @@ from urllib.parse import quote
 from nicegui import app, ui
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import PlainTextResponse, RedirectResponse
+from starlette.staticfiles import StaticFiles
 
 from .api import api_router
 from .api.deps import install_exception_handlers
@@ -44,6 +45,20 @@ def create_app() -> None:
     install_exception_handlers(app)
     app.include_router(api_router)
     app.add_static_files("/static", str(Path(__file__).parent / "ui" / "static"))
+    # Built Sphinx manual. Deliberately NOT in UNRESTRICTED_PREFIXES: the
+    # ops pages (secrets, backups) are for signed-in eyes only.
+    docs_dir = Path(settings().docs_dir)
+    if docs_dir.is_dir():
+        app.mount("/manual", StaticFiles(directory=docs_dir, html=True), name="manual")
+    else:
+
+        @app.get("/manual", include_in_schema=False)
+        def _manual_not_built() -> PlainTextResponse:  # pragma: no cover - dev hint
+            return PlainTextResponse(
+                "Manual not built. Run:\n"
+                "  uv run --group docs sphinx-build -b html docs docs/_build/html\n",
+                status_code=404,
+            )
     app.colors(
         primary="#A5573E",
         secondary="#8A7550",

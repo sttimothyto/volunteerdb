@@ -36,6 +36,9 @@ def frame(title: str, actor: Actor):
             )
         ui.space()
         ui.label(actor.user.email).classes("text-sm opacity-80")
+        ui.button(icon="menu_book", on_click=lambda: ui.navigate.to("/manual", new_tab=True)).props(
+            "flat color=white dense round"
+        ).tooltip("Manual")
         ui.button(icon="dark_mode", on_click=dark.toggle).props(
             "flat color=white dense round"
         ).bind_icon_from(dark, "value", lambda v: "light_mode" if v else "dark_mode").tooltip(

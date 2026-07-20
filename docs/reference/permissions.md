@@ -54,6 +54,7 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
 | `/graph` | Cytoscape ministry graph, as-of picker | signed in |
 | `/import` | Spreadsheet import/export | admin |
+| `/manual` | This documentation (book icon in the header) | signed in |
 | `/admin/users` | Accounts: create, invite, bulk provision | admin |
 | `/admin/fields` | Custom field definitions | admin |
 | `/admin/capacity` | Capacity multipliers, bands, team weights | admin |
