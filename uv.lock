@@ -1577,7 +1577,8 @@ wheels = [
 
 [[package]]
 name = "sphinx"
-source = { editable = "/home/ben/sphinx" }
+version = "9.1.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alabaster" },
     { name = "babel" },
@@ -1597,72 +1598,9 @@ dependencies = [
     { name = "sphinxcontrib-qthelp" },
     { name = "sphinxcontrib-serializinghtml" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "alabaster", specifier = ">=0.7.14" },
-    { name = "babel", specifier = ">=2.13" },
-    { name = "colorama", marker = "sys_platform == 'win32'", specifier = ">=0.4.6" },
-    { name = "docutils", specifier = ">=0.21,<0.23" },
-    { name = "imagesize", specifier = ">=1.3" },
-    { name = "jinja2", specifier = ">=3.1" },
-    { name = "packaging", specifier = ">=23.0" },
-    { name = "pygments", specifier = ">=2.17" },
-    { name = "requests", specifier = ">=2.30.0" },
-    { name = "roman-numerals", specifier = ">=1.0.0" },
-    { name = "snowballstemmer", specifier = ">=2.2" },
-    { name = "sphinxcontrib-applehelp", specifier = ">=1.0.7" },
-    { name = "sphinxcontrib-devhelp", specifier = ">=1.0.6" },
-    { name = "sphinxcontrib-htmlhelp", specifier = ">=2.0.6" },
-    { name = "sphinxcontrib-jsmath", specifier = ">=1.0.1" },
-    { name = "sphinxcontrib-qthelp", specifier = ">=1.0.6" },
-    { name = "sphinxcontrib-serializinghtml", specifier = ">=1.1.9" },
-]
-
-[package.metadata.requires-dev]
-docs = [{ name = "sphinxcontrib-websupport" }]
-lint = [
-    { name = "ruff", specifier = "==0.14.9" },
-    { name = "sphinx-lint", specifier = ">=0.9" },
-]
-package = [
-    { name = "build" },
-    { name = "pypi-attestations", specifier = "==0.0.28" },
-    { name = "twine", specifier = ">=6.1" },
-]
-test = [
-    { name = "cython", specifier = ">=3.0" },
-    { name = "defusedxml", specifier = ">=0.7.1" },
-    { name = "pytest", specifier = ">=9.0" },
-    { name = "pytest-xdist", extras = ["psutil"], specifier = ">=3.4" },
-    { name = "setuptools", specifier = ">=70.0" },
-    { name = "typing-extensions", specifier = ">=4.9" },
-]
-translations = [
-    { name = "babel", specifier = ">=2.13" },
-    { name = "jinja2", specifier = ">=3.1" },
-]
-type-stubs = [
-    { name = "types-colorama", specifier = "==0.4.15.20250801" },
-    { name = "types-defusedxml", specifier = "==0.7.0.20250822" },
-    { name = "types-docutils", specifier = "==0.22.3.20251115" },
-    { name = "types-pillow", specifier = "==10.2.0.20240822" },
-    { name = "types-pygments", specifier = "==2.19.0.20251121" },
-    { name = "types-requests", specifier = "==2.32.4.20250913" },
-    { name = "types-urllib3", specifier = "==1.26.25.14" },
-]
-types = [
-    { name = "mypy", specifier = "==1.19.1" },
-    { name = "pyrefly" },
-    { name = "pyright", specifier = "==1.1.407" },
-    { name = "ty" },
-    { name = "types-colorama", specifier = "==0.4.15.20250801" },
-    { name = "types-defusedxml", specifier = "==0.7.0.20250822" },
-    { name = "types-docutils", specifier = "==0.22.3.20251115" },
-    { name = "types-pillow", specifier = "==10.2.0.20240822" },
-    { name = "types-pygments", specifier = "==2.19.0.20251121" },
-    { name = "types-requests", specifier = "==2.32.4.20250913" },
-    { name = "types-urllib3", specifier = "==1.26.25.14" },
+sdist = { url = "https://files.pythonhosted.org/packages/cd/bd/f08eb0f4eed5c83f1ba2a3bd18f7745a2b1525fad70660a1c00224ec468a/sphinx-9.1.0.tar.gz", hash = "sha256:7741722357dd75f8190766926071fed3bdc211c74dd2d7d4df5404da95930ddb", size = 8718324, upload-time = "2025-12-31T15:09:27.646Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/73/f7/b1884cb3188ab181fc81fa00c266699dab600f927a964df02ec3d5d1916a/sphinx-9.1.0-py3-none-any.whl", hash = "sha256:c84fdd4e782504495fe4f2c0b3413d6c2bf388589bb352d439b2a3bb99991978", size = 3921742, upload-time = "2025-12-31T15:09:25.561Z" },
 ]
 
 [[package]]
@@ -1940,7 +1878,7 @@ dev = [
 docs = [
     { name = "furo", specifier = ">=2025.12" },
     { name = "myst-parser", specifier = ">=5.0" },
-    { name = "sphinx", editable = "/home/ben/sphinx" },
+    { name = "sphinx", specifier = ">=9.1" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
 ]
 

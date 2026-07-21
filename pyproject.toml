@@ -38,9 +38,6 @@ docs = [
     "sphinx-copybutton>=0.5.2",
 ]
 
-[tool.uv.sources]
-sphinx = { path = "/home/ben/sphinx", editable = true }
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
