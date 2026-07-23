@@ -13,7 +13,9 @@ _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 def init(url: str | None = None) -> AsyncEngine:
     """Create (or replace) the global engine. Tests call this with their own URL."""
     global _engine, _sessionmaker
-    _engine = create_async_engine(url or settings().database_url)
+    # pre_ping: validate pooled connections so a Postgres restart doesn't
+    # surface as one error per stale connection
+    _engine = create_async_engine(url or settings().database_url, pool_pre_ping=True)
     _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
 
