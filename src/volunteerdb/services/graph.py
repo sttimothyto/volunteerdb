@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity
-from ..models import Membership, Team, TeamRole, Volunteer
+from ..models import Membership, TeamRole, Volunteer
 from ..permissions import Actor
 from . import capacity as capacity_service
 from . import teams as team_service
