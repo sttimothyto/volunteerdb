@@ -5,6 +5,9 @@ Description=VolunteerDB PostgreSQL
 Image=docker.io/library/postgres:17
 ContainerName=volunteerdb-db
 Network=volunteerdb.network
+# conservative tuning for a >=4 GB host shared with the app container;
+# keep in sync with compose.yaml
+Exec=postgres -c shared_buffers=512MB -c effective_cache_size=2GB -c work_mem=16MB -c maintenance_work_mem=128MB -c random_page_cost=1.1
 EnvironmentFile=/etc/volunteerdb/db.env
 Volume=volunteerdb-pgdata:/var/lib/postgresql/data
 # No PublishPort: reachable only on the volunteerdb network (DNS: volunteerdb-db).

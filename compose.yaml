@@ -1,6 +1,15 @@
 services:
   db:
     image: docker.io/library/postgres:17
+    # conservative tuning for a >=4 GB host shared with the app container;
+    # keep in sync with deploy/files/volunteerdb-db.container
+    command: >-
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=2GB
+      -c work_mem=16MB
+      -c maintenance_work_mem=128MB
+      -c random_page_cost=1.1
     environment:
       POSTGRES_USER: volunteerdb
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-volunteerdb}
