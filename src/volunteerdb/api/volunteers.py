@@ -1,10 +1,7 @@
-import sqlalchemy as sa
 from fastapi import APIRouter
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..history import entity
-from ..models import Membership, Volunteer
-from ..permissions import Actor, require, volunteer_team_ids
+from ..models import Volunteer
+from ..permissions import Actor, require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import volunteers as service
 from .deps import AsOf, CtxDep
@@ -22,21 +19,6 @@ from .schemas import (
 router = APIRouter(prefix="/volunteers", tags=["volunteers"])
 
 
-async def _team_ids_map(
-    session: AsyncSession, volunteer_ids: list[int], at=None
-) -> dict[int, set[int]]:
-    if not volunteer_ids:
-        return {}
-    M = entity(Membership, at)
-    rows = await session.execute(
-        sa.select(M.volunteer_id, M.team_id).where(M.volunteer_id.in_(volunteer_ids))
-    )
-    result: dict[int, set[int]] = {}
-    for v_id, t_id in rows:
-        result.setdefault(v_id, set()).add(t_id)
-    return result
-
-
 def redacted(actor: Actor, volunteer: Volunteer, team_ids: set[int]) -> VolunteerOut:
     """Everyone may see names; contact details, notes and custom values need closer ties."""
     out = VolunteerOut.model_validate(volunteer)
@@ -52,7 +34,7 @@ async def list_volunteers(
     ctx: CtxDep, as_of: AsOf, q: str = "", include_inactive: bool = False
 ) -> list[VolunteerOut]:
     found = await service.search(ctx.session, q, at=as_of, include_inactive=include_inactive)
-    teams_map = await _team_ids_map(ctx.session, [v.id for v in found], as_of)
+    teams_map = await team_ids_map(ctx.session, [v.id for v in found], as_of)
     return [redacted(ctx.actor, v, teams_map.get(v.id, set())) for v in found]
 
 
@@ -68,7 +50,7 @@ async def get_volunteer(ctx: CtxDep, volunteer_id: int, as_of: AsOf) -> Voluntee
     volunteer = await service.get(ctx.session, volunteer_id, at=as_of)
     if volunteer is None:
         raise LookupError(f"volunteer {volunteer_id} not found")
-    team_ids = (await _team_ids_map(ctx.session, [volunteer_id], as_of)).get(volunteer_id, set())
+    team_ids = (await team_ids_map(ctx.session, [volunteer_id], as_of))[volunteer_id]
     return redacted(ctx.actor, volunteer, team_ids)
 
 

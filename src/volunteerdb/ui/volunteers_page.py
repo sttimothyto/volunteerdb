@@ -1,7 +1,7 @@
 from nicegui import app, ui
 
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
-from ..permissions import require, volunteer_team_ids
+from ..permissions import require, team_ids_map, volunteer_team_ids
 from ..services import capacity as capacity_service
 from ..services import custom_fields as custom_field_service
 from ..services import memberships as membership_service
@@ -20,9 +20,7 @@ async def volunteers_page(q: str = "", band: str = ""):
     async with page_session() as (session, actor):
         found = await volunteer_service.search(session, q, include_inactive=actor.is_admin)
         # one query for all listed volunteers' team memberships (drives redaction + capacity)
-        team_sets: dict[int, set[int]] = {}
-        for v in found:
-            team_sets[v.id] = await volunteer_team_ids(session, v.id)
+        team_sets = await team_ids_map(session, [v.id for v in found])
         list_defs = [d for d in await custom_field_service.list_defs(session) if d.show_in_list]
         config = await capacity_service.get_config(session)
         cap = await capacity_service.visible_scores(session, actor, team_sets)

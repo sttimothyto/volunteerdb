@@ -12,10 +12,12 @@ Rules (team roles cascade down to sub-teams):
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .history import entity
 from .models import AppUser, Membership, TeamRole
 from .services import teams as team_service
 
@@ -103,11 +105,25 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
     )
 
 
-async def volunteer_team_ids(session: AsyncSession, volunteer_id: int) -> set[int]:
+async def team_ids_map(
+    session: AsyncSession, volunteer_ids: list[int], at: datetime | None = None
+) -> dict[int, set[int]]:
+    """volunteer id -> their team ids, in one query for any number of volunteers.
+    Every requested id is present in the result (no memberships ⇒ empty set)."""
+    if not volunteer_ids:
+        return {}
+    M = entity(Membership, at)
     rows = await session.execute(
-        sa.select(Membership.team_id).where(Membership.volunteer_id == volunteer_id)
+        sa.select(M.volunteer_id, M.team_id).where(M.volunteer_id.in_(volunteer_ids))
     )
-    return {team_id for (team_id,) in rows}
+    result: dict[int, set[int]] = {vid: set() for vid in volunteer_ids}
+    for v_id, t_id in rows:
+        result[v_id].add(t_id)
+    return result
+
+
+async def volunteer_team_ids(session: AsyncSession, volunteer_id: int) -> set[int]:
+    return (await team_ids_map(session, [volunteer_id]))[volunteer_id]
 
 
 class Forbidden(PermissionError):

@@ -7,7 +7,7 @@ from ..services import capacity as service
 from ..services import volunteers as volunteer_service
 from .deps import AsOf, CtxDep
 from .schemas import BandOut, CapacityConfigIn, CapacityConfigOut, CapacityScoreOut
-from .volunteers import _team_ids_map
+from ..permissions import team_ids_map
 
 router = APIRouter(prefix="/capacity", tags=["capacity"])
 
@@ -49,7 +49,7 @@ async def put_config(ctx: CtxDep, data: CapacityConfigIn) -> CapacityConfigOut:
 async def capacity_scores(ctx: CtxDep, as_of: AsOf) -> list[CapacityScoreOut]:
     """Workload scores, restricted to volunteers whose capacity the caller may see."""
     found = await volunteer_service.search(ctx.session, at=as_of, include_inactive=True)
-    team_sets = await _team_ids_map(ctx.session, [v.id for v in found], as_of)
+    team_sets = await team_ids_map(ctx.session, [v.id for v in found], as_of)
     visible = await service.visible_scores(
         ctx.session, ctx.actor, {v.id: team_sets.get(v.id, set()) for v in found}, at=as_of
     )
