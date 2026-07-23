@@ -1,0 +1,85 @@
+/* VolunteerDB neo-greco skin for the Furo docs theme.
+ *
+ * Palette and faces mirror src/volunteerdb/ui/static/theme.css and the
+ * app.colors() brand palette in main.py; the color values themselves are
+ * injected as Furo CSS variables from conf.py (html_theme_options), so this
+ * file only carries what variables can't express: the display face, the
+ * Greek-key meander, and code-block surface overrides. */
+
+@font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/cinzel-v11-latin-regular.woff2") format("woff2");
+}
+
+/* ---------- display face ---------- */
+
+/* Cinzel ships regular-weight only; letterspace it like the app's titles
+ * instead of letting the browser faux-bold Furo's default 700. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  color: var(--color-brand-primary);
+}
+
+.sidebar-brand-text {
+  font-family: var(--font-stack--headings);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--color-brand-primary);
+}
+
+/* restrained Greek-key meander under page titles (mirrors .vdb-page-title) */
+article h1::after {
+  content: "";
+  display: block;
+  width: 9rem;
+  max-width: 100%;
+  height: 8px;
+  margin-top: 4px;
+  background-color: var(--color-brand-primary);
+  opacity: 0.55;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='8'%3E%3Cpath d='M0 7h13V1H5v4h4V3' fill='none' stroke='black'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='8'%3E%3Cpath d='M0 7h13V1H5v4h4V3' fill='none' stroke='black'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+}
+
+/* ---------- readability accents ---------- */
+
+::selection {
+  background: var(--color-highlighted-background);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-primary);
+  outline-offset: 2px;
+}
+
+/* ---------- code blocks ---------- */
+
+/* Pygments hard-codes .highlight backgrounds per scheme; re-seat the blocks
+ * on the card surface tone with a card-like rule. Selectors mirror the ones
+ * Furo emits in pygments.css so the dark overrides are actually beaten. */
+.highlight {
+  background: var(--color-code-block-background);
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.2rem;
+}
+
+body[data-theme="dark"] .highlight {
+  background: var(--color-code-block-background);
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([data-theme="light"]) .highlight {
+    background: var(--color-code-block-background);
+  }
+}
