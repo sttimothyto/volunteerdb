@@ -53,6 +53,8 @@ SYS_PERIOD_DEFAULT = sa.text("tstzrange(clock_timestamp(), NULL)")
 
 class Volunteer(Base):
     __tablename__ = "volunteer"
+    # serves every list's ORDER BY last_name, first_name (rev 0005)
+    __table_args__ = (sa.Index("ix_volunteer_name", "last_name", "first_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     first_name: Mapped[str] = mapped_column(sa.String(100))
@@ -216,6 +218,11 @@ def _make_history_table(live: sa.Table) -> sa.Table:
 volunteer_history = _make_history_table(Volunteer.__table__)
 team_history = _make_history_table(Team.__table__)
 membership_history = _make_history_table(Membership.__table__)
+
+# the timeline view filters membership history by volunteer (rev 0005; the
+# trigram search indexes from that revision are expression-only and live
+# solely in the migration)
+sa.Index("ix_membership_history_volunteer_id", membership_history.c.volunteer_id)
 
 HISTORY_TABLES: dict[type[Base], sa.Table] = {
     Volunteer: volunteer_history,
