@@ -123,20 +123,20 @@ async def impact(
     would remain. leaders_left == 0 on a team they lead means a leaderless team.
     """
     rows = await assignments(session, volunteer_id, at)
-    result: list[ImpactRow] = []
+    if not rows:
+        return []
+    # one grouped count over all their teams; scalar rows, so no fetch() needed
     M = entity(Membership, at)
+    counts_stmt = (
+        sa.select(M.team_id, M.role, sa.func.count())
+        .where(M.team_id.in_([team.id for _, team in rows]), M.volunteer_id != volunteer_id)
+        .group_by(M.team_id, M.role)
+    )
+    counts = {(team_id, role): n for team_id, role, n in await session.execute(counts_stmt)}
+    result: list[ImpactRow] = []
     for membership, team in rows:
-        counts = dict(
-            (
-                await session.execute(
-                    sa.select(M.role, sa.func.count())
-                    .where(M.team_id == team.id, M.volunteer_id != volunteer_id)
-                    .group_by(M.role)
-                )
-            ).all()
-        )
-        leaders = counts.get(TeamRole.leader, 0)
-        seconds = counts.get(TeamRole.second, 0)
+        leaders = counts.get((team.id, TeamRole.leader), 0)
+        seconds = counts.get((team.id, TeamRole.second), 0)
         result.append(
             ImpactRow(team=team, role=membership.role, leaders_left=leaders, leadership_left=leaders + seconds)
         )
