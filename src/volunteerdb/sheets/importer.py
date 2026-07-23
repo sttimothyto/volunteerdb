@@ -208,6 +208,13 @@ async def _apply(
 
     restricted = actor is not None and not actor.is_admin
 
+    # every current membership in one query: the upsert loop and the restricted
+    # scope check both read from this map instead of issuing per-row lookups
+    membership_by_pair: dict[tuple[int, int], Membership] = {
+        (m.volunteer_id, m.team_id): m
+        for m in (await session.execute(sa.select(Membership))).scalars()
+    }
+
     all_teams = await team_service.list_all(session)
     paths = team_service.team_paths(all_teams)
     team_by_path = {p.lower(): tid for tid, p in paths.items()}
@@ -236,6 +243,8 @@ async def _apply(
     granted_new_keys: set[str] = set()
     teams_by_volunteer: dict[int, set[int]] = {}
     if restricted:
+        for volunteer_id, team_id in membership_by_pair:
+            teams_by_volunteer.setdefault(volunteer_id, set()).add(team_id)
         for row in parsed.membership_rows or []:
             row = tuple(row) + (None,) * (3 - len(row))
             email, name, team_path = (_clean(c) for c in row[:3])
@@ -254,9 +263,6 @@ async def _apply(
                     granted_new_keys.add(name.lower())
             else:
                 granted_ids.add(found.id)
-        rows = await session.execute(sa.select(Membership.volunteer_id, Membership.team_id))
-        for volunteer_id, team_id in rows:
-            teams_by_volunteer.setdefault(volunteer_id, set()).add(team_id)
 
     # --- Volunteers sheet ---
     if parsed.volunteer_rows is not None:
@@ -381,12 +387,15 @@ async def _apply(
                 continue
 
             joined_on = _parse_date(joined_raw, report, MEMBERSHIP_SHEET, row_num)
-            existing = await membership_service.find(session, found.id, team_id)
+            existing = membership_by_pair.get((found.id, team_id))
             before = (existing.role, existing.joined_on, existing.notes) if existing else None
             membership = await membership_service.assign(
-                session, found.id, team_id, role, joined_on=joined_on, notes=_clean(notes)
+                session, found.id, team_id, role,
+                joined_on=joined_on, notes=_clean(notes), existing=existing,
             )
             if existing is None:
+                # a later sheet row for the same pair must hit the update branch
+                membership_by_pair[(found.id, team_id)] = membership
                 report.memberships_created += 1
             elif before != (membership.role, membership.joined_on, membership.notes):
                 report.memberships_updated += 1

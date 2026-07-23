@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Membership, TeamRole
 
+_UNSET: object = object()
+
 
 async def get(session: AsyncSession, membership_id: int) -> Membership | None:
     return await session.get(Membership, membership_id)
@@ -27,9 +29,14 @@ async def assign(
     role: TeamRole,
     joined_on: date | None = None,
     notes: str | None = None,
+    *,
+    existing: Membership | None | object = _UNSET,
 ) -> Membership:
-    """Add the volunteer to the team, or update their role if already on it."""
-    membership = await find(session, volunteer_id, team_id)
+    """Add the volunteer to the team, or update their role if already on it.
+
+    `existing` lets bulk callers (the importer) pass a preloaded membership
+    — or None — and skip the per-row lookup."""
+    membership = await find(session, volunteer_id, team_id) if existing is _UNSET else existing
     if membership is None:
         membership = Membership(
             volunteer_id=volunteer_id, team_id=team_id, role=role, joined_on=joined_on, notes=notes
