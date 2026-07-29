@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, TSTZRANGE, Range
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
@@ -78,11 +78,6 @@ class Volunteer(Base):
         JSONB, default=dict, server_default=sa.text("'{}'::jsonb")
     )
 
-    memberships: Mapped[list["Membership"]] = relationship(
-        back_populates="volunteer", cascade="all, delete-orphan"
-    )
-    user: Mapped["AppUser | None"] = relationship(back_populates="volunteer")
-
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}"
@@ -108,12 +103,6 @@ class Team(Base):
     # keep this the LAST column so the history twin's order matches the DB
     workload_weight: Mapped[Decimal | None] = mapped_column(sa.Numeric(8, 2))
 
-    parent: Mapped["Team | None"] = relationship(remote_side=[id], back_populates="children")
-    children: Mapped[list["Team"]] = relationship(back_populates="parent")
-    memberships: Mapped[list["Membership"]] = relationship(
-        back_populates="team", cascade="all, delete-orphan"
-    )
-
 
 class Membership(Base):
     __tablename__ = "membership"
@@ -130,9 +119,6 @@ class Membership(Base):
     sys_period: Mapped[Range[datetime]] = mapped_column(
         TSTZRANGE, server_default=SYS_PERIOD_DEFAULT
     )
-
-    volunteer: Mapped[Volunteer] = relationship(back_populates="memberships")
-    team: Mapped[Team] = relationship(back_populates="memberships")
 
 
 class AppUser(Base):
@@ -156,8 +142,6 @@ class AppUser(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
-
-    volunteer: Mapped[Volunteer | None] = relationship(back_populates="user")
 
 
 class CustomFieldDef(Base):
