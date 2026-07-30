@@ -54,8 +54,7 @@ class ImportReport:
 
 
 class _Abort(Exception):
-    def __init__(self, report: ImportReport):
-        self.report = report
+    pass
 
 
 def _clean(value) -> str | None:
@@ -166,7 +165,7 @@ async def run_import(content: bytes, *, dry_run: bool, user_id: int | None) -> I
                 actor = await load_actor(session, user)
             await _apply(session, parsed, report, actor)
             if dry_run or report.has_errors:
-                raise _Abort(report)
+                raise _Abort()
             report.applied = True
     except _Abort:
         pass

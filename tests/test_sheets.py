@@ -89,7 +89,7 @@ async def test_unknown_team_blocks_everything(database):
 
 async def test_dry_run_writes_nothing(database):
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy")
+        await teams.create(session, "Liturgy")
 
     wb = load_workbook(BytesIO(exporter.template_workbook()))
     wb[VOLUNTEER_SHEET].append(["Eve", "Green", "eve@example.org", None, None, "yes"])

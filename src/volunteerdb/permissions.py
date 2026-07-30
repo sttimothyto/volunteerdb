@@ -26,7 +26,6 @@ from .services import teams as team_service
 class Actor:
     user: AppUser
     volunteer_id: int | None
-    roles_by_team: dict[int, TeamRole]  # direct memberships
     managed_team_ids: set[int]  # leader/second teams incl. sub-teams
     full_view_team_ids: set[int]  # + core teams incl. sub-teams
     names_view_team_ids: set[int]  # + member teams (direct only)
@@ -98,7 +97,6 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
     return Actor(
         user=user,
         volunteer_id=user.volunteer_id,
-        roles_by_team=roles_by_team,
         managed_team_ids=managed,
         full_view_team_ids=full_view,
         names_view_team_ids=names_view,

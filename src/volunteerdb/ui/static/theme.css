@@ -24,7 +24,6 @@
   --vdb-bg: #fdf6e3;
   --vdb-surface: #fffbee;
   --vdb-ink: #333333;
-  --vdb-ink-muted: #6b6255;
   --vdb-heading: #a5573e;
   --vdb-accent: #f5deb3;
   --vdb-rule: #d8c9a3;
@@ -46,7 +45,6 @@ body.body--dark {
   --vdb-bg: #1c1917;
   --vdb-surface: #2a2622;
   --vdb-ink: #e8e0ce;
-  --vdb-ink-muted: #a89e8f;
   --vdb-heading: #c97b5d;
   --vdb-accent: #d9c48f;
   --vdb-rule: #4a443c;

@@ -45,7 +45,7 @@ html_theme_options = {
         "font-stack--headings": '"Cinzel", Palatino, "Palatino Linotype", Georgia, serif',
         # ink & parchment
         "color-foreground-primary": "#333333",    # --vdb-ink
-        "color-foreground-secondary": "#6b6255",  # --vdb-ink-muted
+        "color-foreground-secondary": "#6b6255",  # muted ink
         "color-foreground-muted": "#6b6255",
         "color-foreground-border": "#d8c9a3",     # --vdb-rule
         "color-background-primary": "#fdf6e3",    # --vdb-bg

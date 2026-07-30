@@ -25,9 +25,6 @@ ROLE_LABELS: dict[TeamRole, str] = {
     TeamRole.member: "Member",
 }
 
-# lower rank = more responsibility; used for sorting rosters and permission checks
-ROLE_RANK: dict[TeamRole, int] = {role: i for i, role in enumerate(TeamRole)}
-
 team_role_enum = sa.Enum(TeamRole, name="team_role")
 
 
