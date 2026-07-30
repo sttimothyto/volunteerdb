@@ -24,6 +24,16 @@ ignored. Copy `.env.example` as a starting point.
   Set `true` whenever the app is served over HTTPS (production sets it via
   the deploy template).
 
+`FORWARDED_ALLOW_IPS`
+: Uvicorn's trusted-proxy list (no `VDB_` prefix). Default: `127.0.0.1`.
+  When the app runs behind a TLS-terminating reverse proxy, the proxy's
+  `X-Forwarded-Proto` header is only honored if the connection comes from a
+  listed address — otherwise absolute URLs the app generates (invite and
+  sign-in links in emails, the admin backup-link dialog) come out `http://`.
+  In the production container, Caddy's connections arrive from the podman
+  gateway address, so the deploy template sets `*`; that is safe because the
+  container port is published on the host loopback only.
+
 `VDB_HOST`
 : Bind address. Default: `0.0.0.0`.
 
