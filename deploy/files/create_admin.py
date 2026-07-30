@@ -6,10 +6,12 @@ import os
 import sys
 
 from volunteerdb.db import db_session
+from volunteerdb.log import init_logging
 from volunteerdb.services import users
 
 
 async def main() -> int:
+    init_logging()
     email = os.environ["VDB_ADMIN_EMAIL"]
     password = os.environ["VDB_ADMIN_PASSWORD"]
     async with db_session() as session:

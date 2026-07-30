@@ -1,12 +1,16 @@
+import structlog
 from fastapi import Request
 from nicegui import ui
 
 from .. import throttle
 from ..db import db_session
+from ..log import audit_log
 from ..services import mail
 from ..services import users as user_service
 from .context import establish_session
 from .theme import apply_theme
+
+logger = structlog.get_logger(__name__)
 
 
 @ui.page("/login")
@@ -30,6 +34,7 @@ def login_page(request: Request, redirect_to: str = "/"):
         if password.value:
             keys = (f"pw:{addr.lower()}", f"pw-ip:{ip}")
             if throttle.blocked(keys[0], 5, 900) or throttle.blocked(keys[1], 30, 900):
+                logger.warning("auth.throttled", method="password", email=addr, ip=ip)
                 ui.notify(
                     "Too many failed attempts — try again in a few minutes.",
                     color="negative",
@@ -40,8 +45,10 @@ def login_page(request: Request, redirect_to: str = "/"):
             if user is None:
                 for key in keys:
                     throttle.hit(key)
+                logger.warning("auth.login_failed", method="password", email=addr, ip=ip)
                 ui.notify("Invalid email or password", color="negative")
                 return
+            audit_log("auth.login", method="password", user=f"{user.id}:{user.email}", ip=ip)
             finish(user.id)
         else:
             await send_code()
@@ -50,12 +57,14 @@ def login_page(request: Request, redirect_to: str = "/"):
         nonlocal pending_email
         addr = (email.value or "").strip()
         if throttle.blocked(f"otp-ip:{ip}", 10, 3600):
+            logger.warning("auth.throttled", method="otp", email=addr, ip=ip)
             ui.notify(
                 "Too many code requests from this device — try again later.",
                 color="negative",
             )
             return
         throttle.hit(f"otp-ip:{ip}")
+        audit_log("auth.otp_requested", email=addr, ip=ip)
         async with db_session() as session:
             result = await user_service.start_otp_login(session, addr)
         if result is not None:
@@ -73,12 +82,14 @@ def login_page(request: Request, redirect_to: str = "/"):
         async with db_session() as session:
             user = await user_service.verify_otp(session, pending_email, code_input.value or "")
         if user is None:
+            logger.warning("auth.login_failed", method="otp", email=pending_email, ip=ip)
             ui.notify(
                 "That code didn't work — it may be mistyped or expired. "
                 "Resend to get a fresh one.",
                 color="negative",
             )
             return
+        audit_log("auth.login", method="otp", user=f"{user.id}:{user.email}", ip=ip)
         finish(user.id)
 
     def show_step(step: ui.column) -> None:
@@ -143,8 +154,10 @@ def invite_page(token: str, request: Request):
         async with db_session() as session:
             user = await user_service.redeem_invite(session, token, pw or None)
         if user is None:
+            logger.warning("auth.invite_invalid")
             ui.notify("This invite link is invalid or already used", color="negative")
             return
+        audit_log("auth.invite_redeemed", user=f"{user.id}:{user.email}")
         await mail.send_email(user.email, *mail.welcome_email(login_url, has_password=bool(pw)))
         establish_session(user.id, remember=remember.value)
         ui.notify(

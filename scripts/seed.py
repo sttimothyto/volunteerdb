@@ -230,4 +230,7 @@ async def seed() -> None:
 
 
 if __name__ == "__main__":
+    from volunteerdb.log import init_logging
+
+    init_logging()
     asyncio.run(seed())

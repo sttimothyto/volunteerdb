@@ -49,6 +49,7 @@ how-to/manage-users
 how-to/import-export
 how-to/custom-fields-and-capacity
 how-to/api-recipes
+how-to/audit-logs
 how-to/write-a-migration
 how-to/run-tests
 ```

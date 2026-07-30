@@ -1,16 +1,21 @@
 from collections.abc import AsyncIterator
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated
 
 import sqlalchemy as sa
+import structlog
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import sessionmaker
+from ..log import bind_actor
 from ..permissions import Actor, Forbidden, load_actor
 from ..services import users as user_service
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -20,22 +25,31 @@ class Ctx:
 
 
 async def api_ctx(
+    request: Request,
     authorization: Annotated[str | None, Header()] = None,
 ) -> AsyncIterator[Ctx]:
     """Authenticated request context: one transaction, actor loaded, and the
     user id recorded transaction-locally for the history triggers."""
+    ip = request.client.host if request.client else "-"
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(401, "missing Bearer token", headers={"WWW-Authenticate": "Bearer"})
     async with sessionmaker()() as session:
-        async with session.begin():
-            user = await user_service.authenticate_token(session, token.strip())
-            if user is None:
-                raise HTTPException(401, "invalid token", headers={"WWW-Authenticate": "Bearer"})
-            await session.execute(
-                sa.select(sa.func.set_config("app.user_id", str(user.id), True))
-            )
-            yield Ctx(session=session, actor=await load_actor(session, user))
+        # ExitStack outlives the transaction block, so the actor identity is
+        # still bound when the commit (and its audit marker line) fires.
+        with ExitStack() as stack:
+            async with session.begin():
+                user = await user_service.authenticate_token(session, token.strip())
+                if user is None:
+                    logger.warning("auth.api_token_invalid", ip=ip)
+                    raise HTTPException(
+                        401, "invalid token", headers={"WWW-Authenticate": "Bearer"}
+                    )
+                await session.execute(
+                    sa.select(sa.func.set_config("app.user_id", str(user.id), True))
+                )
+                stack.enter_context(bind_actor(f"{user.id}:{user.email}", ip=ip, via="api"))
+                yield Ctx(session=session, actor=await load_actor(session, user))
 
 
 CtxDep = Annotated[Ctx, Depends(api_ctx)]

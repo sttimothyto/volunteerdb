@@ -1,15 +1,16 @@
 """Per-page/per-action helpers bridging NiceGUI sessions and the service layer."""
 
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from datetime import UTC, datetime, time, timedelta
 from functools import wraps
 
-from nicegui import app, ui
+from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import db_session
+from ..log import bind_actor
 from ..permissions import Actor, Forbidden, load_actor
 from ..services import users as user_service
 
@@ -63,16 +64,29 @@ async def get_actor(session: AsyncSession) -> Actor | None:
     return await load_actor(session, user)
 
 
+def _client_ip() -> str:
+    try:
+        return context.client.ip or "-"
+    except Exception:  # background task or no client scope
+        return "-"
+
+
 @asynccontextmanager
 async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
     """For page builders: session + actor, or redirects to /login and raises."""
-    async with db_session(session_user_id()) as session:
-        actor = await get_actor(session)
-        if actor is None:
-            clear_session()
-            ui.navigate.to("/login")
-            raise Forbidden("not signed in")
-        yield session, actor
+    # ExitStack outlives db_session, so the actor identity is still bound when
+    # the commit (and its audit marker line) fires.
+    with ExitStack() as stack:
+        async with db_session(session_user_id()) as session:
+            actor = await get_actor(session)
+            if actor is None:
+                clear_session()
+                ui.navigate.to("/login")
+                raise Forbidden("not signed in")
+            stack.enter_context(
+                bind_actor(f"{actor.user.id}:{actor.user.email}", ip=_client_ip(), via="gui")
+            )
+            yield session, actor
 
 
 action_session = page_session  # same contract, used from event handlers

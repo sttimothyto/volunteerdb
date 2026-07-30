@@ -44,6 +44,20 @@ ignored. Copy `.env.example` as a starting point.
 `VDB_RELOAD`
 : Uvicorn auto-reload for development. Default: `false`.
 
+`VDB_LOG_LEVEL`
+: Minimum log verbosity. Default: `AUDIT`, which logs every database write
+  (who, when, from where, and the old → new values), authentication events,
+  commit/rollback markers, and problems. `INFO` adds one line per database
+  read and per HTTP request; `DEBUG` adds query parameters and static-asset
+  requests; `WARNING` keeps problems only. See
+  [Read the audit log](../how-to/audit-logs.md).
+
+`VDB_LOG_FILE`
+: Path of an additional rotating log file (10 MB per file, 6 files kept).
+  Default: empty — logs go to stderr only, which journald captures in
+  production. In the container this path must point into a writable volume
+  (only `/app/.nicegui` is writable by default).
+
 `VDB_SMTP2GO_API_KEY`
 : API key for outbound email via SMTP2GO. Default: empty, in which case
   every email (invites, OTP codes, welcome messages) is printed to the log

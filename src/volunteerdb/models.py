@@ -126,6 +126,7 @@ class AppUser(Base):
         sa.ForeignKey("volunteer.id", ondelete="SET NULL"), unique=True
     )
     email: Mapped[str] = mapped_column(sa.String(255), unique=True)
+    # adding a secret column? add it to audit.REDACTED_COLUMNS
     password_hash: Mapped[str | None] = mapped_column(sa.String(255))
     is_admin: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     api_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)

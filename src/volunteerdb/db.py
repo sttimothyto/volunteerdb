@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
+from . import audit  # noqa: F401 — registers the CRUD audit listeners
 from .config import settings
+from .log import bind_fallback_user
 
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
@@ -38,8 +40,11 @@ async def db_session(user_id: int | None = None) -> AsyncIterator[AsyncSession]:
     `user_id` is recorded transaction-locally so the history triggers can stamp
     `changed_by` on every row they archive.
     """
-    async with sessionmaker()() as session:
-        async with session.begin():
-            if user_id is not None:
-                await session.execute(select(func.set_config("app.user_id", str(user_id), True)))
-            yield session
+    with bind_fallback_user(user_id):
+        async with sessionmaker()() as session:
+            async with session.begin():
+                if user_id is not None:
+                    await session.execute(
+                        select(func.set_config("app.user_id", str(user_id), True))
+                    )
+                yield session

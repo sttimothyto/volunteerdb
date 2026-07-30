@@ -1,8 +1,9 @@
-import logging
 import secrets
+import time
 from pathlib import Path
 from urllib.parse import quote
 
+import structlog
 from nicegui import app, ui
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -12,11 +13,17 @@ from starlette.staticfiles import StaticFiles
 from .api import api_router
 from .api.deps import install_exception_handlers
 from .config import settings
+from .log import init_logging
 from .ui import register_pages
 from .ui.context import session_user_id
 
+logger = structlog.get_logger(__name__)
+
 UNRESTRICTED_PREFIXES = ("/login", "/invite/", "/api/", "/_nicegui", "/static/", "/favicon")
 ASSET_PREFIXES = ("/_nicegui", "/static/", "/favicon", "/api/")
+# Request-log lines for these drop to DEBUG (unlike ASSET_PREFIXES, /api/ stays
+# at INFO — API calls are exactly the traffic worth seeing).
+QUIET_PREFIXES = ("/_nicegui", "/static/", "/favicon")
 
 # Cookie inactivity bound. Real session lifetime is enforced app-side via
 # session_expires_at (see ui/context.py); 92 days covers every case where the
@@ -41,7 +48,39 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class RequestLogMiddleware(BaseHTTPMiddleware):
+    """One line per request: method, path, status, duration — with the cookie
+    user id bound so downstream lines (and this one) carry identity. The API
+    dependency and page_session rebind the full id:email once the actor loads."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        ip = request.client.host if request.client else "-"
+        via = "api" if path.startswith("/api/") else "gui"
+        try:
+            user = str(session_user_id() or "-")
+        except Exception:  # outside NiceGUI storage context
+            user = "-"
+        start = time.perf_counter()
+        with structlog.contextvars.bound_contextvars(user=user, ip=ip, via=via):
+            try:
+                response = await call_next(request)
+            except Exception:
+                logger.exception("http.request_failed", method=request.method, path=path)
+                raise
+            line = logger.debug if any(path.startswith(p) for p in QUIET_PREFIXES) else logger.info
+            line(
+                "http.request",
+                method=request.method,
+                path=path,
+                status=response.status_code,
+                ms=round((time.perf_counter() - start) * 1000),
+            )
+            return response
+
+
 def create_app() -> None:
+    init_logging()
     install_exception_handlers(app)
     app.include_router(api_router)
     app.add_static_files("/static", str(Path(__file__).parent / "ui" / "static"))
@@ -77,16 +116,18 @@ def create_app() -> None:
     )
     ui.add_head_html('<link rel="stylesheet" href="/static/theme.css">', shared=True)
     app.add_middleware(AuthMiddleware)
+    app.add_middleware(RequestLogMiddleware)
     register_pages()
 
 
 def run() -> None:
+    init_logging()
     create_app()
     s = settings()
     secret = s.storage_secret
     if not secret or secret in ("dev-secret-change-me", "change-me-to-a-long-random-string"):
         secret = secrets.token_hex(32)  # never serve forgeable sessions
-        logging.getLogger(__name__).warning(
+        logger.warning(
             "VDB_STORAGE_SECRET unset — using an ephemeral secret; sessions reset on restart"
         )
     ui.run(
@@ -102,6 +143,12 @@ def run() -> None:
         reload=s.reload,
         show=False,
         fastapi_docs=True,
+        # uvicorn must not dictConfig its own handlers; its loggers then
+        # propagate to root and render through structlog. The middleware's
+        # http.request line replaces the access log (it adds user/ip/ms).
+        uvicorn_logging_level="info",
+        log_config=None,
+        access_log=False,
     )
 
 

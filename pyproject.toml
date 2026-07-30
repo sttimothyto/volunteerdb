@@ -15,6 +15,7 @@ dependencies = [
     "pydantic[email]>=2.13.4",
     "python-multipart>=0.0.32",
     "sqlalchemy[asyncio]>=2.0.51",
+    "structlog>=26.1.0",
 ]
 
 [project.scripts]

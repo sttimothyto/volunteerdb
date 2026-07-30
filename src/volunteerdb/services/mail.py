@@ -6,15 +6,14 @@ Callers should invoke send_email as a module attribute (``mail.send_email``)
 so tests can monkeypatch it.
 """
 
-import logging
-
 import httpx
+import structlog
 
 from ..config import settings
 
 API_URL = "https://api.smtp2go.com/v3/email/send"
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 async def send_email(to: str, subject: str, text_body: str) -> bool:
@@ -35,11 +34,11 @@ async def send_email(to: str, subject: str, text_body: str) -> bool:
                 API_URL, json=payload, headers={"X-Smtp2go-Api-Key": s.smtp2go_api_key}
             )
     except httpx.HTTPError:
-        log.exception("smtp2go request failed (to=%s)", to)
+        log.exception("mail.request_failed", to=to)
         return False
     ok = resp.status_code == 200 and resp.json().get("data", {}).get("succeeded", 0) >= 1
     if not ok:
-        log.error("smtp2go send failed (to=%s): %s %s", to, resp.status_code, resp.text[:500])
+        log.error("mail.send_failed", to=to, status=resp.status_code, body=resp.text[:500])
     return ok
 
 

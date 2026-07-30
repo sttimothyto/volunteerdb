@@ -18,6 +18,7 @@ from openpyxl import load_workbook
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import db_session
+from ..log import audit_log
 from ..models import AppUser, Membership, Volunteer
 from ..permissions import Actor, load_actor
 from ..services import memberships as membership_service
@@ -169,6 +170,21 @@ async def run_import(content: bytes, *, dry_run: bool, user_id: int | None) -> I
             report.applied = True
     except _Abort:
         pass
+    audit_log(
+        "import.finished",
+        outcome=(
+            "applied"
+            if report.applied
+            else "dry-run (rolled back)"
+            if dry_run
+            else "failed (rolled back)"
+        ),
+        volunteers_created=report.volunteers_created,
+        volunteers_updated=report.volunteers_updated,
+        memberships_created=report.memberships_created,
+        memberships_updated=report.memberships_updated,
+        errors=len(report.errors),
+    )
     return report
 
 

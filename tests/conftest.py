@@ -10,10 +10,12 @@ import subprocess
 import httpx
 import pytest
 import sqlalchemy as sa
+import structlog
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from volunteerdb import db, throttle
+from volunteerdb.log import shared_processors
 from volunteerdb.api import api_router
 from volunteerdb.api.deps import install_exception_handlers
 from volunteerdb.config import settings
@@ -83,6 +85,28 @@ def reset_throttle():
     throttle._hits.clear()
     yield
     throttle._hits.clear()
+
+
+def _drop_all_events(logger, method_name, event_dict):
+    raise structlog.DropEvent
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _quiet_structlog():
+    """Silence the audit listeners' output; tests opt back in via log_records."""
+    structlog.configure(processors=[_drop_all_events], cache_logger_on_first_use=False)
+    yield
+
+
+@pytest.fixture
+def log_records():
+    """Captured structlog event dicts (structlog does not feed pytest's caplog)."""
+    capture = structlog.testing.LogCapture()
+    structlog.configure(
+        processors=[*shared_processors, capture], cache_logger_on_first_use=False
+    )
+    yield capture.entries
+    structlog.configure(processors=[_drop_all_events], cache_logger_on_first_use=False)
 
 
 @pytest.fixture
