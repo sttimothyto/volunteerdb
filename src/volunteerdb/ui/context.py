@@ -2,13 +2,14 @@
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import ExitStack, asynccontextmanager
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 
 from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import asof
 from ..db import db_session
 from ..log import bind_actor
 from ..permissions import Actor, Forbidden, load_actor
@@ -112,19 +113,13 @@ def notify_errors(handler: Callable) -> Callable:
 
 
 def parse_as_of(raw: str) -> datetime | None:
-    """Query-param 'as of': a date means end of that day, local time."""
-    raw = (raw or "").strip()
-    if not raw:
-        return None
+    """Query-param 'as of': a date means end of that day, local time. Shared with
+    the API (see asof.py); a page ignores garbage and renders live data rather
+    than erroring at the reader."""
     try:
-        parsed = datetime.fromisoformat(raw)
+        return asof.parse_as_of(raw)
     except ValueError:
         return None
-    if parsed.time() == time.min and "T" not in raw:
-        parsed += timedelta(days=1) - timedelta(microseconds=1)
-    if parsed.tzinfo is None:
-        parsed = parsed.astimezone()
-    return parsed
 
 
 def asof_banner(as_of: datetime | None, base_path: str) -> None:

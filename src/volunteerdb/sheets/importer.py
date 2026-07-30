@@ -3,7 +3,9 @@
 - Accepts the two-sheet .xlsx workbook or a single-sheet .csv (identified by
   its header row); the format is detected from the file content.
 - Volunteers are matched by email (plus name to break family-shared-email
-  ties), falling back to exact full name. Unmatched rows create volunteers.
+  ties). This is NOT a fallback chain: a row carrying an email that matches
+  nobody does not then try the name, it creates a volunteer (with a warning if
+  that name already exists). Only a row with a blank email matches by name.
 - Memberships are upserted; rows never delete existing memberships.
 - Any error rolls the whole import back; the report lists every issue.
 """
@@ -24,6 +26,7 @@ from ..permissions import Actor, load_actor
 from ..services import memberships as membership_service
 from ..services import teams as team_service
 from .common import (
+    FORMULA_STARTERS,
     MEMBERSHIP_HEADERS,
     MEMBERSHIP_SHEET,
     VOLUNTEER_HEADERS,
@@ -62,7 +65,7 @@ def _clean(value) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
-    if text.startswith("'="):
+    if len(text) > 1 and text[0] == "'" and text[1] in FORMULA_STARTERS:
         text = text[1:]  # undo the exporter's formula-injection escape
     return text or None
 
@@ -88,6 +91,11 @@ class _Parsed:
     volunteer_rows: list[tuple] | None
     membership_rows: list[tuple] | None
 
+
+# Accepted spellings of "yes" in the Active column. An empty cell means active;
+# anything outside this set archives the volunteer, so unrecognised values are
+# warned about rather than applied silently.
+ACTIVE_VALUES = ("yes", "y", "true", "1", "x")
 
 _EXTRA_COLUMNS_WARNING = (
     "extra columns (custom fields) are ignored — custom values are not imported yet"
@@ -292,15 +300,40 @@ async def _apply(
                 )
                 continue
             email = email.lower() if email else None
-            found = match(email, f"{first} {last}")
+            full_name = f"{first} {last}"
+            found = match(email, full_name)
             if isinstance(found, str):
                 report.errors.append(Issue(VOLUNTEER_SHEET, row_num, found))
                 continue
-            is_active = active is None or active.lower() in ("yes", "y", "true", "1", "x")
+            is_active = active is None or active.lower() in ACTIVE_VALUES
+            says_no = active is not None and active.lower() in ("no", "n", "false", "0")
+            if active is not None and not is_active and not says_no:
+                report.warnings.append(
+                    Issue(
+                        VOLUNTEER_SHEET,
+                        row_num,
+                        f"Active value {active!r} is not recognised — archiving "
+                        f"{full_name}. Use one of {', '.join(ACTIVE_VALUES)} to keep them active.",
+                    )
+                )
             if found is None:
+                # Matching is email-first with no name fallback, so a new address
+                # for someone already on file silently creates a second record.
+                # That is the intended rule; saying nothing about it is what made
+                # the July import produce duplicates.
+                if email and by_name.get(full_name.lower()):
+                    report.warnings.append(
+                        Issue(
+                            VOLUNTEER_SHEET,
+                            row_num,
+                            f"{email!r} matched nobody, but {full_name!r} already exists — "
+                            "creating a NEW volunteer. If they are the same person, set the "
+                            "email on the existing record first.",
+                        )
+                    )
                 if restricted and not (
                     (email and email in granted_new_keys)
-                    or f"{first} {last}".lower() in granted_new_keys
+                    or full_name.lower() in granted_new_keys
                 ):
                     report.errors.append(
                         Issue(

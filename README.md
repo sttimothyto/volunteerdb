@@ -133,8 +133,12 @@ One workbook, two sheets — export, edit, re-import:
 - **Memberships**: Volunteer email, Volunteer name, Team path
   (`Liturgy / Music Ministry`), Role (label or short value), Joined on, Notes
 
-Volunteers are matched by email (name breaks family-shared-email ties), then
-by exact name. Imports only add/update — they never delete — and are
+A row carrying an email is matched by email alone (the name breaks
+family-shared-email ties); only a row with a blank email falls to exact-name
+matching. An email that matches nobody therefore creates a *new* volunteer even
+when the name is already on file — the report warns, but set the address on the
+existing record first if they are the same person. Imports only add/update —
+they never delete, and a blank cell never clears a field — and are
 **all-or-nothing**: any error rejects the whole file with a row-by-row report.
 The GUI always dry-runs first and shows the report before you apply.
 

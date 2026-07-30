@@ -67,6 +67,32 @@ async def test_delete_logs_full_row(database, log_records):
     assert deletes[0]["user"] == "7"
 
 
+async def test_debug_level_reads_do_not_log_bound_parameters(
+    database, log_records, debug_logging
+):
+    """At DEBUG the read listener also logs the statement's bound parameters.
+    authenticate_token binds the stored SHA-256 token digest, so an unredacted
+    dump there turns a debug log into a full API-token compromise."""
+    async with db_session() as session:
+        user = await users.create(session, "dbg@example.org", password="pw")
+    async with db_session() as session:
+        token = await users.issue_api_token(session, user.id)
+
+    async with db_session() as session:
+        found = await users.authenticate_token(session, token)
+    assert found is not None, "the token must still authenticate"
+
+    reads = _by_event(log_records, "db.read")
+    assert any("params" in r for r in reads), (
+        "DEBUG must still log parameters, or this test would pass vacuously"
+    )
+
+    digest = users._token_digest(token)
+    blob = repr(log_records)
+    assert digest not in blob, "the stored token digest reached the log verbatim"
+    assert token not in blob
+
+
 async def test_secrets_never_logged(database, log_records):
     async with db_session() as session:
         user = await users.create(session, "sec@example.org", password="hunter2secret")

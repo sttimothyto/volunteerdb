@@ -26,9 +26,13 @@ history rows written by API calls carry `changed_by`
 
 ## Common query parameters
 
-`as_of` (ISO 8601 timestamp)
+`as_of` (ISO 8601 date or timestamp)
 : Accepted by most GET endpoints on versioned entities: returns the state
   as of that moment. A naive timestamp is interpreted in server-local time.
+  A **bare date means the end of that day**, so `as_of=2026-07-30` includes
+  everything that happened on the 30th; write `as_of=2026-07-30T00:00:00` for
+  its first instant. The GUI's date box resolves identically. A value that is
+  not a valid ISO date or timestamp is a `422`.
 
 `dry_run` (bool)
 : `POST /api/import` only — validate and report without writing.
@@ -62,7 +66,7 @@ authenticated account.
 
 | Method & path | Permission | Notes |
 |---|---|---|
-| `GET /api/volunteers` | signed in | `q=` name/email search, `include_inactive=`, `as_of=`; contact fields redacted per viewer |
+| `GET /api/volunteers` | signed in | `q=` name/email search, `as_of=`; contact fields redacted per viewer. `include_inactive=true` is **admin only** (403 otherwise), matching the GUI |
 | `POST /api/volunteers` | admin | 201 |
 | `GET /api/volunteers/{id}` | signed in | `as_of=`; redacted per viewer |
 | `PATCH /api/volunteers/{id}` | edit rights on the volunteer | `is_active` admin-only; `custom` merges validated custom-field values |

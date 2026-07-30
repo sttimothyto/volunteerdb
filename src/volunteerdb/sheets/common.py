@@ -9,6 +9,12 @@ VOLUNTEER_HEADERS = ["First name", "Last name", "Email", "Phone", "Notes", "Acti
 MEMBERSHIP_SHEET = "Memberships"
 MEMBERSHIP_HEADERS = ["Volunteer email", "Volunteer name", "Team path", "Role", "Joined on", "Notes"]
 
+# A cell opening with one of these is evaluated as a formula by Excel and
+# LibreOffice, so the exporter quotes it and the importer unquotes it. Kept here
+# so the two halves cannot drift apart. Leading whitespace is deliberately not
+# included: the importer strips it before it could ever be interpreted.
+FORMULA_STARTERS = ("=", "+", "-", "@")
+
 _ROLE_LOOKUP: dict[str, TeamRole] = {
     **{role.value: role for role in TeamRole},
     **{label.lower(): role for role, label in ROLE_LABELS.items()},

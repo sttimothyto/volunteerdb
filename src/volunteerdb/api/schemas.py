@@ -95,7 +95,7 @@ class TeamIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     parent_team_id: int | None = None
     description: str | None = None
-    workload_weight: float | None = None
+    workload_weight: float | None = Field(default=None, ge=0)
 
 
 class TeamPatch(BaseModel):
@@ -104,7 +104,7 @@ class TeamPatch(BaseModel):
     clear_parent: bool = False  # set true to move a sub-team to top level
     description: str | None = None
     is_active: bool | None = None
-    workload_weight: float | None = None
+    workload_weight: float | None = Field(default=None, ge=0)
     clear_workload_weight: bool = False  # set true to unweight the team
 
 

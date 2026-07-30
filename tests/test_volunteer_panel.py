@@ -67,7 +67,10 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
         user.find(kind=ui.input, content="6-digit code").clear()
         user.find(kind=ui.input, content="6-digit code").type(code)
         user.find(kind=ui.input, content="6-digit code").trigger("keydown.enter")
-        await user.should_see("Volunteers")  # framed page = signed in
+        # framed page = signed in. should_see defaults to a 300 ms budget
+        # (3 retries x 0.1 s), which the argon2 OTP verify plus the redirect can
+        # exceed when the whole suite is competing for the database.
+        await user.should_see("Volunteers", retries=30)
 
         # switch to the admin for the panel checks
         await user.open(f"/login-dev/{admin_id}")

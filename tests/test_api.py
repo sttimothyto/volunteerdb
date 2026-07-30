@@ -1,9 +1,11 @@
 """JSON API smoke tests over ASGI: auth, CRUD, permissions, as-of."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
+from volunteerdb.api.deps import as_of_param
 from volunteerdb.db import db_session
+from volunteerdb.ui.context import parse_as_of
 from volunteerdb.models import TeamRole
 from volunteerdb.services import custom_fields as custom_fields_service
 from volunteerdb.services import memberships, volunteers
@@ -109,6 +111,58 @@ async def test_as_of_time_travel(client, seeded):
     )
     assert r.status_code == 200
     assert r.json()["first_name"] == "Maria", "as-of sees the pre-rename state"
+
+
+async def test_include_inactive_requires_admin(client, seeded):
+    """The GUI restricts the archived-volunteers toggle to admins; the API let
+    any signed-in caller enumerate them. Same rule on both surfaces."""
+    admin = await _token(client, "admin@example.org", "secret-pw")
+    member = await _token(client, "member@example.org", "member-pw")
+
+    r = await client.post(
+        "/api/volunteers", json={"first_name": "Archie", "last_name": "Archived"}, headers=admin
+    )
+    assert r.status_code == 201, r.text
+    r = await client.patch(
+        f"/api/volunteers/{r.json()['id']}", json={"is_active": False}, headers=admin
+    )
+    assert r.status_code == 200, r.text
+
+    r = await client.get("/api/volunteers", params={"include_inactive": "true"}, headers=admin)
+    assert r.status_code == 200
+    assert "Archived" in [v["last_name"] for v in r.json()]
+
+    r = await client.get("/api/volunteers", params={"include_inactive": "true"}, headers=member)
+    assert r.status_code == 403, "archived volunteers are admin-only"
+
+    r = await client.get("/api/volunteers", headers=member)
+    assert r.status_code == 200
+    assert "Archived" not in [v["last_name"] for v in r.json()], (
+        "the default listing is unchanged for everyone else"
+    )
+
+
+async def test_a_bare_as_of_date_covers_that_whole_day(client, seeded):
+    """A bare date means the END of that day, on both surfaces. The API used to
+    annotate as_of as a datetime, so FastAPI parsed '2026-07-30' to midnight
+    while the GUI bumped it to 23:59:59 — the same query string returning
+    snapshots a day apart."""
+    headers = await _token(client, "admin@example.org", "secret-pw")
+    today = date.today().isoformat()
+
+    r = await client.get("/api/volunteers", params={"as_of": today}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert [v["last_name"] for v in r.json()] == ["Alvarez"], (
+        "the seeded volunteer was created today; resolving a bare as_of date to "
+        "midnight would hide the whole day's history"
+    )
+
+    assert as_of_param(today) == parse_as_of(today), (
+        "the GUI and the API must resolve the same query string to the same instant"
+    )
+
+    r = await client.get("/api/volunteers", params={"as_of": "not-a-date"}, headers=headers)
+    assert r.status_code == 422, "garbage is still rejected rather than ignored"
 
 
 async def test_volunteer_timeline(client, seeded):

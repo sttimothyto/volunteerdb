@@ -219,7 +219,12 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
                 segments[-1].end = row.sys_period.upper  # notes/joined_on-only edit
             else:
                 segments.append(RoleSegment(row.role, row.sys_period.lower, row.sys_period.upper))
-        segments[0].start = datetime.combine(start, time.min).astimezone()
+        # joined_on may only widen the first segment backwards. A start date that
+        # has not arrived yet (signed up in July to begin in September) would
+        # otherwise push the segment past its own end and render as a
+        # negative-width bar; the spell still reports the operator's date.
+        joined_at = datetime.combine(start, time.min).astimezone()
+        segments[0].start = min(joined_at, segments[0].start)
         spells.append(
             MembershipSpell(
                 team_id=first.team_id,

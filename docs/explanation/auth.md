@@ -45,6 +45,13 @@ Throttling is in-process (a sliding window), which is exactly right for a
 single-process deployment and would be the first thing to revisit if the
 app ever scaled out.
 
+Code *entry* is deliberately not throttled on its own. A code dies after five
+wrong guesses, and requesting a fresh one is capped at 10 per IP per hour, so
+the ceiling is roughly 50 guesses an hour against a six-digit space — about
+one in twenty thousand odds of a hit in a year of sustained attack. Adding a
+third limiter to the verify step would buy nothing and would give a wrong-code
+typo the power to lock a volunteer out.
+
 ## Sessions: remember-me with an app-side clock
 
 "Keep me signed in" issues a 90-day session, otherwise 1 day. The expiry

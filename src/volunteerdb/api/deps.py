@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..asof import parse_as_of
 from ..db import sessionmaker
 from ..log import bind_actor
 from ..permissions import Actor, Forbidden, load_actor
@@ -56,12 +57,24 @@ CtxDep = Annotated[Ctx, Depends(api_ctx)]
 
 
 def as_of_param(
-    as_of: Annotated[datetime | None, Query(description="view data as of this ISO timestamp")] = None,
+    as_of: Annotated[
+        str | None,
+        Query(
+            description=(
+                "view data as of this ISO date or timestamp; a bare date means the END "
+                "of that day, so as_of=2026-07-30 includes everything that happened on "
+                "the 30th. Naive timestamps are read in the server's local timezone."
+            ),
+            examples=["2026-07-30", "2026-07-30T14:00:00"],
+        ),
+    ] = None,
 ) -> datetime | None:
-    """Naive timestamps are interpreted in the server's local timezone."""
-    if as_of is not None and as_of.tzinfo is None:
-        as_of = as_of.astimezone()
-    return as_of
+    """Parsed by the same helper the GUI uses, so a query string means the same
+    thing on both surfaces. A malformed value raises ValueError, which the
+    installed handler turns into a 422."""
+    if as_of is None or not as_of.strip():
+        return None
+    return parse_as_of(as_of)
 
 
 AsOf = Annotated[datetime | None, Depends(as_of_param)]

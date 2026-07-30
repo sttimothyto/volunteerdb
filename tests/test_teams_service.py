@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from volunteerdb.db import db_session
 from volunteerdb.models import Team
@@ -40,6 +41,32 @@ def test_descendant_ids_includes_root_and_transitive():
 def test_team_paths_builds_parent_slash_child():
     paths = teams.team_paths(_tree())
     assert paths == {1: "Alpha", 2: "Alpha / beta", 3: "Alpha / beta / Gamma", 4: "Delta"}
+
+
+def test_team_paths_terminates_on_a_cycle():
+    """team_paths runs on as-of snapshots that no service call has validated
+    (exporter, graph, teams page), and the failure mode is a RecursionError that
+    takes the whole request down rather than a bad path string."""
+    cyclic = [
+        Team(id=1, name="A", parent_team_id=2),
+        Team(id=2, name="B", parent_team_id=1),
+    ]
+    paths = teams.team_paths(cyclic)
+    assert set(paths) == {1, 2}, "every team still gets a path"
+
+
+async def test_create_rejects_a_negative_workload_weight(database):
+    """update validates the weight; create must too, or POST /api/teams accepts
+    what PATCH refuses and the negative flows into every capacity band."""
+    async with db_session() as session:
+        with pytest.raises(ValueError):
+            await teams.create(session, "Negative", workload_weight=Decimal("-2"))
+
+        ok = await teams.create(session, "Fine", workload_weight=Decimal("2.5"))
+        assert ok.workload_weight == Decimal("2.5")
+
+        unweighted = await teams.create(session, "Unweighted")
+        assert unweighted.workload_weight is None, "no weight at all stays legal"
 
 
 async def test_update_reparent_cycle_rejected(database):
@@ -82,6 +109,22 @@ async def test_update_workload_weight_validation(database):
 
         cleared = await teams.update(session, team.id, workload_weight=None)
         assert cleared.workload_weight is None
+
+
+async def test_two_top_level_teams_cannot_share_a_name(database):
+    """The unique constraint uses NULLS NOT DISTINCT (Postgres 15+), so two
+    parentless teams cannot share a name. Without it a duplicate 'Music' would
+    make the importer's team-path lookup ambiguous for every future import."""
+    async with db_session() as session:
+        await teams.create(session, "Music")
+        with pytest.raises(IntegrityError):
+            await teams.create(session, "Music")
+
+    async with db_session() as session:
+        liturgy = await teams.create(session, "Liturgy")
+        youth = await teams.create(session, "Youth")
+        await teams.create(session, "Music", parent_team_id=liturgy.id)
+        await teams.create(session, "Music", parent_team_id=youth.id)  # different parents: fine
 
 
 async def test_missing_team_raises_lookup(database):

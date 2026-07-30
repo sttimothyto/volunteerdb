@@ -33,6 +33,9 @@ def redacted(actor: Actor, volunteer: Volunteer, team_ids: set[int]) -> Voluntee
 async def list_volunteers(
     ctx: CtxDep, as_of: AsOf, q: str = "", include_inactive: bool = False
 ) -> list[VolunteerOut]:
+    if include_inactive:
+        # matches the GUI, which offers the archived toggle to admins only
+        require(ctx.actor.is_admin, "only admins list archived volunteers")
     found = await service.search(ctx.session, q, at=as_of, include_inactive=include_inactive)
     teams_map = await team_ids_map(ctx.session, [v.id for v in found], as_of)
     return [redacted(ctx.actor, v, teams_map.get(v.id, set())) for v in found]

@@ -52,12 +52,40 @@ otherwise CSV), so the extension is informational. Details:
 
 ## Matching rules
 
-1. Volunteers are matched by **email**; when several volunteers share the
-   email, the **name** breaks the tie.
-2. With no email, an exact **full name** match is used.
+1. A row **with an email** is matched by that email and nothing else. When
+   several volunteers share it (families do), the **name** breaks the tie.
+2. A row **with no email** is matched by exact **full name**.
 3. Teams are matched by full path, then by unambiguous bare name.
 
 Unmatched volunteers are created; matched ones are updated.
+
+```{important}
+Rule 1 is not a fallback chain. If a row carries an email that matches nobody,
+the name is **not** consulted — even an exact full-name match — and a second
+volunteer is created. This is how you add a contact address for someone already
+on file *by mistake*: the import reports a warning naming the existing person,
+but it still creates the duplicate.
+
+To attach an address to an existing contactless volunteer, set it in the app
+(or via `PATCH /api/volunteers/{id}`) **before** importing a sheet that carries
+it.
+```
+
+## What an import will not do
+
+- **A blank cell never clears a field.** Only non-empty values are written
+  back, so deleting a phone number in an exported workbook and re-importing is
+  a no-op. Clear a field in the app instead. This protects against a truncated
+  paste silently wiping contact details parish-wide.
+- **Custom field values are not imported.** They are exported for reference;
+  extra columns are ignored with a warning.
+- **`Joined on` values it cannot read are dropped**, with a warning, and the
+  membership is imported without a date. Warnings do not block an import — a
+  file whose dates are all `03/05/2026` applies successfully with every join
+  date missing. Use ISO dates (`2026-05-03`) or real date cells.
+- **`Active` is an allow-list**: `yes`, `y`, `true`, `1`, `x` (and an empty
+  cell) mean active. Anything else archives the volunteer, with a warning
+  naming them.
 
 ## Import semantics
 

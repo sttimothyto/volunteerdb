@@ -14,7 +14,13 @@ from ..history import entity, fetch
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, Membership, TeamRole, Volunteer
 from ..services import custom_fields as custom_field_service
 from ..services import teams as team_service
-from .common import MEMBERSHIP_HEADERS, MEMBERSHIP_SHEET, VOLUNTEER_HEADERS, VOLUNTEER_SHEET
+from .common import (
+    FORMULA_STARTERS,
+    MEMBERSHIP_HEADERS,
+    MEMBERSHIP_SHEET,
+    VOLUNTEER_HEADERS,
+    VOLUNTEER_SHEET,
+)
 
 
 def _workbook(custom_defs: list[CustomFieldDef] = ()) -> tuple[Workbook, Worksheet, Worksheet]:
@@ -48,10 +54,11 @@ def _custom_cell(defn: CustomFieldDef, value):
 
 
 def _safe(value):
-    """Strings starting with '=' would become live formulas when opened in a
-    spreadsheet program (xlsx and CSV alike); prefix a quote (stripped again
-    by the importer on round-trip)."""
-    if isinstance(value, str) and value.startswith("="):
+    """Strings starting with a formula character would become live formulas when
+    opened in a spreadsheet program (xlsx and CSV alike); prefix a quote
+    (stripped again by the importer on round-trip). '+' matters as much as '=':
+    a phone number written '+1 416 555 0100' otherwise opens as arithmetic."""
+    if isinstance(value, str) and value.startswith(FORMULA_STARTERS):
         return "'" + value
     return value
 

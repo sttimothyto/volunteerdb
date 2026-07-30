@@ -38,6 +38,22 @@ def _fmt(column: str, value: object) -> str:
     return text if len(text) <= _MAX_VALUE_LEN else text[:_MAX_VALUE_LEN] + "…"
 
 
+def _param_column(name: str) -> str:
+    """Bind-parameter name -> column name for redaction lookups.
+
+    SQLAlchemy names a bind after its column, adding a numeric suffix where one
+    is needed: a WHERE on api_token compiles to 'api_token_1' while an UPDATE
+    ... SET api_token compiles to 'api_token'. Without stripping the suffix the
+    WHERE form misses REDACTED_COLUMNS and logs the secret in the clear.
+    """
+    base, _, suffix = name.rpartition("_")
+    return base if base and suffix.isdigit() else name
+
+
+def _fmt_params(params: dict) -> dict[str, str]:
+    return {k: _fmt(_param_column(k), v) for k, v in params.items()}
+
+
 def _txn(session: Session) -> str:
     """Short tag correlating a transaction's writes with its COMMIT/ROLLBACK line."""
     return session.info.setdefault("audit_txn", secrets.token_hex(3))
@@ -132,7 +148,7 @@ def _log_execute(execute_state: ORMExecuteState) -> None:
         tables = ", ".join(dict.fromkeys(names))
         if settings().log_level.upper() == "DEBUG":
             try:
-                params = _fmt("", stmt.compile().params)
+                params = _fmt_params(stmt.compile().params)
             except Exception:
                 params = "?"
             _read_logger.info("db.read", table=tables, params=params)
@@ -148,7 +164,7 @@ def _log_execute(execute_state: ORMExecuteState) -> None:
             else "db.delete"
         )
         try:
-            params = {k: _fmt(k, v) for k, v in stmt.compile().params.items()}
+            params = _fmt_params(stmt.compile().params)
         except Exception:
             params = "?"
         table = getattr(getattr(stmt, "table", None), "name", "?")

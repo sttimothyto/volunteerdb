@@ -38,6 +38,21 @@ def test_clean_and_safe_units():
     assert _clean(_safe("=1+1")) == "=1+1", "escape/unescape are inverses"
 
 
+def test_leading_formula_characters_are_escaped():
+    """Excel and LibreOffice evaluate a cell opening with = + - or @, so an
+    exported Canadian phone like '+1 416 555 0100' becomes a broken number the
+    moment the parish opens the workbook."""
+    for raw in ("=SUM(A1)", "+1 416 555 0100", "-5 min early", "@channel"):
+        escaped = _safe(raw)
+        assert escaped.startswith("'"), f"{raw!r} would evaluate as a formula in a spreadsheet"
+        assert _clean(escaped) == raw, "escaping and cleaning must stay inverses"
+
+    assert _safe("plain text") == "plain text"
+    assert _safe("mid=equals") == "mid=equals", "only a leading trigger matters"
+    assert _safe(None) is None
+    assert _safe(5) == 5, "non-strings pass through untouched"
+
+
 def test_parse_date_variants():
     report = ImportReport()
     assert _parse_date(datetime(2024, 3, 5, 10, 30), report, "S", 2) == date(2024, 3, 5)
@@ -127,6 +142,80 @@ async def test_import_ambiguous_matches_error(database):
     messages = [issue.message for issue in report.errors]
     assert any("ambiguous: 2 volunteers match 'Sam Same'" in m for m in messages)
     assert any("'Music' is ambiguous, use its full path" in m for m in messages)
+
+
+async def test_a_blank_cell_never_clears_an_existing_value(database):
+    """Round-tripping an export and deleting a cell does NOT clear the field —
+    only non-empty values are written back. Deliberate: a truncated paste would
+    otherwise wipe contact details parish-wide, and all-or-nothing would not
+    help because it is not an error."""
+    async with db_session() as session:
+        await volunteers.create(
+            session, "Clara", "Contact", "clara@example.org", "555-0199", notes="sings alto"
+        )
+
+    content = _workbook_bytes(
+        volunteer_rows=[["Clara", "Contact", "clara@example.org", None, None, "yes"]]
+    )
+    report = await importer.run_import(content, dry_run=False, user_id=None)
+    assert report.applied and report.volunteers_updated == 0, "nothing changed"
+
+    async with db_session() as session:
+        (found,) = await volunteers.search(session, "clara@example.org")
+    assert found.phone == "555-0199" and found.notes == "sings alto", (
+        "blanking a cell is a no-op; clearing a field needs the app, not the sheet"
+    )
+
+
+async def test_an_unrecognized_active_value_warns_before_archiving(database):
+    """Active is an allow-list, so anything it does not recognise archives the
+    volunteer. Silently archiving a parish is not an acceptable failure mode."""
+    async with db_session() as session:
+        await volunteers.create(session, "Vera", "Verbatim", "vera@example.org")
+
+    content = _workbook_bytes(
+        volunteer_rows=[["Vera", "Verbatim", "vera@example.org", None, None, "Active"]]
+    )
+    report = await importer.run_import(content, dry_run=False, user_id=None)
+    assert report.applied
+
+    async with db_session() as session:
+        (found,) = await volunteers.search(session, "vera@example.org", include_inactive=True)
+    assert found.is_active is False, "the allow-list behaviour itself is unchanged"
+
+    (warning,) = report.warnings
+    assert warning.row == 2 and "Active" in warning.message
+    assert "archiv" in warning.message.lower(), "the operator must be told what it did"
+
+
+async def test_a_whole_workbook_of_unreadable_dates_still_applies(database):
+    """An unreadable Joined on is a warning, not an error, and has_errors only
+    looks at errors — so a file whose every date is in the wrong format imports
+    'successfully' with every join date dropped."""
+    async with db_session() as session:
+        await teams.create(session, "Liturgy")
+        for n in range(3):
+            await volunteers.create(session, f"V{n}", "Dated", f"v{n}@example.org")
+
+    content = _workbook_bytes(
+        membership_rows=[
+            [f"v{n}@example.org", None, "Liturgy", "member", "03/05/2026", None]
+            for n in range(3)
+        ]
+    )
+    report = await importer.run_import(content, dry_run=False, user_id=None)
+
+    assert report.applied, "warnings do not block the import"
+    assert report.memberships_created == 3
+    assert len(report.warnings) == 3
+    assert all("unreadable date" in w.message for w in report.warnings)
+
+    async with db_session() as session:
+        (v0,) = await volunteers.search(session, "V0")
+        rows = await volunteers.assignments(session, v0.id)
+    assert rows and all(m.joined_on is None for m, _team in rows), (
+        "every join date was silently dropped"
+    )
 
 
 async def test_active_column_blank_counts_as_active(database):

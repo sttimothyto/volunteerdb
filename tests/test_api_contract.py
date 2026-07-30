@@ -60,6 +60,11 @@ async def test_error_mapping_404_409_422(client, seeded):
     )
     assert r.status_code == 422, "negative weight is a validation error"
 
+    r = await client.post(
+        "/api/teams", json={"name": "Negative", "workload_weight": -2}, headers=admin
+    )
+    assert r.status_code == 422, "POST must refuse what PATCH refuses"
+
 
 async def test_team_cycle_maps_to_422(client, seeded):
     admin = await _token(client, "admin@example.org", "secret-pw")

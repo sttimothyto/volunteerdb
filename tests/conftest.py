@@ -6,15 +6,17 @@ migrated with alembic; every test starts from truncated tables.
 
 import os
 import subprocess
+from pathlib import Path
 
 import httpx
 import pytest
 import sqlalchemy as sa
 import structlog
 from fastapi import FastAPI
+from nicegui.testing.user_simulation import user_simulation
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from volunteerdb import db, throttle
+from volunteerdb import audit, db, log, throttle
 from volunteerdb.log import shared_processors
 from volunteerdb.api import api_router
 from volunteerdb.api.deps import install_exception_handlers
@@ -28,6 +30,10 @@ BASE_URL = os.environ.get(
 )
 TEST_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_test"
 
+# NiceGUI "main file" for user_simulation; see its docstring for why page module
+# imports have to happen inside the simulation's reset context.
+SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
+
 
 @pytest.fixture(scope="session")
 async def database():
@@ -39,7 +45,17 @@ async def database():
             await conn.execute(sa.text("DROP DATABASE IF EXISTS volunteerdb_test WITH (FORCE)"))
             await conn.execute(sa.text("CREATE DATABASE volunteerdb_test"))
     except Exception as exc:  # DB not running
-        pytest.skip(f"Postgres unavailable at {BASE_URL}: {exc}")
+        # Failing (not skipping) is deliberate: a skip exits 0, so a suite that
+        # never reached the database would report the same green as a suite that
+        # passed. Set VDB_TEST_ALLOW_NO_DB=1 to opt into the old behaviour.
+        message = (
+            f"Postgres unavailable at {BASE_URL}: {exc}\n"
+            "Start it with:  podman compose up -d db   (needs a .env — see README)\n"
+            "To skip the database-backed tests deliberately, set VDB_TEST_ALLOW_NO_DB=1."
+        )
+        if os.environ.get("VDB_TEST_ALLOW_NO_DB") == "1":
+            pytest.skip(message)
+        pytest.fail(message, pytrace=False)
     finally:
         await admin_engine.dispose()
 
@@ -110,13 +126,39 @@ def log_records():
 
 
 @pytest.fixture
-async def client(database):
+def api_app(database) -> FastAPI:
+    """The API routers on a bare app. Exposed separately so tests can introspect
+    it (openapi()) without reaching into the client's private transport."""
     app = FastAPI()
     install_exception_handlers(app)
     app.include_router(api_router)
-    transport = httpx.ASGITransport(app=app)
+    return app
+
+
+@pytest.fixture
+async def client(api_app):
+    transport = httpx.ASGITransport(app=api_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+@pytest.fixture
+async def real_app_client(database):
+    """An HTTP client bound to the *real* create_app(), not the bare router app:
+    middleware, mounts and page routes included. user_simulation enters the
+    lifespan context, so the deferred /api routers are resolved."""
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        yield user.http_client
+
+
+@pytest.fixture
+def debug_logging(monkeypatch):
+    """settings() is lru_cached, so patch the module attribute the readers call."""
+    original = settings()
+    patched = original.model_copy(update={"log_level": "DEBUG"})
+    for module in (audit, log):
+        monkeypatch.setattr(module, "settings", lambda: patched)
+    yield patched
 
 
 @pytest.fixture

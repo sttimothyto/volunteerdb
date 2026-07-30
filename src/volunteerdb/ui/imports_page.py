@@ -76,10 +76,12 @@ async def import_page():
         ui.separator()
         ui.label("Import").classes("text-lg font-medium")
         ui.label(
-            "Excel workbooks carry two sheets: Volunteers (matched by email, then name) "
-            "and Memberships (volunteer + team path + role); a .csv carries one of the "
-            "two, identified by its header row. Imports never delete anything; "
-            "they only add and update. All-or-nothing on errors."
+            "Excel workbooks carry two sheets: Volunteers and Memberships (volunteer + "
+            "team path + role); a .csv carries one of the two, identified by its header "
+            "row. Rows with an email are matched on that email alone — only a blank "
+            "email cell matches by name, so a new address for someone already on file "
+            "creates a second record. Imports never delete anything and a blank cell "
+            "never clears a field; they only add and update. All-or-nothing on errors."
             + (
                 ""
                 if actor.is_admin
@@ -105,6 +107,16 @@ async def import_page():
                     f"volunteers: +{report.volunteers_created} new, {report.volunteers_updated} updated · "
                     f"memberships: +{report.memberships_created} new, {report.memberships_updated} updated"
                 )
+                if report.warnings:
+                    count = len(report.warnings)
+                    # Warnings never block an import, so the ones that quietly lose
+                    # data (dropped join dates, archived volunteers, duplicates) are
+                    # easy to scroll past. Put the count where the eye already is.
+                    ui.label(
+                        f"⚠️ {count} warning{'' if count == 1 else 's'} — these do not stop "
+                        "the import. Dropped join dates, archived volunteers and possible "
+                        "duplicates all appear here."
+                    ).classes("text-amber-700 font-medium")
                 for issue in report.errors:
                     ui.label(f"❌ {issue.sheet} row {issue.row}: {issue.message}").classes(
                         "text-negative text-sm"

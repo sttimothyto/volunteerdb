@@ -50,21 +50,36 @@ def descendant_ids(teams: list[Team], root_id: int) -> set[int]:
 
 
 def team_paths(teams: list[Team]) -> dict[int, str]:
-    """id -> 'Parent / Child' display path."""
+    """id -> 'Parent / Child' display path.
+
+    Cycles cannot occur in live data (_check_no_cycle) but this also runs on
+    as-of snapshots that nothing validates, so a cycle truncates the path
+    instead of recursing until the stack blows.
+    """
     by_id = {t.id: t for t in teams}
     paths: dict[int, str] = {}
 
-    def path(t: Team) -> str:
+    def path(t: Team, seen: frozenset[int]) -> str:
         if t.id in paths:
             return paths[t.id]
         parent = by_id.get(t.parent_team_id) if t.parent_team_id else None
-        p = f"{path(parent)} / {t.name}" if parent else t.name
+        if parent is not None and parent.id not in seen:
+            p = f"{path(parent, seen | {t.id})} / {t.name}"
+        else:
+            p = t.name
         paths[t.id] = p
         return p
 
     for t in teams:
-        path(t)
+        path(t, frozenset())
     return paths
+
+
+def _check_workload_weight(workload_weight: Decimal | None) -> None:
+    """Shared by create and update: they disagreed once, and a negative weight
+    silently corrupts every capacity band downstream."""
+    if workload_weight is not None and workload_weight < 0:
+        raise ValueError("workload weight must not be negative")
 
 
 async def create(
@@ -74,6 +89,7 @@ async def create(
     description: str | None = None,
     workload_weight: Decimal | None = None,
 ) -> Team:
+    _check_workload_weight(workload_weight)
     team = Team(
         name=name.strip(),
         parent_team_id=parent_team_id,
@@ -108,8 +124,7 @@ async def update(
     if is_active is not None:
         team.is_active = is_active
     if workload_weight is not _UNSET:
-        if workload_weight is not None and workload_weight < 0:  # type: ignore[operator]
-            raise ValueError("workload weight must not be negative")
+        _check_workload_weight(workload_weight)  # type: ignore[arg-type]
         team.workload_weight = workload_weight  # type: ignore[assignment]
     await session.flush()
     return team
