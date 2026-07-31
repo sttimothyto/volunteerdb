@@ -1,0 +1,65 @@
+#!/bin/bash
+# Managed by volunteerdb deploy/deploy.py - do not edit by hand.
+# Nightly: pg_dump | gzip -> {{ backup_dir }} -> rclone copy -> Google Drive.
+set -Eeuo pipefail
+
+DB_CONTAINER='{{ db_container }}'
+DB_USER='{{ db_user }}'
+DB_NAME='{{ db_name }}'
+BACKUP_DIR='{{ backup_dir }}'
+RCLONE_CONF='{{ rclone_conf }}'
+RCLONE_DEST='{{ rclone_dest }}'
+RETAIN_LOCAL_DAYS='{{ retain_local_days }}'
+RETAIN_REMOTE_DAYS='{{ retain_remote_days }}'
+# Floor for a plausible gzipped dump. An empty-database dump gzips to ~1-2 KB;
+# the live DB dumps ~21 KB gzipped (2026-07). Catches an empty/wrong database
+# (pipefail already catches a pg_dump that dies mid-stream).
+MIN_BYTES=10000
+
+STAMP=$(date +%F)
+OUT="$BACKUP_DIR/volunteerdb-$STAMP.sql.gz"
+TMP=""
+ERR_CTX="(startup)"
+trap 'ERR_CTX="line $LINENO: $BASH_COMMAND"' ERR
+
+{% if alert_email %}
+send_alert() {
+    local key msg
+    msg="volunteerdb backup FAILED on $(hostname) at $(date -Is) - $ERR_CTX. Details: journalctl -t volunteerdb-backup"
+    key=$(sed -n 's/^VDB_SMTP2GO_API_KEY=//p' '{{ env_file }}')
+    [ -n "$key" ] || { echo "no VDB_SMTP2GO_API_KEY in {{ env_file }} - cannot send alert" >&2; return 0; }
+    curl -sSf --max-time 30 -X POST https://api.smtp2go.com/v3/email/send \
+        -H 'Content-Type: application/json' \
+        -H "X-Smtp2go-Api-Key: $key" \
+        -d "{\"sender\":\"{{ mail_from_name }} <{{ mail_from }}>\",\"to\":[\"{{ alert_email }}\"],\"subject\":\"[volunteerdb] nightly backup FAILED\",\"text_body\":\"$msg\"}" \
+        >/dev/null || echo "alert email failed" >&2
+}
+{% endif %}
+
+cleanup() {
+    local status=$?
+    [ -n "$TMP" ] && rm -f "$TMP"
+    if [ "$status" -ne 0 ]; then
+        echo "backup FAILED ($ERR_CTX)" >&2
+        {% if alert_email %}send_alert{% endif %}
+    fi
+}
+trap cleanup EXIT
+
+mkdir -p "$BACKUP_DIR"
+TMP=$(mktemp "$BACKUP_DIR/.tmp-$STAMP.XXXXXX")
+
+podman exec "$DB_CONTAINER" pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "$TMP"
+
+size=$(stat -c%s "$TMP")
+[ "$size" -ge "$MIN_BYTES" ] || { echo "dump suspiciously small: $size < $MIN_BYTES bytes" >&2; false; }
+gzip -t "$TMP"
+mv "$TMP" "$OUT"
+TMP=""
+
+rclone --config "$RCLONE_CONF" copy "$OUT" "$RCLONE_DEST/"
+
+find "$BACKUP_DIR" -name 'volunteerdb-*.sql.gz' -mtime +"$RETAIN_LOCAL_DAYS" -delete
+rclone --config "$RCLONE_CONF" delete --min-age "${RETAIN_REMOTE_DAYS}d" "$RCLONE_DEST/"
+
+echo "backup OK: $OUT ($size bytes) uploaded to $RCLONE_DEST"

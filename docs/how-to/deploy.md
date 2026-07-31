@@ -5,7 +5,9 @@ deployed by a single idempotent pyinfra script. The same command performs
 first-time installs and routine upgrades.
 
 **Prerequisites:** SSH access to the host under a pyinfra inventory name
-`sttimothyto-prod`; `uv` locally.
+`sttimothyto-prod`; `uv` locally. For nightly backups, the rclone Google
+Drive remote must be provisioned once —
+[one-time Drive setup](backup-restore.md#one-time-drive-setup).
 
 ## Deploy or upgrade
 
@@ -24,7 +26,7 @@ Optional environment on the command line:
 ## What the deploy does
 
 1. Installs system packages (podman, `aardvark-dns` — required for
-   container-name DNS, curl).
+   container-name DNS, curl, rclone).
 2. Syncs the repository to `/opt/volunteerdb/app` (the image build context)
    and templates `/etc/volunteerdb/env` and `/etc/volunteerdb/db.env`
    (mode 600). Secrets are self-managing: existing values are read back from
@@ -41,6 +43,11 @@ Optional environment on the command line:
 6. Restarts `volunteerdb-app.service` onto the fresh image and **smoke
    tests** `http://127.0.0.1:8090/login` until it answers 200.
 7. Prunes dangling images.
+8. Installs the nightly-backup script and its 02:00 root-crontab entry,
+   after asserting the one-time rclone Google Drive remote is provisioned
+   ([backup how-to](backup-restore.md)). Until that one-time setup is
+   done, the deploy fails at this final step — the app itself is already
+   fully deployed by then.
 
 TLS and the public hostname are **outside this repository**: Caddy on the
 host terminates HTTPS for `vdb.sttimothyto.org` and reverse-proxies to

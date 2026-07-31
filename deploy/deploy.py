@@ -51,6 +51,10 @@ MANUAL CLEANUP after burn-in (intentionally not automated):
 MANUAL POST-DEPLOY STEPS (unchanged):
   1. DNS: add A record  vdb.sttimothyto.org -> 91.99.133.210
   2. /etc/caddy/Caddyfile already proxies vdb.sttimothyto.org -> 127.0.0.1:8090
+  3. Backups: one-time rclone Google Drive remote provisioning (headless OAuth
+     paste flow) — runbook in docs/how-to/backup-restore.md. Never manage
+     /root/.config/rclone/rclone.conf from this script: rclone rewrites the
+     token in place on refresh, and a deploy would clobber it.
 """
 
 import os
@@ -60,7 +64,7 @@ from pathlib import Path
 from pyinfra import host
 from pyinfra.facts.files import File, FileContents
 from pyinfra.facts.systemd import SystemdStatus
-from pyinfra.operations import apt, files, server, systemd
+from pyinfra.operations import apt, crontab, files, server, systemd
 
 # pyinfra resolves relative src paths against the invocation cwd, not this
 # file — anchor everything here so the deploy works from any directory.
@@ -82,6 +86,17 @@ DUMP = "/var/backups/volunteerdb-cutover.sql"
 OLD_UNIT = "/etc/systemd/system/volunteerdb.service"
 ADMIN_EMAIL = "admin@sttimothyto.org"
 ADMIN_PASSWORD = os.environ.get("VDB_ADMIN_PASSWORD")
+
+# Nightly backups (script + crontab installed at the end of this deploy).
+DB_CONTAINER = "volunteerdb-db"
+BACKUP_SCRIPT = "/usr/local/bin/volunteerdb-backup"
+BACKUP_DIR = "/var/backups/volunteerdb"
+RCLONE_REMOTE = "volunteerdb-gdrive-backup"
+RCLONE_DEST = f"{RCLONE_REMOTE}:volunteerdb-backups"
+RCLONE_CONF = "/root/.config/rclone/rclone.conf"
+BACKUP_RETAIN_LOCAL_DAYS = 14
+BACKUP_RETAIN_REMOTE_DAYS = 730
+BACKUP_ALERT_EMAIL = ADMIN_EMAIL  # "" disables the failure email
 
 
 # Reuse secrets already on the server; generate once if absent.
@@ -111,7 +126,7 @@ apt.packages(
     # aardvark-dns is only Recommends of netavark and the host sets
     # APT::Install-Recommends=false — without it, container-name DNS on the
     # volunteerdb network silently fails.
-    packages=["podman", "aardvark-dns", "curl", "ca-certificates"],
+    packages=["podman", "aardvark-dns", "curl", "ca-certificates", "rclone"],
     update=True,
     cache_time=1440,
 )
@@ -297,4 +312,49 @@ if CUTOVER:
 server.shell(
     name="Prune dangling images (bound build-layer growth)",
     commands=["podman image prune -f"],
+)
+
+# --- nightly backups: pg_dump -> gzip -> Google Drive via rclone -------------
+# Kept last so a missing rclone remote cannot block the app deploy (pyinfra
+# runs ops in file order and stops at the first failure).
+files.directory(name="Backup dir", path=BACKUP_DIR, mode="700")
+files.template(
+    name="Install backup script",
+    src=str(HERE / "templates" / "volunteerdb-backup.sh.j2"),
+    dest=BACKUP_SCRIPT,
+    mode="700",
+    user="root",
+    group="root",
+    db_container=DB_CONTAINER,
+    db_user=DB_USER,
+    db_name=DB_NAME,
+    backup_dir=BACKUP_DIR,
+    rclone_conf=RCLONE_CONF,
+    rclone_dest=RCLONE_DEST,
+    retain_local_days=BACKUP_RETAIN_LOCAL_DAYS,
+    retain_remote_days=BACKUP_RETAIN_REMOTE_DAYS,
+    alert_email=BACKUP_ALERT_EMAIL,
+    env_file=ENV_FILE,
+    mail_from="no-reply@sttimothyto.org",
+    mail_from_name="VolunteerDB",
+)
+# The rclone remote is provisioned ONCE by hand (docs/how-to/backup-restore.md):
+# rclone rewrites the OAuth token inside rclone.conf on refresh, so this deploy
+# must never write that file — it only asserts the remote exists.
+server.shell(
+    name=f"Assert rclone remote {RCLONE_REMOTE} is provisioned",
+    commands=[
+        f"grep -qx '\\[{RCLONE_REMOTE}\\]' {RCLONE_CONF} 2>/dev/null || "
+        f"{{ echo 'ERROR: rclone remote {RCLONE_REMOTE} not configured on this host. "
+        "Run the one-time Drive setup in docs/how-to/backup-restore.md, "
+        "then re-run the deploy.'; exit 1; }"
+    ],
+)
+crontab.crontab(
+    name="Nightly backup crontab entry (02:00 America/Toronto)",
+    command=f"systemd-cat -t volunteerdb-backup {BACKUP_SCRIPT}",
+    cron_name="volunteerdb-backup",
+    minute="0",
+    hour="2",
+    user="root",
 )
