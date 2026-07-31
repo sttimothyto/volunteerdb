@@ -30,10 +30,19 @@ crontab entry (installed by the deploy) runs
 1. dumps the database (`pg_dump | gzip`, plain SQL format) atomically to
    `/var/backups/volunteerdb/volunteerdb-YYYY-MM-DD.sql.gz`, refusing
    suspiciously small or corrupt archives;
-2. uploads it with rclone to the Google Drive folder `volunteerdb-backups`
-   (remote `volunteerdb-gdrive-backup`);
+2. uploads it with rclone through the encrypting **crypt** remote
+   `volunteerdb-gdrive-backup-crypt` into the Google Drive folder
+   `volunteerdb-backups` — file contents *and names* are encrypted on the
+   server before upload, so the Drive folder holds only opaque blobs;
 3. prunes local copies older than **14 days** and Drive copies older than
-   **730 days**.
+   **730 days** (the prune runs against the crypt remote, so it only ever
+   touches files the wrapper can decrypt).
+
+The local 14-day copies are deliberately **not** encrypted: they sit
+root-only (`0700`) on the same host as the live database, so encrypting
+them would add no protection, and plain files keep restores and drills
+simple. The Drive leg is where the exposure lives (a shared cloud
+account, two years of retention), and that leg is ciphertext.
 
 Output goes to journald: `journalctl -t volunteerdb-backup`. On any
 failure, an alert email is sent to `admin@sttimothyto.org` via SMTP2GO
@@ -77,6 +86,32 @@ chmod 600 /root/.config/rclone/rclone.conf
 rclone mkdir volunteerdb-gdrive-backup:volunteerdb-backups   # smoke test + folder
 ```
 
+Then create the crypt wrapper the backup script actually uploads through.
+Generate a strong password and create the remote, again as root on the
+server (the leading spaces keep the password out of shell history):
+
+```sh
+ PW=$(openssl rand -base64 24)
+ rclone config create volunteerdb-gdrive-backup-crypt crypt \
+   remote=volunteerdb-gdrive-backup:volunteerdb-backups \
+   password="$PW" --obscure
+ echo "$PW"    # record it (see warning), then clear terminal scrollback
+```
+
+:::{warning}
+**Record the crypt password off the server, immediately** — in the parish
+password manager *and* as a printed copy with the parish records. The
+scenario Drive backups exist for (total server loss) is exactly the
+scenario in which `rclone.conf` — the only on-server copy of the password
+— is gone too. Without the recorded password, every Drive backup is
+unreadable ciphertext. To re-read it later while the server is alive:
+
+```sh
+rclone reveal "$(sed -n '/^\[volunteerdb-gdrive-backup-crypt\]$/,/^\[/ s/^password = //p' \
+  /root/.config/rclone/rclone.conf)"
+```
+:::
+
 Re-run the deploy afterwards; the assertion passes and the crontab entry
 is installed. Notes:
 
@@ -89,22 +124,55 @@ is installed. Notes:
   under a new grant, backups uploaded under the old one remain in Drive
   but become invisible to `rclone` (retention stops covering them) — check
   the Drive web UI for orphans after re-provisioning.
+- No salt (`password2`) is set on the crypt remote: it would be a second
+  secret to custody, and it adds nothing against this threat model when
+  the password itself is 24 random bytes.
+- The crypt remote wraps the same folder the plain remote pointed at.
+  Plaintext dumps uploaded before encryption was introduced (2026-07) were
+  re-uploaded through the wrapper and the plaintext originals deleted from
+  Drive; if you ever see readable `volunteerdb-*.sql.gz` names in the
+  Drive web UI, they are unmanaged stragglers — remove them.
 
 ## Restore
 
 ### Fetch a nightly backup
 
-The last 14 nights are on the server under `/var/backups/volunteerdb/`.
-Older ones live on Google Drive; from the server (or any machine with the
-rclone remote configured):
+The last 14 nights are on the server under `/var/backups/volunteerdb/`
+(plain `.sql.gz`). Older ones live encrypted on Google Drive; fetch them
+**through the crypt remote**, which decrypts transparently and hands back
+the plain `.sql.gz`:
 
 ```sh
-rclone lsl volunteerdb-gdrive-backup:volunteerdb-backups          # pick a date
-rclone copy volunteerdb-gdrive-backup:volunteerdb-backups/volunteerdb-<DATE>.sql.gz /root/
+rclone lsl volunteerdb-gdrive-backup-crypt:                       # pick a date
+rclone copy volunteerdb-gdrive-backup-crypt:volunteerdb-<DATE>.sql.gz /root/
 gunzip /root/volunteerdb-<DATE>.sql.gz
 ```
 
+(Listing the underlying `volunteerdb-gdrive-backup:volunteerdb-backups`
+remote instead shows only encrypted blob names — that view is what anyone
+looking at the Drive folder gets.)
+
 Then feed the resulting `.sql` into the commands below.
+
+### Restore without the server (disaster recovery)
+
+If the server is gone, you need two things: the parish Google OAuth
+client (plus a browser sign-in as the parish account) and the **recorded
+crypt password**. On any machine, recreate both remotes exactly as in
+[One-time Drive setup](#one-time-drive-setup) — same names, crypt
+wrapping `volunteerdb-gdrive-backup:volunteerdb-backups`, the recorded
+password — then fetch as above.
+
+If a fresh `drive.file` grant cannot see the old files (see the
+re-provisioning note above), download the encrypted blobs from the Drive
+web UI and decrypt them locally by pointing a crypt remote at the
+download directory:
+
+```sh
+rclone config create vdb-local-crypt crypt \
+  remote=/path/to/downloaded-blobs password='<recorded password>' --obscure
+rclone copy vdb-local-crypt: ./decrypted/
+```
 
 ### Restore into the database
 

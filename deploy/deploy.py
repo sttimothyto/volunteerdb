@@ -51,8 +51,10 @@ MANUAL CLEANUP after burn-in (intentionally not automated):
 MANUAL POST-DEPLOY STEPS (unchanged):
   1. DNS: add A record  vdb.sttimothyto.org -> 91.99.133.210
   2. /etc/caddy/Caddyfile already proxies vdb.sttimothyto.org -> 127.0.0.1:8090
-  3. Backups: one-time rclone Google Drive remote provisioning (headless OAuth
-     paste flow) — runbook in docs/how-to/backup-restore.md. Never manage
+  3. Backups: one-time rclone provisioning of the Google Drive remote
+     (headless OAuth paste flow) and its crypt wrapper (encrypts the Drive
+     leg; the crypt password must also be recorded off-server) — runbook in
+     docs/how-to/backup-restore.md. Never manage
      /root/.config/rclone/rclone.conf from this script: rclone rewrites the
      token in place on refresh, and a deploy would clobber it.
 """
@@ -92,7 +94,10 @@ DB_CONTAINER = "volunteerdb-db"
 BACKUP_SCRIPT = "/usr/local/bin/volunteerdb-backup"
 BACKUP_DIR = "/var/backups/volunteerdb"
 RCLONE_REMOTE = "volunteerdb-gdrive-backup"
-RCLONE_DEST = f"{RCLONE_REMOTE}:volunteerdb-backups"
+# Crypt wrapper around RCLONE_REMOTE:volunteerdb-backups — dump contents and
+# names are encrypted client-side before upload; Drive only sees ciphertext.
+RCLONE_CRYPT_REMOTE = f"{RCLONE_REMOTE}-crypt"
+RCLONE_DEST = f"{RCLONE_CRYPT_REMOTE}:"
 RCLONE_CONF = "/root/.config/rclone/rclone.conf"
 BACKUP_RETAIN_LOCAL_DAYS = 14
 BACKUP_RETAIN_REMOTE_DAYS = 730
@@ -314,7 +319,7 @@ server.shell(
     commands=["podman image prune -f"],
 )
 
-# --- nightly backups: pg_dump -> gzip -> Google Drive via rclone -------------
+# --- nightly backups: pg_dump -> gzip -> rclone crypt -> Google Drive --------
 # Kept last so a missing rclone remote cannot block the app deploy (pyinfra
 # runs ops in file order and stops at the first failure).
 files.directory(name="Backup dir", path=BACKUP_DIR, mode="700")
@@ -338,16 +343,18 @@ files.template(
     mail_from="no-reply@sttimothyto.org",
     mail_from_name="VolunteerDB",
 )
-# The rclone remote is provisioned ONCE by hand (docs/how-to/backup-restore.md):
-# rclone rewrites the OAuth token inside rclone.conf on refresh, so this deploy
-# must never write that file — it only asserts the remote exists.
+# Both rclone remotes (Drive + crypt wrapper) are provisioned ONCE by hand
+# (docs/how-to/backup-restore.md): rclone rewrites the OAuth token inside
+# rclone.conf on refresh, so this deploy must never write that file — it only
+# asserts the remotes exist.
 server.shell(
-    name=f"Assert rclone remote {RCLONE_REMOTE} is provisioned",
+    name=f"Assert rclone remotes {RCLONE_REMOTE} + {RCLONE_CRYPT_REMOTE} are provisioned",
     commands=[
-        f"grep -qx '\\[{RCLONE_REMOTE}\\]' {RCLONE_CONF} 2>/dev/null || "
-        f"{{ echo 'ERROR: rclone remote {RCLONE_REMOTE} not configured on this host. "
+        f"for r in {RCLONE_REMOTE} {RCLONE_CRYPT_REMOTE}; do "
+        f'grep -qxF "[$r]" {RCLONE_CONF} 2>/dev/null || '
+        '{ echo "ERROR: rclone remote $r not configured on this host. '
         "Run the one-time Drive setup in docs/how-to/backup-restore.md, "
-        "then re-run the deploy.'; exit 1; }"
+        'then re-run the deploy."; exit 1; }; done'
     ],
 )
 crontab.crontab(

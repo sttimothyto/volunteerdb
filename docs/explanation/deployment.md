@@ -56,23 +56,36 @@ explicit exception, covered in [Rotate secrets](../how-to/rotate-secrets.md).
 A root crontab entry (installed by the deploy) runs a small script at
 02:00 Eastern: `pg_dump | gzip` out of the database container, an atomic
 rename so a half-written dump never gets a dated name, then `rclone copy`
-to a Google Drive folder owned by the parish account — 14 days retained
-on disk, two years on Drive. Output lands in journald
-(`journalctl -t volunteerdb-backup`) and any failure emails
-`admin@sttimothyto.org` through the same SMTP2GO account the app sends
-with, so a silently broken backup cannot rot unnoticed.
+through an encrypting *crypt* remote to a Google Drive folder owned by
+the parish account — 14 days retained on disk, two years on Drive.
+Output lands in journald (`journalctl -t volunteerdb-backup`) and any
+failure emails `admin@sttimothyto.org` through the same SMTP2GO account
+the app sends with, so a silently broken backup cannot rot unnoticed.
 
-Two deliberate choices:
+Three deliberate choices:
 
 - **The Drive token is least-privilege.** The rclone remote uses the
   `drive.file` scope, so the credential on the server can only see files
   rclone itself created — a leaked token exposes backups, not the whole
   Drive.
+- **Drive copies are encrypted; local ones are not.** The Drive leg is
+  where backup exposure actually lives: a consumer cloud account,
+  shareable folders, and up to two years of nightly snapshots of names,
+  contact details and — via ministry membership — religious affiliation.
+  So dumps pass through an rclone `crypt` remote and reach Drive as
+  ciphertext, contents and filenames both. The local 14-day copies stay
+  plaintext on purpose: they are root-only files on the same host as the
+  live database, so encrypting them adds nothing, and plain files keep
+  restores simple. The price is a custody duty — the crypt password must
+  also live *off* the server (password manager + printed copy), because
+  server loss is precisely the scenario where Drive backups are needed
+  and `rclone.conf` is gone.
 - **The rclone config is outside the deploy.** rclone rewrites the OAuth
   token inside `/root/.config/rclone/rclone.conf` on every refresh; a
-  deploy that templated the file would clobber live tokens. It is
-  provisioned once by hand ([Back up and restore](../how-to/backup-restore.md))
-  and the deploy merely asserts it exists.
+  deploy that templated the file would clobber live tokens. It (and the
+  crypt wrapper) is provisioned once by hand
+  ([Back up and restore](../how-to/backup-restore.md)) and the deploy
+  merely asserts both remotes exist.
 
 ## What is deliberately outside the repo
 
@@ -83,7 +96,8 @@ Two deliberate choices:
 - **The old native install.** The deploy still carries a guarded one-time
   cutover/rollback path from the pre-container deployment; it is inert once
   the host PostgreSQL is retired.
-- **The rclone Google Drive credential** — see [Nightly backups](#nightly-backups).
+- **The rclone Google Drive credentials** (OAuth token + backup-encryption
+  password) — see [Nightly backups](#nightly-backups).
 
 ## Known gaps (honesty section)
 

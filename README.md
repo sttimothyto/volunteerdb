@@ -144,8 +144,9 @@ The GUI always dry-runs first and shows the report before you apply.
 
 ## Operations
 
-- **Backup**: production backs itself up nightly (`pg_dump` → gzip → Google
-  Drive via rclone; see the manual's backup how-to). Ad-hoc:
+- **Backup**: production backs itself up nightly (`pg_dump` → gzip →
+  encrypted upload to Google Drive via an rclone crypt remote; see the
+  manual's backup how-to). Ad-hoc:
   `podman exec <db-container> pg_dump -U volunteerdb volunteerdb > backup.sql`
 - **Migrations**: `uv run alembic upgrade head` after pulling changes
 - **Tests**: `uv run pytest` (needs the db container running; uses a separate

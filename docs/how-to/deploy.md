@@ -6,8 +6,8 @@ first-time installs and routine upgrades.
 
 **Prerequisites:** SSH access to the host under a pyinfra inventory name
 `sttimothyto-prod`; `uv` locally. For nightly backups, the rclone Google
-Drive remote must be provisioned once —
-[one-time Drive setup](backup-restore.md#one-time-drive-setup).
+Drive remote **and its encrypting crypt wrapper** must be provisioned
+once — [one-time Drive setup](backup-restore.md#one-time-drive-setup).
 
 ## Deploy or upgrade
 
@@ -44,7 +44,8 @@ Optional environment on the command line:
    tests** `http://127.0.0.1:8090/login` until it answers 200.
 7. Prunes dangling images.
 8. Installs the nightly-backup script and its 02:00 root-crontab entry,
-   after asserting the one-time rclone Google Drive remote is provisioned
+   after asserting the one-time rclone remotes (Google Drive + encrypting
+   crypt wrapper) are provisioned
    ([backup how-to](backup-restore.md)). Until that one-time setup is
    done, the deploy fails at this final step — the app itself is already
    fully deployed by then.

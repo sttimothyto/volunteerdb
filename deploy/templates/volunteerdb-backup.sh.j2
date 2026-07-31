@@ -1,6 +1,7 @@
 #!/bin/bash
 # Managed by volunteerdb deploy/deploy.py - do not edit by hand.
-# Nightly: pg_dump | gzip -> {{ backup_dir }} -> rclone copy -> Google Drive.
+# Nightly: pg_dump | gzip -> {{ backup_dir }} -> rclone copy via crypt remote
+# (contents + names encrypted client-side) -> Google Drive.
 set -Eeuo pipefail
 
 DB_CONTAINER='{{ db_container }}'
