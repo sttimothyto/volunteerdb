@@ -39,6 +39,10 @@ Additional rules:
   signal (`Actor.can_view_capacity`).
 - Redaction, not denial: lists and rosters show `•••` for contact fields the
   viewer may not see.
+- Headshots are a deliberate exception to the edit matrix: **any signed-in
+  account** may view, upload, replace, or delete any volunteer's photo
+  (panel, detail page, graph, and the `/api/volunteers/{id}/photo`
+  endpoints). Photos are not treated as redacted contact detail.
 
 ## GUI page index
 

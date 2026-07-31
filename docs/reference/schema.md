@@ -109,6 +109,21 @@ Values are stored per volunteer in `volunteer.custom` under `key`.
 Currently holds one key, `"capacity"`: role multipliers and color bands
 (see [The capacity model](../explanation/capacity.md)).
 
+(volunteer_photo)=
+## `volunteer_photo` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `volunteer_id` | integer | PK, FK → `volunteer.id` ON DELETE CASCADE |
+| `image` | bytea | normalized 400×400 JPEG, ≤ 24 KB (its base64 fits an Excel cell) |
+| `content_type` | varchar(50) | `image/jpeg` |
+| `uploaded_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `uploaded_at` | timestamptz | drives the `?v=` cache-buster in photo URLs |
+
+Deliberately not versioned (like `custom_field_def`): photos are
+current-state only, so as-of views show the current photo. Keeping the blob
+out of `volunteer` also keeps it out of every list query and as-of UNION.
+
 ## History twins and triggers
 
 `volunteer_history`, `team_history`, `membership_history` each hold the live
@@ -133,3 +148,5 @@ why adding a live column requires rebuilding the twin; see
 | `0002` | `custom_field_def`, `app_setting`, `volunteer.custom`, `team.workload_weight`; rebuilds both affected history twins (the recipe's origin) |
 | `0003` | OTP login columns on `app_user` |
 | `0004` | Nulls all `api_token` values — switch to stored SHA-256 digests (irreversible; existing tokens invalidated) |
+| `0005` | Performance indexes: pg_trgm search on volunteer, `membership_history.volunteer_id`, `(last_name, first_name)` |
+| `0006` | `volunteer_photo` (not versioned — no twin rebuild) |
