@@ -11,6 +11,7 @@ from volunteerdb.sheets import exporter
 from volunteerdb.sheets.common import (
     MEMBERSHIP_HEADERS,
     MEMBERSHIP_SHEET,
+    PHOTO_HEADER,
     VOLUNTEER_HEADERS,
     VOLUNTEER_SHEET,
 )
@@ -45,7 +46,7 @@ async def test_template_download(client, seeded, token_member):
 
     wb = load_workbook(BytesIO(r.content))
     assert set(wb.sheetnames) == {VOLUNTEER_SHEET, MEMBERSHIP_SHEET}
-    assert [c.value for c in wb[VOLUNTEER_SHEET][1]] == VOLUNTEER_HEADERS
+    assert [c.value for c in wb[VOLUNTEER_SHEET][1]] == [*VOLUNTEER_HEADERS, PHOTO_HEADER]
     assert [c.value for c in wb[MEMBERSHIP_SHEET][1]] == MEMBERSHIP_HEADERS
 
 
@@ -88,7 +89,9 @@ async def test_csv_template_download(client, seeded, token_member):
     assert r.status_code == 200, "any signed-in user may fetch the template"
     assert r.headers["content-type"].startswith("text/csv")
     assert r.content.startswith(b"\xef\xbb\xbf"), "UTF-8 BOM for Excel"
-    assert r.content.decode("utf-8-sig").splitlines()[0] == ",".join(VOLUNTEER_HEADERS)
+    assert r.content.decode("utf-8-sig").splitlines()[0] == ",".join(
+        [*VOLUNTEER_HEADERS, PHOTO_HEADER]
+    )
 
     r = await client.get("/api/export/template/bogus.csv", headers=token_member)
     assert r.status_code == 422

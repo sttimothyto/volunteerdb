@@ -10,6 +10,8 @@
 - Any error rolls the whole import back; the report lists every issue.
 """
 
+import base64
+import binascii
 import csv
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -24,11 +26,13 @@ from ..log import audit_log
 from ..models import AppUser, Membership, Volunteer
 from ..permissions import Actor, load_actor
 from ..services import memberships as membership_service
+from ..services import photos as photo_service
 from ..services import teams as team_service
 from .common import (
     FORMULA_STARTERS,
     MEMBERSHIP_HEADERS,
     MEMBERSHIP_SHEET,
+    PHOTO_HEADER,
     VOLUNTEER_HEADERS,
     VOLUNTEER_SHEET,
     parse_role,
@@ -48,6 +52,7 @@ class ImportReport:
     volunteers_updated: int = 0
     memberships_created: int = 0
     memberships_updated: int = 0
+    photos_set: int = 0
     errors: list[Issue] = field(default_factory=list)
     warnings: list[Issue] = field(default_factory=list)
     applied: bool = False
@@ -90,6 +95,8 @@ class _Parsed:
 
     volunteer_rows: list[tuple] | None
     membership_rows: list[tuple] | None
+    # the optional Photo column (position 7) was present in the header
+    volunteer_has_photo: bool = False
 
 
 # Accepted spellings of "yes" in the Active column. An empty cell means active;
@@ -102,6 +109,14 @@ _EXTRA_COLUMNS_WARNING = (
 )
 
 
+def _photo_column_present(header) -> bool:
+    """Is the optional Photo column in position 7, right after the base headers?"""
+    n = len(VOLUNTEER_HEADERS)
+    if len(header) <= n or header[n] is None:
+        return False
+    return str(header[n]).strip().casefold() == PHOTO_HEADER.casefold()
+
+
 def _parse_xlsx(content: bytes, report: ImportReport) -> _Parsed | None:
     try:
         workbook = load_workbook(BytesIO(content), data_only=True)
@@ -110,15 +125,18 @@ def _parse_xlsx(content: bytes, report: ImportReport) -> _Parsed | None:
         return None
 
     volunteer_rows = membership_rows = None
+    has_photo = False
     if VOLUNTEER_SHEET in workbook.sheetnames:
         sheet = workbook[VOLUNTEER_SHEET]
         header = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
-        if sum(1 for cell in header if cell is not None) > len(VOLUNTEER_HEADERS):
+        has_photo = _photo_column_present(header)
+        expected = len(VOLUNTEER_HEADERS) + (1 if has_photo else 0)
+        if sum(1 for cell in header if cell is not None) > expected:
             report.warnings.append(Issue(VOLUNTEER_SHEET, 1, _EXTRA_COLUMNS_WARNING))
         volunteer_rows = list(sheet.iter_rows(min_row=2, values_only=True))
     if MEMBERSHIP_SHEET in workbook.sheetnames:
         membership_rows = list(workbook[MEMBERSHIP_SHEET].iter_rows(min_row=2, values_only=True))
-    return _Parsed(volunteer_rows, membership_rows)
+    return _Parsed(volunteer_rows, membership_rows, volunteer_has_photo=has_photo)
 
 
 def _parse_csv(content: bytes, report: ImportReport) -> _Parsed | None:
@@ -135,9 +153,11 @@ def _parse_csv(content: bytes, report: ImportReport) -> _Parsed | None:
     data = [tuple(row) for row in rows[1:]]
     n = len(VOLUNTEER_HEADERS)
     if header[:n] == [h.casefold() for h in VOLUNTEER_HEADERS]:
-        if any(header[n:]):
+        # the Photo column is optional so pre-photo 6-column files keep working
+        has_photo = _photo_column_present(header)
+        if any(header[n + 1 if has_photo else n :]):
             report.warnings.append(Issue(VOLUNTEER_SHEET, 1, _EXTRA_COLUMNS_WARNING))
-        return _Parsed(data, None)
+        return _Parsed(data, None, volunteer_has_photo=has_photo)
     if header[:n] == [h.casefold() for h in MEMBERSHIP_HEADERS]:
         if any(header[n:]):
             report.warnings.append(Issue(MEMBERSHIP_SHEET, 1, "extra columns are ignored"))
@@ -191,9 +211,45 @@ async def run_import(content: bytes, *, dry_run: bool, user_id: int | None) -> I
         volunteers_updated=report.volunteers_updated,
         memberships_created=report.memberships_created,
         memberships_updated=report.memberships_updated,
+        photos_set=report.photos_set,
         errors=len(report.errors),
     )
     return report
+
+
+async def _apply_photo(
+    session: AsyncSession,
+    volunteer: Volunteer,
+    photo_raw: str,
+    report: ImportReport,
+    row_num: int,
+    actor: Actor | None,
+) -> None:
+    """Decode and store one Photo cell; row-level errors, never an exception."""
+    try:
+        decoded = base64.b64decode(photo_raw, validate=True)
+    except (binascii.Error, ValueError):
+        report.errors.append(Issue(VOLUNTEER_SHEET, row_num, "Photo is not valid base64"))
+        return
+    if len(decoded) > photo_service.MAX_UPLOAD_BYTES:
+        report.errors.append(Issue(VOLUNTEER_SHEET, row_num, "Photo is larger than 10 MB"))
+        return
+    # byte-equal to what's stored (the usual export -> import round-trip):
+    # skip, so re-imports are no-ops instead of JPEG re-compression churn
+    existing = await photo_service.get(session, volunteer.id)
+    if existing is not None and existing.image == decoded:
+        return
+    try:
+        await photo_service.set_photo(
+            session,
+            volunteer.id,
+            decoded,
+            uploaded_by=actor.user.id if actor is not None else None,
+        )
+    except ValueError as exc:
+        report.errors.append(Issue(VOLUNTEER_SHEET, row_num, f"Photo: {exc}"))
+        return
+    report.photos_set += 1
 
 
 async def _apply(
@@ -290,8 +346,9 @@ async def _apply(
     # --- Volunteers sheet ---
     if parsed.volunteer_rows is not None:
         for row_num, row in enumerate(parsed.volunteer_rows, start=2):
-            row = tuple(row) + (None,) * (6 - len(row))
+            row = tuple(row) + (None,) * (7 - len(row))
             first, last, email, phone, notes, active = (_clean(c) for c in row[:6])
+            photo_raw = _clean(row[6]) if parsed.volunteer_has_photo else None
             if not first and not last:
                 continue
             if not first or not last:
@@ -356,6 +413,7 @@ async def _apply(
                 await session.flush()
                 index(v)
                 report.volunteers_created += 1
+                target = v
             else:
                 # Denied even when the row changes nothing: erroring only on a
                 # change would let dry-runs probe contact fields by brute force.
@@ -386,6 +444,12 @@ async def _apply(
                         changed = True
                 if changed:
                     report.volunteers_updated += 1
+                target = found
+
+            # a blank Photo cell means "leave unchanged", like every other
+            # column; removal happens in the app/API, never via spreadsheet
+            if photo_raw is not None:
+                await _apply_photo(session, target, photo_raw, report, row_num, actor)
 
     # --- Memberships sheet ---
     if parsed.membership_rows is not None:

@@ -15,10 +15,15 @@ file (see below). Implementation in `src/volunteerdb/sheets/` (`common.py`,
 | Phone | free text |
 | Notes | free text |
 | Active | boolean-ish (`yes`/`no`, `true`/`false`, `1`/`0`) |
+| Photo | base64 of the stored 400×400 JPEG headshot (≤ 24 KB, so it always fits an Excel cell). **Optional on import**: pre-photo 6-column files still work. Blank leaves the stored photo unchanged — removal happens in the app or API, never via spreadsheet. A byte-identical value is skipped, so re-importing an export is a no-op; anything else is decoded, validated and re-normalized |
 
-Exports append one column per active custom field (e.g. *Safeguarding
-training*). These extra columns are currently **ignored on import** with a
+Exports place the **Photo** column right after the six base columns, then
+append one column per active custom field (e.g. *Safeguarding training*).
+The custom-field columns are currently **ignored on import** with a
 warning — custom-field values are edited in the app.
+
+Because photos are not history-versioned, an as-of export carries the
+*current* photo alongside the historical roster.
 
 ## Sheet "Memberships"
 
