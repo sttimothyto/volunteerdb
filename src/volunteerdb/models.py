@@ -183,6 +183,28 @@ class AppSetting(Base):
     )
 
 
+class VolunteerPhoto(Base):
+    """Normalized headshot: 400x400 JPEG, at most services.photos.PHOTO_MAX_BYTES.
+
+    Not system-versioned (like custom_field_def): photos are current-state only,
+    so as-of views show the current photo.
+    """
+
+    __tablename__ = "volunteer_photo"
+
+    volunteer_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("volunteer.id", ondelete="CASCADE"), primary_key=True
+    )
+    image: Mapped[bytes] = mapped_column(sa.LargeBinary)
+    content_type: Mapped[str] = mapped_column(
+        sa.String(50), default="image/jpeg", server_default="image/jpeg"
+    )
+    uploaded_by: Mapped[int | None] = mapped_column(sa.ForeignKey("app_user.id", ondelete="SET NULL"))
+    uploaded_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+
+
 def _make_history_table(live: sa.Table) -> sa.Table:
     """History twin: live columns (no PK/defaults) + audit columns, no FKs so
     archived rows survive deletion of whatever they referenced."""
