@@ -1,13 +1,16 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, UploadFile
+from starlette.responses import Response
 
 from ..models import Volunteer
 from ..permissions import Actor, require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
+from ..services import photos as photo_service
 from ..services import volunteers as service
 from .deps import AsOf, CtxDep
 from .schemas import (
     AssignmentOut,
     ImpactOut,
+    PhotoMetaOut,
     TimelineSegmentOut,
     TimelineSpellOut,
     VolunteerIn,
@@ -38,7 +41,11 @@ async def list_volunteers(
         require(ctx.actor.is_admin, "only admins list archived volunteers")
     found = await service.search(ctx.session, q, at=as_of, include_inactive=include_inactive)
     teams_map = await team_ids_map(ctx.session, [v.id for v in found], as_of)
-    return [redacted(ctx.actor, v, teams_map.get(v.id, set())) for v in found]
+    photo_ids = await photo_service.versions(ctx.session, [v.id for v in found])
+    out = [redacted(ctx.actor, v, teams_map.get(v.id, set())) for v in found]
+    for entry in out:
+        entry.has_photo = entry.id in photo_ids
+    return out
 
 
 @router.post("", status_code=201)
@@ -54,7 +61,9 @@ async def get_volunteer(ctx: CtxDep, volunteer_id: int, as_of: AsOf) -> Voluntee
     if volunteer is None:
         raise LookupError(f"volunteer {volunteer_id} not found")
     team_ids = (await team_ids_map(ctx.session, [volunteer_id], as_of))[volunteer_id]
-    return redacted(ctx.actor, volunteer, team_ids)
+    out = redacted(ctx.actor, volunteer, team_ids)
+    out.has_photo = bool(await photo_service.versions(ctx.session, [volunteer_id]))
+    return out
 
 
 @router.patch("/{volunteer_id}")
@@ -75,6 +84,40 @@ async def update_volunteer(ctx: CtxDep, volunteer_id: int, data: VolunteerPatch)
 async def delete_volunteer(ctx: CtxDep, volunteer_id: int) -> None:
     require(ctx.actor.is_admin, "only admins delete volunteers")
     await service.delete(ctx.session, volunteer_id)
+
+
+@router.put("/{volunteer_id}/photo")
+async def put_photo(ctx: CtxDep, volunteer_id: int, file: UploadFile) -> PhotoMetaOut:
+    """Upload/replace the headshot. Open to every signed-in account by design
+    (deliberate exception to can_edit_volunteer); stored normalized to a
+    400x400 JPEG."""
+    content = await file.read(photo_service.MAX_UPLOAD_BYTES + 1)
+    if len(content) > photo_service.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "image file larger than 10 MB")
+    record = await photo_service.set_photo(
+        ctx.session, volunteer_id, content, uploaded_by=ctx.actor.user.id
+    )
+    return PhotoMetaOut(
+        volunteer_id=record.volunteer_id,
+        content_type=record.content_type,
+        size_bytes=len(record.image),
+        uploaded_at=record.uploaded_at,
+    )
+
+
+@router.get("/{volunteer_id}/photo")
+async def get_photo(ctx: CtxDep, volunteer_id: int) -> Response:
+    """The stored JPEG bytes. Visible to all signed-in users."""
+    record = await photo_service.get(ctx.session, volunteer_id)
+    if record is None:
+        raise LookupError(f"volunteer {volunteer_id} has no photo")
+    return Response(content=record.image, media_type=record.content_type)
+
+
+@router.delete("/{volunteer_id}/photo", status_code=204)
+async def delete_photo(ctx: CtxDep, volunteer_id: int) -> None:
+    """Remove the headshot (idempotent). Open to every signed-in account."""
+    await photo_service.delete_photo(ctx.session, volunteer_id)
 
 
 @router.get("/{volunteer_id}/assignments")

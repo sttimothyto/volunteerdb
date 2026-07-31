@@ -8,6 +8,7 @@ def register_pages() -> None:
         graph_page,
         imports_page,
         login,
+        photos_route,
         teams_page,
         volunteers_page,
     )
