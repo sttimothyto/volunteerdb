@@ -10,8 +10,12 @@ from volunteerdb.services import custom_fields, volunteers
 
 async def test_create_def_slugifies_and_orders(database):
     async with db_session() as session:
-        await custom_fields.create_def(session, "Safeguarding training", FieldType.date, position=2)
-        await custom_fields.create_def(session, "Shirt size!", FieldType.text, position=1)
+        await custom_fields.create_def(
+            session, "Safeguarding training", FieldType.date, position=2
+        )
+        await custom_fields.create_def(
+            session, "Shirt size!", FieldType.text, position=1
+        )
 
     async with db_session() as session:
         defs = await custom_fields.list_defs(session)
@@ -30,7 +34,9 @@ async def test_duplicate_key_conflicts(database):
 async def test_select_requires_options(database):
     with pytest.raises(ValueError):
         async with db_session() as session:
-            await custom_fields.create_def(session, "Preferred contact", FieldType.select)
+            await custom_fields.create_def(
+                session, "Preferred contact", FieldType.select
+            )
     with pytest.raises(ValueError):
         async with db_session() as session:
             await custom_fields.create_def(
@@ -60,7 +66,9 @@ async def test_update_def_replaces_options_and_deactivates(database):
 
     with pytest.raises(ValueError):  # options only make sense on select fields
         async with db_session() as session:
-            text_def = await custom_fields.create_def(session, "Notes 2", FieldType.text)
+            text_def = await custom_fields.create_def(
+                session, "Notes 2", FieldType.text
+            )
             await custom_fields.update_def(session, text_def.id, options=["a"])
 
 
@@ -68,7 +76,9 @@ async def test_validate_value_matrix(database):
     async with db_session() as session:
         text_d = await custom_fields.create_def(session, "T", FieldType.text)
         num_d = await custom_fields.create_def(session, "N", FieldType.number)
-        sel_d = await custom_fields.create_def(session, "S", FieldType.select, options=["a", "b"])
+        sel_d = await custom_fields.create_def(
+            session, "S", FieldType.select, options=["a", "b"]
+        )
         date_d = await custom_fields.create_def(session, "D", FieldType.date)
         check_d = await custom_fields.create_def(session, "C", FieldType.checkbox)
 
@@ -102,11 +112,18 @@ async def test_set_values_merges_and_clears(database):
         vid = v.id
 
     async with db_session() as session:
-        await custom_fields.set_values(session, vid, {"shirt_size": "M", "trained": True})
+        await custom_fields.set_values(
+            session, vid, {"shirt_size": "M", "trained": True}
+        )
     async with db_session() as session:
-        await custom_fields.set_values(session, vid, {"shirt_size": "L"})  # merge, not replace
+        await custom_fields.set_values(
+            session, vid, {"shirt_size": "L"}
+        )  # merge, not replace
     async with db_session() as session:
-        assert (await volunteers.get(session, vid)).custom == {"shirt_size": "L", "trained": True}
+        assert (await volunteers.get(session, vid)).custom == {
+            "shirt_size": "L",
+            "trained": True,
+        }
         await custom_fields.set_values(session, vid, {"trained": None})  # None clears
     async with db_session() as session:
         assert (await volunteers.get(session, vid)).custom == {"shirt_size": "L"}

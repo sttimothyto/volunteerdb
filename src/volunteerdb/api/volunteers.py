@@ -69,7 +69,9 @@ async def get_volunteer(ctx: CtxDep, volunteer_id: int, as_of: AsOf) -> Voluntee
 
 
 @router.patch("/{volunteer_id}")
-async def update_volunteer(ctx: CtxDep, volunteer_id: int, data: VolunteerPatch) -> VolunteerOut:
+async def update_volunteer(
+    ctx: CtxDep, volunteer_id: int, data: VolunteerPatch
+) -> VolunteerOut:
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
     require(ctx.actor.can_edit_volunteer(volunteer_id, team_ids), "edit this volunteer")
     fields = data.model_dump(exclude_unset=True)
@@ -78,7 +80,9 @@ async def update_volunteer(ctx: CtxDep, volunteer_id: int, data: VolunteerPatch)
     custom = fields.pop("custom", None)
     volunteer = await service.update(ctx.session, volunteer_id, **fields)
     if custom is not None:
-        volunteer = await custom_field_service.set_values(ctx.session, volunteer_id, custom)
+        volunteer = await custom_field_service.set_values(
+            ctx.session, volunteer_id, custom
+        )
     return redacted(ctx.actor, volunteer, team_ids)
 
 
@@ -123,7 +127,9 @@ async def delete_photo(ctx: CtxDep, volunteer_id: int) -> None:
 
 
 @router.get("/{volunteer_id}/assignments")
-async def volunteer_assignments(ctx: CtxDep, volunteer_id: int, as_of: AsOf) -> list[AssignmentOut]:
+async def volunteer_assignments(
+    ctx: CtxDep, volunteer_id: int, as_of: AsOf
+) -> list[AssignmentOut]:
     """Which teams does this person serve on? Visible to all signed-in users."""
     rows = await service.assignments(ctx.session, volunteer_id, at=as_of)
     return [
@@ -153,7 +159,10 @@ async def volunteer_timeline(ctx: CtxDep, volunteer_id: int) -> list[TimelineSpe
             end=s.end,
             segments=[
                 TimelineSegmentOut(
-                    role=seg.role, role_label=role_label(seg.role), start=seg.start, end=seg.end
+                    role=seg.role,
+                    role_label=role_label(seg.role),
+                    start=seg.start,
+                    end=seg.end,
                 )
                 for seg in s.segments
             ],
@@ -163,11 +172,14 @@ async def volunteer_timeline(ctx: CtxDep, volunteer_id: int) -> list[TimelineSpe
 
 
 @router.get("/{volunteer_id}/impact")
-async def volunteer_impact(ctx: CtxDep, volunteer_id: int, as_of: AsOf) -> list[ImpactOut]:
+async def volunteer_impact(
+    ctx: CtxDep, volunteer_id: int, as_of: AsOf
+) -> list[ImpactOut]:
     """If this volunteer leaves, what holes appear?"""
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
     require(
-        ctx.actor.can_view_volunteer(volunteer_id, team_ids), "view this volunteer's impact"
+        ctx.actor.can_view_volunteer(volunteer_id, team_ids),
+        "view this volunteer's impact",
     )
     rows = await service.impact(ctx.session, volunteer_id, at=as_of)
     return [

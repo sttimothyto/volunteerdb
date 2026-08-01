@@ -31,16 +31,20 @@ async def dashboard(as_of: str = ""):
             else []
         )
         # band chips in the legend; workload is admin-only everywhere
-        bands = (await workload_service.get_config(session)).bands if actor.is_admin else []
+        bands = (
+            (await workload_service.get_config(session)).bands if actor.is_admin else []
+        )
 
     panel = VolunteerPanel(as_of)
     with frame("Dashboard", actor):
         asof_banner(at, "/")
 
         with ui.row().classes("items-center gap-2 w-full"):
-            search = ui.input("Find volunteers or teams…").props(
-                "outlined dense clearable"
-            ).classes("w-72")
+            search = (
+                ui.input("Find volunteers or teams…")
+                .props("outlined dense clearable")
+                .classes("w-72")
+            )
 
             def go() -> None:
                 ui.navigate.to(f"/volunteers?q={quote_plus(search.value or '')}")
@@ -49,9 +53,11 @@ async def dashboard(as_of: str = ""):
             ui.button("Search", on_click=go).props("dense")
 
         with ui.row().classes("items-center gap-2 w-full"):
-            team_filter = ui.select(
-                team_options, label="Focus on team", value=0, with_input=True
-            ).props("outlined dense").classes("w-72")
+            team_filter = (
+                ui.select(team_options, label="Focus on team", value=0, with_input=True)
+                .props("outlined dense")
+                .classes("w-72")
+            )
 
             async def refilter() -> None:
                 async with action_session() as (session, actor):
@@ -67,9 +73,15 @@ async def dashboard(as_of: str = ""):
             ui.space()
             with ui.row().classes("items-center gap-3 flex-wrap"):
                 _legend_entry("team", "background: var(--vdb-graph-team)")
-                _legend_entry("volunteer", "background: var(--vdb-graph-node)", dot=True)
-                _legend_entry("leadership", "background: var(--vdb-graph-leader)", edge=True)
-                _legend_entry("sub-team", "background: var(--vdb-graph-hier)", edge=True)
+                _legend_entry(
+                    "volunteer", "background: var(--vdb-graph-node)", dot=True
+                )
+                _legend_entry(
+                    "leadership", "background: var(--vdb-graph-leader)", edge=True
+                )
+                _legend_entry(
+                    "sub-team", "background: var(--vdb-graph-hier)", edge=True
+                )
                 for band in bands:
                     _legend_entry(band.label, f"background: {band.color}", dot=True)
 
@@ -92,15 +104,28 @@ async def dashboard(as_of: str = ""):
             ui.label("My teams").classes("text-lg font-medium mt-4")
             with ui.column().classes("w-full gap-1"):
                 for membership, team in my_assignments:
-                    with ui.row().classes(
-                        "items-center gap-2 p-2 rounded bg-blue-50 cursor-pointer w-full"
-                    ).on("click", lambda _, tid=team.id: ui.navigate.to(f"/teams/{tid}")):
+                    with (
+                        ui.row()
+                        .classes(
+                            "items-center gap-2 p-2 rounded bg-blue-50 cursor-pointer w-full"
+                        )
+                        .on(
+                            "click",
+                            lambda _, tid=team.id: ui.navigate.to(f"/teams/{tid}"),
+                        )
+                    ):
                         ui.label(team.name).classes("font-medium")
                         ui.badge(ROLE_LABELS[membership.role])
 
 
-def _legend_entry(label: str, swatch_style: str, dot: bool = False, edge: bool = False) -> None:
-    classes = "vdb-legend-edge" if edge else "vdb-legend-swatch" + (" vdb-legend-dot" if dot else "")
+def _legend_entry(
+    label: str, swatch_style: str, dot: bool = False, edge: bool = False
+) -> None:
+    classes = (
+        "vdb-legend-edge"
+        if edge
+        else "vdb-legend-swatch" + (" vdb-legend-dot" if dot else "")
+    )
     with ui.row().classes("items-center gap-1"):
         ui.element("span").classes(classes).style(swatch_style)
         ui.label(label).classes("text-xs text-gray-500")

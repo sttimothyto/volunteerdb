@@ -87,7 +87,10 @@ async def test_redeem_invite_password_optional(database):
 
         rb = await users.redeem_invite(session, b.invite_token, "longenough")
         assert rb is not None and rb.password_hash is not None
-        assert await users.authenticate(session, "withpw@example.org", "longenough") is not None
+        assert (
+            await users.authenticate(session, "withpw@example.org", "longenough")
+            is not None
+        )
 
 
 async def test_mail_dev_mode_and_builders(monkeypatch, capsys):

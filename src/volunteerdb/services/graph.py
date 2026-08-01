@@ -35,12 +35,22 @@ async def elements(
 
     M, V = entity(Membership, at), entity(Volunteer, at)
     rows = (
-        await session.execute(
-            sa.select(M.team_id, sa.cast(M.role, sa.String), V.id, V.first_name, V.last_name)
-            .join(V, V.id == M.volunteer_id)
-            .where(M.team_id.in_(visible_ids))
-        )
-    ).all() if visible_ids else []
+        (
+            await session.execute(
+                sa.select(
+                    M.team_id,
+                    sa.cast(M.role, sa.String),
+                    V.id,
+                    V.first_name,
+                    V.last_name,
+                )
+                .join(V, V.id == M.volunteer_id)
+                .where(M.team_id.in_(visible_ids))
+            )
+        ).all()
+        if visible_ids
+        else []
+    )
 
     # workload colouring: the permission check needs each volunteer's FULL team
     # set (the visible edges above are only a subset), and the score is global
@@ -48,7 +58,9 @@ async def elements(
     team_sets: dict[int, set[int]] = {v_id: set() for v_id in volunteer_ids}
     if volunteer_ids:
         all_memberships = await session.execute(
-            sa.select(M.volunteer_id, M.team_id).where(M.volunteer_id.in_(volunteer_ids))
+            sa.select(M.volunteer_id, M.team_id).where(
+                M.volunteer_id.in_(volunteer_ids)
+            )
         )
         for v_id, t_id in all_memberships:
             team_sets[v_id].add(t_id)
@@ -100,7 +112,8 @@ async def elements(
                     "source": f"v{v_id}",
                     "target": f"t{m_team_id}",
                     "role": role,
-                    "leadership": role in (TeamRole.leader.value, TeamRole.second.value),
+                    "leadership": role
+                    in (TeamRole.leader.value, TeamRole.second.value),
                 }
             }
         )

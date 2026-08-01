@@ -108,7 +108,9 @@ async def test_secrets_never_logged(database, log_records):
     assert token not in blob
     assert f"'{code}'" not in blob  # the OTP itself (its argon2 hash is redacted)
 
-    app_user_inserts = [r for r in _by_event(log_records, "db.insert") if r["table"] == "app_user"]
+    app_user_inserts = [
+        r for r in _by_event(log_records, "db.insert") if r["table"] == "app_user"
+    ]
     assert app_user_inserts[0]["values"]["password_hash"] == "«redacted»"
     token_updates = [
         r
@@ -143,12 +145,18 @@ async def test_dry_run_import_rollback_marked(database, log_records):
     assert summary[0]["volunteers_created"] == 1
 
 
-async def test_api_write_carries_actor_identity(database, log_records, client, token_admin):
+async def test_api_write_carries_actor_identity(
+    database, log_records, client, token_admin
+):
     response = await client.post(
-        "/api/volunteers", json={"first_name": "Log", "last_name": "Test"}, headers=token_admin
+        "/api/volunteers",
+        json={"first_name": "Log", "last_name": "Test"},
+        headers=token_admin,
     )
     assert response.status_code == 201, response.text
-    inserts = [r for r in _by_event(log_records, "db.insert") if r["table"] == "volunteer"]
+    inserts = [
+        r for r in _by_event(log_records, "db.insert") if r["table"] == "volunteer"
+    ]
     record = inserts[-1]
     assert record["user"].endswith(":admin@example.org")
     assert record["via"] == "api"

@@ -40,7 +40,12 @@ def test_descendant_ids_includes_root_and_transitive():
 
 def test_team_paths_builds_parent_slash_child():
     paths = teams.team_paths(_tree())
-    assert paths == {1: "Alpha", 2: "Alpha / beta", 3: "Alpha / beta / Gamma", 4: "Delta"}
+    assert paths == {
+        1: "Alpha",
+        2: "Alpha / beta",
+        3: "Alpha / beta / Gamma",
+        4: "Delta",
+    }
 
 
 def test_team_paths_terminates_on_a_cycle():
@@ -124,7 +129,9 @@ async def test_two_top_level_teams_cannot_share_a_name(database):
         liturgy = await teams.create(session, "Liturgy")
         youth = await teams.create(session, "Youth")
         await teams.create(session, "Music", parent_team_id=liturgy.id)
-        await teams.create(session, "Music", parent_team_id=youth.id)  # different parents: fine
+        await teams.create(
+            session, "Music", parent_team_id=youth.id
+        )  # different parents: fine
 
 
 async def test_missing_team_raises_lookup(database):
@@ -140,15 +147,20 @@ async def test_search_matches_name_description_and_path(database):
     async with db_session() as session:
         liturgy = await teams.create(session, "Liturgy")
         await teams.create(
-            session, "Altar Servers", parent_team_id=liturgy.id, description="robes and candles"
+            session,
+            "Altar Servers",
+            parent_team_id=liturgy.id,
+            description="robes and candles",
         )
         retired = await teams.create(session, "Old Guild")
         await teams.update(session, retired.id, is_active=False)
 
-        assert [t.name for t, _ in await teams.search(session, "altar")] == ["Altar Servers"]
-        assert [t.name for t, _ in await teams.search(session, "candles")] == ["Altar Servers"], (
-            "description matches"
-        )
+        assert [t.name for t, _ in await teams.search(session, "altar")] == [
+            "Altar Servers"
+        ]
+        assert [t.name for t, _ in await teams.search(session, "candles")] == [
+            "Altar Servers"
+        ], "description matches"
         hits = await teams.search(session, "liturgy")
         assert [(t.name, path) for t, path in hits] == [
             ("Liturgy", "Liturgy"),

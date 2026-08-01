@@ -34,8 +34,12 @@ def _clean_options(options: list | None) -> list[str]:
     return cleaned
 
 
-async def list_defs(session: AsyncSession, include_inactive: bool = False) -> list[CustomFieldDef]:
-    stmt = sa.select(CustomFieldDef).order_by(CustomFieldDef.position, CustomFieldDef.label)
+async def list_defs(
+    session: AsyncSession, include_inactive: bool = False
+) -> list[CustomFieldDef]:
+    stmt = sa.select(CustomFieldDef).order_by(
+        CustomFieldDef.position, CustomFieldDef.label
+    )
     if not include_inactive:
         stmt = stmt.where(CustomFieldDef.is_active)
     return list((await session.execute(stmt)).scalars())
@@ -149,7 +153,9 @@ def validate_value(defn: CustomFieldDef, value: Any) -> Any:
             return value
 
 
-async def set_values(session: AsyncSession, volunteer_id: int, values: dict[str, Any]) -> Volunteer:
+async def set_values(
+    session: AsyncSession, volunteer_id: int, values: dict[str, Any]
+) -> Volunteer:
     """Validate and merge values into Volunteer.custom. A None value clears its key."""
     volunteer = await volunteer_service.get(session, volunteer_id)
     if volunteer is None:

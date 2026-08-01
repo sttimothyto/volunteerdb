@@ -42,9 +42,12 @@ def open_photo_dialog(
         @notify_errors
         async def on_upload(e: events.UploadEventArguments) -> None:
             raw = await e.file.read()
-            state["image"] = await anyio.to_thread.run_sync(photo_service.normalize, raw)
+            state["image"] = await anyio.to_thread.run_sync(
+                photo_service.normalize, raw
+            )
             preview.set_source(
-                "data:image/jpeg;base64," + base64.b64encode(state["image"]).decode("ascii")
+                "data:image/jpeg;base64,"
+                + base64.b64encode(state["image"]).decode("ascii")
             )
             preview.classes(remove="hidden")
 

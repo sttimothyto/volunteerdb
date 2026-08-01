@@ -26,8 +26,12 @@ async def test_history_twins_mirror_live_column_order(database):
     async with database.connect() as conn:
         for model, twin in HISTORY_TABLES.items():
             live_name = model.__tablename__
-            live = [tuple(r) for r in await conn.execute(_COLUMN_META, {"table": live_name})]
-            hist = [tuple(r) for r in await conn.execute(_COLUMN_META, {"table": twin.name})]
+            live = [
+                tuple(r) for r in await conn.execute(_COLUMN_META, {"table": live_name})
+            ]
+            hist = [
+                tuple(r) for r in await conn.execute(_COLUMN_META, {"table": twin.name})
+            ]
             assert live, f"no columns found for {live_name}"
             n = len(live)
 

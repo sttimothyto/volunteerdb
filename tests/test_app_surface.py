@@ -67,7 +67,9 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
             f"{guarded} must send anonymous browsers to the login page"
         )
 
-    response = await real_app_client.get("/static/cytoscape.esm.min.js", follow_redirects=False)
+    response = await real_app_client.get(
+        "/static/cytoscape.esm.min.js", follow_redirects=False
+    )
     assert response.status_code == 200, (
         "the /static mount must serve without auth, or every page loads unstyled"
     )

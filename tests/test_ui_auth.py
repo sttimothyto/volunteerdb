@@ -13,7 +13,9 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 async def test_anonymous_redirect_and_login_guards(database):
     async with db_session() as session:
-        await users.create(session, "admin@example.org", is_admin=True, password="correct-pw-1")
+        await users.create(
+            session, "admin@example.org", is_admin=True, password="correct-pw-1"
+        )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         # an anonymous page hit bounces to the login card (AuthMiddleware)

@@ -45,7 +45,8 @@ from volunteerdb.sheets.exporter import export_workbook
 from volunteerdb.sheets.importer import run_import
 
 BASE_URL = os.environ.get(
-    "VDB_DATABASE_URL", "postgresql+asyncpg://volunteerdb:volunteerdb@localhost:5432/volunteerdb"
+    "VDB_DATABASE_URL",
+    "postgresql+asyncpg://volunteerdb:volunteerdb@localhost:5432/volunteerdb",
 )
 BENCH_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_bench"
 
@@ -56,20 +57,88 @@ BUSY_EMAIL = "busy.bee@bench.test"  # exactly 5 memberships (impact pattern)
 CHURNED_EMAIL = "chris.churn@bench.test"  # guaranteed membership history (timeline)
 
 FIRST_NAMES = [
-    "Maria", "Marcus", "Martha", "Omar", "Tamara", "James", "Rose", "Peter", "Agnes",
-    "Thomas", "Lucia", "David", "Sarah", "Emmanuel", "Anna", "Miguel", "Grace", "John",
-    "Teresa", "Paul", "Claire", "Frank", "Rita", "Samuel", "Helen", "George", "Monica",
-    "Andrew", "Beatrice", "Charles", "Dorothy", "Felix", "Irene", "Leo", "Nadia", "Oscar",
+    "Maria",
+    "Marcus",
+    "Martha",
+    "Omar",
+    "Tamara",
+    "James",
+    "Rose",
+    "Peter",
+    "Agnes",
+    "Thomas",
+    "Lucia",
+    "David",
+    "Sarah",
+    "Emmanuel",
+    "Anna",
+    "Miguel",
+    "Grace",
+    "John",
+    "Teresa",
+    "Paul",
+    "Claire",
+    "Frank",
+    "Rita",
+    "Samuel",
+    "Helen",
+    "George",
+    "Monica",
+    "Andrew",
+    "Beatrice",
+    "Charles",
+    "Dorothy",
+    "Felix",
+    "Irene",
+    "Leo",
+    "Nadia",
+    "Oscar",
 ]
 LAST_NAMES = [
-    "Miller", "Mueller", "Keller", "Alvarez", "Okafor", "Nguyen", "Kowalski", "Mbeki",
-    "Lindqvist", "Fernandez", "Chen", "O'Brien", "Diallo", "Horvath", "Santos", "Kim",
-    "Romano", "Adeyemi", "Dubois", "Novak", "Fitzgerald", "Torres", "Park", "Ivanov",
-    "Silva", "Walsh", "Laurent", "Osei", "Meyer", "Garcia", "Papadopoulos", "Brennan",
+    "Miller",
+    "Mueller",
+    "Keller",
+    "Alvarez",
+    "Okafor",
+    "Nguyen",
+    "Kowalski",
+    "Mbeki",
+    "Lindqvist",
+    "Fernandez",
+    "Chen",
+    "O'Brien",
+    "Diallo",
+    "Horvath",
+    "Santos",
+    "Kim",
+    "Romano",
+    "Adeyemi",
+    "Dubois",
+    "Novak",
+    "Fitzgerald",
+    "Torres",
+    "Park",
+    "Ivanov",
+    "Silva",
+    "Walsh",
+    "Laurent",
+    "Osei",
+    "Meyer",
+    "Garcia",
+    "Papadopoulos",
+    "Brennan",
 ]
 PARENT_TEAMS = [
-    "Liturgy", "Faith Formation", "Hospitality", "Outreach", "Maintenance",
-    "Finance", "Communications", "Music", "Youth", "Altar Society",
+    "Liturgy",
+    "Faith Formation",
+    "Hospitality",
+    "Outreach",
+    "Maintenance",
+    "Finance",
+    "Communications",
+    "Music",
+    "Youth",
+    "Altar Society",
 ]
 
 
@@ -79,7 +148,9 @@ async def recreate_bench_db() -> None:
     )
     try:
         async with admin_engine.connect() as conn:
-            await conn.execute(sa.text("DROP DATABASE IF EXISTS volunteerdb_bench WITH (FORCE)"))
+            await conn.execute(
+                sa.text("DROP DATABASE IF EXISTS volunteerdb_bench WITH (FORCE)")
+            )
             await conn.execute(sa.text("CREATE DATABASE volunteerdb_bench"))
     finally:
         await admin_engine.dispose()
@@ -102,13 +173,17 @@ async def seed(scale: int) -> None:
         team_ids: list[int] = []
         for i, parent_name in enumerate(PARENT_TEAMS):
             weight = Decimal(rng.choice(["1", "1.5", "2", "3"])) if i % 2 == 0 else None
-            parent = await team_service.create(session, parent_name, workload_weight=weight)
+            parent = await team_service.create(
+                session, parent_name, workload_weight=weight
+            )
             team_ids.append(parent.id)
             for k in range(4):
                 weight = Decimal(rng.choice(["1", "1.5", "2"])) if k % 2 == 0 else None
                 child = await team_service.create(
-                    session, f"{parent_name} Group {k + 1}",
-                    parent_team_id=parent.id, workload_weight=weight,
+                    session,
+                    f"{parent_name} Group {k + 1}",
+                    parent_team_id=parent.id,
+                    workload_weight=weight,
                 )
                 team_ids.append(child.id)
 
@@ -116,15 +191,26 @@ async def seed(scale: int) -> None:
         for i in range(scale):
             first = rng.choice(FIRST_NAMES)
             last = rng.choice(LAST_NAMES)
-            rows.append(Volunteer(
-                first_name=first, last_name=last,
-                email=f"{first}.{last}.{i}@bench.test".lower().replace("'", ""),
-                phone="555-0100",
-            ))
+            rows.append(
+                Volunteer(
+                    first_name=first,
+                    last_name=last,
+                    email=f"{first}.{last}.{i}@bench.test".lower().replace("'", ""),
+                    phone="555-0100",
+                )
+            )
         # landmark identities the run command finds by email
         rows[0].first_name, rows[0].last_name, rows[0].email = "Busy", "Bee", BUSY_EMAIL
-        rows[1].first_name, rows[1].last_name, rows[1].email = "Lena", "Leader", LEADER_EMAIL
-        rows[2].first_name, rows[2].last_name, rows[2].email = "Chris", "Churn", CHURNED_EMAIL
+        rows[1].first_name, rows[1].last_name, rows[1].email = (
+            "Lena",
+            "Leader",
+            LEADER_EMAIL,
+        )
+        rows[2].first_name, rows[2].last_name, rows[2].email = (
+            "Chris",
+            "Churn",
+            CHURNED_EMAIL,
+        )
         session.add_all(rows)
         await session.flush()
 
@@ -143,7 +229,8 @@ async def seed(scale: int) -> None:
             member_teams.append(picked)
             for t in picked:
                 role = (
-                    TeamRole.leader if i == 1
+                    TeamRole.leader
+                    if i == 1
                     else rng.choices(list(TeamRole), weights=[5, 10, 15, 70])[0]
                 )
                 member_rows.append(Membership(volunteer_id=v.id, team_id=t, role=role))
@@ -169,7 +256,10 @@ async def seed(scale: int) -> None:
             session, "Safeguarding training", FieldType.date, show_in_list=True
         )
         await custom_field_service.create_def(
-            session, "Preferred contact", FieldType.select, options=["Email", "Phone", "Post"]
+            session,
+            "Preferred contact",
+            FieldType.select,
+            options=["Email", "Phone", "Post"],
         )
 
         await user_service.create(session, ADMIN_EMAIL, is_admin=True, password="bench")
@@ -255,7 +345,9 @@ async def find_landmarks() -> dict[str, int]:
             marks[key] = user.id
         for key, email in [("busy", BUSY_EMAIL), ("churned", CHURNED_EMAIL)]:
             marks[key] = (
-                await session.execute(sa.select(Volunteer.id).where(Volunteer.email == email))
+                await session.execute(
+                    sa.select(Volunteer.id).where(Volunteer.email == email)
+                )
             ).scalar_one()
         return marks
 
@@ -270,7 +362,9 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
         async with db_session() as session:
             user = await user_service.get(session, marks["admin_user"])
             actor = await load_actor(session, user)
-            found = await volunteer_service.search(session, "", include_inactive=actor.is_admin)
+            found = await volunteer_service.search(
+                session, "", include_inactive=actor.is_admin
+            )
             team_sets = await team_ids_map(session, [v.id for v in found])
             [d for d in await custom_field_service.list_defs(session) if d.show_in_list]
             await workload_service.get_config(session)
@@ -290,7 +384,9 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
     async def search_asof():
         async with db_session() as session:
-            await volunteer_service.search(session, "", at=asof_ts, include_inactive=True)
+            await volunteer_service.search(
+                session, "", at=asof_ts, include_inactive=True
+            )
 
     async def load_actor_leader():
         # mirrors page_session/api_ctx: PK user fetch + actor expansion
@@ -308,7 +404,9 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
     async def import_reimport():
         # idempotent parish re-import; dry_run rolls back so runs are repeatable
-        report = await run_import(parish_workbook, dry_run=True, user_id=marks["admin_user"])
+        report = await run_import(
+            parish_workbook, dry_run=True, user_id=marks["admin_user"]
+        )
         assert not report.has_errors, report.errors[:3]
 
     return {
@@ -332,8 +430,10 @@ async def cmd_setup(scale: int) -> None:
     db.init(BENCH_URL)
     t0 = time.perf_counter()
     await seed(scale)
-    print(f"Seeded volunteerdb_bench: {scale} volunteers, 50 teams "
-          f"({time.perf_counter() - t0:.1f}s)")
+    print(
+        f"Seeded volunteerdb_bench: {scale} volunteers, 50 teams "
+        f"({time.perf_counter() - t0:.1f}s)"
+    )
     await db.engine().dispose()
 
 
@@ -354,9 +454,13 @@ async def cmd_run(args) -> None:
             print(f"\n=== EXPLAIN {name} " + "=" * 40)
             await explain_statements(results[name]["statements"])
 
-    print(f"\n{'pattern':<22} {'queries':>7} {'cold ms':>9} {'median ms':>10} {'p90 ms':>8}")
+    print(
+        f"\n{'pattern':<22} {'queries':>7} {'cold ms':>9} {'median ms':>10} {'p90 ms':>8}"
+    )
     for name, r in results.items():
-        print(f"{name:<22} {r['queries']:>7} {r['cold_ms']:>9} {r['median_ms']:>10} {r['p90_ms']:>8}")
+        print(
+            f"{name:<22} {r['queries']:>7} {r['cold_ms']:>9} {r['median_ms']:>10} {r['p90_ms']:>8}"
+        )
 
     if args.json:
         for r in results.values():
@@ -379,7 +483,11 @@ def cmd_compare(before_path: str, after_path: str) -> None:
         a = after["patterns"].get(name)
         if a is None:
             continue
-        delta = (a["median_ms"] - b["median_ms"]) / b["median_ms"] * 100 if b["median_ms"] else 0
+        delta = (
+            (a["median_ms"] - b["median_ms"]) / b["median_ms"] * 100
+            if b["median_ms"]
+            else 0
+        )
         print(
             f"{name:<22} {b['queries']:>5} → {a['queries']:<4}"
             f" {b['median_ms']:>8} → {a['median_ms']:<8} {delta:>+7.1f}%"
@@ -393,7 +501,9 @@ def main() -> None:
     p_setup.add_argument("--scale", type=int, default=500, help="number of volunteers")
     p_run = sub.add_parser("run", help="time the hot-query patterns")
     p_run.add_argument("--json", help="write results to this JSON file")
-    p_run.add_argument("--explain", action="store_true", help="EXPLAIN ANALYZE each SELECT")
+    p_run.add_argument(
+        "--explain", action="store_true", help="EXPLAIN ANALYZE each SELECT"
+    )
     p_run.add_argument("--only", help="run only patterns whose name contains this")
     p_run.add_argument("--runs", type=int, default=15)
     p_cmp = sub.add_parser("compare", help="diff two run JSONs")

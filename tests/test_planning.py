@@ -35,7 +35,9 @@ async def test_vacancies_scoped_to_managed_teams(database):
         assert by_team[garden.id].missing_leader and by_team[garden.id].missing_second
 
         leader_rows = await planning.vacancies(session, leader_actor)
-        assert {r.team.id for r in leader_rows} == {liturgy.id}, "leaders see their subtree only"
+        assert {r.team.id for r in leader_rows} == {liturgy.id}, (
+            "leaders see their subtree only"
+        )
 
 
 async def test_propose_duplicate_and_repropose_after_decline(database):
@@ -43,8 +45,12 @@ async def test_propose_duplicate_and_repropose_after_decline(database):
         liturgy, _, vera, _, _, admin_user = await _parish(session)
         ids = (liturgy.id, vera.id, admin_user.id)
         p = await planning.propose(
-            session, team_id=liturgy.id, volunteer_id=vera.id,
-            role=TeamRole.second, proposed_by=admin_user.id, note="  reliable  ",
+            session,
+            team_id=liturgy.id,
+            volunteer_id=vera.id,
+            role=TeamRole.second,
+            proposed_by=admin_user.id,
+            note="  reliable  ",
         )
         assert p.status == ProposalStatus.proposed.value
         assert p.note == "reliable"
@@ -54,25 +60,36 @@ async def test_propose_duplicate_and_repropose_after_decline(database):
     with pytest.raises(IntegrityError):
         async with db_session() as session:
             await planning.propose(
-                session, team_id=liturgy_id, volunteer_id=vera_id,
-                role=TeamRole.second, proposed_by=admin_id,
+                session,
+                team_id=liturgy_id,
+                volunteer_id=vera_id,
+                role=TeamRole.second,
+                proposed_by=admin_id,
             )
 
     async with db_session() as session:
         await planning.decline(session, first_id, decided_by=admin_id)
         again = await planning.propose(
-            session, team_id=liturgy_id, volunteer_id=vera_id,
-            role=TeamRole.second, proposed_by=admin_id,
+            session,
+            team_id=liturgy_id,
+            volunteer_id=vera_id,
+            role=TeamRole.second,
+            proposed_by=admin_id,
         )
-        assert again.id != first_id, "the partial unique index only guards OPEN proposals"
+        assert again.id != first_id, (
+            "the partial unique index only guards OPEN proposals"
+        )
 
 
 async def test_accept_creates_membership_and_flips_status(database):
     async with db_session() as session:
         liturgy, _, vera, _, admin_actor, admin_user = await _parish(session)
         p = await planning.propose(
-            session, team_id=liturgy.id, volunteer_id=vera.id,
-            role=TeamRole.second, proposed_by=admin_user.id,
+            session,
+            team_id=liturgy.id,
+            volunteer_id=vera.id,
+            role=TeamRole.second,
+            proposed_by=admin_user.id,
         )
         accepted = await planning.accept(session, p.id, decided_by=admin_user.id)
         assert accepted.status == ProposalStatus.accepted.value
@@ -90,8 +107,11 @@ async def test_accept_upgrades_an_existing_member(database):
         liturgy, _, vera, _, _, admin_user = await _parish(session)
         await memberships.assign(session, vera.id, liturgy.id, TeamRole.member)
         p = await planning.propose(
-            session, team_id=liturgy.id, volunteer_id=vera.id,
-            role=TeamRole.second, proposed_by=admin_user.id,
+            session,
+            team_id=liturgy.id,
+            volunteer_id=vera.id,
+            role=TeamRole.second,
+            proposed_by=admin_user.id,
         )
         await planning.accept(session, p.id, decided_by=admin_user.id)
         m = await memberships.find(session, vera.id, liturgy.id)
@@ -102,8 +122,11 @@ async def test_withdraw_and_missing_proposal(database):
     async with db_session() as session:
         liturgy, _, vera, _, _, admin_user = await _parish(session)
         p = await planning.propose(
-            session, team_id=liturgy.id, volunteer_id=vera.id,
-            role=TeamRole.leader, proposed_by=admin_user.id,
+            session,
+            team_id=liturgy.id,
+            volunteer_id=vera.id,
+            role=TeamRole.leader,
+            proposed_by=admin_user.id,
         )
         withdrawn = await planning.withdraw(session, p.id, decided_by=admin_user.id)
         assert withdrawn.status == ProposalStatus.withdrawn.value
@@ -114,14 +137,22 @@ async def test_withdraw_and_missing_proposal(database):
 
 async def test_list_proposals_scoped_and_filtered(database):
     async with db_session() as session:
-        liturgy, garden, vera, leader_actor, admin_actor, admin_user = await _parish(session)
+        liturgy, garden, vera, leader_actor, admin_actor, admin_user = await _parish(
+            session
+        )
         on_liturgy = await planning.propose(
-            session, team_id=liturgy.id, volunteer_id=vera.id,
-            role=TeamRole.second, proposed_by=admin_user.id,
+            session,
+            team_id=liturgy.id,
+            volunteer_id=vera.id,
+            role=TeamRole.second,
+            proposed_by=admin_user.id,
         )
         await planning.propose(
-            session, team_id=garden.id, volunteer_id=vera.id,
-            role=TeamRole.leader, proposed_by=admin_user.id,
+            session,
+            team_id=garden.id,
+            volunteer_id=vera.id,
+            role=TeamRole.leader,
+            proposed_by=admin_user.id,
         )
 
         admin_views = await planning.list_proposals(session, admin_actor)

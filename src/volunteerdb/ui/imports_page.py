@@ -27,7 +27,9 @@ async def import_page():
 
         @notify_errors
         async def download_template_csv(sheet: str) -> None:
-            ui.download(exporter.template_csv(sheet), f"volunteerdb-template-{sheet}.csv")
+            ui.download(
+                exporter.template_csv(sheet), f"volunteerdb-template-{sheet}.csv"
+            )
 
         @notify_errors
         async def download_data(sheet: str | None = None) -> None:
@@ -47,17 +49,23 @@ async def import_page():
 
         data_label = "Full parish export" if actor.is_admin else "My teams export"
         with ui.row().classes("gap-2"):
-            ui.button(data_label, icon="download", on_click=download_data).props("dense")
+            ui.button(data_label, icon="download", on_click=download_data).props(
+                "dense"
+            )
             ui.button(
-                "volunteers.csv", icon="download", on_click=lambda: download_data("volunteers")
+                "volunteers.csv",
+                icon="download",
+                on_click=lambda: download_data("volunteers"),
             ).props("dense outline")
             ui.button(
-                "memberships.csv", icon="download", on_click=lambda: download_data("memberships")
+                "memberships.csv",
+                icon="download",
+                on_click=lambda: download_data("memberships"),
             ).props("dense outline")
         with ui.row().classes("gap-2"):
-            ui.button("Empty template", icon="description", on_click=download_template).props(
-                "outline dense"
-            )
+            ui.button(
+                "Empty template", icon="description", on_click=download_template
+            ).props("outline dense")
             ui.button(
                 "template volunteers.csv",
                 icon="description",
@@ -70,7 +78,11 @@ async def import_page():
             ).props("outline dense")
         ui.label(
             "The export round-trips: edit it in a spreadsheet program and import it below."
-            + ("" if actor.is_admin else " Covers the teams you lead, including sub-teams.")
+            + (
+                ""
+                if actor.is_admin
+                else " Covers the teams you lead, including sub-teams."
+            )
         ).classes("text-sm text-gray-500")
 
         ui.separator()
@@ -96,13 +108,17 @@ async def import_page():
             report_area.clear()
             with report_area:
                 if report.applied:
-                    ui.label("Import applied ✔").classes("text-positive text-lg font-medium")
-                elif report.has_errors:
-                    ui.label("Not applied — fix the errors below and re-upload.").classes(
-                        "text-negative font-medium"
+                    ui.label("Import applied ✔").classes(
+                        "text-positive text-lg font-medium"
                     )
+                elif report.has_errors:
+                    ui.label(
+                        "Not applied — fix the errors below and re-upload."
+                    ).classes("text-negative font-medium")
                 else:
-                    ui.label("Dry run — nothing written yet.").classes("text-amber-700 font-medium")
+                    ui.label("Dry run — nothing written yet.").classes(
+                        "text-amber-700 font-medium"
+                    )
                 ui.label(
                     f"volunteers: +{report.volunteers_created} new, {report.volunteers_updated} updated · "
                     f"memberships: +{report.memberships_created} new, {report.memberships_updated} updated · "
@@ -119,17 +135,17 @@ async def import_page():
                         "duplicates all appear here."
                     ).classes("text-amber-700 font-medium")
                 for issue in report.errors:
-                    ui.label(f"❌ {issue.sheet} row {issue.row}: {issue.message}").classes(
-                        "text-negative text-sm"
-                    )
+                    ui.label(
+                        f"❌ {issue.sheet} row {issue.row}: {issue.message}"
+                    ).classes("text-negative text-sm")
                 for issue in report.warnings:
-                    ui.label(f"⚠️ {issue.sheet} row {issue.row}: {issue.message}").classes(
-                        "text-amber-700 text-sm"
-                    )
+                    ui.label(
+                        f"⚠️ {issue.sheet} row {issue.row}: {issue.message}"
+                    ).classes("text-amber-700 text-sm")
                 if not report.applied and not report.has_errors and state["content"]:
-                    ui.button("Apply this import", icon="publish", on_click=apply_import).props(
-                        "color=positive"
-                    )
+                    ui.button(
+                        "Apply this import", icon="publish", on_click=apply_import
+                    ).props("color=positive")
 
         @notify_errors
         async def on_upload(e: events.UploadEventArguments) -> None:
@@ -138,7 +154,9 @@ async def import_page():
             async with action_session() as (_, actor):
                 require(actor.can_import_export, "import spreadsheets")
                 user_id = actor.user.id
-            report = await importer.run_import(state["content"], dry_run=True, user_id=user_id)
+            report = await importer.run_import(
+                state["content"], dry_run=True, user_id=user_id
+            )
             await render_report(report)
 
         @notify_errors
@@ -146,7 +164,9 @@ async def import_page():
             async with action_session() as (_, actor):
                 require(actor.can_import_export, "import spreadsheets")
                 user_id = actor.user.id
-            report = await importer.run_import(state["content"], dry_run=False, user_id=user_id)
+            report = await importer.run_import(
+                state["content"], dry_run=False, user_id=user_id
+            )
             await render_report(report)
             if report.applied:
                 ui.notify(f"Imported {state['filename']}", color="positive")

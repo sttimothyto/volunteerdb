@@ -19,13 +19,18 @@ depends_on = None
 
 def upgrade() -> None:
     op.add_column("app_user", sa.Column("otp_hash", sa.String(255), nullable=True))
-    op.add_column("app_user", sa.Column("otp_sent_at", sa.TIMESTAMP(timezone=True), nullable=True))
     op.add_column(
-        "app_user", sa.Column("otp_expires_at", sa.TIMESTAMP(timezone=True), nullable=True)
+        "app_user", sa.Column("otp_sent_at", sa.TIMESTAMP(timezone=True), nullable=True)
     )
     op.add_column(
         "app_user",
-        sa.Column("otp_attempts", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("otp_expires_at", sa.TIMESTAMP(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "app_user",
+        sa.Column(
+            "otp_attempts", sa.Integer(), nullable=False, server_default=sa.text("0")
+        ),
     )
 
 

@@ -31,16 +31,18 @@ async def planning_page():
         allowed = actor.is_admin or bool(actor.managed_team_ids)
         if not allowed:
             with frame("Planning", actor):
-                ui.label("Planning is available to admins and to team leaders/seconds.").classes(
-                    "text-gray-500"
-                )
+                ui.label(
+                    "Planning is available to admins and to team leaders/seconds."
+                ).classes("text-gray-500")
             return
         vacancy_rows = await planning_service.vacancies(session, actor)
         proposals = await planning_service.list_proposals(session, actor)
         volunteer_options = {
             v.id: v.full_name for v in await volunteer_service.search(session)
         }
-        team_sets = await team_ids_map(session, [pv.proposal.volunteer_id for pv in proposals])
+        team_sets = await team_ids_map(
+            session, [pv.proposal.volunteer_id for pv in proposals]
+        )
         wl = await workload_service.visible_scores(session, actor, team_sets)
 
     open_by_team: dict[int, list] = {}
@@ -95,13 +97,19 @@ async def planning_page():
 
     def propose_form(team_id: int, default_role: TeamRole) -> None:
         with ui.row().classes("w-full items-center gap-2"):
-            who = ui.select(volunteer_options, label="Volunteer", with_input=True).props(
-                "outlined dense"
-            ).classes("w-64")
-            role = ui.select(ROLE_OPTIONS, label="Role", value=default_role.value).props(
-                "outlined dense"
-            ).classes("w-52")
-            note = ui.input("Why them? (optional)").props("outlined dense").classes("grow")
+            who = (
+                ui.select(volunteer_options, label="Volunteer", with_input=True)
+                .props("outlined dense")
+                .classes("w-64")
+            )
+            role = (
+                ui.select(ROLE_OPTIONS, label="Role", value=default_role.value)
+                .props("outlined dense")
+                .classes("w-52")
+            )
+            note = (
+                ui.input("Why them? (optional)").props("outlined dense").classes("grow")
+            )
 
             @notify_errors
             async def submit() -> None:
@@ -177,7 +185,9 @@ async def _accept(proposal_id: int) -> None:
         proposal = await planning_service.get(session, proposal_id)
         if proposal is None:
             raise LookupError("proposal vanished")
-        require(actor.can_manage_team(proposal.team_id), "decide proposals for this team")
+        require(
+            actor.can_manage_team(proposal.team_id), "decide proposals for this team"
+        )
         await planning_service.accept(session, proposal_id, decided_by=actor.user.id)
     ui.navigate.reload()
 
@@ -187,7 +197,9 @@ async def _decline(proposal_id: int) -> None:
         proposal = await planning_service.get(session, proposal_id)
         if proposal is None:
             raise LookupError("proposal vanished")
-        require(actor.can_manage_team(proposal.team_id), "decide proposals for this team")
+        require(
+            actor.can_manage_team(proposal.team_id), "decide proposals for this team"
+        )
         await planning_service.decline(session, proposal_id, decided_by=actor.user.id)
     ui.navigate.reload()
 
@@ -198,7 +210,8 @@ async def _withdraw(proposal_id: int) -> None:
         if proposal is None:
             raise LookupError("proposal vanished")
         require(
-            proposal.proposed_by == actor.user.id or actor.can_manage_team(proposal.team_id),
+            proposal.proposed_by == actor.user.id
+            or actor.can_manage_team(proposal.team_id),
             "withdraw this proposal",
         )
         await planning_service.withdraw(session, proposal_id, decided_by=actor.user.id)

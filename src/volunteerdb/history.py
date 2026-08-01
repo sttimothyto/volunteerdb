@@ -32,8 +32,12 @@ def asof[T: Base](model: type[T], at: datetime) -> type[T]:
     hist = HISTORY_TABLES[model]
     ts = sa.literal(at, sa.TIMESTAMP(timezone=True))
     names = [c.name for c in live.columns]
-    live_sel = sa.select(*[live.c[n] for n in names]).where(live.c.sys_period.contains(ts))
-    hist_sel = sa.select(*[hist.c[n] for n in names]).where(hist.c.sys_period.contains(ts))
+    live_sel = sa.select(*[live.c[n] for n in names]).where(
+        live.c.sys_period.contains(ts)
+    )
+    hist_sel = sa.select(*[hist.c[n] for n in names]).where(
+        hist.c.sys_period.contains(ts)
+    )
     subq = sa.union_all(live_sel, hist_sel).subquery(f"{live.name}_asof")
     return aliased(model, subq)  # type: ignore[return-value]
 
@@ -43,7 +47,9 @@ def entity[T: Base](model: type[T], at: datetime | None) -> type[T]:
     return asof(model, at) if at is not None else model
 
 
-async def fetch(session: AsyncSession, stmt: sa.Select, at: datetime | None) -> list[sa.Row]:
+async def fetch(
+    session: AsyncSession, stmt: sa.Select, at: datetime | None
+) -> list[sa.Row]:
     """Execute an entity-returning statement, as-of safe.
 
     Live queries (at is None) use the caller's session as usual. As-of queries

@@ -33,10 +33,17 @@ def upgrade() -> None:
             primary_key=True,
         ),
         sa.Column("image", sa.LargeBinary, nullable=False),
-        sa.Column("content_type", sa.String(50), nullable=False, server_default="image/jpeg"),
-        sa.Column("uploaded_by", sa.Integer, sa.ForeignKey("app_user.id", ondelete="SET NULL")),
         sa.Column(
-            "uploaded_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+            "content_type", sa.String(50), nullable=False, server_default="image/jpeg"
+        ),
+        sa.Column(
+            "uploaded_by", sa.Integer, sa.ForeignKey("app_user.id", ondelete="SET NULL")
+        ),
+        sa.Column(
+            "uploaded_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
     )
 

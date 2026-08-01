@@ -18,7 +18,9 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
-team_role = postgresql.ENUM("leader", "second", "core", "member", name="team_role", create_type=False)
+team_role = postgresql.ENUM(
+    "leader", "second", "core", "member", name="team_role", create_type=False
+)
 
 SYS_PERIOD_DEFAULT = sa.text("tstzrange(clock_timestamp(), NULL)")
 
@@ -69,13 +71,22 @@ def upgrade() -> None:
         sa.Column("notes", sa.Text),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.true()),
         sa.Column(
-            "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
         sa.Column(
-            "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
         sa.Column(
-            "sys_period", postgresql.TSTZRANGE, nullable=False, server_default=SYS_PERIOD_DEFAULT
+            "sys_period",
+            postgresql.TSTZRANGE,
+            nullable=False,
+            server_default=SYS_PERIOD_DEFAULT,
         ),
     )
     op.create_index("ix_volunteer_email", "volunteer", ["email"])
@@ -84,13 +95,20 @@ def upgrade() -> None:
         "team",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("name", sa.String(200), nullable=False),
-        sa.Column("parent_team_id", sa.Integer, sa.ForeignKey("team.id", ondelete="RESTRICT")),
+        sa.Column(
+            "parent_team_id", sa.Integer, sa.ForeignKey("team.id", ondelete="RESTRICT")
+        ),
         sa.Column("description", sa.Text),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.true()),
         sa.Column(
-            "sys_period", postgresql.TSTZRANGE, nullable=False, server_default=SYS_PERIOD_DEFAULT
+            "sys_period",
+            postgresql.TSTZRANGE,
+            nullable=False,
+            server_default=SYS_PERIOD_DEFAULT,
         ),
-        sa.UniqueConstraint("parent_team_id", "name", postgresql_nulls_not_distinct=True),
+        sa.UniqueConstraint(
+            "parent_team_id", "name", postgresql_nulls_not_distinct=True
+        ),
     )
 
     op.create_table(
@@ -103,13 +121,19 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column(
-            "team_id", sa.Integer, sa.ForeignKey("team.id", ondelete="CASCADE"), nullable=False
+            "team_id",
+            sa.Integer,
+            sa.ForeignKey("team.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column("role", team_role, nullable=False),
         sa.Column("joined_on", sa.Date),
         sa.Column("notes", sa.Text),
         sa.Column(
-            "sys_period", postgresql.TSTZRANGE, nullable=False, server_default=SYS_PERIOD_DEFAULT
+            "sys_period",
+            postgresql.TSTZRANGE,
+            nullable=False,
+            server_default=SYS_PERIOD_DEFAULT,
         ),
         sa.UniqueConstraint("volunteer_id", "team_id"),
     )
@@ -120,7 +144,10 @@ def upgrade() -> None:
         "app_user",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column(
-            "volunteer_id", sa.Integer, sa.ForeignKey("volunteer.id", ondelete="SET NULL"), unique=True
+            "volunteer_id",
+            sa.Integer,
+            sa.ForeignKey("volunteer.id", ondelete="SET NULL"),
+            unique=True,
         ),
         sa.Column("email", sa.String(255), nullable=False, unique=True),
         sa.Column("password_hash", sa.String(255)),
@@ -130,7 +157,10 @@ def upgrade() -> None:
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.true()),
         sa.Column("last_login_at", sa.TIMESTAMP(timezone=True)),
         sa.Column(
-            "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
     )
 
@@ -200,6 +230,14 @@ def downgrade() -> None:
     for table in VERSIONED_TABLES:
         op.execute(f"DROP TRIGGER IF EXISTS versioning_trigger ON {table}")
     op.execute("DROP FUNCTION IF EXISTS versioning()")
-    for table in ("membership_history", "team_history", "volunteer_history", "app_user", "membership", "team", "volunteer"):
+    for table in (
+        "membership_history",
+        "team_history",
+        "volunteer_history",
+        "app_user",
+        "membership",
+        "team",
+        "volunteer",
+    ):
         op.drop_table(table)
     op.execute("DROP TYPE team_role")

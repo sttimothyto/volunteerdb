@@ -17,7 +17,9 @@ async def main() -> int:
     async with db_session() as session:
         existing = await users.get_by_email(session, email)
         if existing is not None:
-            print(f"admin {existing.email} already exists (id={existing.id}); nothing to do")
+            print(
+                f"admin {existing.email} already exists (id={existing.id}); nothing to do"
+            )
             return 0
         user = await users.create(session, email, is_admin=True, password=password)
         print(f"created admin {user.email} (id={user.id})")

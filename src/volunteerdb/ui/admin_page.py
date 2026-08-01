@@ -38,7 +38,10 @@ async def users_page(request: Request):
                     "text-gray-500",
                 )
             elif sent:
-                note, color = f"Invite email sent to {email}. Backup link above.", "text-gray-500"
+                note, color = (
+                    f"Invite email sent to {email}. Backup link above.",
+                    "text-gray-500",
+                )
             else:
                 note, color = (
                     "Couldn't send the invite email — hand this link out instead.",
@@ -64,9 +67,9 @@ async def users_page(request: Request):
                         "address and send each of them an invite email?"
                     )
                     with ui.row().classes("justify-end w-full gap-2"):
-                        ui.button("Cancel", on_click=lambda: confirm_dialog.submit(False)).props(
-                            "flat"
-                        )
+                        ui.button(
+                            "Cancel", on_click=lambda: confirm_dialog.submit(False)
+                        ).props("flat")
                         ui.button(
                             "Create and email invites",
                             on_click=lambda: confirm_dialog.submit(True),
@@ -78,7 +81,9 @@ async def users_page(request: Request):
                     report = await user_service.bulk_provision(session)
                     created = [(u.email, u.invite_token) for _, u in report.created]
                     skipped = len(report.skipped)
-                emailed = sum([await email_invite(addr, token) for addr, token in created])
+                emailed = sum(
+                    [await email_invite(addr, token) for addr, token in created]
+                )
                 failed = len(created) - emailed
                 ui.notify(
                     f"Created {len(created)} accounts ({emailed} invites emailed"
@@ -93,20 +98,26 @@ async def users_page(request: Request):
                 icon="group_add",
                 on_click=provision,
             ).props("dense")
-            ui.button("New account", icon="person_add", on_click=lambda: new_account_dialog()).props(
-                "dense outline"
-            )
+            ui.button(
+                "New account", icon="person_add", on_click=lambda: new_account_dialog()
+            ).props("dense outline")
 
         def new_account_dialog() -> None:
             with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
                 ui.label("New account").classes("text-lg font-medium")
-                email = ui.input("Email (login)").props("outlined dense").classes("w-full")
-                link = ui.select(
-                    {0: "— not linked —"} | volunteer_names,
-                    label="Linked volunteer",
-                    value=0,
-                    with_input=True,
-                ).props("outlined dense").classes("w-full")
+                email = (
+                    ui.input("Email (login)").props("outlined dense").classes("w-full")
+                )
+                link = (
+                    ui.select(
+                        {0: "— not linked —"} | volunteer_names,
+                        label="Linked volunteer",
+                        value=0,
+                        with_input=True,
+                    )
+                    .props("outlined dense")
+                    .classes("w-full")
+                )
                 admin_flag = ui.switch("Parish admin (full access)")
 
                 @notify_errors
@@ -131,9 +142,14 @@ async def users_page(request: Request):
 
         ui.label(f"{len(accounts)} accounts").classes("text-sm text-gray-500")
         for account in accounts:
-            with ui.row().classes("w-full items-center gap-3 p-2 rounded hover:bg-gray-100"):
-                ui.icon("admin_panel_settings" if account.is_admin else "person").classes(
-                    "text-xl " + ("text-primary" if account.is_admin else "text-gray-400")
+            with ui.row().classes(
+                "w-full items-center gap-3 p-2 rounded hover:bg-gray-100"
+            ):
+                ui.icon(
+                    "admin_panel_settings" if account.is_admin else "person"
+                ).classes(
+                    "text-xl "
+                    + ("text-primary" if account.is_admin else "text-gray-400")
                 )
                 with ui.column().classes("gap-0"):
                     ui.label(account.email).classes("font-medium")
@@ -147,9 +163,13 @@ async def users_page(request: Request):
                 if not account.is_active:
                     ui.badge("disabled", color="grey")
                 elif account.invite_token:
-                    ui.badge("invite pending", color="warning").classes("cursor-pointer").on(
+                    ui.badge("invite pending", color="warning").classes(
+                        "cursor-pointer"
+                    ).on(
                         "click",
-                        lambda _, t=account.invite_token, m=account.email: show_invite(t, m),
+                        lambda _, t=account.invite_token, m=account.email: show_invite(
+                            t, m
+                        ),
                     ).tooltip("Show invite link")
                 elif account.password_hash is None:
                     ui.badge("email-code sign-in", color="info").tooltip(
@@ -161,17 +181,23 @@ async def users_page(request: Request):
                     )
 
                 @notify_errors
-                async def toggle_admin(_, uid=account.id, current=account.is_admin) -> None:
+                async def toggle_admin(
+                    _, uid=account.id, current=account.is_admin
+                ) -> None:
                     async with action_session() as (session, actor):
                         require(actor.is_admin, "manage accounts")
                         await user_service.set_flags(session, uid, is_admin=not current)
                     ui.navigate.reload()
 
                 @notify_errors
-                async def toggle_active(_, uid=account.id, current=account.is_active) -> None:
+                async def toggle_active(
+                    _, uid=account.id, current=account.is_active
+                ) -> None:
                     async with action_session() as (session, actor):
                         require(actor.is_admin, "manage accounts")
-                        await user_service.set_flags(session, uid, is_active=not current)
+                        await user_service.set_flags(
+                            session, uid, is_active=not current
+                        )
                     ui.navigate.reload()
 
                 @notify_errors
@@ -182,12 +208,17 @@ async def users_page(request: Request):
                     sent = await email_invite(addr, token)
                     show_invite(token, addr, sent)
 
-                ui.button(icon="key_off" if account.is_admin else "key", on_click=toggle_admin).props(
-                    "dense flat"
-                ).tooltip("Revoke admin" if account.is_admin else "Make admin")
                 ui.button(
-                    icon="block" if account.is_active else "check_circle", on_click=toggle_active
-                ).props("dense flat").tooltip("Disable" if account.is_active else "Enable")
+                    icon="key_off" if account.is_admin else "key", on_click=toggle_admin
+                ).props("dense flat").tooltip(
+                    "Revoke admin" if account.is_admin else "Make admin"
+                )
+                ui.button(
+                    icon="block" if account.is_active else "check_circle",
+                    on_click=toggle_active,
+                ).props("dense flat").tooltip(
+                    "Disable" if account.is_active else "Enable"
+                )
                 ui.button(icon="mail", on_click=reinvite).props("dense flat").tooltip(
                     "New invite link (resets password)"
                 )

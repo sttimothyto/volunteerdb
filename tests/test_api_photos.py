@@ -30,7 +30,9 @@ async def test_any_signed_in_account_may_manage_any_photo(client, seeded, token_
         await memberships.assign(session, zoe.id, other_team.id, TeamRole.member)
         zoe_id = zoe.id
 
-    r = await client.put(f"/api/volunteers/{zoe_id}/photo", files=_upload(_png()), headers=token_member)
+    r = await client.put(
+        f"/api/volunteers/{zoe_id}/photo", files=_upload(_png()), headers=token_member
+    )
     assert r.status_code == 200, r.text
     meta = r.json()
     assert meta["volunteer_id"] == zoe_id
@@ -54,7 +56,9 @@ async def test_any_signed_in_account_may_manage_any_photo(client, seeded, token_
 async def test_replace_bumps_uploaded_at(client, seeded, token_admin):
     volunteer_id = seeded["volunteer_id"]
     r = await client.put(
-        f"/api/volunteers/{volunteer_id}/photo", files=_upload(_png()), headers=token_admin
+        f"/api/volunteers/{volunteer_id}/photo",
+        files=_upload(_png()),
+        headers=token_admin,
     )
     first = r.json()["uploaded_at"]
     r = await client.put(
@@ -81,7 +85,9 @@ async def test_upload_limits(client, seeded, token_admin):
     )
     assert r.status_code == 422
 
-    r = await client.put("/api/volunteers/424242/photo", files=_upload(_png()), headers=token_admin)
+    r = await client.put(
+        "/api/volunteers/424242/photo", files=_upload(_png()), headers=token_admin
+    )
     assert r.status_code == 404
 
 
@@ -92,7 +98,9 @@ async def test_has_photo_on_list_and_detail(client, seeded, token_admin):
     assert maria["has_photo"] is False
 
     await client.put(
-        f"/api/volunteers/{volunteer_id}/photo", files=_upload(_png()), headers=token_admin
+        f"/api/volunteers/{volunteer_id}/photo",
+        files=_upload(_png()),
+        headers=token_admin,
     )
     r = await client.get("/api/volunteers", headers=token_admin)
     (maria,) = [v for v in r.json() if v["id"] == volunteer_id]

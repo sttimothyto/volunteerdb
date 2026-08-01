@@ -26,7 +26,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 BASE_URL = os.environ.get(
-    "VDB_DATABASE_URL", "postgresql+asyncpg://volunteerdb:volunteerdb@localhost:5432/volunteerdb"
+    "VDB_DATABASE_URL",
+    "postgresql+asyncpg://volunteerdb:volunteerdb@localhost:5432/volunteerdb",
 )
 TEST_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_test"
 
@@ -42,7 +43,9 @@ async def database():
     )
     try:
         async with admin_engine.connect() as conn:
-            await conn.execute(sa.text("DROP DATABASE IF EXISTS volunteerdb_test WITH (FORCE)"))
+            await conn.execute(
+                sa.text("DROP DATABASE IF EXISTS volunteerdb_test WITH (FORCE)")
+            )
             await conn.execute(sa.text("CREATE DATABASE volunteerdb_test"))
     except Exception as exc:  # DB not running
         # Failing (not skipping) is deliberate: a skip exits 0, so a suite that
@@ -167,14 +170,20 @@ async def seeded(database):
         team = await teams.create(session, "Liturgy")
         v = await volunteers.create(session, "Maria", "Alvarez", "maria@example.org")
         await memberships.assign(session, v.id, team.id, TeamRole.member)
-        await users.create(session, "admin@example.org", is_admin=True, password="secret-pw")
-        await users.create(session, "member@example.org", volunteer_id=v.id, password="member-pw")
+        await users.create(
+            session, "admin@example.org", is_admin=True, password="secret-pw"
+        )
+        await users.create(
+            session, "member@example.org", volunteer_id=v.id, password="member-pw"
+        )
         return {"team_id": team.id, "volunteer_id": v.id}
 
 
 async def _token(client, email, password) -> dict:
     """Log in over the API and return an Authorization header dict."""
-    r = await client.post("/api/auth/login", json={"email": email, "password": password})
+    r = await client.post(
+        "/api/auth/login", json={"email": email, "password": password}
+    )
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
@@ -195,5 +204,7 @@ async def token_leader(client, seeded) -> dict:
     async with db_session() as session:
         lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
         await memberships.assign(session, lena.id, seeded["team_id"], TeamRole.leader)
-        await users.create(session, "lena@example.org", volunteer_id=lena.id, password="leader-pw")
+        await users.create(
+            session, "lena@example.org", volunteer_id=lena.id, password="leader-pw"
+        )
     return await _token(client, "lena@example.org", "leader-pw")

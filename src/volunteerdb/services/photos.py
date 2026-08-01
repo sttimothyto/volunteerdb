@@ -38,7 +38,12 @@ def normalize(data: bytes) -> bytes:
             white = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
             img = Image.alpha_composite(white, rgba).convert("RGB")
         img = ImageOps.fit(img, (PHOTO_SIZE, PHOTO_SIZE), Image.Resampling.LANCZOS)
-    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as exc:
+    except (
+        UnidentifiedImageError,
+        Image.DecompressionBombError,
+        OSError,
+        ValueError,
+    ) as exc:
         raise ValueError("not a readable image") from exc
     for quality in _QUALITY_STEPS:
         buffer = BytesIO()
@@ -106,7 +111,9 @@ async def versions(
     return dict((await session.execute(stmt)).all())  # type: ignore[arg-type]
 
 
-async def images(session: AsyncSession, volunteer_ids: Iterable[int]) -> dict[int, bytes]:
+async def images(
+    session: AsyncSession, volunteer_ids: Iterable[int]
+) -> dict[int, bytes]:
     """Blobs, for the spreadsheet exporter only."""
     ids = list(volunteer_ids)
     if not ids:

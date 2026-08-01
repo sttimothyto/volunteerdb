@@ -22,7 +22,9 @@ async def test_ongoing_membership_is_one_open_spell(database):
         spells = await volunteers.timeline(session, vid)
     assert len(spells) == 1
     spell = spells[0]
-    assert spell.team_id == tid and spell.team_name == "Choir" and not spell.team_deleted
+    assert (
+        spell.team_id == tid and spell.team_name == "Choir" and not spell.team_deleted
+    )
     assert spell.role == TeamRole.member
     assert spell.start == date.today()
     assert spell.end is None
@@ -33,12 +35,17 @@ async def test_ongoing_membership_is_one_open_spell(database):
 async def test_joined_on_overrides_start(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        await memberships.assign(session, vid, tid, TeamRole.core, joined_on=date(2020, 1, 1))
+        await memberships.assign(
+            session, vid, tid, TeamRole.core, joined_on=date(2020, 1, 1)
+        )
 
     async with db_session() as session:
         (spell,) = await volunteers.timeline(session, vid)
     assert spell.start == date(2020, 1, 1)
-    assert spell.segments[0].start == datetime.combine(date(2020, 1, 1), time.min).astimezone()
+    assert (
+        spell.segments[0].start
+        == datetime.combine(date(2020, 1, 1), time.min).astimezone()
+    )
 
 
 async def test_role_change_merges_into_one_spell(database):
@@ -62,7 +69,9 @@ async def test_notes_edit_does_not_split_segments(database):
         vid, tid = await _fixtures(session)
         await memberships.assign(session, vid, tid, TeamRole.member)
     async with db_session(user_id=1) as session:
-        await memberships.assign(session, vid, tid, TeamRole.member, notes="brings donuts")
+        await memberships.assign(
+            session, vid, tid, TeamRole.member, notes="brings donuts"
+        )
 
     async with db_session() as session:
         (spell,) = await volunteers.timeline(session, vid)
@@ -105,7 +114,9 @@ async def test_a_future_joined_on_does_not_invert_the_first_segment(database):
         spells = await volunteers.timeline(session, vid)
 
     for spell in spells:
-        assert spell.start <= (spell.end or date.max), f"spell ends before it starts: {spell}"
+        assert spell.start <= (spell.end or date.max), (
+            f"spell ends before it starts: {spell}"
+        )
         for segment in spell.segments:
             assert segment.start <= (segment.end or datetime.max.replace(tzinfo=UTC)), (
                 f"segment ends before it starts: {segment}"
@@ -119,10 +130,16 @@ async def test_spells_on_two_teams_stay_independent_and_sort_by_start(database):
         vid, choir = await _fixtures(session)
         ushers = await teams.create(session, "Ushers")
         ushers_id = ushers.id
-        await memberships.assign(session, vid, choir, TeamRole.member, joined_on=date(2019, 5, 1))
-        await memberships.assign(session, vid, ushers_id, TeamRole.core, joined_on=date(2021, 9, 1))
+        await memberships.assign(
+            session, vid, choir, TeamRole.member, joined_on=date(2019, 5, 1)
+        )
+        await memberships.assign(
+            session, vid, ushers_id, TeamRole.core, joined_on=date(2021, 9, 1)
+        )
     async with db_session(user_id=1) as session:
-        await memberships.assign(session, vid, choir, TeamRole.leader, joined_on=date(2019, 5, 1))
+        await memberships.assign(
+            session, vid, choir, TeamRole.leader, joined_on=date(2019, 5, 1)
+        )
 
     async with db_session() as session:
         spells = await volunteers.timeline(session, vid)
@@ -135,7 +152,9 @@ async def test_spells_on_two_teams_stay_independent_and_sort_by_start(database):
     assert choir_spell.role == TeamRole.leader
     assert [s.role for s in choir_spell.segments] == [TeamRole.member, TeamRole.leader]
     assert ushers_spell.role == TeamRole.core
-    assert len(ushers_spell.segments) == 1, "the Choir role change must not leak across teams"
+    assert len(ushers_spell.segments) == 1, (
+        "the Choir role change must not leak across teams"
+    )
 
 
 async def test_deleted_team_uses_last_historical_name(database):

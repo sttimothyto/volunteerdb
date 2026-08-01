@@ -36,9 +36,13 @@ async def send_email(to: str, subject: str, text_body: str) -> bool:
     except httpx.HTTPError:
         log.exception("mail.request_failed", to=to)
         return False
-    ok = resp.status_code == 200 and resp.json().get("data", {}).get("succeeded", 0) >= 1
+    ok = (
+        resp.status_code == 200 and resp.json().get("data", {}).get("succeeded", 0) >= 1
+    )
     if not ok:
-        log.error("mail.send_failed", to=to, status=resp.status_code, body=resp.text[:500])
+        log.error(
+            "mail.send_failed", to=to, status=resp.status_code, body=resp.text[:500]
+        )
     return ok
 
 

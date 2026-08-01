@@ -21,7 +21,9 @@ async def test_propose_then_accept_flow(database):
         leader = await users.create(
             session, "lena@example.org", volunteer_id=lena.id, password="pw"
         )
-        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="pw"
+        )
         leader_id, admin_id = leader.id, admin.id
         team_id, vera_id = liturgy.id, vera.id
 
@@ -46,7 +48,9 @@ async def test_propose_then_accept_flow(database):
         await user.open("/planning")
         await user.should_see("Vera Volunteer")
         user.find("Accept", kind=ui.button).click()
-        await user.should_see("Every team has a leader and a second-in-command. 🎉", retries=30)
+        await user.should_see(
+            "Every team has a leader and a second-in-command. 🎉", retries=30
+        )
         await user.should_see("Accepted")
 
         await user.open(f"/teams/{team_id}")

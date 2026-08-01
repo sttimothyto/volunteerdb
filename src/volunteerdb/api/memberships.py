@@ -27,7 +27,9 @@ async def assign(ctx: CtxDep, data: MembershipIn) -> MembershipOut:
 
 
 @router.patch("/{membership_id}")
-async def update(ctx: CtxDep, membership_id: int, data: MembershipPatch) -> MembershipOut:
+async def update(
+    ctx: CtxDep, membership_id: int, data: MembershipPatch
+) -> MembershipOut:
     membership = await service.get(ctx.session, membership_id)
     if membership is None:
         raise LookupError(f"membership {membership_id} not found")

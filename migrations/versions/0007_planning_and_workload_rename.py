@@ -28,7 +28,9 @@ branch_labels = None
 depends_on = None
 
 # the type is owned by revision 0001; create_type=False just references it
-team_role = postgresql.ENUM("leader", "second", "core", "member", name="team_role", create_type=False)
+team_role = postgresql.ENUM(
+    "leader", "second", "core", "member", name="team_role", create_type=False
+)
 
 
 def upgrade() -> None:
@@ -51,12 +53,19 @@ def upgrade() -> None:
         sa.Column("role", team_role, nullable=False),
         sa.Column("status", sa.String(20), nullable=False, server_default="proposed"),
         sa.Column("note", sa.Text),
-        sa.Column("proposed_by", sa.Integer, sa.ForeignKey("app_user.id", ondelete="SET NULL")),
         sa.Column(
-            "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+            "proposed_by", sa.Integer, sa.ForeignKey("app_user.id", ondelete="SET NULL")
+        ),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
         sa.Column("decided_at", sa.TIMESTAMP(timezone=True)),
-        sa.Column("decided_by", sa.Integer, sa.ForeignKey("app_user.id", ondelete="SET NULL")),
+        sa.Column(
+            "decided_by", sa.Integer, sa.ForeignKey("app_user.id", ondelete="SET NULL")
+        ),
         sa.CheckConstraint(
             "status IN ('proposed', 'accepted', 'declined', 'withdrawn')",
             name="ck_proposal_status",

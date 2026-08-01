@@ -31,7 +31,9 @@ def _class_literals() -> list[tuple[Path, int, str]]:
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-            if not (isinstance(node.func, ast.Attribute) and node.func.attr == "classes"):
+            if not (
+                isinstance(node.func, ast.Attribute) and node.func.attr == "classes"
+            ):
                 continue
             for arg in node.args:
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
@@ -49,7 +51,9 @@ def test_no_tailwind_hidden_paired_with_a_responsive_display():
             continue  # a bare `hidden` toggle (photo_dialog) is fine on its own
         overrides = [t for t in tokens if _RESPONSIVE_DISPLAY.match(t)]
         if overrides:
-            offenders.append(f"{path.name}:{lineno}: {classes!r} — {' '.join(overrides)}")
+            offenders.append(
+                f"{path.name}:{lineno}: {classes!r} — {' '.join(overrides)}"
+            )
 
     assert not offenders, (
         "Quasar's `.hidden{display:none!important}` beats these Tailwind display utilities, "

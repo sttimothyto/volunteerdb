@@ -30,7 +30,9 @@ async def update_custom_field(
     ctx: CtxDep, field_id: int, data: CustomFieldDefPatch
 ) -> CustomFieldDefOut:
     require(ctx.actor.is_admin, "only admins edit custom fields")
-    defn = await service.update_def(ctx.session, field_id, **data.model_dump(exclude_unset=True))
+    defn = await service.update_def(
+        ctx.session, field_id, **data.model_dump(exclude_unset=True)
+    )
     return CustomFieldDefOut.model_validate(defn)
 
 

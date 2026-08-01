@@ -37,8 +37,12 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
             session, "Maria", "Alvarez", "maria@example.org", "555-1234"
         )
         await memberships.assign(session, maria.id, liturgy.id, TeamRole.leader)
-        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
-        await users.create(session, "felix@example.org")  # passwordless -> email-code login
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="pw"
+        )
+        await users.create(
+            session, "felix@example.org"
+        )  # passwordless -> email-code login
         team_id, maria_id, admin_id = liturgy.id, maria.id, admin.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -111,9 +115,13 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
 async def test_photo_dialog_disclaimer_gates_upload(database):
     async with db_session() as session:
         liturgy = await teams.create(session, "Liturgy")
-        maria = await volunteers.create(session, "Maria", "Alvarez", "maria@example.org")
+        maria = await volunteers.create(
+            session, "Maria", "Alvarez", "maria@example.org"
+        )
         await memberships.assign(session, maria.id, liturgy.id, TeamRole.member)
-        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="pw"
+        )
         team_id, admin_id = liturgy.id, admin.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -129,7 +137,9 @@ async def test_photo_dialog_disclaimer_gates_upload(database):
         await user.should_see("reported to the authorities")
 
         upload_button = user.find("Upload", kind=ui.button).elements.pop()
-        assert not upload_button.enabled, "Upload stays disabled until the declaration is checked"
+        assert not upload_button.enabled, (
+            "Upload stays disabled until the declaration is checked"
+        )
         checkbox = user.find(kind=ui.checkbox).elements.pop()
         checkbox.value = True
         assert upload_button.enabled, "checking the declaration enables Upload"

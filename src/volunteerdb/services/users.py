@@ -5,7 +5,13 @@ from datetime import UTC, datetime, timedelta
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import burn_password_check, hash_password, new_otp_code, new_token, verify_password
+from ..auth import (
+    burn_password_check,
+    hash_password,
+    new_otp_code,
+    new_token,
+    verify_password,
+)
 from ..models import AppUser, Volunteer
 
 OTP_TTL = timedelta(minutes=10)
@@ -19,15 +25,21 @@ async def get(session: AsyncSession, user_id: int) -> AppUser | None:
 
 async def get_by_email(session: AsyncSession, email: str) -> AppUser | None:
     return (
-        await session.execute(sa.select(AppUser).where(AppUser.email == email.strip().lower()))
+        await session.execute(
+            sa.select(AppUser).where(AppUser.email == email.strip().lower())
+        )
     ).scalar_one_or_none()
 
 
 async def list_all(session: AsyncSession) -> list[AppUser]:
-    return list((await session.execute(sa.select(AppUser).order_by(AppUser.email))).scalars())
+    return list(
+        (await session.execute(sa.select(AppUser).order_by(AppUser.email))).scalars()
+    )
 
 
-async def authenticate(session: AsyncSession, email: str, password: str) -> AppUser | None:
+async def authenticate(
+    session: AsyncSession, email: str, password: str
+) -> AppUser | None:
     user = await get_by_email(session, email)
     if user is None or not user.is_active or user.password_hash is None:
         burn_password_check(password)  # uniform timing: no account-existence oracle
@@ -177,7 +189,11 @@ async def issue_api_token(session: AsyncSession, user_id: int) -> str:
 
 
 async def set_flags(
-    session: AsyncSession, user_id: int, *, is_admin: bool | None = None, is_active: bool | None = None
+    session: AsyncSession,
+    user_id: int,
+    *,
+    is_admin: bool | None = None,
+    is_active: bool | None = None,
 ) -> AppUser:
     user = await get(session, user_id)
     if user is None:
@@ -193,7 +209,9 @@ async def set_flags(
 @dataclass
 class ProvisionReport:
     created: list[tuple[Volunteer, AppUser]] = field(default_factory=list)
-    skipped: list[tuple[Volunteer, str]] = field(default_factory=list)  # (volunteer, reason)
+    skipped: list[tuple[Volunteer, str]] = field(
+        default_factory=list
+    )  # (volunteer, reason)
 
 
 async def bulk_provision(session: AsyncSession) -> ProvisionReport:
@@ -216,7 +234,9 @@ async def bulk_provision(session: AsyncSession) -> ProvisionReport:
             sa.select(AppUser.volunteer_id).where(AppUser.volunteer_id.is_not(None))
         )
     }
-    used_emails = {email for (email,) in await session.execute(sa.select(AppUser.email))}
+    used_emails = {
+        email for (email,) in await session.execute(sa.select(AppUser.email))
+    }
     for v in volunteers:
         email = (v.email or "").strip().lower()
         if v.id in linked:

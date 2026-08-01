@@ -50,13 +50,17 @@ class Actor:
     def can_view_roster_names(self, team_id: int) -> bool:
         return self.can_view_full_roster(team_id) or team_id in self.names_view_team_ids
 
-    def can_edit_volunteer(self, volunteer_id: int, volunteer_team_ids: set[int]) -> bool:
+    def can_edit_volunteer(
+        self, volunteer_id: int, volunteer_team_ids: set[int]
+    ) -> bool:
         """Contact-info edits: admin, self, or leader/second of one of their teams."""
         if self.is_admin or volunteer_id == self.volunteer_id:
             return True
         return bool(self.managed_team_ids & volunteer_team_ids)
 
-    def can_view_volunteer(self, volunteer_id: int, volunteer_team_ids: set[int]) -> bool:
+    def can_view_volunteer(
+        self, volunteer_id: int, volunteer_team_ids: set[int]
+    ) -> bool:
         """Full profile view: admin, self, or full-roster rights on a shared team."""
         if self.is_admin or volunteer_id == self.volunteer_id:
             return True

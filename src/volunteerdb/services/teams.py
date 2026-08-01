@@ -15,7 +15,9 @@ class CycleError(ValueError):
 _UNSET: object = object()
 
 
-async def get(session: AsyncSession, team_id: int, at: datetime | None = None) -> Team | None:
+async def get(
+    session: AsyncSession, team_id: int, at: datetime | None = None
+) -> Team | None:
     T = entity(Team, at)
     rows = await fetch(session, sa.select(T).where(T.id == team_id), at)
     return rows[0][0] if rows else None
@@ -51,7 +53,11 @@ async def search(
         (t, paths[t.id])
         for t in all_teams
         if t.is_active
-        and (q in t.name.lower() or q in (t.description or "").lower() or q in paths[t.id].lower())
+        and (
+            q in t.name.lower()
+            or q in (t.description or "").lower()
+            or q in paths[t.id].lower()
+        )
     ]
     hits.sort(key=lambda pair: pair[1].lower())
     return hits
@@ -152,7 +158,9 @@ async def update(
     return team
 
 
-async def _check_no_cycle(session: AsyncSession, team_id: int, new_parent_id: int | None) -> None:
+async def _check_no_cycle(
+    session: AsyncSession, team_id: int, new_parent_id: int | None
+) -> None:
     if new_parent_id is None:
         return
     teams = await list_all(session)
@@ -174,7 +182,8 @@ async def roster(
     """Memberships with their volunteers, leaders first."""
     M, V = entity(Membership, at), entity(Volunteer, at)
     role_order = sa.case(
-        {role.value: i for i, role in enumerate(TeamRole)}, value=sa.cast(M.role, sa.String)
+        {role.value: i for i, role in enumerate(TeamRole)},
+        value=sa.cast(M.role, sa.String),
     )
     stmt = (
         sa.select(M, V)

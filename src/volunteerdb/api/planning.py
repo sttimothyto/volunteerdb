@@ -24,8 +24,12 @@ async def list_proposals(
     ctx: CtxDep, team_id: int | None = None, status: str | None = None
 ) -> list[ProposalOut]:
     """Proposals the caller may see: admins all, leaders/seconds their subtree."""
-    require(ctx.actor.is_admin or bool(ctx.actor.managed_team_ids), "use the planning page")
-    views = await service.list_proposals(ctx.session, ctx.actor, team_id=team_id, status=status)
+    require(
+        ctx.actor.is_admin or bool(ctx.actor.managed_team_ids), "use the planning page"
+    )
+    views = await service.list_proposals(
+        ctx.session, ctx.actor, team_id=team_id, status=status
+    )
     return [_out(v.proposal) for v in views]
 
 
@@ -47,7 +51,9 @@ async def _decided(ctx, proposal_id: int) -> Proposal:
     proposal = await service.get(ctx.session, proposal_id)
     if proposal is None:
         raise LookupError(f"proposal {proposal_id} not found")
-    require(ctx.actor.can_manage_team(proposal.team_id), "decide proposals for this team")
+    require(
+        ctx.actor.can_manage_team(proposal.team_id), "decide proposals for this team"
+    )
     return proposal
 
 
@@ -55,13 +61,17 @@ async def _decided(ctx, proposal_id: int) -> Proposal:
 async def accept_proposal(ctx: CtxDep, proposal_id: int) -> ProposalOut:
     """Accept: flips the status and creates/upgrades the membership together."""
     await _decided(ctx, proposal_id)
-    return _out(await service.accept(ctx.session, proposal_id, decided_by=ctx.actor.user.id))
+    return _out(
+        await service.accept(ctx.session, proposal_id, decided_by=ctx.actor.user.id)
+    )
 
 
 @router.post("/proposals/{proposal_id}/decline")
 async def decline_proposal(ctx: CtxDep, proposal_id: int) -> ProposalOut:
     await _decided(ctx, proposal_id)
-    return _out(await service.decline(ctx.session, proposal_id, decided_by=ctx.actor.user.id))
+    return _out(
+        await service.decline(ctx.session, proposal_id, decided_by=ctx.actor.user.id)
+    )
 
 
 @router.post("/proposals/{proposal_id}/withdraw")
@@ -75,4 +85,6 @@ async def withdraw_proposal(ctx: CtxDep, proposal_id: int) -> ProposalOut:
         or ctx.actor.can_manage_team(proposal.team_id),
         "withdraw this proposal",
     )
-    return _out(await service.withdraw(ctx.session, proposal_id, decided_by=ctx.actor.user.id))
+    return _out(
+        await service.withdraw(ctx.session, proposal_id, decided_by=ctx.actor.user.id)
+    )

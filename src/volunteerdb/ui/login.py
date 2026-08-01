@@ -45,10 +45,14 @@ def login_page(request: Request, redirect_to: str = "/"):
             if user is None:
                 for key in keys:
                     throttle.hit(key)
-                logger.warning("auth.login_failed", method="password", email=addr, ip=ip)
+                logger.warning(
+                    "auth.login_failed", method="password", email=addr, ip=ip
+                )
                 ui.notify("Invalid email or password", color="negative")
                 return
-            audit_log("auth.login", method="password", user=f"{user.id}:{user.email}", ip=ip)
+            audit_log(
+                "auth.login", method="password", user=f"{user.id}:{user.email}", ip=ip
+            )
             finish(user.id)
         else:
             await send_code()
@@ -80,9 +84,13 @@ def login_page(request: Request, redirect_to: str = "/"):
 
     async def verify() -> None:
         async with db_session() as session:
-            user = await user_service.verify_otp(session, pending_email, code_input.value or "")
+            user = await user_service.verify_otp(
+                session, pending_email, code_input.value or ""
+            )
         if user is None:
-            logger.warning("auth.login_failed", method="otp", email=pending_email, ip=ip)
+            logger.warning(
+                "auth.login_failed", method="otp", email=pending_email, ip=ip
+            )
             ui.notify(
                 "That code didn't work — it may be mistyped or expired. "
                 "Resend to get a fresh one.",
@@ -100,11 +108,18 @@ def login_page(request: Request, redirect_to: str = "/"):
         ui.label("Volunteer Database (VDB)").classes("text-2xl vdb-brand")
         with ui.card().classes("w-80 gap-3"):
             with ui.column().classes("w-full gap-3") as credentials_step:
-                email = ui.input("Email").props("outlined dense").classes("w-full").on(
-                    "keydown.enter", submit
+                email = (
+                    ui.input("Email")
+                    .props("outlined dense")
+                    .classes("w-full")
+                    .on("keydown.enter", submit)
                 )
                 password = (
-                    ui.input("Password (optional)", password=True, password_toggle_button=True)
+                    ui.input(
+                        "Password (optional)",
+                        password=True,
+                        password_toggle_button=True,
+                    )
                     .props("outlined dense")
                     .classes("w-full")
                     .on("keydown.enter", submit)
@@ -158,7 +173,9 @@ def invite_page(token: str, request: Request):
             ui.notify("This invite link is invalid or already used", color="negative")
             return
         audit_log("auth.invite_redeemed", user=f"{user.id}:{user.email}")
-        await mail.send_email(user.email, *mail.welcome_email(login_url, has_password=bool(pw)))
+        await mail.send_email(
+            user.email, *mail.welcome_email(login_url, has_password=bool(pw))
+        )
         establish_session(user.id, remember=remember.value)
         ui.notify(
             "Welcome! Your password is set."
@@ -176,7 +193,9 @@ def invite_page(token: str, request: Request):
                 "with a one-time code emailed to you each time."
             ).classes("text-sm text-gray-500")
             password = (
-                ui.input("Password (optional)", password=True, password_toggle_button=True)
+                ui.input(
+                    "Password (optional)", password=True, password_toggle_button=True
+                )
                 .props("outlined dense")
                 .classes("w-full")
             )

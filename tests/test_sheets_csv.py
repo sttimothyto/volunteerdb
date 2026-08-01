@@ -7,7 +7,11 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
-from volunteerdb.sheets.common import MEMBERSHIP_HEADERS, PHOTO_HEADER, VOLUNTEER_HEADERS
+from volunteerdb.sheets.common import (
+    MEMBERSHIP_HEADERS,
+    PHOTO_HEADER,
+    VOLUNTEER_HEADERS,
+)
 
 
 def _csv_bytes(header, rows) -> bytes:
@@ -24,7 +28,9 @@ def _rows(content: bytes) -> list[list[str]]:
 
 async def _setup(session):
     liturgy = await teams.create(session, "Liturgy")
-    anna = await volunteers.create(session, "Anna", "Smith", "anna@example.org", phone="555-1")
+    anna = await volunteers.create(
+        session, "Anna", "Smith", "anna@example.org", phone="555-1"
+    )
     await memberships.assign(session, anna.id, liturgy.id, TeamRole.leader)
     return liturgy, anna
 
@@ -68,7 +74,8 @@ async def test_csv_imports_add_and_update(database):
     assert report.applied and report.volunteers_created == 1
 
     content = _csv_bytes(
-        MEMBERSHIP_HEADERS, [["cara@example.org", "Cara White", "Liturgy", "member", "2024-05-03", ""]]
+        MEMBERSHIP_HEADERS,
+        [["cara@example.org", "Cara White", "Liturgy", "member", "2024-05-03", ""]],
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert not report.has_errors, report.errors
@@ -122,7 +129,8 @@ async def test_csv_unreadable_date_warns_and_blank_active_is_active(database):
         assert cara.is_active, "blank Active means active, as in xlsx"
 
     content = _csv_bytes(
-        MEMBERSHIP_HEADERS, [["cara@example.org", "Cara White", "Liturgy", "member", "05/03/2024", ""]]
+        MEMBERSHIP_HEADERS,
+        [["cara@example.org", "Cara White", "Liturgy", "member", "05/03/2024", ""]],
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert not report.has_errors and report.applied

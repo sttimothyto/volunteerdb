@@ -21,15 +21,21 @@ async def parish(database):
         music = await teams.create(session, "Music", parent_team_id=liturgy.id)
         hospitality = await teams.create(session, "Hospitality")
         lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-        mia = await volunteers.create(session, "Mia", "Member", "mia@example.org", phone="555-1")
-        otto = await volunteers.create(session, "Otto", "Out", "otto@example.org", phone="555-2")
+        mia = await volunteers.create(
+            session, "Mia", "Member", "mia@example.org", phone="555-1"
+        )
+        otto = await volunteers.create(
+            session, "Otto", "Out", "otto@example.org", phone="555-2"
+        )
         await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
         await memberships.assign(session, mia.id, liturgy.id, TeamRole.member)
         await memberships.assign(session, otto.id, hospitality.id, TeamRole.member)
         leader = await users.create(
             session, "lena@example.org", volunteer_id=lena.id, password="pw"
         )
-        member = await users.create(session, "mia@example.org", volunteer_id=mia.id, password="pw")
+        member = await users.create(
+            session, "mia@example.org", volunteer_id=mia.id, password="pw"
+        )
         return {
             "liturgy": liturgy.id,
             "music": music.id,
@@ -54,9 +60,13 @@ def _workbook_bytes(vol_rows=(), mem_rows=()) -> bytes:
 
 async def test_membership_on_managed_subtree_applied(parish):
     content = _workbook_bytes(
-        mem_rows=[["mia@example.org", "Mia Member", "Liturgy / Music", "member", None, None]]
+        mem_rows=[
+            ["mia@example.org", "Mia Member", "Liturgy / Music", "member", None, None]
+        ]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=parish["leader_uid"])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
     assert not report.has_errors, report.errors
     assert report.applied and report.memberships_created == 1
 
@@ -68,7 +78,9 @@ async def test_unmanaged_team_row_blocks_everything(parish):
             ["otto@example.org", "Otto Out", "Hospitality", "core", None, None],
         ]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=parish["leader_uid"])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
     assert report.has_errors and not report.applied
     assert any("not a team you lead" in e.message for e in report.errors)
     async with db_session() as session:
@@ -81,26 +93,44 @@ async def test_new_volunteer_with_managed_membership_created(parish):
         vol_rows=[["Nora", "New", "nora@example.org", None, None, "yes"]],
         mem_rows=[["nora@example.org", "Nora New", "Liturgy", "member", None, None]],
     )
-    report = await importer.run_import(content, dry_run=False, user_id=parish["leader_uid"])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
     assert not report.has_errors, report.errors
-    assert report.applied and report.volunteers_created == 1 and report.memberships_created == 1
+    assert (
+        report.applied
+        and report.volunteers_created == 1
+        and report.memberships_created == 1
+    )
 
 
 async def test_new_volunteer_without_membership_rejected(parish):
-    content = _workbook_bytes(vol_rows=[["Nora", "New", "nora@example.org", None, None, "yes"]])
-    report = await importer.run_import(content, dry_run=False, user_id=parish["leader_uid"])
+    content = _workbook_bytes(
+        vol_rows=[["Nora", "New", "nora@example.org", None, None, "yes"]]
+    )
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
     assert report.has_errors and not report.applied
-    assert any("must also be added to a team you lead" in e.message for e in report.errors)
+    assert any(
+        "must also be added to a team you lead" in e.message for e in report.errors
+    )
 
 
 async def test_new_volunteer_with_unmanaged_membership_rejected(parish):
     content = _workbook_bytes(
         vol_rows=[["Nora", "New", "nora@example.org", None, None, "yes"]],
-        mem_rows=[["nora@example.org", "Nora New", "Hospitality", "member", None, None]],
+        mem_rows=[
+            ["nora@example.org", "Nora New", "Hospitality", "member", None, None]
+        ],
     )
-    report = await importer.run_import(content, dry_run=False, user_id=parish["leader_uid"])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
     assert not report.applied
-    assert any("must also be added to a team you lead" in e.message for e in report.errors)
+    assert any(
+        "must also be added to a team you lead" in e.message for e in report.errors
+    )
     assert any("not a team you lead" in e.message for e in report.errors)
 
 
@@ -108,7 +138,9 @@ async def test_contact_update_of_managed_volunteer_applied(parish):
     content = _workbook_bytes(
         vol_rows=[["Mia", "Member", "mia@example.org", "555-99", None, "yes"]]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=parish["leader_uid"])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
     assert not report.has_errors, report.errors
     assert report.applied and report.volunteers_updated == 1
     async with db_session() as session:
@@ -122,7 +154,9 @@ async def test_update_of_outsider_rejected_even_when_identical(parish):
     content = _workbook_bytes(
         vol_rows=[["Otto", "Out", "otto@example.org", "555-2", None, "yes"]]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=parish["leader_uid"])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
     assert report.has_errors and not report.applied
     assert any("not allowed to edit volunteer" in e.message for e in report.errors)
 
@@ -132,9 +166,15 @@ async def test_update_ok_when_same_file_adds_them_to_managed_team(parish):
         vol_rows=[["Otto", "Out", "otto@example.org", "555-77", None, "yes"]],
         mem_rows=[["otto@example.org", "Otto Out", "Liturgy", "member", None, None]],
     )
-    report = await importer.run_import(content, dry_run=False, user_id=parish["leader_uid"])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
     assert not report.has_errors, report.errors
-    assert report.applied and report.volunteers_updated == 1 and report.memberships_created == 1
+    assert (
+        report.applied
+        and report.volunteers_updated == 1
+        and report.memberships_created == 1
+    )
     async with db_session() as session:
         (otto,) = await volunteers.search(session, "Otto")
         assert otto.phone == "555-77"
@@ -143,7 +183,9 @@ async def test_update_ok_when_same_file_adds_them_to_managed_team(parish):
 async def test_scoped_export_reimports_as_noop(parish):
     async with db_session() as session:
         content = await exporter.export_workbook(session, team_ids={parish["liturgy"]})
-    report = await importer.run_import(content, dry_run=False, user_id=parish["leader_uid"])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
     assert not report.has_errors, report.errors
     assert report.applied
     assert report.volunteers_created == report.volunteers_updated == 0
@@ -156,6 +198,8 @@ async def test_user_without_managed_teams_gets_row_errors(parish):
         vol_rows=[["Nora", "New", "nora@example.org", None, None, "yes"]],
         mem_rows=[["mia@example.org", "Mia Member", "Liturgy", "core", None, None]],
     )
-    report = await importer.run_import(content, dry_run=False, user_id=parish["member_uid"])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["member_uid"]
+    )
     assert report.has_errors and not report.applied
     assert len(report.errors) == 2

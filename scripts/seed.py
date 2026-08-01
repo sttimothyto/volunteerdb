@@ -51,36 +51,151 @@ TEAMS: dict[str, list[str]] = {
 # (first, last, email, [(team, role)])
 L, S, C, M = TeamRole.leader, TeamRole.second, TeamRole.core, TeamRole.member
 VOLUNTEERS: list[tuple[str, str, str | None, list[tuple[str, TeamRole]]]] = [
-    ("Maria", "Alvarez", "maria.alvarez@example.org", [("Liturgy", L), ("Altar Society", L), ("Hospitality", C)]),
-    ("James", "Okafor", "james.okafor@example.org", [("Liturgy", S), ("Music Ministry", L)]),
-    ("Rose", "Nguyen", "rose.nguyen@example.org", [("Lectors", L), ("Faith Formation", C)]),
-    ("Peter", "Kowalski", "peter.kowalski@example.org", [("Altar Servers", L), ("Youth Group", S)]),
-    ("Agnes", "Mbeki", "agnes.mbeki@example.org", [("Faith Formation", L), ("Catechists", L)]),
-    ("Thomas", "Lindqvist", "thomas.l@example.org", [("Maintenance", L), ("Gardening", S)]),
-    ("Lucia", "Fernandez", "lucia.f@example.org", [("St. Vincent de Paul", L), ("Hospitality", S)]),
-    ("David", "Chen", "david.chen@example.org", [("Finance Council", L), ("Communications", S)]),
-    ("Sarah", "O'Brien", "sarah.obrien@example.org", [("Communications", L), ("Lectors", C)]),
-    ("Emmanuel", "Diallo", "emmanuel.d@example.org", [("Youth Group", L), ("Catechists", S)]),
-    ("Anna", "Horvath", "anna.h@example.org", [("Sacristans", L), ("Altar Society", S)]),
-    ("Miguel", "Santos", "miguel.santos@example.org", [("RCIA", L), ("Faith Formation", S)]),
+    (
+        "Maria",
+        "Alvarez",
+        "maria.alvarez@example.org",
+        [("Liturgy", L), ("Altar Society", L), ("Hospitality", C)],
+    ),
+    (
+        "James",
+        "Okafor",
+        "james.okafor@example.org",
+        [("Liturgy", S), ("Music Ministry", L)],
+    ),
+    (
+        "Rose",
+        "Nguyen",
+        "rose.nguyen@example.org",
+        [("Lectors", L), ("Faith Formation", C)],
+    ),
+    (
+        "Peter",
+        "Kowalski",
+        "peter.kowalski@example.org",
+        [("Altar Servers", L), ("Youth Group", S)],
+    ),
+    (
+        "Agnes",
+        "Mbeki",
+        "agnes.mbeki@example.org",
+        [("Faith Formation", L), ("Catechists", L)],
+    ),
+    (
+        "Thomas",
+        "Lindqvist",
+        "thomas.l@example.org",
+        [("Maintenance", L), ("Gardening", S)],
+    ),
+    (
+        "Lucia",
+        "Fernandez",
+        "lucia.f@example.org",
+        [("St. Vincent de Paul", L), ("Hospitality", S)],
+    ),
+    (
+        "David",
+        "Chen",
+        "david.chen@example.org",
+        [("Finance Council", L), ("Communications", S)],
+    ),
+    (
+        "Sarah",
+        "O'Brien",
+        "sarah.obrien@example.org",
+        [("Communications", L), ("Lectors", C)],
+    ),
+    (
+        "Emmanuel",
+        "Diallo",
+        "emmanuel.d@example.org",
+        [("Youth Group", L), ("Catechists", S)],
+    ),
+    (
+        "Anna",
+        "Horvath",
+        "anna.h@example.org",
+        [("Sacristans", L), ("Altar Society", S)],
+    ),
+    (
+        "Miguel",
+        "Santos",
+        "miguel.santos@example.org",
+        [("RCIA", L), ("Faith Formation", S)],
+    ),
     ("Grace", "Kim", "grace.kim@example.org", [("Music Ministry", S), ("Liturgy", C)]),
-    ("John", "Muller", "john.muller@example.org", [("Finance Council", S), ("Maintenance", C)]),
-    ("Teresa", "Romano", "teresa.romano@example.org", [("Altar Society", C), ("Hospitality", M)]),
-    ("Paul", "Adeyemi", "paul.a@example.org", [("Altar Servers", S), ("Youth Group", C)]),
+    (
+        "John",
+        "Muller",
+        "john.muller@example.org",
+        [("Finance Council", S), ("Maintenance", C)],
+    ),
+    (
+        "Teresa",
+        "Romano",
+        "teresa.romano@example.org",
+        [("Altar Society", C), ("Hospitality", M)],
+    ),
+    (
+        "Paul",
+        "Adeyemi",
+        "paul.a@example.org",
+        [("Altar Servers", S), ("Youth Group", C)],
+    ),
     ("Claire", "Dubois", "claire.dubois@example.org", [("Lectors", S), ("RCIA", C)]),
-    ("Frank", "Novak", "frank.novak@example.org", [("Gardening", L), ("Maintenance", M)]),
-    ("Rita", "Fitzgerald", "rita.f@example.org", [("Sacristans", S), ("Altar Society", M)]),
+    (
+        "Frank",
+        "Novak",
+        "frank.novak@example.org",
+        [("Gardening", L), ("Maintenance", M)],
+    ),
+    (
+        "Rita",
+        "Fitzgerald",
+        "rita.f@example.org",
+        [("Sacristans", S), ("Altar Society", M)],
+    ),
     ("Samuel", "Torres", "samuel.torres@example.org", [("St. Vincent de Paul", S)]),
-    ("Helen", "Park", "helen.park@example.org", [("Catechists", C), ("Communications", C)]),
+    (
+        "Helen",
+        "Park",
+        "helen.park@example.org",
+        [("Catechists", C), ("Communications", C)],
+    ),
     ("George", "Ivanov", "george.ivanov@example.org", [("Music Ministry", C)]),
-    ("Monica", "Silva", "monica.silva@example.org", [("Hospitality", C), ("St. Vincent de Paul", C)]),
+    (
+        "Monica",
+        "Silva",
+        "monica.silva@example.org",
+        [("Hospitality", C), ("St. Vincent de Paul", C)],
+    ),
     ("Andrew", "Walsh", None, [("Maintenance", M), ("Gardening", M)]),
-    ("Beatrice", "Laurent", "bea.laurent@example.org", [("Lectors", M), ("Altar Society", M)]),
-    ("Charles", "Osei", "charles.osei@example.org", [("Youth Group", M), ("Music Ministry", M)]),
+    (
+        "Beatrice",
+        "Laurent",
+        "bea.laurent@example.org",
+        [("Lectors", M), ("Altar Society", M)],
+    ),
+    (
+        "Charles",
+        "Osei",
+        "charles.osei@example.org",
+        [("Youth Group", M), ("Music Ministry", M)],
+    ),
     ("Dorothy", "Meyer", None, [("Hospitality", M)]),
-    ("Felix", "Garcia", "felix.garcia@example.org", [("Altar Servers", M), ("Youth Group", M)]),
+    (
+        "Felix",
+        "Garcia",
+        "felix.garcia@example.org",
+        [("Altar Servers", M), ("Youth Group", M)],
+    ),
     ("Irene", "Papadopoulos", "irene.p@example.org", [("Catechists", M), ("RCIA", M)]),
-    ("Leo", "Brennan", "leo.brennan@example.org", [("St. Vincent de Paul", M), ("Finance Council", M)]),
+    (
+        "Leo",
+        "Brennan",
+        "leo.brennan@example.org",
+        [("St. Vincent de Paul", M), ("Finance Council", M)],
+    ),
 ]
 
 # real-world join dates for some current memberships (varied bar lengths)
@@ -117,7 +232,9 @@ PROMOTED = ("Peter Kowalski", "Altar Servers")
 
 async def seed() -> None:
     async with db_session() as session:
-        if (await session.execute(sa.select(sa.func.count()).select_from(Volunteer))).scalar():
+        if (
+            await session.execute(sa.select(sa.func.count()).select_from(Volunteer))
+        ).scalar():
             sys.exit("Database already contains volunteers; refusing to seed.")
 
         team_ids: dict[str, int] = {}
@@ -128,7 +245,10 @@ async def seed() -> None:
             team_ids[parent_name] = parent.id
             for sub in subs:
                 child = await teams.create(
-                    session, sub, parent_team_id=parent.id, workload_weight=WEIGHTS.get(sub)
+                    session,
+                    sub,
+                    parent_team_id=parent.id,
+                    workload_weight=WEIGHTS.get(sub),
                 )
                 team_ids[sub] = child.id
 
@@ -142,7 +262,11 @@ async def seed() -> None:
         # one exists (that's what makes Grace's rejoin a separate spell)
         for name, team_name, role, joined, left in PAST_SPELLS:
             m = await memberships.assign(
-                session, volunteer_ids[name], team_ids[team_name], role, joined_on=joined
+                session,
+                volunteer_ids[name],
+                team_ids[team_name],
+                role,
+                joined_on=joined,
             )
             mid = m.id
             await memberships.remove(session, mid)
@@ -154,7 +278,9 @@ async def seed() -> None:
                     " WHERE id = :mid AND op = 'D'"
                 ),
                 {
-                    "joined": datetime(joined.year, joined.month, joined.day, 9, tzinfo=UTC),
+                    "joined": datetime(
+                        joined.year, joined.month, joined.day, 9, tzinfo=UTC
+                    ),
                     "left": datetime(left.year, left.month, left.day, 17, tzinfo=UTC),
                     "mid": mid,
                 },
@@ -176,17 +302,25 @@ async def seed() -> None:
         # a mid-spell promotion (op='U' history row): Peter served as a plain
         # Altar Server before taking over as leader — two-color timeline bar
         await memberships.assign(
-            session, volunteer_ids[PROMOTED[0]], team_ids[PROMOTED[1]], M,
+            session,
+            volunteer_ids[PROMOTED[0]],
+            team_ids[PROMOTED[1]],
+            M,
             joined_on=JOINED[PROMOTED],
         )
-        await memberships.assign(session, volunteer_ids[PROMOTED[0]], team_ids[PROMOTED[1]], L)
+        await memberships.assign(
+            session, volunteer_ids[PROMOTED[0]], team_ids[PROMOTED[1]], L
+        )
 
         # demo custom fields (admin-extensible volunteer properties)
         await custom_fields.create_def(
             session, "Safeguarding training", FieldType.date, show_in_list=True
         )
         await custom_fields.create_def(
-            session, "Preferred contact", FieldType.select, options=["Email", "Phone", "Post"]
+            session,
+            "Preferred contact",
+            FieldType.select,
+            options=["Email", "Phone", "Post"],
         )
         await custom_fields.set_values(
             session,
@@ -197,11 +331,15 @@ async def seed() -> None:
             session, volunteer_ids["Felix Garcia"], {"preferred_contact": "Phone"}
         )
         await custom_fields.set_values(
-            session, volunteer_ids["Agnes Mbeki"], {"safeguarding_training": "2026-01-20"}
+            session,
+            volunteer_ids["Agnes Mbeki"],
+            {"safeguarding_training": "2026-01-20"},
         )
 
         admin_password = os.environ.get("VDB_SEED_ADMIN_PASSWORD", "changeme")
-        await users.create(session, "admin@sttimothy.example", is_admin=True, password=admin_password)
+        await users.create(
+            session, "admin@sttimothy.example", is_admin=True, password=admin_password
+        )
         # a leader account to try out per-team permissions
         await users.create(
             session,
@@ -218,7 +356,9 @@ async def seed() -> None:
         )
 
     print("Seeded:")
-    print(f"  {sum(len(s) + 1 for s in TEAMS.values())} teams, {len(VOLUNTEERS)} volunteers")
+    print(
+        f"  {sum(len(s) + 1 for s in TEAMS.values())} teams, {len(VOLUNTEERS)} volunteers"
+    )
     print(f"  {len(WEIGHTS)} weighted teams + 2 custom fields (workload/fields demo)")
     print(
         f"  {len(PAST_SPELLS)} ended spells, {len(JOINED)} backdated joins,"

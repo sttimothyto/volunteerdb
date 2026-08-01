@@ -41,7 +41,9 @@ async def test_xlsx_export_carries_base64_and_reimports_as_noop(database):
 
     vs = load_workbook(BytesIO(content))[VOLUNTEER_SHEET]
     assert [c.value for c in vs[1]] == [*VOLUNTEER_HEADERS, PHOTO_HEADER]
-    anna_row = next(r for r in vs.iter_rows(min_row=2, values_only=True) if r[0] == "Anna")
+    anna_row = next(
+        r for r in vs.iter_rows(min_row=2, values_only=True) if r[0] == "Anna"
+    )
     cell = anna_row[6]
     assert cell and len(cell) <= 32_767, "base64 must fit an Excel cell"
     assert base64.b64decode(cell, validate=True) == stored
@@ -86,9 +88,13 @@ async def test_csv_import_sets_photo_on_new_and_existing_volunteers(database):
         stored = await photos.get(session, anna_id)
         assert stored is not None
         image = Image.open(BytesIO(stored.image))
-        assert image.size == (photos.PHOTO_SIZE, photos.PHOTO_SIZE), "import normalizes too"
+        assert image.size == (photos.PHOTO_SIZE, photos.PHOTO_SIZE), (
+            "import normalizes too"
+        )
         (noah,) = await volunteers.search(session, "Noah")
-        assert await photos.get(session, noah.id) is not None, "photo lands on created rows"
+        assert await photos.get(session, noah.id) is not None, (
+            "photo lands on created rows"
+        )
 
 
 async def test_blank_photo_cell_leaves_photo_unchanged(database):
@@ -134,7 +140,17 @@ async def test_dry_run_counts_photos_but_writes_nothing(database):
         anna_id = anna.id
     content = _csv_bytes(
         [*VOLUNTEER_HEADERS, PHOTO_HEADER],
-        [["Anna", "Smith", "anna@example.org", "", "", "yes", base64.b64encode(_png()).decode()]],
+        [
+            [
+                "Anna",
+                "Smith",
+                "anna@example.org",
+                "",
+                "",
+                "yes",
+                base64.b64encode(_png()).decode(),
+            ]
+        ],
     )
     report = await importer.run_import(content, dry_run=True, user_id=None)
     assert not report.has_errors and not report.applied and report.photos_set == 1

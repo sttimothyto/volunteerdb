@@ -35,29 +35,43 @@ async def workload_page():
             multiplier_inputs: dict[TeamRole, ui.number] = {}
             with ui.row().classes("gap-4"):
                 for role in TeamRole:
-                    multiplier_inputs[role] = ui.number(
-                        ROLE_LABELS[role],
-                        value=float(config.multipliers[role]),
-                        min=0,
-                        step=0.5,
-                    ).props("outlined dense").classes("w-40")
+                    multiplier_inputs[role] = (
+                        ui.number(
+                            ROLE_LABELS[role],
+                            value=float(config.multipliers[role]),
+                            min=0,
+                            step=0.5,
+                        )
+                        .props("outlined dense")
+                        .classes("w-40")
+                    )
 
             ui.label("Colour bands").classes("text-lg font-medium")
             band_rows: list[tuple[ui.input, ui.color_input, ui.number | None]] = []
             for i, b in enumerate(config.bands):
                 is_last = i == len(config.bands) - 1
                 with ui.row().classes("items-center gap-3"):
-                    label = ui.input("Label", value=b.label).props("outlined dense").classes("w-32")
-                    color = ui.color_input(label="Colour", value=b.color).props("dense").classes(
-                        "w-36"
+                    label = (
+                        ui.input("Label", value=b.label)
+                        .props("outlined dense")
+                        .classes("w-32")
+                    )
+                    color = (
+                        ui.color_input(label="Colour", value=b.color)
+                        .props("dense")
+                        .classes("w-36")
                     )
                     if is_last:
                         upper = None
                         ui.label("everything above").classes("text-sm text-gray-500")
                     else:
-                        upper = ui.number(
-                            "up to score", value=float(b.upper), min=0, step=0.5
-                        ).props("outlined dense").classes("w-32")
+                        upper = (
+                            ui.number(
+                                "up to score", value=float(b.upper), min=0, step=0.5
+                            )
+                            .props("outlined dense")
+                            .classes("w-32")
+                        )
                     band_rows.append((label, color, upper))
 
             @notify_errors
@@ -95,11 +109,17 @@ async def workload_page():
                 with ui.row().classes("w-full items-center gap-3"):
                     ui.label(paths[team.id]).classes("w-96")
                     originals[team.id] = team.workload_weight
-                    weight_inputs[team.id] = ui.number(
-                        value=None if team.workload_weight is None else float(team.workload_weight),
-                        min=0,
-                        step=0.5,
-                    ).props("outlined dense clearable").classes("w-32")
+                    weight_inputs[team.id] = (
+                        ui.number(
+                            value=None
+                            if team.workload_weight is None
+                            else float(team.workload_weight),
+                            min=0,
+                            step=0.5,
+                        )
+                        .props("outlined dense clearable")
+                        .classes("w-32")
+                    )
 
             @notify_errors
             async def save_weights() -> None:
@@ -109,9 +129,13 @@ async def workload_page():
                     for team_id, inp in weight_inputs.items():
                         new = None if inp.value is None else Decimal(str(inp.value))
                         if new != originals[team_id]:
-                            await team_service.update(session, team_id, workload_weight=new)
+                            await team_service.update(
+                                session, team_id, workload_weight=new
+                            )
                             changed += 1
-                ui.notify(f"Updated {changed} team weight{'s' if changed != 1 else ''}",
-                          color="positive")
+                ui.notify(
+                    f"Updated {changed} team weight{'s' if changed != 1 else ''}",
+                    color="positive",
+                )
 
             ui.button("Save weights", icon="save", on_click=save_weights).props("dense")

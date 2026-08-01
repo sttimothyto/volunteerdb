@@ -14,7 +14,9 @@ from volunteerdb.sheets.common import MEMBERSHIP_SHEET, VOLUNTEER_SHEET
 async def _setup(session):
     liturgy = await teams.create(session, "Liturgy")
     music = await teams.create(session, "Music", parent_team_id=liturgy.id)
-    anna = await volunteers.create(session, "Anna", "Smith", "anna@example.org", phone="555-1")
+    anna = await volunteers.create(
+        session, "Anna", "Smith", "anna@example.org", phone="555-1"
+    )
     ben = await volunteers.create(session, "Ben", "Jones", "ben@example.org")
     await memberships.assign(session, anna.id, liturgy.id, TeamRole.leader)
     await memberships.assign(session, ben.id, music.id, TeamRole.member)
@@ -48,7 +50,9 @@ async def test_import_applies_edits_and_additions(database):
             row[3].value = "Ministry leader"
     # add a brand-new volunteer with a membership by team path
     vs.append(["Cara", "White", "cara@example.org", "555-9", None, "yes"])
-    ms.append(["cara@example.org", "Cara White", "Liturgy / Music", "member", None, None])
+    ms.append(
+        ["cara@example.org", "Cara White", "Liturgy / Music", "member", None, None]
+    )
     buffer = BytesIO()
     wb.save(buffer)
 
@@ -74,7 +78,9 @@ async def test_unknown_team_blocks_everything(database):
 
     wb = load_workbook(BytesIO(content))
     wb[VOLUNTEER_SHEET].append(["Dave", "Black", "dave@example.org", None, None, "yes"])
-    wb[MEMBERSHIP_SHEET].append(["dave@example.org", "Dave Black", "No Such Team", "member", None, None])
+    wb[MEMBERSHIP_SHEET].append(
+        ["dave@example.org", "Dave Black", "No Such Team", "member", None, None]
+    )
     buffer = BytesIO()
     wb.save(buffer)
 
@@ -84,7 +90,9 @@ async def test_unknown_team_blocks_everything(database):
     assert "No Such Team" in report.errors[0].message
 
     async with db_session() as session:
-        assert await volunteers.search(session, "Dave") == [], "all-or-nothing: Dave not created"
+        assert await volunteers.search(session, "Dave") == [], (
+            "all-or-nothing: Dave not created"
+        )
 
 
 async def test_dry_run_writes_nothing(database):
@@ -93,7 +101,9 @@ async def test_dry_run_writes_nothing(database):
 
     wb = load_workbook(BytesIO(exporter.template_workbook()))
     wb[VOLUNTEER_SHEET].append(["Eve", "Green", "eve@example.org", None, None, "yes"])
-    wb[MEMBERSHIP_SHEET].append(["eve@example.org", "Eve Green", "Liturgy", "leader", None, None])
+    wb[MEMBERSHIP_SHEET].append(
+        ["eve@example.org", "Eve Green", "Liturgy", "leader", None, None]
+    )
     buffer = BytesIO()
     wb.save(buffer)
 
@@ -119,7 +129,9 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
     vs = load_workbook(BytesIO(content))[VOLUNTEER_SHEET]
     headers = [c.value for c in vs[1]]
     assert headers[-2:] == ["Shirt size", "Trained"]
-    anna_row = next(r for r in vs.iter_rows(min_row=2, values_only=True) if r[0] == "Anna")
+    anna_row = next(
+        r for r in vs.iter_rows(min_row=2, values_only=True) if r[0] == "Anna"
+    )
     # custom values sit after the Photo column (index 6)
     assert anna_row[7] == "M" and anna_row[8] == "yes"
 

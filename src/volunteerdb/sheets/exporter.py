@@ -12,7 +12,14 @@ from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
-from ..models import ROLE_LABELS, CustomFieldDef, FieldType, Membership, TeamRole, Volunteer
+from ..models import (
+    ROLE_LABELS,
+    CustomFieldDef,
+    FieldType,
+    Membership,
+    TeamRole,
+    Volunteer,
+)
 from ..services import custom_fields as custom_field_service
 from ..services import photos as photo_service
 from ..services import teams as team_service
@@ -26,7 +33,9 @@ from .common import (
 )
 
 
-def _workbook(custom_defs: list[CustomFieldDef] = ()) -> tuple[Workbook, Worksheet, Worksheet]:
+def _workbook(
+    custom_defs: list[CustomFieldDef] = (),
+) -> tuple[Workbook, Worksheet, Worksheet]:
     wb = Workbook()
     vs = wb.active
     vs.title = VOLUNTEER_SHEET
@@ -95,7 +104,11 @@ def template_csv(sheet: str) -> bytes:
     Unlike the xlsx template there is no role dropdown — CSV cannot carry one."""
     if sheet not in CSV_SHEETS:
         raise ValueError(f"unknown sheet {sheet!r}")
-    header = [*VOLUNTEER_HEADERS, PHOTO_HEADER] if sheet == "volunteers" else MEMBERSHIP_HEADERS
+    header = (
+        [*VOLUNTEER_HEADERS, PHOTO_HEADER]
+        if sheet == "volunteers"
+        else MEMBERSHIP_HEADERS
+    )
     return _csv_bytes(header, [])
 
 
@@ -156,7 +169,9 @@ async def build_export_data(
     # photos are not system-versioned, so as-of exports carry the current photo
     photos_b64 = {
         vid: base64.b64encode(img).decode("ascii")
-        for vid, img in (await photo_service.images(session, [v.id for v in volunteers])).items()
+        for vid, img in (
+            await photo_service.images(session, [v.id for v in volunteers])
+        ).items()
     }
     # ingest caps images at PHOTO_MAX_BYTES, whose base64 fits Excel's
     # 32,767-char cell limit; this guards against a future regression there
@@ -178,7 +193,8 @@ async def build_export_data(
         for v in volunteers
     ]
     by_path = sorted(
-        membership_pairs, key=lambda row: (paths[row[0].team_id].lower(), row[1].last_name.lower())
+        membership_pairs,
+        key=lambda row: (paths[row[0].team_id].lower(), row[1].last_name.lower()),
     )
     membership_rows = [
         [
@@ -196,7 +212,11 @@ async def build_export_data(
     ]
     return ExportData(
         custom_defs=custom_defs,
-        volunteer_header=[*VOLUNTEER_HEADERS, PHOTO_HEADER, *(d.label for d in custom_defs)],
+        volunteer_header=[
+            *VOLUNTEER_HEADERS,
+            PHOTO_HEADER,
+            *(d.label for d in custom_defs),
+        ],
         volunteer_rows=volunteer_rows,
         membership_rows=membership_rows,
     )
@@ -216,7 +236,9 @@ async def export_workbook(
     team_ids: set[int] | None = None,
 ) -> bytes:
     """Whole parish, one team's subtree (team_id), or a union of subtrees (team_ids)."""
-    data = await build_export_data(session, team_ids=_resolve_scope(team_id, team_ids), at=at)
+    data = await build_export_data(
+        session, team_ids=_resolve_scope(team_id, team_ids), at=at
+    )
     wb, vs, ms = _workbook(data.custom_defs)
     for row in data.volunteer_rows:
         vs.append(row)
@@ -236,7 +258,9 @@ async def export_csv(
     """One sheet ('volunteers' or 'memberships') as CSV, same scoping as export_workbook."""
     if sheet not in CSV_SHEETS:
         raise ValueError(f"unknown sheet {sheet!r}")
-    data = await build_export_data(session, team_ids=_resolve_scope(team_id, team_ids), at=at)
+    data = await build_export_data(
+        session, team_ids=_resolve_scope(team_id, team_ids), at=at
+    )
     if sheet == "volunteers":
         return _csv_bytes(data.volunteer_header, data.volunteer_rows)
     return _csv_bytes(MEMBERSHIP_HEADERS, data.membership_rows)

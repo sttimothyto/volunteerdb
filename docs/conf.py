@@ -22,8 +22,8 @@ extensions = [
 
 myst_enable_extensions = [
     "colon_fence",  # ::: fenced directives (admonitions) in Markdown prose
-    "deflist",      # definition lists for config vars and CLI synopses
-    "tasklist",     # checklists in runbooks
+    "deflist",  # definition lists for config vars and CLI synopses
+    "tasklist",  # checklists in runbooks
 ]
 myst_heading_anchors = 3
 
@@ -44,29 +44,29 @@ html_theme_options = {
         "font-stack": 'Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif',
         "font-stack--headings": '"Cinzel", Palatino, "Palatino Linotype", Georgia, serif',
         # ink & parchment
-        "color-foreground-primary": "#333333",    # --vdb-ink
+        "color-foreground-primary": "#333333",  # --vdb-ink
         "color-foreground-secondary": "#6b6255",  # muted ink
         "color-foreground-muted": "#6b6255",
-        "color-foreground-border": "#d8c9a3",     # --vdb-rule
-        "color-background-primary": "#fdf6e3",    # --vdb-bg
+        "color-foreground-border": "#d8c9a3",  # --vdb-rule
+        "color-background-primary": "#fdf6e3",  # --vdb-bg
         "color-background-secondary": "#fffbee",  # --vdb-surface
         "color-background-hover": "#f5eed7",
         "color-background-hover--transparent": "#f5eed700",
         "color-background-border": "#d8c9a3",
         "color-background-item": "#d8c9a3",
         # brand
-        "color-brand-primary": "#a5573e",         # --vdb-heading / q-primary
-        "color-brand-content": "#2e5e7e",         # --vdb-link
-        "color-brand-visited": "#2e5e7e",         # app links don't shift when visited
+        "color-brand-primary": "#a5573e",  # --vdb-heading / q-primary
+        "color-brand-content": "#2e5e7e",  # --vdb-link
+        "color-brand-visited": "#2e5e7e",  # app links don't shift when visited
         # highlights & code
         "color-highlighted-background": "#d6edff",  # --vdb-selection
-        "color-highlight-on-target": "#f5deb3",     # --vdb-accent
+        "color-highlight-on-target": "#f5deb3",  # --vdb-accent
         "color-inline-code-background": "#f5eed7",
-        "color-code-block-background": "#fffbee",   # consumed by vdb-theme.css
+        "color-code-block-background": "#fffbee",  # consumed by vdb-theme.css
         "color-guilabel-background": "#f5deb380",
         "color-guilabel-border": "#d8c9a380",
         # admonitions on the app's status palette (info/positive/warning/negative)
-        "color-admonition-title": "#8a7550",        # q-secondary
+        "color-admonition-title": "#8a7550",  # q-secondary
         "color-admonition-title-background": "rgba(138, 117, 80, .2)",
         "color-admonition-title--note": "#4c7086",
         "color-admonition-title-background--note": "rgba(76, 112, 134, .2)",
@@ -150,5 +150,5 @@ linkcheck_ignore = [
     r"http://localhost.*",
     r"http://127\.0\.0\.1.*",
     r"https://vdb\.sttimothyto\.org.*",  # auth-walled production instance
-    r".*\.example.*",                    # seeded demo addresses
+    r".*\.example.*",  # seeded demo addresses
 ]

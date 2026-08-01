@@ -13,7 +13,9 @@ from volunteerdb.services import memberships, teams, users, volunteers, workload
 
 def _config(multipliers=None, bands=None) -> workload.WorkloadConfig:
     return workload.WorkloadConfig(
-        multipliers=dict(workload.DEFAULT_CONFIG.multipliers) if multipliers is None else multipliers,
+        multipliers=dict(workload.DEFAULT_CONFIG.multipliers)
+        if multipliers is None
+        else multipliers,
         bands=list(workload.DEFAULT_CONFIG.bands) if bands is None else bands,
     )
 
@@ -41,7 +43,12 @@ async def test_config_default_and_roundtrip(database):
 async def test_config_validation(database):
     bad_configs = [
         _config(multipliers={TeamRole.leader: Decimal("3")}),  # roles missing
-        _config(multipliers={**workload.DEFAULT_CONFIG.multipliers, TeamRole.core: Decimal("-1")}),
+        _config(
+            multipliers={
+                **workload.DEFAULT_CONFIG.multipliers,
+                TeamRole.core: Decimal("-1"),
+            }
+        ),
         _config(bands=[]),
         _config(bands=[workload.Band("g", "#0f0", Decimal("4"))]),  # last band bounded
         _config(
@@ -67,7 +74,9 @@ async def test_config_validation(database):
 def test_band_for_boundaries():
     cfg = workload.DEFAULT_CONFIG
     assert workload.band_for(Decimal("0"), cfg).label == "green"
-    assert workload.band_for(Decimal("4"), cfg).label == "green", "upper bound is inclusive"
+    assert workload.band_for(Decimal("4"), cfg).label == "green", (
+        "upper bound is inclusive"
+    )
     assert workload.band_for(Decimal("4.01"), cfg).label == "amber"
     assert workload.band_for(Decimal("8"), cfg).label == "amber"
     assert workload.band_for(Decimal("100"), cfg).label == "red"
@@ -83,17 +92,27 @@ async def test_scores_role_multiplied_and_null_weights(database):
         light = await volunteers.create(session, "Light", "Load")
         idle = await volunteers.create(session, "Idle", "Hands")
 
-        await memberships.assign(session, busy.id, liturgy.id, TeamRole.leader)  # 3 × 3 = 9
-        await memberships.assign(session, busy.id, choir.id, TeamRole.core)  # 2 × 1.5 = 3
-        await memberships.assign(session, busy.id, social.id, TeamRole.leader)  # NULL -> 0
-        await memberships.assign(session, light.id, choir.id, TeamRole.member)  # 2 × 1 = 2
+        await memberships.assign(
+            session, busy.id, liturgy.id, TeamRole.leader
+        )  # 3 × 3 = 9
+        await memberships.assign(
+            session, busy.id, choir.id, TeamRole.core
+        )  # 2 × 1.5 = 3
+        await memberships.assign(
+            session, busy.id, social.id, TeamRole.leader
+        )  # NULL -> 0
+        await memberships.assign(
+            session, light.id, choir.id, TeamRole.member
+        )  # 2 × 1 = 2
         ids = {"busy": busy.id, "light": light.id, "idle": idle.id}
 
     async with db_session() as session:
         result = await workload.scores(session, list(ids.values()))
         assert result[ids["busy"]] == Decimal("12")
         assert result[ids["light"]] == Decimal("2")
-        assert result[ids["idle"]] == Decimal("0"), "no memberships still yields a score"
+        assert result[ids["idle"]] == Decimal("0"), (
+            "no memberships still yields a score"
+        )
         assert await workload.scores(session, []) == {}
 
         cfg = await workload.get_config(session)
@@ -117,7 +136,8 @@ async def test_visible_scores_respects_permissions(database):
         await memberships.assign(session, outsider.id, garden.id, TeamRole.member)
 
         lead_actor = await load_actor(
-            session, await users.create(session, "lead@example.org", volunteer_id=lead.id)
+            session,
+            await users.create(session, "lead@example.org", volunteer_id=lead.id),
         )
         admin_actor = await load_actor(
             session, await users.create(session, "admin@example.org", is_admin=True)
@@ -135,7 +155,9 @@ async def test_visible_scores_respects_permissions(database):
         visible = await workload.visible_scores(session, admin_actor, team_sets)
         assert set(visible) == {lead.id, follower.id, outsider.id}
         follower_score, follower_band = visible[follower.id]
-        assert follower_score == Decimal("5"), "2×1 (member of Liturgy) + 1×3 (leads Garden)"
+        assert follower_score == Decimal("5"), (
+            "2×1 (member of Liturgy) + 1×3 (leads Garden)"
+        )
         assert follower_band.label == "amber"
 
 
@@ -153,10 +175,12 @@ async def test_graph_colors_only_permitted_nodes(database):
         await memberships.assign(session, watcher.id, liturgy.id, TeamRole.core)
 
         lead_actor = await load_actor(
-            session, await users.create(session, "lead@example.org", volunteer_id=lead.id)
+            session,
+            await users.create(session, "lead@example.org", volunteer_id=lead.id),
         )
         core_actor = await load_actor(
-            session, await users.create(session, "core@example.org", volunteer_id=watcher.id)
+            session,
+            await users.create(session, "core@example.org", volunteer_id=watcher.id),
         )
         admin_actor = await load_actor(
             session, await users.create(session, "admin@example.org", is_admin=True)
@@ -174,7 +198,9 @@ async def test_graph_colors_only_permitted_nodes(database):
         graph = volunteer_nodes(
             await graph_service.elements(session, admin_actor, team_id=liturgy.id)
         )
-        assert graph[follower.id]["band"] == "amber", "2×1 + 1×3 = 5, includes unseen Garden"
+        assert graph[follower.id]["band"] == "amber", (
+            "2×1 + 1×3 = 5, includes unseen Garden"
+        )
         assert graph[follower.id]["color"] == "#ffb300"
         assert graph[lead.id]["band"] == "amber", "leader of weight-2 team: 2×3 = 6"
 

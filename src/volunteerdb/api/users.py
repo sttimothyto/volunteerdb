@@ -31,7 +31,9 @@ async def create_user(ctx: CtxDep, data: UserIn) -> UserOut:
 @router.patch("/{user_id}")
 async def update_user(ctx: CtxDep, user_id: int, data: UserPatch) -> UserOut:
     require(ctx.actor.is_admin, "manage accounts")
-    user = await service.set_flags(ctx.session, user_id, **data.model_dump(exclude_unset=True))
+    user = await service.set_flags(
+        ctx.session, user_id, **data.model_dump(exclude_unset=True)
+    )
     return _user_out(user)
 
 

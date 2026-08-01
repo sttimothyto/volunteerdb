@@ -5,13 +5,22 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
-from ..models import Membership, Team, TeamRole, Volunteer, membership_history, team_history
+from ..models import (
+    Membership,
+    Team,
+    TeamRole,
+    Volunteer,
+    membership_history,
+    team_history,
+)
 from ..permissions import Actor
 
 _UNSET: object = object()
 
 
-async def get(session: AsyncSession, volunteer_id: int, at: datetime | None = None) -> Volunteer | None:
+async def get(
+    session: AsyncSession, volunteer_id: int, at: datetime | None = None
+) -> Volunteer | None:
     V = entity(Volunteer, at)
     rows = await fetch(session, sa.select(V).where(V.id == volunteer_id), at)
     return rows[0][0] if rows else None
@@ -135,7 +144,10 @@ async def assignments(
     """Every (membership, team) this volunteer holds — the cross-reference view."""
     M, T = entity(Membership, at), entity(Team, at)
     stmt = (
-        sa.select(M, T).join(T, T.id == M.team_id).where(M.volunteer_id == volunteer_id).order_by(T.name)
+        sa.select(M, T)
+        .join(T, T.id == M.team_id)
+        .where(M.volunteer_id == volunteer_id)
+        .order_by(T.name)
     )
     return [(m, t) for m, t in await fetch(session, stmt, at)]
 
@@ -163,16 +175,25 @@ async def impact(
     M = entity(Membership, at)
     counts_stmt = (
         sa.select(M.team_id, M.role, sa.func.count())
-        .where(M.team_id.in_([team.id for _, team in rows]), M.volunteer_id != volunteer_id)
+        .where(
+            M.team_id.in_([team.id for _, team in rows]), M.volunteer_id != volunteer_id
+        )
         .group_by(M.team_id, M.role)
     )
-    counts = {(team_id, role): n for team_id, role, n in await session.execute(counts_stmt)}
+    counts = {
+        (team_id, role): n for team_id, role, n in await session.execute(counts_stmt)
+    }
     result: list[ImpactRow] = []
     for membership, team in rows:
         leaders = counts.get((team.id, TeamRole.leader), 0)
         seconds = counts.get((team.id, TeamRole.second), 0)
         result.append(
-            ImpactRow(team=team, role=membership.role, leaders_left=leaders, leadership_left=leaders + seconds)
+            ImpactRow(
+                team=team,
+                role=membership.role,
+                leaders_left=leaders,
+                leadership_left=leaders + seconds,
+            )
         )
     # most critical first: the fewer leaders remain, the higher it sorts
     result.sort(key=lambda r: (r.leadership_left, r.leaders_left, r.team.name.lower()))
@@ -211,7 +232,9 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
     """
     mh = membership_history
     cols = ("id", "team_id", "role", "joined_on", "sys_period")
-    hist = sa.select(*[mh.c[n] for n in cols], mh.c.op).where(mh.c.volunteer_id == volunteer_id)
+    hist = sa.select(*[mh.c[n] for n in cols], mh.c.op).where(
+        mh.c.volunteer_id == volunteer_id
+    )
     live = sa.select(
         *[Membership.__table__.c[n] for n in cols],
         sa.literal(None, sa.CHAR(1)).label("op"),
@@ -222,7 +245,11 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
     prev_key: tuple[int, datetime | None] | None = None
     for row in sorted(versions, key=lambda r: (r.team_id, r.sys_period.lower)):
         prev_team, prev_upper = prev_key or (None, None)
-        if row.team_id != prev_team or prev_upper is None or row.sys_period.lower > prev_upper:
+        if (
+            row.team_id != prev_team
+            or prev_upper is None
+            or row.sys_period.lower > prev_upper
+        ):
             runs.append([])
         runs[-1].append(row)
         prev_key = (row.team_id, row.sys_period.upper)
@@ -252,7 +279,9 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
             if segments and segments[-1].role == row.role:
                 segments[-1].end = row.sys_period.upper  # notes/joined_on-only edit
             else:
-                segments.append(RoleSegment(row.role, row.sys_period.lower, row.sys_period.upper))
+                segments.append(
+                    RoleSegment(row.role, row.sys_period.lower, row.sys_period.upper)
+                )
         # joined_on may only widen the first segment backwards. A start date that
         # has not arrived yet (signed up in July to begin in September) would
         # otherwise push the segment past its own end and render as a

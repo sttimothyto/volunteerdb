@@ -95,7 +95,9 @@ async def test_team_patch_clear_parent_and_clear_weight(client, seeded):
     )
     sub_id = r.json()["id"]
 
-    r = await client.patch(f"/api/teams/{sub_id}", json={"clear_parent": True}, headers=admin)
+    r = await client.patch(
+        f"/api/teams/{sub_id}", json={"clear_parent": True}, headers=admin
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["parent_team_id"] is None
@@ -116,7 +118,9 @@ async def test_delete_endpoints_admin_only_then_404(client, seeded):
 
     # a disposable volunteer with a membership on the seeded team
     r = await client.post(
-        "/api/volunteers", json={"first_name": "Dis", "last_name": "Posable"}, headers=admin
+        "/api/volunteers",
+        json={"first_name": "Dis", "last_name": "Posable"},
+        headers=admin,
     )
     vid = r.json()["id"]
     r = await client.post(

@@ -81,7 +81,9 @@ def _log_writes(session: Session, flush_context: UOWTransaction) -> None:
     # but INSERT statements have executed, so primary keys are assigned.
     for obj in session.new:
         table, pk = _ident(obj)
-        audit_log("db.insert", table=table, pk=pk, txn=_txn(session), values=_row_values(obj))
+        audit_log(
+            "db.insert", table=table, pk=pk, txn=_txn(session), values=_row_values(obj)
+        )
         _bump(session)
     for obj in session.dirty:
         if not session.is_modified(obj, include_collections=False):
@@ -97,11 +99,15 @@ def _log_writes(session: Session, flush_context: UOWTransaction) -> None:
             changes[attr.key] = f"{_fmt(attr.key, old)} → {_fmt(attr.key, new)}"
         if changes:
             table, pk = _ident(obj)
-            audit_log("db.update", table=table, pk=pk, txn=_txn(session), changes=changes)
+            audit_log(
+                "db.update", table=table, pk=pk, txn=_txn(session), changes=changes
+            )
             _bump(session)
     for obj in session.deleted:
         table, pk = _ident(obj)
-        audit_log("db.delete", table=table, pk=pk, txn=_txn(session), was=_row_values(obj))
+        audit_log(
+            "db.delete", table=table, pk=pk, txn=_txn(session), was=_row_values(obj)
+        )
         _bump(session)
 
 
@@ -168,5 +174,7 @@ def _log_execute(execute_state: ORMExecuteState) -> None:
         except Exception:
             params = "?"
         table = getattr(getattr(stmt, "table", None), "name", "?")
-        audit_log(op, table=table, core=True, txn=_txn(execute_state.session), values=params)
+        audit_log(
+            op, table=table, core=True, txn=_txn(execute_state.session), values=params
+        )
         _bump(execute_state.session)

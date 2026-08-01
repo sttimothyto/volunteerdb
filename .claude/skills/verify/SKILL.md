@@ -19,8 +19,9 @@ wires the real app (`volunteerdb.main.create_app()`) plus one extra route:
 ```python
 from volunteerdb.ui.context import establish_session
 
-@ui.page("/login-dev/{user_id}")              # path MUST start with /login —
-def dev_login(user_id: int):                  # it rides the AuthMiddleware
+
+@ui.page("/login-dev/{user_id}")  # path MUST start with /login —
+def dev_login(user_id: int):  # it rides the AuthMiddleware
     establish_session(user_id, remember=True)  # UNRESTRICTED_PREFIXES exemption
     ui.label(f"dev-login ok: user {user_id}")
 ```

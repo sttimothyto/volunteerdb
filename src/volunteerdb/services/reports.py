@@ -25,7 +25,9 @@ class CoverageRow:
         return self.counts.get(TeamRole.second, 0) == 0
 
 
-async def coverage(session: AsyncSession, at: datetime | None = None) -> list[CoverageRow]:
+async def coverage(
+    session: AsyncSession, at: datetime | None = None
+) -> list[CoverageRow]:
     """Role headcounts per team; the dashboard's 'holes to fill' report."""
     all_teams = await team_service.list_all(session, at)
     paths = team_service.team_paths(all_teams)
@@ -50,5 +52,7 @@ async def coverage(session: AsyncSession, at: datetime | None = None) -> list[Co
         if t.is_active
     ]
     # teams with holes first, then by path for stable reading
-    result.sort(key=lambda r: (not r.missing_leader, not r.missing_second, r.path.lower()))
+    result.sort(
+        key=lambda r: (not r.missing_leader, not r.missing_second, r.path.lower())
+    )
     return result

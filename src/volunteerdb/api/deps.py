@@ -34,7 +34,9 @@ async def api_ctx(
     ip = request.client.host if request.client else "-"
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(401, "missing Bearer token", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            401, "missing Bearer token", headers={"WWW-Authenticate": "Bearer"}
+        )
     async with sessionmaker()() as session:
         # ExitStack outlives the transaction block, so the actor identity is
         # still bound when the commit (and its audit marker line) fires.
@@ -49,7 +51,9 @@ async def api_ctx(
                 await session.execute(
                     sa.select(sa.func.set_config("app.user_id", str(user.id), True))
                 )
-                stack.enter_context(bind_actor(f"{user.id}:{user.email}", ip=ip, via="api"))
+                stack.enter_context(
+                    bind_actor(f"{user.id}:{user.email}", ip=ip, via="api")
+                )
                 yield Ctx(session=session, actor=await load_actor(session, user))
 
 
@@ -97,7 +101,9 @@ def install_exception_handlers(app: FastAPI) -> None:
     async def _conflict(request: Request, exc: IntegrityError):
         from fastapi.responses import JSONResponse
 
-        return JSONResponse(status_code=409, content={"detail": "conflicts with existing data"})
+        return JSONResponse(
+            status_code=409, content={"detail": "conflicts with existing data"}
+        )
 
     @app.exception_handler(ValueError)
     async def _unprocessable(request: Request, exc: ValueError):

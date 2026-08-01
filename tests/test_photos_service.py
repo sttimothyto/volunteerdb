@@ -13,9 +13,9 @@ from volunteerdb.services import photos, volunteers
 
 def _png(width: int, height: int, mode: str = "RGBA") -> bytes:
     buffer = BytesIO()
-    Image.new(mode, (width, height), (200, 120, 80, 255) if mode == "RGBA" else (200, 120, 80)).save(
-        buffer, format="PNG"
-    )
+    Image.new(
+        mode, (width, height), (200, 120, 80, 255) if mode == "RGBA" else (200, 120, 80)
+    ).save(buffer, format="PNG")
     return buffer.getvalue()
 
 
@@ -32,7 +32,9 @@ def test_normalize_produces_square_jpeg_within_cap():
     out = photos.normalize(_png(800, 500))
     image = Image.open(BytesIO(out))
     assert image.format == "JPEG"
-    assert image.size == (photos.PHOTO_SIZE, photos.PHOTO_SIZE), "non-square input center-cropped"
+    assert image.size == (photos.PHOTO_SIZE, photos.PHOTO_SIZE), (
+        "non-square input center-cropped"
+    )
     assert image.mode == "RGB", "alpha flattened"
     assert len(out) <= photos.PHOTO_MAX_BYTES, "base64 must fit an Excel cell"
 
@@ -41,7 +43,9 @@ def test_normalize_strips_exif_and_honors_orientation():
     out = photos.normalize(_jpeg_with_orientation(600, 400))
     image = Image.open(BytesIO(out))
     assert image.size == (photos.PHOTO_SIZE, photos.PHOTO_SIZE)
-    assert dict(image.getexif()) == {}, "EXIF (incl. GPS) must not survive normalization"
+    assert dict(image.getexif()) == {}, (
+        "EXIF (incl. GPS) must not survive normalization"
+    )
 
 
 def test_normalize_rejects_garbage_and_oversize():
@@ -57,7 +61,9 @@ async def test_set_get_delete_and_versions(database):
     async with db_session() as session:
         v = await volunteers.create(session, "Pia", "Photo", "pia@example.org")
         volunteer_id = v.id
-        stored = await photos.set_photo(session, volunteer_id, _png(500, 500), uploaded_by=None)
+        stored = await photos.set_photo(
+            session, volunteer_id, _png(500, 500), uploaded_by=None
+        )
         assert len(stored.image) <= photos.PHOTO_MAX_BYTES
         assert stored.content_type == "image/jpeg"
         first_at = stored.uploaded_at
@@ -68,9 +74,13 @@ async def test_set_get_delete_and_versions(database):
         assert await photos.versions(session, []) == {}
 
         # replace: bytes change and uploaded_at moves (drives the ?v= cache-buster)
-        replaced = await photos.set_photo(session, volunteer_id, _png(300, 700), uploaded_by=None)
+        replaced = await photos.set_photo(
+            session, volunteer_id, _png(300, 700), uploaded_by=None
+        )
         assert replaced.uploaded_at >= first_at
-        assert (await photos.images(session, [volunteer_id]))[volunteer_id] == replaced.image
+        assert (await photos.images(session, [volunteer_id]))[
+            volunteer_id
+        ] == replaced.image
 
         await photos.delete_photo(session, volunteer_id)
         assert await photos.get(session, volunteer_id) is None
@@ -94,7 +104,9 @@ async def test_deleting_the_volunteer_cascades_the_photo(database):
         await volunteers.delete(session, volunteer_id)
         remaining = (
             await session.execute(
-                sa.select(VolunteerPhoto).where(VolunteerPhoto.volunteer_id == volunteer_id)
+                sa.select(VolunteerPhoto).where(
+                    VolunteerPhoto.volunteer_id == volunteer_id
+                )
             )
         ).scalar_one_or_none()
         assert remaining is None, "ON DELETE CASCADE"

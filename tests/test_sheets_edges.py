@@ -44,7 +44,9 @@ def test_leading_formula_characters_are_escaped():
     moment the parish opens the workbook."""
     for raw in ("=SUM(A1)", "+1 416 555 0100", "-5 min early", "@channel"):
         escaped = _safe(raw)
-        assert escaped.startswith("'"), f"{raw!r} would evaluate as a formula in a spreadsheet"
+        assert escaped.startswith("'"), (
+            f"{raw!r} would evaluate as a formula in a spreadsheet"
+        )
         assert _clean(escaped) == raw, "escaping and cleaning must stay inverses"
 
     assert _safe("plain text") == "plain text"
@@ -84,8 +86,14 @@ async def test_formula_injection_escape_roundtrips(database):
         content = await exporter.export_workbook(session)
 
     vs = load_workbook(BytesIO(content))[VOLUNTEER_SHEET]
-    row = next(r for r in vs.iter_rows(min_row=2, values_only=True) if r[2] == "evil@example.org")
-    assert row[0] == "'=Evil" and row[4] == "'=SUM(A1:A9)", "cells never start with a bare ="
+    row = next(
+        r
+        for r in vs.iter_rows(min_row=2, values_only=True)
+        if r[2] == "evil@example.org"
+    )
+    assert row[0] == "'=Evil" and row[4] == "'=SUM(A1:A9)", (
+        "cells never start with a bare ="
+    )
 
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert not report.has_errors
@@ -151,7 +159,12 @@ async def test_a_blank_cell_never_clears_an_existing_value(database):
     help because it is not an error."""
     async with db_session() as session:
         await volunteers.create(
-            session, "Clara", "Contact", "clara@example.org", "555-0199", notes="sings alto"
+            session,
+            "Clara",
+            "Contact",
+            "clara@example.org",
+            "555-0199",
+            notes="sings alto",
         )
 
     content = _workbook_bytes(
@@ -180,7 +193,9 @@ async def test_an_unrecognized_active_value_warns_before_archiving(database):
     assert report.applied
 
     async with db_session() as session:
-        (found,) = await volunteers.search(session, "vera@example.org", include_inactive=True)
+        (found,) = await volunteers.search(
+            session, "vera@example.org", include_inactive=True
+        )
     assert found.is_active is False, "the allow-list behaviour itself is unchanged"
 
     (warning,) = report.warnings

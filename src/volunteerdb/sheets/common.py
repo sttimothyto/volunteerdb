@@ -13,7 +13,14 @@ VOLUNTEER_HEADERS = ["First name", "Last name", "Email", "Phone", "Notes", "Acti
 PHOTO_HEADER = "Photo"
 
 MEMBERSHIP_SHEET = "Memberships"
-MEMBERSHIP_HEADERS = ["Volunteer email", "Volunteer name", "Team path", "Role", "Joined on", "Notes"]
+MEMBERSHIP_HEADERS = [
+    "Volunteer email",
+    "Volunteer name",
+    "Team path",
+    "Role",
+    "Joined on",
+    "Notes",
+]
 
 # A cell opening with one of these is evaluated as a formula by Excel and
 # LibreOffice, so the exporter quotes it and the importer unquotes it. Kept here

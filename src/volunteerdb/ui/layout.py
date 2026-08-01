@@ -35,23 +35,27 @@ def frame(title: str, actor: Actor):
                 ui.button(label, on_click=lambda t=target: ui.navigate.to(t)).props(
                     "flat color=white dense"
                 )
-        with ui.button(icon="menu").props("flat color=white dense round").classes("lt-md"):
+        with (
+            ui.button(icon="menu")
+            .props("flat color=white dense round")
+            .classes("lt-md")
+        ):
             with ui.menu():
                 for label, target in nav_items:
                     ui.menu_item(label, on_click=lambda t=target: ui.navigate.to(t))
         ui.space()
         ui.label(actor.user.email).classes("text-sm opacity-80 gt-sm")
-        ui.button(icon="menu_book", on_click=lambda: ui.navigate.to("/manual", new_tab=True)).props(
-            "flat color=white dense round"
-        ).tooltip("Manual")
+        ui.button(
+            icon="menu_book", on_click=lambda: ui.navigate.to("/manual", new_tab=True)
+        ).props("flat color=white dense round").tooltip("Manual")
         ui.button(icon="dark_mode", on_click=dark.toggle).props(
             "flat color=white dense round"
-        ).bind_icon_from(dark, "value", lambda v: "light_mode" if v else "dark_mode").tooltip(
-            "Toggle dark mode"
-        )
-        ui.button(icon="logout", on_click=_logout).props("flat color=white dense").tooltip(
-            "Sign out"
-        )
+        ).bind_icon_from(
+            dark, "value", lambda v: "light_mode" if v else "dark_mode"
+        ).tooltip("Toggle dark mode")
+        ui.button(icon="logout", on_click=_logout).props(
+            "flat color=white dense"
+        ).tooltip("Sign out")
     with ui.column().classes("w-full max-w-5xl mx-auto p-4 gap-4"):
         ui.label(title).classes("text-2xl vdb-page-title")
         yield

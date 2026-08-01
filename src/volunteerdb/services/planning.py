@@ -116,7 +116,9 @@ async def _get_or_raise(session: AsyncSession, proposal_id: int) -> Proposal:
     return proposal
 
 
-async def accept(session: AsyncSession, proposal_id: int, *, decided_by: int) -> Proposal:
+async def accept(
+    session: AsyncSession, proposal_id: int, *, decided_by: int
+) -> Proposal:
     """Mark accepted AND create the membership — both flush in the caller's
     session, so they commit (or roll back) together. assign() upserts: a
     volunteer already on the team gets their role updated instead."""
@@ -129,14 +131,18 @@ async def accept(session: AsyncSession, proposal_id: int, *, decided_by: int) ->
     return proposal
 
 
-async def decline(session: AsyncSession, proposal_id: int, *, decided_by: int) -> Proposal:
+async def decline(
+    session: AsyncSession, proposal_id: int, *, decided_by: int
+) -> Proposal:
     proposal = await _get_or_raise(session, proposal_id)
     _decide(proposal, ProposalStatus.declined, decided_by)
     await session.flush()
     return proposal
 
 
-async def withdraw(session: AsyncSession, proposal_id: int, *, decided_by: int) -> Proposal:
+async def withdraw(
+    session: AsyncSession, proposal_id: int, *, decided_by: int
+) -> Proposal:
     proposal = await _get_or_raise(session, proposal_id)
     _decide(proposal, ProposalStatus.withdrawn, decided_by)
     await session.flush()

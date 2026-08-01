@@ -15,7 +15,8 @@ async def coverage(ctx: CtxDep, as_of: AsOf) -> list[CoverageOut]:
     """Teams and their role headcounts; missing leadership sorts first.
     Admins see the whole parish, leaders see the teams they manage."""
     require(
-        ctx.actor.is_admin or bool(ctx.actor.managed_team_ids), "view the coverage report"
+        ctx.actor.is_admin or bool(ctx.actor.managed_team_ids),
+        "view the coverage report",
     )
     rows = await service.coverage(ctx.session, at=as_of)
     if not ctx.actor.is_admin:
@@ -40,4 +41,6 @@ async def coverage(ctx: CtxDep, as_of: AsOf) -> list[CoverageOut]:
 async def graph(ctx: CtxDep, as_of: AsOf, team_id: int | None = None) -> dict:
     """Cytoscape.js elements for the volunteer↔team graph, filtered to what
     the caller may see."""
-    return await graph_service.elements(ctx.session, ctx.actor, team_id=team_id, at=as_of)
+    return await graph_service.elements(
+        ctx.session, ctx.actor, team_id=team_id, at=as_of
+    )

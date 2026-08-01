@@ -77,7 +77,9 @@ async def test_rolled_back_changes_leave_no_history(database):
     async with db_session() as session:
         assert (await volunteers.get(session, vid)).first_name == "Keep"
         count = (
-            await session.execute(sa.select(sa.func.count()).select_from(volunteer_history))
+            await session.execute(
+                sa.select(sa.func.count()).select_from(volunteer_history)
+            )
         ).scalar()
         assert count == 0
 
@@ -103,7 +105,13 @@ async def test_custom_values_are_versioned(database):
         old = await volunteers.get(session, vid, at=t_medium)
         assert old.custom == {"shirt_size": "M"}
         row = (
-            (await session.execute(sa.select(volunteer_history).order_by(volunteer_history.c.sys_period.desc())))
+            (
+                await session.execute(
+                    sa.select(volunteer_history).order_by(
+                        volunteer_history.c.sys_period.desc()
+                    )
+                )
+            )
             .mappings()
             .first()
         )

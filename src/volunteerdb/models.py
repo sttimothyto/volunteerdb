@@ -79,7 +79,9 @@ class Volunteer(Base):
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()
+        sa.TIMESTAMP(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
     )
     sys_period: Mapped[Range[datetime]] = mapped_column(
         TSTZRANGE, server_default=SYS_PERIOD_DEFAULT
@@ -98,7 +100,9 @@ class Volunteer(Base):
 class Team(Base):
     __tablename__ = "team"
     __table_args__ = (
-        sa.UniqueConstraint("parent_team_id", "name", postgresql_nulls_not_distinct=True),
+        sa.UniqueConstraint(
+            "parent_team_id", "name", postgresql_nulls_not_distinct=True
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -124,7 +128,9 @@ class Membership(Base):
     volunteer_id: Mapped[int] = mapped_column(
         sa.ForeignKey("volunteer.id", ondelete="CASCADE"), index=True
     )
-    team_id: Mapped[int] = mapped_column(sa.ForeignKey("team.id", ondelete="CASCADE"), index=True)
+    team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE"), index=True
+    )
     role: Mapped[TeamRole] = mapped_column(team_role_enum)
     joined_on: Mapped[date | None]
     notes: Mapped[str | None] = mapped_column(sa.Text)
@@ -159,20 +165,28 @@ class Proposal(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    team_id: Mapped[int] = mapped_column(sa.ForeignKey("team.id", ondelete="CASCADE"), index=True)
-    volunteer_id: Mapped[int] = mapped_column(sa.ForeignKey("volunteer.id", ondelete="CASCADE"))
+    team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE"), index=True
+    )
+    volunteer_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("volunteer.id", ondelete="CASCADE")
+    )
     role: Mapped[TeamRole] = mapped_column(team_role_enum)
     # plain string + CHECK, not a PG enum, so adding statuses never needs ALTER TYPE
     status: Mapped[str] = mapped_column(
         sa.String(20), default=ProposalStatus.proposed.value, server_default="proposed"
     )
     note: Mapped[str | None] = mapped_column(sa.Text)
-    proposed_by: Mapped[int | None] = mapped_column(sa.ForeignKey("app_user.id", ondelete="SET NULL"))
+    proposed_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
     decided_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
-    decided_by: Mapped[int | None] = mapped_column(sa.ForeignKey("app_user.id", ondelete="SET NULL"))
+    decided_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
 
 
 class AppUser(Base):
@@ -236,7 +250,9 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(sa.String(100), primary_key=True)
     value: Mapped[dict] = mapped_column(JSONB)
     updated_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now()
+        sa.TIMESTAMP(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
     )
 
 
@@ -256,7 +272,9 @@ class VolunteerPhoto(Base):
     content_type: Mapped[str] = mapped_column(
         sa.String(50), default="image/jpeg", server_default="image/jpeg"
     )
-    uploaded_by: Mapped[int | None] = mapped_column(sa.ForeignKey("app_user.id", ondelete="SET NULL"))
+    uploaded_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
     uploaded_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
@@ -272,7 +290,9 @@ def _make_history_table(live: sa.Table) -> sa.Table:
         sa.Column("changed_by", sa.Integer),
         sa.Column("op", sa.CHAR(1)),
         sa.Index(f"ix_{live.name}_history_id", "id"),
-        sa.Index(f"ix_{live.name}_history_sys_period", "sys_period", postgresql_using="gist"),
+        sa.Index(
+            f"ix_{live.name}_history_sys_period", "sys_period", postgresql_using="gist"
+        ),
     )
 
 

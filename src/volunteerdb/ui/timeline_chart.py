@@ -126,7 +126,10 @@ def timeline_chart(spells, paths: dict[int, str], dark: bool) -> None:
             "type": "time",
             "axisLabel": {"color": chrome["muted"], "fontFamily": _SERIF},
             "axisLine": axis_line,
-            "splitLine": {"show": True, "lineStyle": {"color": chrome["rule"], "opacity": 0.5}},
+            "splitLine": {
+                "show": True,
+                "lineStyle": {"color": chrome["rule"], "opacity": 0.5},
+            },
         },
         "yAxis": {
             "type": "category",

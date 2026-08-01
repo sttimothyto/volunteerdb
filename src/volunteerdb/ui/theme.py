@@ -9,5 +9,7 @@ def apply_theme() -> ui.dark_mode:
     dark = ui.dark_mode().bind_value(app.storage.user, "dark_mode")
     if app.storage.user["dark_mode"]:
         # anti-flash: per-client head html renders after the shared theme.css link
-        ui.add_head_html("<style>html{background-color:#1C1917;color-scheme:dark}</style>")
+        ui.add_head_html(
+            "<style>html{background-color:#1C1917;color-scheme:dark}</style>"
+        )
     return dark

@@ -135,7 +135,9 @@ def _parse_xlsx(content: bytes, report: ImportReport) -> _Parsed | None:
             report.warnings.append(Issue(VOLUNTEER_SHEET, 1, _EXTRA_COLUMNS_WARNING))
         volunteer_rows = list(sheet.iter_rows(min_row=2, values_only=True))
     if MEMBERSHIP_SHEET in workbook.sheetnames:
-        membership_rows = list(workbook[MEMBERSHIP_SHEET].iter_rows(min_row=2, values_only=True))
+        membership_rows = list(
+            workbook[MEMBERSHIP_SHEET].iter_rows(min_row=2, values_only=True)
+        )
     return _Parsed(volunteer_rows, membership_rows, volunteer_has_photo=has_photo)
 
 
@@ -160,7 +162,9 @@ def _parse_csv(content: bytes, report: ImportReport) -> _Parsed | None:
         return _Parsed(data, None, volunteer_has_photo=has_photo)
     if header[:n] == [h.casefold() for h in MEMBERSHIP_HEADERS]:
         if any(header[n:]):
-            report.warnings.append(Issue(MEMBERSHIP_SHEET, 1, "extra columns are ignored"))
+            report.warnings.append(
+                Issue(MEMBERSHIP_SHEET, 1, "extra columns are ignored")
+            )
         return _Parsed(None, data)
     report.errors.append(
         Issue(
@@ -173,7 +177,9 @@ def _parse_csv(content: bytes, report: ImportReport) -> _Parsed | None:
     return None
 
 
-async def run_import(content: bytes, *, dry_run: bool, user_id: int | None) -> ImportReport:
+async def run_import(
+    content: bytes, *, dry_run: bool, user_id: int | None
+) -> ImportReport:
     """Parse and apply a workbook or CSV. On dry_run or any error, everything
     rolls back. Non-admin users (leaders/seconds) are scoped to the teams they
     manage; user_id=None runs unrestricted (service-level callers)."""
@@ -229,10 +235,14 @@ async def _apply_photo(
     try:
         decoded = base64.b64decode(photo_raw, validate=True)
     except (binascii.Error, ValueError):
-        report.errors.append(Issue(VOLUNTEER_SHEET, row_num, "Photo is not valid base64"))
+        report.errors.append(
+            Issue(VOLUNTEER_SHEET, row_num, "Photo is not valid base64")
+        )
         return
     if len(decoded) > photo_service.MAX_UPLOAD_BYTES:
-        report.errors.append(Issue(VOLUNTEER_SHEET, row_num, "Photo is larger than 10 MB"))
+        report.errors.append(
+            Issue(VOLUNTEER_SHEET, row_num, "Photo is larger than 10 MB")
+        )
         return
     # byte-equal to what's stored (the usual export -> import round-trip):
     # skip, so re-imports are no-ops instead of JPEG re-compression churn
@@ -276,7 +286,9 @@ async def _apply(
         if email:
             candidates = by_email.get(email.lower(), [])
             if len(candidates) > 1 and name:
-                narrowed = [c for c in candidates if c.full_name.lower() == name.lower()]
+                narrowed = [
+                    c for c in candidates if c.full_name.lower() == name.lower()
+                ]
                 if narrowed:
                     candidates = narrowed
         elif name:
@@ -353,7 +365,11 @@ async def _apply(
                 continue
             if not first or not last:
                 report.errors.append(
-                    Issue(VOLUNTEER_SHEET, row_num, "first and last name are both required")
+                    Issue(
+                        VOLUNTEER_SHEET,
+                        row_num,
+                        "first and last name are both required",
+                    )
                 )
                 continue
             email = email.lower() if email else None
@@ -418,7 +434,9 @@ async def _apply(
                 # Denied even when the row changes nothing: erroring only on a
                 # change would let dry-runs probe contact fields by brute force.
                 if restricted and not (
-                    actor.can_edit_volunteer(found.id, teams_by_volunteer.get(found.id, set()))
+                    actor.can_edit_volunteer(
+                        found.id, teams_by_volunteer.get(found.id, set())
+                    )
                     or found.id in granted_ids
                 ):
                     report.errors.append(
@@ -460,7 +478,9 @@ async def _apply(
             if not any((email, name, team_path, _clean(role_raw))):
                 continue
             if not team_path:
-                report.errors.append(Issue(MEMBERSHIP_SHEET, row_num, "team path is required"))
+                report.errors.append(
+                    Issue(MEMBERSHIP_SHEET, row_num, "team path is required")
+                )
                 continue
 
             team_id = resolve_team(team_path)
@@ -500,10 +520,19 @@ async def _apply(
 
             joined_on = _parse_date(joined_raw, report, MEMBERSHIP_SHEET, row_num)
             existing = membership_by_pair.get((found.id, team_id))
-            before = (existing.role, existing.joined_on, existing.notes) if existing else None
+            before = (
+                (existing.role, existing.joined_on, existing.notes)
+                if existing
+                else None
+            )
             membership = await membership_service.assign(
-                session, found.id, team_id, role,
-                joined_on=joined_on, notes=_clean(notes), existing=existing,
+                session,
+                found.id,
+                team_id,
+                role,
+                joined_on=joined_on,
+                notes=_clean(notes),
+                existing=existing,
             )
             if existing is None:
                 # a later sheet row for the same pair must hit the update branch

@@ -23,7 +23,9 @@ async def parish(database):
             ("core", TeamRole.core),
             ("member", TeamRole.member),
         ]:
-            v = await volunteers.create(session, name.title(), "Person", f"{name}@example.org")
+            v = await volunteers.create(
+                session, name.title(), "Person", f"{name}@example.org"
+            )
             await memberships.assign(session, v.id, liturgy.id, role)
             people[name] = v
 
@@ -121,8 +123,12 @@ async def test_workload_view_rights(parish):
 
     for name in ("leader", "second"):
         actor = await _actor(accounts, name)
-        assert not actor.can_view_workload(member_teams), f"{name} no longer sees workload"
-        assert not actor.can_view_workload(outsider_teams), "not other ministries' people"
+        assert not actor.can_view_workload(member_teams), (
+            f"{name} no longer sees workload"
+        )
+        assert not actor.can_view_workload(outsider_teams), (
+            "not other ministries' people"
+        )
 
     core = await _actor(accounts, "core")
     assert not core.can_view_workload(member_teams), "core members never see workload"

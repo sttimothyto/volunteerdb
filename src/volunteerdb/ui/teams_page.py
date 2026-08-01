@@ -8,7 +8,13 @@ from ..services import reports as report_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..sheets import exporter
-from .context import action_session, asof_banner, notify_errors, page_session, parse_as_of
+from .context import (
+    action_session,
+    asof_banner,
+    notify_errors,
+    page_session,
+    parse_as_of,
+)
 from .layout import frame
 from .volunteer_panel import VolunteerPanel
 
@@ -38,16 +44,34 @@ async def teams_page(as_of: str = ""):
         asof_banner(at, "/teams")
         if actor.is_admin and at is None:
             with ui.row().classes("gap-2"):
-                ui.button("New team", icon="add", on_click=lambda: _team_dialog(all_teams)).props(
-                    "dense"
-                )
+                ui.button(
+                    "New team", icon="add", on_click=lambda: _team_dialog(all_teams)
+                ).props("dense")
         if show_coverage:
             columns = [
-                {"name": "path", "label": "Team", "field": "path", "align": "left", "sortable": True},
-                {"name": "leader", "label": ROLE_LABELS[TeamRole.leader], "field": "leader"},
-                {"name": "second", "label": ROLE_LABELS[TeamRole.second], "field": "second"},
+                {
+                    "name": "path",
+                    "label": "Team",
+                    "field": "path",
+                    "align": "left",
+                    "sortable": True,
+                },
+                {
+                    "name": "leader",
+                    "label": ROLE_LABELS[TeamRole.leader],
+                    "field": "leader",
+                },
+                {
+                    "name": "second",
+                    "label": ROLE_LABELS[TeamRole.second],
+                    "field": "second",
+                },
                 {"name": "core", "label": ROLE_LABELS[TeamRole.core], "field": "core"},
-                {"name": "member", "label": ROLE_LABELS[TeamRole.member], "field": "member"},
+                {
+                    "name": "member",
+                    "label": ROLE_LABELS[TeamRole.member],
+                    "field": "member",
+                },
                 {"name": "total", "label": "Total", "field": "total", "sortable": True},
             ]
             rows = [
@@ -62,12 +86,17 @@ async def teams_page(as_of: str = ""):
                 }
                 for r in coverage
             ]
-            table = ui.table(columns=columns, rows=rows, row_key="id", pagination=15).classes(
-                "w-full vdb-clickable-rows"
+            table = ui.table(
+                columns=columns, rows=rows, row_key="id", pagination=15
+            ).classes("w-full vdb-clickable-rows")
+            table.on(
+                "rowClick",
+                lambda e: ui.navigate.to(f"/teams/{e.args[1]['id']}{suffix}"),
             )
-            table.on("rowClick", lambda e: ui.navigate.to(f"/teams/{e.args[1]['id']}{suffix}"))
         tree = ui.tree(nodes(None), label_key="label", node_key="id").classes("w-full")
-        tree.on_select(lambda e: e.value and ui.navigate.to(f"/teams/{e.value}{suffix}"))
+        tree.on_select(
+            lambda e: e.value and ui.navigate.to(f"/teams/{e.value}{suffix}")
+        )
         if not all_teams:
             ui.label("No teams yet.").classes("text-gray-500")
 
@@ -78,24 +107,40 @@ def _team_dialog(all_teams, team=None) -> None:
     parent_options = {0: "— top level —"} | {t.id: paths[t.id] for t in all_teams}
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label("Edit team" if team else "New team").classes("text-lg font-medium")
-        name = ui.input("Name", value=team.name if team else "").props("outlined dense").classes(
-            "w-full"
+        name = (
+            ui.input("Name", value=team.name if team else "")
+            .props("outlined dense")
+            .classes("w-full")
         )
-        parent = ui.select(
-            parent_options,
-            label="Parent team",
-            value=(team.parent_team_id or 0) if team else 0,
-        ).props("outlined dense").classes("w-full")
-        description = ui.textarea(
-            "Description", value=(team.description or "") if team else ""
-        ).props("outlined dense").classes("w-full")
-        weight = ui.number(
-            "Workload weight (optional)",
-            value=float(team.workload_weight) if team is not None and team.workload_weight is not None else None,
-            min=0,
-            step=0.5,
-        ).props("outlined dense clearable").classes("w-full")
-        weight.tooltip("How work-heavy this ministry is; leave empty to exclude it from workload scores")
+        parent = (
+            ui.select(
+                parent_options,
+                label="Parent team",
+                value=(team.parent_team_id or 0) if team else 0,
+            )
+            .props("outlined dense")
+            .classes("w-full")
+        )
+        description = (
+            ui.textarea("Description", value=(team.description or "") if team else "")
+            .props("outlined dense")
+            .classes("w-full")
+        )
+        weight = (
+            ui.number(
+                "Workload weight (optional)",
+                value=float(team.workload_weight)
+                if team is not None and team.workload_weight is not None
+                else None,
+                min=0,
+                step=0.5,
+            )
+            .props("outlined dense clearable")
+            .classes("w-full")
+        )
+        weight.tooltip(
+            "How work-heavy this ministry is; leave empty to exclude it from workload scores"
+        )
 
         @notify_errors
         async def save() -> None:
@@ -104,7 +149,9 @@ def _team_dialog(all_teams, team=None) -> None:
 
                 require(actor.is_admin, "only admins manage teams")
                 parent_id = parent.value or None
-                weight_value = Decimal(str(weight.value)) if weight.value is not None else None
+                weight_value = (
+                    Decimal(str(weight.value)) if weight.value is not None else None
+                )
                 if team is None:
                     created = await team_service.create(
                         session,
@@ -168,47 +215,62 @@ async def team_detail(team_id: int, as_of: str = ""):
                 ui.button(
                     "Edit team",
                     icon="edit",
-                    on_click=lambda: _team_dialog([t for t in all_teams if t.id != team_id], team),
+                    on_click=lambda: _team_dialog(
+                        [t for t in all_teams if t.id != team_id], team
+                    ),
                 ).props("dense outline")
-                ui.button("Delete", icon="delete", on_click=lambda: _delete_team(team_id)).props(
-                    "dense outline color=negative"
-                )
+                ui.button(
+                    "Delete", icon="delete", on_click=lambda: _delete_team(team_id)
+                ).props("dense outline color=negative")
             if can_full:
                 slug = team.name.lower().replace(" ", "-")
 
                 async def export_xlsx() -> None:
                     async with action_session() as (session, _):
-                        content = await exporter.export_workbook(session, team_id=team_id, at=at)
+                        content = await exporter.export_workbook(
+                            session, team_id=team_id, at=at
+                        )
                     ui.download(content, f"{slug}.xlsx")
 
                 async def export_csv(sheet: str) -> None:
                     async with action_session() as (session, _):
-                        content = await exporter.export_csv(session, sheet, team_id=team_id, at=at)
+                        content = await exporter.export_csv(
+                            session, sheet, team_id=team_id, at=at
+                        )
                     ui.download(content, f"{slug}-{sheet}.csv")
 
-                with ui.dropdown_button("Export roster", icon="download").props("dense outline"):
+                with ui.dropdown_button("Export roster", icon="download").props(
+                    "dense outline"
+                ):
                     ui.item("Excel workbook (.xlsx)", on_click=export_xlsx)
                     ui.item("volunteers.csv", on_click=lambda: export_csv("volunteers"))
-                    ui.item("memberships.csv", on_click=lambda: export_csv("memberships"))
+                    ui.item(
+                        "memberships.csv", on_click=lambda: export_csv("memberships")
+                    )
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")
             with ui.row().classes("gap-2"):
                 for child in children:
                     ui.button(
-                        child.name, on_click=lambda _, cid=child.id: ui.navigate.to(f"/teams/{cid}")
+                        child.name,
+                        on_click=lambda _, cid=child.id: ui.navigate.to(
+                            f"/teams/{cid}"
+                        ),
                     ).props("outline dense")
 
         ui.label("Roster").classes("text-lg font-medium")
         if not can_names:
-            ui.label("You are not on this team, so its roster is not visible to you.").classes(
-                "text-gray-500"
-            )
+            ui.label(
+                "You are not on this team, so its roster is not visible to you."
+            ).classes("text-gray-500")
         elif not roster:
             ui.label("Nobody on this team yet.").classes("text-gray-500")
         else:
             for membership, volunteer in roster:
-                with ui.row().classes("w-full items-center gap-3 p-2 rounded hover:bg-gray-100"):
+                with ui.row().classes(
+                    "w-full items-center gap-3 p-2 rounded hover:bg-gray-100"
+                ):
                     ui.label(volunteer.full_name).classes(
                         "font-medium w-48 cursor-pointer text-primary hover:underline"
                     ).on("click", lambda _, vid=volunteer.id: panel.open(vid))
@@ -224,7 +286,9 @@ async def team_detail(team_id: int, as_of: str = ""):
                     else:
                         ui.badge(ROLE_LABELS[membership.role])
                     if can_full:
-                        ui.label(volunteer.email or "").classes("text-sm text-gray-600 w-56")
+                        ui.label(volunteer.email or "").classes(
+                            "text-sm text-gray-600 w-56"
+                        )
                         ui.label(volunteer.phone or "").classes("text-sm text-gray-600")
                     ui.space()
                     if membership.joined_on:
@@ -242,12 +306,16 @@ async def team_detail(team_id: int, as_of: str = ""):
         if can_manage:
             ui.label("Add member").classes("text-lg font-medium")
             with ui.row().classes("items-center gap-2"):
-                who = ui.select(
-                    volunteer_options, label="Volunteer", with_input=True
-                ).props("outlined dense").classes("w-64")
-                role = ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value).props(
-                    "outlined dense"
-                ).classes("w-52")
+                who = (
+                    ui.select(volunteer_options, label="Volunteer", with_input=True)
+                    .props("outlined dense")
+                    .classes("w-64")
+                )
+                role = (
+                    ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
+                    .props("outlined dense")
+                    .classes("w-52")
+                )
 
                 @notify_errors
                 async def add() -> None:
@@ -257,7 +325,9 @@ async def team_detail(team_id: int, as_of: str = ""):
                     async with action_session() as (session, actor):
                         from ..permissions import require
 
-                        require(actor.can_manage_team(team_id), "manage this team's roster")
+                        require(
+                            actor.can_manage_team(team_id), "manage this team's roster"
+                        )
                         await membership_service.assign(
                             session, who.value, team_id, TeamRole(role.value)
                         )

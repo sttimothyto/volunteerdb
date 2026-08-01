@@ -46,7 +46,10 @@ async def test_template_download(client, seeded, token_member):
 
     wb = load_workbook(BytesIO(r.content))
     assert set(wb.sheetnames) == {VOLUNTEER_SHEET, MEMBERSHIP_SHEET}
-    assert [c.value for c in wb[VOLUNTEER_SHEET][1]] == [*VOLUNTEER_HEADERS, PHOTO_HEADER]
+    assert [c.value for c in wb[VOLUNTEER_SHEET][1]] == [
+        *VOLUNTEER_HEADERS,
+        PHOTO_HEADER,
+    ]
     assert [c.value for c in wb[MEMBERSHIP_SHEET][1]] == MEMBERSHIP_HEADERS
 
 
@@ -69,9 +72,13 @@ async def test_team_export_permission_matrix(client, seeded, token_admin, token_
 
     async with db_session() as session:
         # promote the member's volunteer to core: full-roster rights incl. sub-teams
-        await memberships.assign(session, seeded["volunteer_id"], team_id, TeamRole.core)
+        await memberships.assign(
+            session, seeded["volunteer_id"], team_id, TeamRole.core
+        )
         music = await teams.create(session, "Music", parent_team_id=team_id)
-        singer = await volunteers.create(session, "Sally", "Singer", "sally@example.org")
+        singer = await volunteers.create(
+            session, "Sally", "Singer", "sally@example.org"
+        )
         await memberships.assign(session, singer.id, music.id, TeamRole.member)
 
     r = await client.get(f"/api/export/team/{team_id}.xlsx", headers=token_member)
@@ -104,15 +111,24 @@ async def test_parish_csv_admin_only(client, seeded, token_admin, token_member):
     r = await client.get("/api/export/parish/volunteers.csv", headers=token_admin)
     assert r.status_code == 200
     assert "Maria" in r.content.decode("utf-8-sig")
-    assert 'filename="volunteerdb-parish-volunteers.csv"' in r.headers["content-disposition"]
+    assert (
+        'filename="volunteerdb-parish-volunteers.csv"'
+        in r.headers["content-disposition"]
+    )
 
 
-async def test_team_csv_permission_mirrors_xlsx(client, seeded, token_admin, token_member):
+async def test_team_csv_permission_mirrors_xlsx(
+    client, seeded, token_admin, token_member
+):
     team_id = seeded["team_id"]
-    r = await client.get(f"/api/export/team/{team_id}/memberships.csv", headers=token_member)
+    r = await client.get(
+        f"/api/export/team/{team_id}/memberships.csv", headers=token_member
+    )
     assert r.status_code == 403, "a plain member cannot export contact details"
 
-    r = await client.get(f"/api/export/team/{team_id}/memberships.csv", headers=token_admin)
+    r = await client.get(
+        f"/api/export/team/{team_id}/memberships.csv", headers=token_admin
+    )
     assert r.status_code == 200
     assert "Liturgy" in r.content.decode("utf-8-sig")
 
@@ -150,7 +166,8 @@ async def test_leader_import_scoped_over_http(client, seeded, token_leader):
     async with db_session() as session:
         await teams.create(session, "Hospitality")
     content = _import_workbook_bytes(
-        [], [["maria@example.org", "Maria Alvarez", "Hospitality", "member", None, None]]
+        [],
+        [["maria@example.org", "Maria Alvarez", "Hospitality", "member", None, None]],
     )
     r = await client.post("/api/import", files=_upload(content), headers=token_leader)
     assert r.status_code == 200
@@ -164,7 +181,10 @@ async def test_leader_csv_dry_run_over_http(client, seeded, token_leader):
         ",".join(VOLUNTEER_HEADERS) + "\nMaria,Alvarez,maria@example.org,555-77,,yes\n"
     ).encode("utf-8-sig")
     r = await client.post(
-        "/api/import", params={"dry_run": "true"}, files=_upload_csv(content), headers=token_leader
+        "/api/import",
+        params={"dry_run": "true"},
+        files=_upload_csv(content),
+        headers=token_leader,
     )
     assert r.status_code == 200, r.text
     report = r.json()
@@ -172,7 +192,9 @@ async def test_leader_csv_dry_run_over_http(client, seeded, token_leader):
     assert not report["errors"]
 
 
-async def test_import_dry_run_then_apply_over_http(client, seeded, token_admin, token_member):
+async def test_import_dry_run_then_apply_over_http(
+    client, seeded, token_admin, token_member
+):
     content = _import_workbook_bytes(
         [["Eve", "Green", "eve@example.org", None, None, "yes"]],
         [["eve@example.org", "Eve Green", "Liturgy", "leader", None, None]],
@@ -182,7 +204,10 @@ async def test_import_dry_run_then_apply_over_http(client, seeded, token_admin, 
     assert r.status_code == 403
 
     r = await client.post(
-        "/api/import", params={"dry_run": "true"}, files=_upload(content), headers=token_admin
+        "/api/import",
+        params={"dry_run": "true"},
+        files=_upload(content),
+        headers=token_admin,
     )
     assert r.status_code == 200
     report = r.json()

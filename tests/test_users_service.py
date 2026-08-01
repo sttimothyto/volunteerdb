@@ -9,8 +9,12 @@ from volunteerdb.services.users import _token_digest
 
 async def test_bulk_provision_dedupes_and_skips(database):
     async with db_session() as session:
-        family1 = await volunteers.create(session, "Ana", "Family", "family@example.org")
-        family2 = await volunteers.create(session, "Bob", "Family", "family@example.org")
+        family1 = await volunteers.create(
+            session, "Ana", "Family", "family@example.org"
+        )
+        family2 = await volunteers.create(
+            session, "Bob", "Family", "family@example.org"
+        )
         await volunteers.create(session, "Carl", "Nomail")  # no email: not considered
         inactive = await volunteers.create(session, "Dora", "Gone", "dora@example.org")
         await volunteers.update(session, inactive.id, is_active=False)
@@ -22,7 +26,9 @@ async def test_bulk_provision_dedupes_and_skips(database):
         assert [v.id for v, _ in report.created] == [family1.id]
         created_user = report.created[0][1]
         assert created_user.email == "family@example.org"
-        assert created_user.invite_token is not None, "provisioned accounts are invite-based"
+        assert created_user.invite_token is not None, (
+            "provisioned accounts are invite-based"
+        )
         skipped = {v.id: reason for v, reason in report.skipped}
         assert "already used" in skipped[family2.id]
         assert skipped[linked.id] == "already has an account"
@@ -47,9 +53,13 @@ async def test_issue_api_token_revokes_previous(database):
         first = await users.issue_api_token(session, user.id)
         second = await users.issue_api_token(session, user.id)
 
-        assert await users.authenticate_token(session, first) is None, "old token is revoked"
+        assert await users.authenticate_token(session, first) is None, (
+            "old token is revoked"
+        )
         assert (await users.authenticate_token(session, second)).id == user.id
-        assert user.api_token == _token_digest(second) != second, "only the digest is stored"
+        assert user.api_token == _token_digest(second) != second, (
+            "only the digest is stored"
+        )
 
 
 async def test_authenticate_token_rejects_inactive_and_empty(database):
@@ -66,15 +76,23 @@ async def test_authenticate_token_rejects_inactive_and_empty(database):
 async def test_reissue_invite_invalidates_password(database):
     async with db_session() as session:
         user = await users.create(session, "reset@example.org", password="old-pass-1")
-        assert await users.authenticate(session, "reset@example.org", "old-pass-1") is not None
+        assert (
+            await users.authenticate(session, "reset@example.org", "old-pass-1")
+            is not None
+        )
 
         invite = await users.reissue_invite(session, user.id)
-        assert await users.authenticate(session, "reset@example.org", "old-pass-1") is None
+        assert (
+            await users.authenticate(session, "reset@example.org", "old-pass-1") is None
+        )
 
         redeemed = await users.redeem_invite(session, invite, "new-pass-1")
         assert redeemed is not None and redeemed.invite_token is None
         assert await users.redeem_invite(session, invite, "again") is None, "single use"
-        assert await users.authenticate(session, "reset@example.org", "new-pass-1") is not None
+        assert (
+            await users.authenticate(session, "reset@example.org", "new-pass-1")
+            is not None
+        )
 
 
 async def test_set_password_clears_invite_and_missing_raises(database):
@@ -84,7 +102,10 @@ async def test_set_password_clears_invite_and_missing_raises(database):
 
         await users.set_password(session, user.id, "fresh-pass-1")
         assert user.invite_token is None
-        assert await users.authenticate(session, "invitee@example.org", "fresh-pass-1") is not None
+        assert (
+            await users.authenticate(session, "invitee@example.org", "fresh-pass-1")
+            is not None
+        )
 
         with pytest.raises(LookupError):
             await users.set_password(session, 424242, "x")

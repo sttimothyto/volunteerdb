@@ -37,7 +37,9 @@ async def test_unmatched_email_does_not_fall_back_to_name(database):
         await volunteers.create(session, "Andrea", "Smart")
 
     content = _workbook_bytes(
-        volunteer_rows=[["Andrea", "Smart", "a.smart705@outlook.com", None, None, "yes"]]
+        volunteer_rows=[
+            ["Andrea", "Smart", "a.smart705@outlook.com", None, None, "yes"]
+        ]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert report.applied and report.volunteers_created == 1
@@ -102,14 +104,18 @@ async def test_family_shared_email_is_disambiguated_by_name(database):
         await volunteers.create(session, "Jose", "Alvarez", "family@example.org")
 
     content = _workbook_bytes(
-        volunteer_rows=[["Maria", "Alvarez", "family@example.org", "555-0100", None, "yes"]]
+        volunteer_rows=[
+            ["Maria", "Alvarez", "family@example.org", "555-0100", None, "yes"]
+        ]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert report.applied, [i.message for i in report.errors]
     assert report.volunteers_created == 0 and report.volunteers_updated == 1
 
     async with db_session() as session:
-        found = {v.first_name: v.phone for v in await volunteers.search(session, "Alvarez")}
+        found = {
+            v.first_name: v.phone for v in await volunteers.search(session, "Alvarez")
+        }
     assert found == {"Maria": "555-0100", "Jose": None}, "only the named spouse changed"
 
     ambiguous = _workbook_bytes(

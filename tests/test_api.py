@@ -19,7 +19,9 @@ async def test_login_and_me(client, seeded):
     assert r.status_code == 200
     assert r.json()["is_admin"] is True
 
-    r = await client.post("/api/auth/login", json={"email": "admin@example.org", "password": "nope"})
+    r = await client.post(
+        "/api/auth/login", json={"email": "admin@example.org", "password": "nope"}
+    )
     assert r.status_code == 401
     r = await client.get("/api/teams")
     assert r.status_code == 401
@@ -78,7 +80,11 @@ async def test_member_permissions_enforced(client, seeded):
 
     r = await client.post(
         "/api/memberships",
-        json={"volunteer_id": seeded["volunteer_id"], "team_id": seeded["team_id"], "role": "leader"},
+        json={
+            "volunteer_id": seeded["volunteer_id"],
+            "team_id": seeded["team_id"],
+            "role": "leader",
+        },
         headers=headers,
     )
     assert r.status_code == 403
@@ -99,7 +105,9 @@ async def test_as_of_time_travel(client, seeded):
     await asyncio.sleep(0.02)
 
     r = await client.patch(
-        f"/api/volunteers/{seeded['volunteer_id']}", json={"first_name": "Renamed"}, headers=headers
+        f"/api/volunteers/{seeded['volunteer_id']}",
+        json={"first_name": "Renamed"},
+        headers=headers,
     )
     assert r.status_code == 200
 
@@ -107,7 +115,9 @@ async def test_as_of_time_travel(client, seeded):
     assert r.json()["first_name"] == "Renamed"
 
     r = await client.get(
-        f"/api/volunteers/{seeded['volunteer_id']}", params={"as_of": before}, headers=headers
+        f"/api/volunteers/{seeded['volunteer_id']}",
+        params={"as_of": before},
+        headers=headers,
     )
     assert r.status_code == 200
     assert r.json()["first_name"] == "Maria", "as-of sees the pre-rename state"
@@ -120,7 +130,9 @@ async def test_include_inactive_requires_admin(client, seeded):
     member = await _token(client, "member@example.org", "member-pw")
 
     r = await client.post(
-        "/api/volunteers", json={"first_name": "Archie", "last_name": "Archived"}, headers=admin
+        "/api/volunteers",
+        json={"first_name": "Archie", "last_name": "Archived"},
+        headers=admin,
     )
     assert r.status_code == 201, r.text
     r = await client.patch(
@@ -128,11 +140,15 @@ async def test_include_inactive_requires_admin(client, seeded):
     )
     assert r.status_code == 200, r.text
 
-    r = await client.get("/api/volunteers", params={"include_inactive": "true"}, headers=admin)
+    r = await client.get(
+        "/api/volunteers", params={"include_inactive": "true"}, headers=admin
+    )
     assert r.status_code == 200
     assert "Archived" in [v["last_name"] for v in r.json()]
 
-    r = await client.get("/api/volunteers", params={"include_inactive": "true"}, headers=member)
+    r = await client.get(
+        "/api/volunteers", params={"include_inactive": "true"}, headers=member
+    )
     assert r.status_code == 403, "archived volunteers are admin-only"
 
     r = await client.get("/api/volunteers", headers=member)
@@ -161,7 +177,9 @@ async def test_a_bare_as_of_date_covers_that_whole_day(client, seeded):
         "the GUI and the API must resolve the same query string to the same instant"
     )
 
-    r = await client.get("/api/volunteers", params={"as_of": "not-a-date"}, headers=headers)
+    r = await client.get(
+        "/api/volunteers", params={"as_of": "not-a-date"}, headers=headers
+    )
     assert r.status_code == 422, "garbage is still rejected rather than ignored"
 
 
@@ -194,7 +212,11 @@ async def test_custom_fields_flow(client, seeded):
     member = await _token(client, "member@example.org", "member-pw")
 
     # only admins define fields
-    body = {"label": "Preferred contact", "field_type": "select", "options": ["Email", "Phone"]}
+    body = {
+        "label": "Preferred contact",
+        "field_type": "select",
+        "options": ["Email", "Phone"],
+    }
     r = await client.post("/api/custom-fields", json=body, headers=member)
     assert r.status_code == 403
     r = await client.post("/api/custom-fields", json=body, headers=admin)
@@ -209,11 +231,15 @@ async def test_custom_fields_flow(client, seeded):
     # invalid value -> 422; valid -> stored
     vid = seeded["volunteer_id"]
     r = await client.patch(
-        f"/api/volunteers/{vid}", json={"custom": {"preferred_contact": "Fax"}}, headers=admin
+        f"/api/volunteers/{vid}",
+        json={"custom": {"preferred_contact": "Fax"}},
+        headers=admin,
     )
     assert r.status_code == 422
     r = await client.patch(
-        f"/api/volunteers/{vid}", json={"custom": {"preferred_contact": "Email"}}, headers=admin
+        f"/api/volunteers/{vid}",
+        json={"custom": {"preferred_contact": "Email"}},
+        headers=admin,
     )
     assert r.status_code == 200
     assert r.json()["custom"] == {"preferred_contact": "Email"}
@@ -232,7 +258,9 @@ async def test_custom_fields_flow(client, seeded):
     assert r.json()["custom"] == {"preferred_contact": "Phone"}
 
     # member cannot edit/delete definitions
-    r = await client.patch(f"/api/custom-fields/{field['id']}", json={"label": "X"}, headers=member)
+    r = await client.patch(
+        f"/api/custom-fields/{field['id']}", json={"label": "X"}, headers=member
+    )
     assert r.status_code == 403
     r = await client.delete(f"/api/custom-fields/{field['id']}", headers=admin)
     assert r.status_code == 204
@@ -255,7 +283,11 @@ async def test_workload_flow(client, seeded):
     # promote Maria to leader: score = 3 (weight) × 3 (leader multiplier) = 9 -> red
     r = await client.post(
         "/api/memberships",
-        json={"volunteer_id": seeded["volunteer_id"], "team_id": seeded["team_id"], "role": "leader"},
+        json={
+            "volunteer_id": seeded["volunteer_id"],
+            "team_id": seeded["team_id"],
+            "role": "leader",
+        },
         headers=admin,
     )
     assert r.status_code == 201

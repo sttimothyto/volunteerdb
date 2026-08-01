@@ -5,7 +5,15 @@ from fastapi import APIRouter
 from ..permissions import require
 from ..services import teams as service
 from .deps import AsOf, CtxDep
-from .schemas import RosterEntry, TeamIn, TeamOut, TeamPatch, TeamWithPath, VolunteerOut, role_label
+from .schemas import (
+    RosterEntry,
+    TeamIn,
+    TeamOut,
+    TeamPatch,
+    TeamWithPath,
+    VolunteerOut,
+    role_label,
+)
 from .volunteers import redacted
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -22,7 +30,10 @@ async def list_teams(ctx: CtxDep, as_of: AsOf) -> list[TeamWithPath]:
     """The team directory (structure is visible to every signed-in user)."""
     all_teams = await service.list_all(ctx.session, at=as_of)
     paths = service.team_paths(all_teams)
-    return [TeamWithPath(**TeamOut.model_validate(t).model_dump(), path=paths[t.id]) for t in all_teams]
+    return [
+        TeamWithPath(**TeamOut.model_validate(t).model_dump(), path=paths[t.id])
+        for t in all_teams
+    ]
 
 
 @router.post("", status_code=201)

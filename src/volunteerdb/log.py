@@ -88,17 +88,24 @@ def init_logging() -> None:
     mode = s.log_level.upper()
     threshold = _MODE_NUM.get(mode)
     if threshold is None:
-        raise ValueError(f"VDB_LOG_LEVEL must be one of {sorted(_MODE_NUM)}, got {s.log_level!r}")
+        raise ValueError(
+            f"VDB_LOG_LEVEL must be one of {sorted(_MODE_NUM)}, got {s.log_level!r}"
+        )
 
     structlog.configure(
-        processors=[*shared_processors, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
+        processors=[
+            *shared_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=False,
     )
 
     mode_filter = _ModeFilter(threshold)
-    console = logging.StreamHandler(sys.stderr)  # stderr: stdout stays clean for [MAIL] prints
+    console = logging.StreamHandler(
+        sys.stderr
+    )  # stderr: stdout stays clean for [MAIL] prints
     console.setFormatter(_formatter(colors=sys.stderr.isatty()))
     handlers: list[logging.Handler] = [console]
     if s.log_file:

@@ -41,7 +41,9 @@ async def template(ctx: CtxDep) -> Response:
 
 @router.get("/export/template/{sheet}.csv")
 async def template_csv(ctx: CtxDep, sheet: CsvSheet) -> Response:
-    return _csv(exporter.template_csv(sheet.value), f"volunteerdb-template-{sheet.value}.csv")
+    return _csv(
+        exporter.template_csv(sheet.value), f"volunteerdb-template-{sheet.value}.csv"
+    )
 
 
 @router.get("/export/parish.xlsx")
@@ -66,9 +68,13 @@ async def export_team(ctx: CtxDep, team_id: int, as_of: AsOf) -> Response:
 
 
 @router.get("/export/team/{team_id}/{sheet}.csv")
-async def export_team_csv(ctx: CtxDep, team_id: int, sheet: CsvSheet, as_of: AsOf) -> Response:
+async def export_team_csv(
+    ctx: CtxDep, team_id: int, sheet: CsvSheet, as_of: AsOf
+) -> Response:
     require(ctx.actor.can_view_full_roster(team_id), "export this team")
-    content = await exporter.export_csv(ctx.session, sheet.value, team_id=team_id, at=as_of)
+    content = await exporter.export_csv(
+        ctx.session, sheet.value, team_id=team_id, at=as_of
+    )
     return _csv(content, f"volunteerdb-team-{team_id}-{sheet.value}.csv")
 
 
@@ -109,7 +115,9 @@ class ImportReportOut(BaseModel):
 
 
 @router.post("/import")
-async def import_workbook(ctx: CtxDep, file: UploadFile, dry_run: bool = False) -> ImportReportOut:
+async def import_workbook(
+    ctx: CtxDep, file: UploadFile, dry_run: bool = False
+) -> ImportReportOut:
     """Upload a filled-in .xlsx template or a single-sheet .csv. All-or-nothing;
     use dry_run=true to preview. Non-admin leaders/seconds are scoped to the
     teams they manage (out-of-scope rows come back as errors)."""
@@ -117,7 +125,9 @@ async def import_workbook(ctx: CtxDep, file: UploadFile, dry_run: bool = False) 
     content = await file.read(MAX_IMPORT_BYTES + 1)
     if len(content) > MAX_IMPORT_BYTES:
         raise HTTPException(413, "file larger than 10 MB")
-    report = await importer.run_import(content, dry_run=dry_run, user_id=ctx.actor.user.id)
+    report = await importer.run_import(
+        content, dry_run=dry_run, user_id=ctx.actor.user.id
+    )
     return ImportReportOut(
         applied=report.applied,
         volunteers_created=report.volunteers_created,

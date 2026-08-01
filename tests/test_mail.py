@@ -51,12 +51,15 @@ async def test_send_email_posts_to_smtp2go(monkeypatch):
 async def test_send_email_api_error_returns_false(monkeypatch):
     _fake_settings(monkeypatch)
 
-    _mock_transport(monkeypatch, lambda request: httpx.Response(500, json={"error": "boom"}))
+    _mock_transport(
+        monkeypatch, lambda request: httpx.Response(500, json={"error": "boom"})
+    )
     assert await mail.send_email("to@example.org", "s", "b") is False
 
     # a 200 that reports zero deliveries is also a failure
     _mock_transport(
-        monkeypatch, lambda request: httpx.Response(200, json={"data": {"succeeded": 0}})
+        monkeypatch,
+        lambda request: httpx.Response(200, json={"data": {"succeeded": 0}}),
     )
     assert await mail.send_email("to@example.org", "s", "b") is False
 

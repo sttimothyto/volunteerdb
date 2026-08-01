@@ -47,9 +47,9 @@ asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 
 [tool.ruff]
-# The source is written to 100 columns. Without this, ruff falls back to its
-# 88-column default and `ruff format` reflows most of the repo.
-line-length = 100
+# Ruff's default width, stated explicitly so it cannot drift under us. The
+# source is formatted to it -- run `make format` rather than rewrapping by hand.
+line-length = 88
 extend-exclude = ["ingest-data"]  # one-off import scripts, not part of the app
 
 [tool.ruff.lint]

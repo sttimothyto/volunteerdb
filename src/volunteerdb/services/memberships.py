@@ -12,7 +12,9 @@ async def get(session: AsyncSession, membership_id: int) -> Membership | None:
     return await session.get(Membership, membership_id)
 
 
-async def find(session: AsyncSession, volunteer_id: int, team_id: int) -> Membership | None:
+async def find(
+    session: AsyncSession, volunteer_id: int, team_id: int
+) -> Membership | None:
     return (
         await session.execute(
             sa.select(Membership).where(
@@ -36,10 +38,16 @@ async def assign(
 
     `existing` lets bulk callers (the importer) pass a preloaded membership
     — or None — and skip the per-row lookup."""
-    membership = await find(session, volunteer_id, team_id) if existing is _UNSET else existing
+    membership = (
+        await find(session, volunteer_id, team_id) if existing is _UNSET else existing
+    )
     if membership is None:
         membership = Membership(
-            volunteer_id=volunteer_id, team_id=team_id, role=role, joined_on=joined_on, notes=notes
+            volunteer_id=volunteer_id,
+            team_id=team_id,
+            role=role,
+            joined_on=joined_on,
+            notes=notes,
         )
         session.add(membership)
     else:

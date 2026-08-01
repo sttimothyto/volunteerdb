@@ -14,7 +14,9 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 async def test_admin_pages_render(database):
     async with db_session() as session:
-        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="pw"
+        )
         member = await users.create(session, "felix@example.org", password="pw")
         admin_id, member_id = admin.id, member.id
 
@@ -49,9 +51,13 @@ async def test_admin_pages_render(database):
         await user.open("/admin/users")
         await user.should_see("Admins only.")
         await user.open("/import")
-        await user.should_see("Import/Export is available to admins and to team leaders/seconds.")
+        await user.should_see(
+            "Import/Export is available to admins and to team leaders/seconds."
+        )
         await user.open("/planning")
-        await user.should_see("Planning is available to admins and to team leaders/seconds.")
+        await user.should_see(
+            "Planning is available to admins and to team leaders/seconds."
+        )
 
 
 async def test_leader_import_page_scoped(database):
@@ -59,7 +65,9 @@ async def test_leader_import_page_scoped(database):
         liturgy = await teams.create(session, "Liturgy")
         lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
         await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
-        leader = await users.create(session, "lena@example.org", volunteer_id=lena.id, password="pw")
+        leader = await users.create(
+            session, "lena@example.org", volunteer_id=lena.id, password="pw"
+        )
         leader_id = leader.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -79,7 +87,9 @@ async def test_admin_users_provision_button(database, monkeypatch):
     monkeypatch.setattr(mail, "send_email", fake_send)
 
     async with db_session() as session:
-        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="pw"
+        )
         await volunteers.create(session, "Vera", "Volunteer", "vera@example.org")
         admin_id = admin.id
 
@@ -88,7 +98,9 @@ async def test_admin_users_provision_button(database, monkeypatch):
         await user.open("/admin/users")
         await user.should_see("1 accounts")
 
-        user.find("Create accounts for all volunteers with email", kind=ui.button).click()
+        user.find(
+            "Create accounts for all volunteers with email", kind=ui.button
+        ).click()
         await user.should_see("send each of them an invite email?", retries=30)
         user.find("Create and email invites", kind=ui.button).click()
         await user.should_see("vera@example.org", retries=30)

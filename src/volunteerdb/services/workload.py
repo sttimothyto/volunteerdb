@@ -70,7 +70,9 @@ def _to_json(config: WorkloadConfig) -> dict:
 def _from_json(value: dict) -> WorkloadConfig:
     # JSON numbers arrive as floats; go through str() to keep Decimals exact
     multipliers = {
-        role: Decimal(str(value["multipliers"].get(role.value, DEFAULT_CONFIG.multipliers[role])))
+        role: Decimal(
+            str(value["multipliers"].get(role.value, DEFAULT_CONFIG.multipliers[role]))
+        )
         for role in TeamRole
     }
     bands = [
@@ -139,11 +141,16 @@ async def scores(
         config = await get_config(session)
     M, T = entity(Membership, at), entity(Team, at)
     mult = sa.case(
-        {role.value: sa.literal(config.multipliers[role], sa.Numeric(8, 2)) for role in TeamRole},
+        {
+            role.value: sa.literal(config.multipliers[role], sa.Numeric(8, 2))
+            for role in TeamRole
+        },
         value=sa.cast(M.role, sa.String),
     )
     stmt = (
-        sa.select(M.volunteer_id, sa.func.sum(sa.func.coalesce(T.workload_weight, 0) * mult))
+        sa.select(
+            M.volunteer_id, sa.func.sum(sa.func.coalesce(T.workload_weight, 0) * mult)
+        )
         .join(T, T.id == M.team_id)
         .group_by(M.volunteer_id)
     )
@@ -163,7 +170,9 @@ async def visible_scores(
 ) -> dict[int, tuple[Decimal, Band]]:
     """(score, band) for exactly those volunteers whose workload `actor` may see.
     `team_sets` maps volunteer id -> ALL their team ids (drives the permission)."""
-    permitted = [vid for vid, tids in team_sets.items() if actor.can_view_workload(tids)]
+    permitted = [
+        vid for vid, tids in team_sets.items() if actor.can_view_workload(tids)
+    ]
     if not permitted:
         return {}
     config = await get_config(session)

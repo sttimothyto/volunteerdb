@@ -7,7 +7,15 @@ from PIL import Image
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.permissions import load_actor
-from volunteerdb.services import graph, memberships, photos, reports, teams, users, volunteers
+from volunteerdb.services import (
+    graph,
+    memberships,
+    photos,
+    reports,
+    teams,
+    users,
+    volunteers,
+)
 
 
 async def test_coverage_counts_and_hole_first_sorting(database):
@@ -38,7 +46,9 @@ async def test_coverage_counts_and_hole_first_sorting(database):
             TeamRole.member: 1,
         }
         assert by_name["Altar"].total == 3
-        assert not by_name["Altar"].missing_leader and not by_name["Altar"].missing_second
+        assert (
+            not by_name["Altar"].missing_leader and not by_name["Altar"].missing_second
+        )
         assert by_name["Bakers"].missing_leader and by_name["Bakers"].missing_second
         assert by_name["Drama"].total == 0
 
@@ -61,7 +71,9 @@ async def _parish(session):
 async def test_graph_admin_sees_everything(database):
     async with db_session() as session:
         parent, child, other, on_parent, on_child, on_other = await _parish(session)
-        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="pw"
+        )
         actor = await load_actor(session, admin)
 
         data = await graph.elements(session, actor)
@@ -75,7 +87,9 @@ async def test_graph_admin_sees_everything(database):
         assert edges[f"m{child.id}-{on_child.id}"]["leadership"] is False
         assert edges[f"h{child.id}"]["hierarchy"] is True, "sub-team edge present"
 
-        leader_node = next(n for n in data["nodes"] if n["data"]["id"] == f"v{on_parent.id}")
+        leader_node = next(
+            n for n in data["nodes"] if n["data"]["id"] == f"v{on_parent.id}"
+        )
         assert "band" in leader_node["data"], "admins see workload colouring"
 
 
@@ -94,9 +108,13 @@ async def test_graph_member_sees_only_own_team(database):
             "a plain member sees only their direct team"
         )
         edge_ids = {e["data"]["id"] for e in data["edges"]}
-        assert f"h{child.id}" not in edge_ids, "hierarchy edge dropped: parent invisible"
+        assert f"h{child.id}" not in edge_ids, (
+            "hierarchy edge dropped: parent invisible"
+        )
 
-        own_node = next(n for n in data["nodes"] if n["data"]["id"] == f"v{on_child.id}")
+        own_node = next(
+            n for n in data["nodes"] if n["data"]["id"] == f"v{on_child.id}"
+        )
         assert "band" not in own_node["data"], "workload is a leadership-only signal"
 
 
@@ -105,28 +123,39 @@ async def test_graph_photo_datum_only_on_photographed_volunteers(database):
         parent, child, other, on_parent, on_child, on_other = await _parish(session)
         buffer = BytesIO()
         Image.new("RGB", (500, 500), (50, 100, 150)).save(buffer, format="PNG")
-        await photos.set_photo(session, on_parent.id, buffer.getvalue(), uploaded_by=None)
-        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        await photos.set_photo(
+            session, on_parent.id, buffer.getvalue(), uploaded_by=None
+        )
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="pw"
+        )
         actor = await load_actor(session, admin)
 
         data = await graph.elements(session, actor)
 
         by_id = {n["data"]["id"]: n["data"] for n in data["nodes"]}
-        assert by_id[f"v{on_parent.id}"]["photo"].startswith(f"/photos/{on_parent.id}?v="), (
-            "photographed volunteers carry their cookie-authed image URL"
-        )
+        assert by_id[f"v{on_parent.id}"]["photo"].startswith(
+            f"/photos/{on_parent.id}?v="
+        ), "photographed volunteers carry their cookie-authed image URL"
         assert "photo" not in by_id[f"v{on_child.id}"], "no photo, no datum"
 
 
 async def test_graph_team_filter_restricts_to_subtree(database):
     async with db_session() as session:
         parent, child, other, on_parent, on_child, on_other = await _parish(session)
-        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="pw"
+        )
         actor = await load_actor(session, admin)
 
         data = await graph.elements(session, actor, team_id=parent.id)
 
         node_ids = {n["data"]["id"] for n in data["nodes"]}
         assert f"t{other.id}" not in node_ids and f"v{on_other.id}" not in node_ids
-        assert {f"t{parent.id}", f"t{child.id}", f"v{on_parent.id}", f"v{on_child.id}"} <= node_ids
+        assert {
+            f"t{parent.id}",
+            f"t{child.id}",
+            f"v{on_parent.id}",
+            f"v{on_child.id}",
+        } <= node_ids
         assert f"h{child.id}" in {e["data"]["id"] for e in data["edges"]}

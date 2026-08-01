@@ -54,7 +54,9 @@ TEAM_COLS = [
 AUDIT_COLS = [("changed_by", "integer"), ("op", "char(1)")]
 
 
-def _rebuild_history(table: str, cols: list[tuple[str, str]], select_exprs: list[str]) -> None:
+def _rebuild_history(
+    table: str, cols: list[tuple[str, str]], select_exprs: list[str]
+) -> None:
     """Recreate <table>_history with `cols`, carrying rows over via `select_exprs`."""
     hist = f"{table}_history"
     ddl = ", ".join(f"{name} {sql_type}" for name, sql_type in cols)
@@ -63,7 +65,9 @@ def _rebuild_history(table: str, cols: list[tuple[str, str]], select_exprs: list
     op.execute(f"DROP TABLE {hist}")
     op.execute(f"ALTER TABLE {hist}_new RENAME TO {hist}")
     op.create_index(f"ix_{hist}_id", hist, ["id"])
-    op.create_index(f"ix_{hist}_sys_period", hist, ["sys_period"], postgresql_using="gist")
+    op.create_index(
+        f"ix_{hist}_sys_period", hist, ["sys_period"], postgresql_using="gist"
+    )
 
 
 def upgrade() -> None:
@@ -74,11 +78,16 @@ def upgrade() -> None:
         sa.Column("label", sa.String(100), nullable=False),
         sa.Column("field_type", sa.String(20), nullable=False),
         sa.Column("options", postgresql.JSONB),
-        sa.Column("show_in_list", sa.Boolean, nullable=False, server_default=sa.false()),
+        sa.Column(
+            "show_in_list", sa.Boolean, nullable=False, server_default=sa.false()
+        ),
         sa.Column("position", sa.Integer, nullable=False, server_default=sa.text("0")),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.true()),
         sa.Column(
-            "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
         sa.CheckConstraint(
             "field_type IN ('text', 'number', 'select', 'date', 'checkbox')",
@@ -91,14 +100,20 @@ def upgrade() -> None:
         sa.Column("key", sa.String(100), primary_key=True),
         sa.Column("value", postgresql.JSONB, nullable=False),
         sa.Column(
-            "updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
     )
 
     op.add_column(
         "volunteer",
         sa.Column(
-            "custom", postgresql.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
+            "custom",
+            postgresql.JSONB,
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
         ),
     )
     _rebuild_history(

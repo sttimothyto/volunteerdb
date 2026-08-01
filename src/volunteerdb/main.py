@@ -19,7 +19,14 @@ from .ui.context import session_user_id
 
 logger = structlog.get_logger(__name__)
 
-UNRESTRICTED_PREFIXES = ("/login", "/invite/", "/api/", "/_nicegui", "/static/", "/favicon")
+UNRESTRICTED_PREFIXES = (
+    "/login",
+    "/invite/",
+    "/api/",
+    "/_nicegui",
+    "/static/",
+    "/favicon",
+)
 # /photos/ is cookie-authed but asset-like: skipping the session re-issue keeps
 # its long-lived Cache-Control effective (a Set-Cookie per image defeats caching)
 ASSET_PREFIXES = ("/_nicegui", "/static/", "/favicon", "/api/", "/photos/")
@@ -39,7 +46,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if "id" in request.session and not any(path.startswith(p) for p in ASSET_PREFIXES):
+        if "id" in request.session and not any(
+            path.startswith(p) for p in ASSET_PREFIXES
+        ):
             # Starlette only re-issues the session cookie when the session dict
             # was modified, so without this touch it would hard-expire max_age
             # after the FIRST visit, even for active users.
@@ -68,9 +77,15 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             try:
                 response = await call_next(request)
             except Exception:
-                logger.exception("http.request_failed", method=request.method, path=path)
+                logger.exception(
+                    "http.request_failed", method=request.method, path=path
+                )
                 raise
-            line = logger.debug if any(path.startswith(p) for p in QUIET_PREFIXES) else logger.info
+            line = (
+                logger.debug
+                if any(path.startswith(p) for p in QUIET_PREFIXES)
+                else logger.info
+            )
             line(
                 "http.request",
                 method=request.method,
@@ -100,6 +115,7 @@ def create_app() -> None:
                 "  uv run --group docs sphinx-build -b html docs docs/_build/html\n",
                 status_code=404,
             )
+
     app.colors(
         primary="#A5573E",
         secondary="#8A7550",
@@ -127,7 +143,10 @@ def run() -> None:
     create_app()
     s = settings()
     secret = s.storage_secret
-    if not secret or secret in ("dev-secret-change-me", "change-me-to-a-long-random-string"):
+    if not secret or secret in (
+        "dev-secret-change-me",
+        "change-me-to-a-long-random-string",
+    ):
         secret = secrets.token_hex(32)  # never serve forgeable sessions
         logger.warning(
             "VDB_STORAGE_SECRET unset — using an ephemeral secret; sessions reset on restart"

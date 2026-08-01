@@ -77,7 +77,11 @@ APP_DIR = "/opt/volunteerdb/app"  # synced source == podman build context
 ENV_FILE = "/etc/volunteerdb/env"
 DB_ENV_FILE = "/etc/volunteerdb/db.env"
 QUADLET_DIR = "/etc/containers/systemd"
-QUADLETS = ("volunteerdb.network", "volunteerdb-db.container", "volunteerdb-app.container")
+QUADLETS = (
+    "volunteerdb.network",
+    "volunteerdb-db.container",
+    "volunteerdb-app.container",
+)
 IMAGE = "localhost/volunteerdb:latest"
 PG_IMAGE = "docker.io/library/postgres:17"
 NET = "volunteerdb"
@@ -108,7 +112,9 @@ BACKUP_ALERT_EMAIL = ADMIN_EMAIL  # "" disables the failure email
 def _remote_env() -> dict[str, str]:
     lines = host.get_fact(FileContents, path=ENV_FILE) or []
     pairs = (
-        line.split("=", 1) for line in lines if "=" in line and not line.lstrip().startswith("#")
+        line.split("=", 1)
+        for line in lines
+        if "=" in line and not line.lstrip().startswith("#")
     )
     return {k.strip(): v.strip() for k, v in pairs}
 
@@ -121,7 +127,9 @@ smtp2go_api_key = (
 )
 if not smtp2go_api_key:
     print("NOTE: VDB_SMTP2GO_API_KEY not set - emails will be logged, not sent.")
-database_url = f"postgresql+asyncpg://{DB_USER}:{db_password}@volunteerdb-db:5432/{DB_NAME}"
+database_url = (
+    f"postgresql+asyncpg://{DB_USER}:{db_password}@volunteerdb-db:5432/{DB_NAME}"
+)
 
 # First containerized run against a host still serving the native deploy?
 _units = host.get_fact(SystemdStatus) or {}
@@ -262,7 +270,9 @@ if CUTOVER:
 
 server.shell(
     name="alembic upgrade head (one-shot container)",
-    commands=[f"podman run --rm --network {NET} --env-file {ENV_FILE} {IMAGE} alembic upgrade head"],
+    commands=[
+        f"podman run --rm --network {NET} --env-file {ENV_FILE} {IMAGE} alembic upgrade head"
+    ],
 )
 if ADMIN_PASSWORD:
     # Bare -e flags pass the values through from the op's _env — the password

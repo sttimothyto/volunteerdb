@@ -85,7 +85,9 @@ async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
                 ui.navigate.to("/login")
                 raise Forbidden("not signed in")
             stack.enter_context(
-                bind_actor(f"{actor.user.id}:{actor.user.email}", ip=_client_ip(), via="gui")
+                bind_actor(
+                    f"{actor.user.id}:{actor.user.email}", ip=_client_ip(), via="gui"
+                )
             )
             yield session, actor
 
@@ -125,7 +127,11 @@ def parse_as_of(raw: str) -> datetime | None:
 def asof_banner(as_of: datetime | None, base_path: str) -> None:
     """Date picker + banner for read-only historical views."""
     with ui.row().classes("items-center gap-2"):
-        date_input = ui.input("View as of (YYYY-MM-DD)").props("dense outlined clearable").classes("w-48")
+        date_input = (
+            ui.input("View as of (YYYY-MM-DD)")
+            .props("dense outlined clearable")
+            .classes("w-48")
+        )
         if as_of is not None:
             date_input.value = as_of.date().isoformat()
 
