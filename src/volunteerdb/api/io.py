@@ -103,6 +103,7 @@ class ImportReportOut(BaseModel):
     volunteers_updated: int
     memberships_created: int
     memberships_updated: int
+    photos_set: int
     errors: list[IssueOut]
     warnings: list[IssueOut]
 
@@ -123,6 +124,7 @@ async def import_workbook(ctx: CtxDep, file: UploadFile, dry_run: bool = False) 
         volunteers_updated=report.volunteers_updated,
         memberships_created=report.memberships_created,
         memberships_updated=report.memberships_updated,
+        photos_set=report.photos_set,
         errors=[IssueOut(**vars(i)) for i in report.errors],
         warnings=[IssueOut(**vars(i)) for i in report.warnings],
     )

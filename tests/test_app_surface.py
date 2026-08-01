@@ -58,7 +58,7 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
         "here means every API client gets bounced to the login page instead of a 401"
     )
 
-    for guarded in ("/volunteers", "/manual"):
+    for guarded in ("/volunteers", "/manual", "/photos/1"):
         response = await real_app_client.get(guarded, follow_redirects=False)
         assert response.status_code in (302, 303, 307), (
             f"{guarded} served an anonymous browser with {response.status_code}"

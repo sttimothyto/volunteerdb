@@ -5,10 +5,12 @@ from ..permissions import require, team_ids_map, volunteer_team_ids
 from ..services import capacity as capacity_service
 from ..services import custom_fields as custom_field_service
 from ..services import memberships as membership_service
+from ..services import photos as photo_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from .context import action_session, notify_errors, page_session
 from .layout import frame
+from .photo_dialog import photo_avatar
 from .timeline_chart import timeline_chart
 from .volunteer_panel import VolunteerPanel, format_custom
 
@@ -162,11 +164,15 @@ async def volunteer_detail(volunteer_id: int):
         all_teams = await team_service.list_all(session)
         paths = team_service.team_paths(all_teams)
         assignable = {t.id: paths[t.id] for t in all_teams if actor.can_manage_team(t.id)}
+        photo_at = (await photo_service.versions(session, [volunteer_id])).get(volunteer_id)
+
+    async def _reload() -> None:
+        ui.navigate.reload()
 
     with frame(volunteer.full_name, actor):
         with ui.card().classes("w-full gap-1 p-4"):
             with ui.row().classes("items-center gap-2"):
-                ui.icon("person").classes("text-2xl")
+                photo_avatar(volunteer_id, volunteer.full_name, photo_at, on_change=_reload)
                 ui.label(volunteer.full_name).classes("text-lg font-medium")
                 if not volunteer.is_active:
                     ui.badge("inactive", color="grey")

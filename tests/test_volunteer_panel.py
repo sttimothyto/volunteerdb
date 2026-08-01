@@ -106,3 +106,30 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
         await user.should_not_see("View as of (YYYY-MM-DD)")
         await user.open(f"/teams/{team_id}")
         await user.should_see("View as of (YYYY-MM-DD)")
+
+
+async def test_photo_dialog_disclaimer_gates_upload(database):
+    async with db_session() as session:
+        liturgy = await teams.create(session, "Liturgy")
+        maria = await volunteers.create(session, "Maria", "Alvarez", "maria@example.org")
+        await memberships.assign(session, maria.id, liturgy.id, TeamRole.member)
+        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        team_id, admin_id = liturgy.id, admin.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{admin_id}")
+        await user.should_see("dev-login ok")
+
+        await user.open(f"/teams/{team_id}")
+        user.find("Maria Alvarez", kind=ui.label).trigger("click")
+        await user.should_see("Serves on")
+
+        # the person icon in the panel header opens the upload dialog
+        user.find(marker="photo-avatar").trigger("click")
+        await user.should_see("reported to the authorities")
+
+        upload_button = user.find("Upload", kind=ui.button).elements.pop()
+        assert not upload_button.enabled, "Upload stays disabled until the declaration is checked"
+        checkbox = user.find(kind=ui.checkbox).elements.pop()
+        checkbox.value = True
+        assert upload_button.enabled, "checking the declaration enables Upload"

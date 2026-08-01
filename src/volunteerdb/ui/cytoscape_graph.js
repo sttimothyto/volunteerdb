@@ -1,3 +1,15 @@
+const TINT_OPACITY = 0.45;
+
+// Semi-transparent solid-colour layer drawn OVER a node's photo so the
+// capacity band stays readable. Kept at module level: styleFor() is re-run
+// by the dark-mode observer and must not rebuild closures per restyle.
+function tintLayer(color) {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">' +
+    `<rect width="16" height="16" fill="${color}" fill-opacity="${TINT_OPACITY}"/></svg>`;
+  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+}
+
 export default {
   template: '<div style="width: 100%; height: 70vh; min-height: 420px;"></div>',
   props: {
@@ -77,6 +89,20 @@ export default {
           // capacity colouring; nodes without a color datum keep the neutral above
           selector: 'node[type="volunteer"][color]',
           style: { "background-color": "data(color)" },
+        },
+        {
+          // headshot fills the bubble; capacity tint (when visible) is a second
+          // image layer drawn on top of it. Model size stays 16px — the canvas
+          // renders the photo at screen resolution, so it resolves on zoom.
+          selector: 'node[type="volunteer"][photo]',
+          style: {
+            "background-image": (ele) =>
+              ele.data("color")
+                ? [ele.data("photo"), tintLayer(ele.data("color"))]
+                : [ele.data("photo")],
+            "background-fit": (ele) => (ele.data("color") ? "cover cover" : "cover"),
+            "background-clip": "node",
+          },
         },
         {
           selector: "edge",

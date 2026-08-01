@@ -71,9 +71,17 @@ authenticated account.
 | `GET /api/volunteers/{id}` | signed in | `as_of=`; redacted per viewer |
 | `PATCH /api/volunteers/{id}` | edit rights on the volunteer | `is_active` admin-only; `custom` merges validated custom-field values |
 | `DELETE /api/volunteers/{id}` | admin | 204 |
+| `PUT /api/volunteers/{id}/photo` | signed in | Upload/replace the headshot (multipart `file`). Any image ≤ 10 MB (413 above); stored EXIF-stripped, center-cropped, 400×400 JPEG ≤ 24 KB. Unreadable file → 422. **Deliberately open to every signed-in account** — no `can_edit_volunteer` gating |
+| `GET /api/volunteers/{id}/photo` | signed in | The stored JPEG bytes; 404 when there is none |
+| `DELETE /api/volunteers/{id}/photo` | signed in | 204; idempotent |
 | `GET /api/volunteers/{id}/assignments` | signed in | Team/role list, `as_of=` |
 | `GET /api/volunteers/{id}/timeline` | full profile view | All-time service spells |
 | `GET /api/volunteers/{id}/impact` | full profile view | "If they leave" hole report, `as_of=` |
+
+The volunteer list and detail responses carry `has_photo` (null on embedded
+volunteer objects elsewhere). Browsers load images from the cookie-
+authenticated `GET /photos/{id}?v=…` route instead — it sits behind the
+normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 
 ### Teams — `api/teams.py`
 

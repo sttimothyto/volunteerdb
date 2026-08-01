@@ -1,3 +1,4 @@
+import base64
 import csv
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,11 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..history import entity, fetch
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, Membership, TeamRole, Volunteer
 from ..services import custom_fields as custom_field_service
+from ..services import photos as photo_service
 from ..services import teams as team_service
 from .common import (
     FORMULA_STARTERS,
     MEMBERSHIP_HEADERS,
     MEMBERSHIP_SHEET,
+    PHOTO_HEADER,
     VOLUNTEER_HEADERS,
     VOLUNTEER_SHEET,
 )
@@ -27,7 +30,7 @@ def _workbook(custom_defs: list[CustomFieldDef] = ()) -> tuple[Workbook, Workshe
     wb = Workbook()
     vs = wb.active
     vs.title = VOLUNTEER_SHEET
-    vs.append([*VOLUNTEER_HEADERS, *(d.label for d in custom_defs)])
+    vs.append([*VOLUNTEER_HEADERS, PHOTO_HEADER, *(d.label for d in custom_defs)])
     ms = wb.create_sheet(MEMBERSHIP_SHEET)
     ms.append(MEMBERSHIP_HEADERS)
     bold = Font(bold=True)
@@ -92,14 +95,14 @@ def template_csv(sheet: str) -> bytes:
     Unlike the xlsx template there is no role dropdown — CSV cannot carry one."""
     if sheet not in CSV_SHEETS:
         raise ValueError(f"unknown sheet {sheet!r}")
-    header = VOLUNTEER_HEADERS if sheet == "volunteers" else MEMBERSHIP_HEADERS
+    header = [*VOLUNTEER_HEADERS, PHOTO_HEADER] if sheet == "volunteers" else MEMBERSHIP_HEADERS
     return _csv_bytes(header, [])
 
 
 @dataclass
 class ExportData:
     custom_defs: list[CustomFieldDef]
-    volunteer_header: list[str]  # VOLUNTEER_HEADERS + custom-field labels
+    volunteer_header: list[str]  # VOLUNTEER_HEADERS + Photo + custom-field labels
     volunteer_rows: list[list]  # cells already _safe-escaped
     membership_rows: list[list]
 
@@ -150,6 +153,14 @@ async def build_export_data(
         volunteers.sort(key=lambda v: (v.last_name.lower(), v.first_name.lower()))
 
     custom_defs = await custom_field_service.list_defs(session)
+    # photos are not system-versioned, so as-of exports carry the current photo
+    photos_b64 = {
+        vid: base64.b64encode(img).decode("ascii")
+        for vid, img in (await photo_service.images(session, [v.id for v in volunteers])).items()
+    }
+    # ingest caps images at PHOTO_MAX_BYTES, whose base64 fits Excel's
+    # 32,767-char cell limit; this guards against a future regression there
+    assert all(len(b64) <= 32_767 for b64 in photos_b64.values())
     volunteer_rows = [
         [
             _safe(c)
@@ -160,6 +171,7 @@ async def build_export_data(
                 v.phone,
                 v.notes,
                 "yes" if v.is_active else "no",
+                photos_b64.get(v.id),
                 *(_custom_cell(d, (v.custom or {}).get(d.key)) for d in custom_defs),
             )
         ]
@@ -184,7 +196,7 @@ async def build_export_data(
     ]
     return ExportData(
         custom_defs=custom_defs,
-        volunteer_header=[*VOLUNTEER_HEADERS, *(d.label for d in custom_defs)],
+        volunteer_header=[*VOLUNTEER_HEADERS, PHOTO_HEADER, *(d.label for d in custom_defs)],
         volunteer_rows=volunteer_rows,
         membership_rows=membership_rows,
     )

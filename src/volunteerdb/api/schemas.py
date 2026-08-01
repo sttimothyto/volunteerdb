@@ -24,6 +24,15 @@ class VolunteerOut(ORMModel):
     is_active: bool
     # admin-defined custom field values; nulled like contact details
     custom: dict[str, Any] | None = None
+    # tri-state: computed on the list/detail endpoints, null where not (embeds)
+    has_photo: bool | None = None
+
+
+class PhotoMetaOut(BaseModel):
+    volunteer_id: int
+    content_type: str
+    size_bytes: int  # always <= services.photos.PHOTO_MAX_BYTES
+    uploaded_at: datetime
 
 
 class VolunteerIn(BaseModel):

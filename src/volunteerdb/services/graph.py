@@ -13,6 +13,7 @@ from ..history import entity
 from ..models import Membership, TeamRole, Volunteer
 from ..permissions import Actor
 from . import capacity as capacity_service
+from . import photos as photo_service
 from . import teams as team_service
 
 
@@ -57,6 +58,9 @@ async def elements(
             await capacity_service.visible_scores(session, actor, team_sets, at=at)
         ).items()
     }
+    # ids + uploaded_at only, never the blobs; the canvas fetches each image
+    # via its cookie-authed /photos/ URL (photos are current-state, even as-of)
+    photo_versions = await photo_service.versions(session, volunteer_ids)
 
     nodes = [
         {
@@ -85,6 +89,9 @@ async def elements(
             if band is not None:  # viewers without capacity rights keep grey dots
                 data["band"] = band.label
                 data["color"] = band.color
+            uploaded_at = photo_versions.get(v_id)
+            if uploaded_at is not None:
+                data["photo"] = photo_service.photo_url(v_id, uploaded_at)
             nodes.append({"data": data})
         edges.append(
             {

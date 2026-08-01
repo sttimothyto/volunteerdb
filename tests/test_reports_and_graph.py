@@ -1,9 +1,13 @@
 """Coverage report and Cytoscape graph: counts, sorting, and visibility scoping."""
 
+from io import BytesIO
+
+from PIL import Image
+
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.permissions import load_actor
-from volunteerdb.services import graph, memberships, reports, teams, users, volunteers
+from volunteerdb.services import graph, memberships, photos, reports, teams, users, volunteers
 
 
 async def test_coverage_counts_and_hole_first_sorting(database):
@@ -94,6 +98,24 @@ async def test_graph_member_sees_only_own_team(database):
 
         own_node = next(n for n in data["nodes"] if n["data"]["id"] == f"v{on_child.id}")
         assert "band" not in own_node["data"], "capacity is a leadership-only signal"
+
+
+async def test_graph_photo_datum_only_on_photographed_volunteers(database):
+    async with db_session() as session:
+        parent, child, other, on_parent, on_child, on_other = await _parish(session)
+        buffer = BytesIO()
+        Image.new("RGB", (500, 500), (50, 100, 150)).save(buffer, format="PNG")
+        await photos.set_photo(session, on_parent.id, buffer.getvalue(), uploaded_by=None)
+        admin = await users.create(session, "admin@example.org", is_admin=True, password="pw")
+        actor = await load_actor(session, admin)
+
+        data = await graph.elements(session, actor)
+
+        by_id = {n["data"]["id"]: n["data"] for n in data["nodes"]}
+        assert by_id[f"v{on_parent.id}"]["photo"].startswith(f"/photos/{on_parent.id}?v="), (
+            "photographed volunteers carry their cookie-authed image URL"
+        )
+        assert "photo" not in by_id[f"v{on_child.id}"], "no photo, no datum"
 
 
 async def test_graph_team_filter_restricts_to_subtree(database):

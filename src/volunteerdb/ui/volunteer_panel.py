@@ -11,9 +11,11 @@ from ..models import ROLE_LABELS, CustomFieldDef, FieldType
 from ..permissions import volunteer_team_ids
 from ..services import capacity as capacity_service
 from ..services import custom_fields as custom_field_service
+from ..services import photos as photo_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from .context import action_session, notify_errors, parse_as_of
+from .photo_dialog import photo_avatar
 
 
 def format_custom(defn: CustomFieldDef, value, missing: str = "—") -> str:
@@ -49,11 +51,20 @@ class VolunteerPanel:
             )
             assignments = await volunteer_service.assignments(session, volunteer_id, at=self.at)
             paths = team_service.team_paths(await team_service.list_all(session, at=self.at))
+            photo_at = (await photo_service.versions(session, [volunteer_id])).get(volunteer_id)
 
         self.content.clear()
         with self.content:
             with ui.row().classes("items-center gap-2 w-full no-wrap"):
-                ui.icon("person").classes("text-2xl")
+                # photos are current-state only, so as-of snapshots render read-only
+                photo_avatar(
+                    volunteer_id,
+                    volunteer.full_name,
+                    photo_at,
+                    on_change=(
+                        (lambda: self.open(volunteer_id)) if self.at is None else None
+                    ),
+                )
                 ui.label(volunteer.full_name).classes("text-lg font-medium")
                 ui.space()
                 ui.button(icon="close", on_click=self.drawer.hide).props("flat dense round")

@@ -120,7 +120,8 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
     headers = [c.value for c in vs[1]]
     assert headers[-2:] == ["Shirt size", "Trained"]
     anna_row = next(r for r in vs.iter_rows(min_row=2, values_only=True) if r[0] == "Anna")
-    assert anna_row[6] == "M" and anna_row[7] == "yes"
+    # custom values sit after the Photo column (index 6)
+    assert anna_row[7] == "M" and anna_row[8] == "yes"
 
     # round-trip stays safe: the extra columns are ignored with a warning
     report = await importer.run_import(content, dry_run=False, user_id=None)

@@ -105,7 +105,8 @@ async def import_page():
                     ui.label("Dry run — nothing written yet.").classes("text-amber-700 font-medium")
                 ui.label(
                     f"volunteers: +{report.volunteers_created} new, {report.volunteers_updated} updated · "
-                    f"memberships: +{report.memberships_created} new, {report.memberships_updated} updated"
+                    f"memberships: +{report.memberships_created} new, {report.memberships_updated} updated · "
+                    f"photos: {report.photos_set} set"
                 )
                 if report.warnings:
                     count = len(report.warnings)

@@ -41,6 +41,16 @@ historical snapshots — see the {ref}`endpoints <api-import-export>`.
 Remember: imports only **add and update**. Removing a volunteer or
 membership is done in the app, never via a spreadsheet with rows deleted.
 
+### Photos
+
+Exports carry each volunteer's headshot as base64 in the **Photo** column
+(column 7, before the custom-field columns); the report counts imported
+photos as `photos set`. A blank cell leaves the stored photo alone, a
+byte-identical value is skipped (so re-importing an export is a no-op), and
+anything else is decoded, validated and normalized to a 400×400 JPEG.
+Pre-photo 6-column volunteer files import unchanged. Photos cannot be
+removed via spreadsheet — use the app or the API.
+
 ## Verify
 
 The post-apply report states what was created and updated. Spot-check one

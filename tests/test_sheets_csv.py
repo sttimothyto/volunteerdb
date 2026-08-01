@@ -7,7 +7,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
-from volunteerdb.sheets.common import MEMBERSHIP_HEADERS, VOLUNTEER_HEADERS
+from volunteerdb.sheets.common import MEMBERSHIP_HEADERS, PHOTO_HEADER, VOLUNTEER_HEADERS
 
 
 def _csv_bytes(header, rows) -> bytes:
@@ -30,7 +30,10 @@ async def _setup(session):
 
 
 async def test_template_csv_headers_and_bom():
-    for sheet, headers in (("volunteers", VOLUNTEER_HEADERS), ("memberships", MEMBERSHIP_HEADERS)):
+    for sheet, headers in (
+        ("volunteers", [*VOLUNTEER_HEADERS, PHOTO_HEADER]),
+        ("memberships", MEMBERSHIP_HEADERS),
+    ):
         content = exporter.template_csv(sheet)
         assert content.startswith(b"\xef\xbb\xbf"), "BOM so Excel detects UTF-8"
         assert _rows(content) == [headers]
@@ -42,7 +45,7 @@ async def test_csv_export_reimports_as_noop(database):
         vol_csv = await exporter.export_csv(session, "volunteers")
         mem_csv = await exporter.export_csv(session, "memberships")
 
-    assert _rows(vol_csv)[0] == VOLUNTEER_HEADERS
+    assert _rows(vol_csv)[0] == [*VOLUNTEER_HEADERS, PHOTO_HEADER]
     assert _rows(mem_csv)[0] == MEMBERSHIP_HEADERS
     for content in (vol_csv, mem_csv):
         report = await importer.run_import(content, dry_run=False, user_id=None)
@@ -50,6 +53,7 @@ async def test_csv_export_reimports_as_noop(database):
         assert report.applied
         assert report.volunteers_created == report.volunteers_updated == 0
         assert report.memberships_created == report.memberships_updated == 0
+        assert report.photos_set == 0
 
 
 async def test_csv_imports_add_and_update(database):
