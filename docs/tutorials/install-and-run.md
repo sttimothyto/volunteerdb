@@ -8,22 +8,24 @@ installation with the test suite.
 (`sudo apt install podman podman-compose`) installed, and a clone of this
 repository as your working directory.
 
+:::{tip}
+`make seed` performs steps 1–4 in one command, and `make dev` does step 5.
+This tutorial spells them out so you know what each one does; the targets are
+one-line wrappers over exactly these commands.
+:::
+
 ## 1. Create your environment file
 
 ```sh
 cp .env.example .env
 ```
 
-Open `.env` and set `VDB_STORAGE_SECRET` to any long random string
-(`python3 -c "import secrets; print(secrets.token_hex(32))"` makes one).
-Everything else can stay at its default for development.
-
-:::{note}
-This step is not optional. Podman-compose does not apply `${VAR:-default}`
-fallbacks, so without a `.env` the database container would initialize with
-a literal `${POSTGRES_PASSWORD:-volunteerdb}` as its password. If that
-already happened, reset with `podman compose down -v && podman compose up -d db`.
-:::
+Everything can stay at its default for development. `VDB_STORAGE_SECRET` may
+stay empty — the app then generates a random key each boot, which only means
+your session ends when you restart it. Set it to a long random string
+(`python3 -c "import secrets; print(secrets.token_hex(32))"` makes one) to stay
+signed in across restarts. `make seed` writes the file with a generated secret
+if it does not exist, and leaves an existing one alone.
 
 ## 2. Start PostgreSQL
 
@@ -42,7 +44,7 @@ uv run alembic upgrade head
 ```
 
 The first `uv run` also creates the project's virtualenv. Expected output:
-a short `INFO` line per migration, ending at revision `0004`, and no
+a short `INFO` line per migration, ending at the newest revision, and no
 traceback.
 
 ## 4. Seed the demo parish
@@ -109,6 +111,14 @@ seeded data is untouched. Expected: all tests pass in a couple of minutes.
 - Prefer the whole app containerized too?
   `podman compose --profile app up -d --build` serves the same thing from a
   container.
-- Development loop: `VDB_RELOAD=true uv run volunteerdb` restarts on source
-  changes; [Run the test suite](../how-to/run-tests.md) covers testing
-  habits.
+- Development loop: `make dev` restarts on source changes;
+  [Run the test suite](../how-to/run-tests.md) covers testing habits.
+
+  :::{note}
+  The long form is `VDB_RELOAD=true uv run python -m volunteerdb.main`, and
+  the `python -m` part matters. Reload respawns a worker that re-imports the
+  module, where only the `__mp_main__` guard in `main.py` calls `ui.run()`.
+  The `volunteerdb` console script imports it as `volunteerdb.main` instead,
+  so the guard never fires and startup fails with "You must call ui.run() to
+  start the server". Without reload, either form is fine.
+  :::

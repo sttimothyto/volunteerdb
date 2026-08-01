@@ -12,6 +12,11 @@ services:
       -c random_page_cost=1.1
     environment:
       POSTGRES_USER: volunteerdb
+      # The :-volunteerdb fallback does NOT save you here: podman-compose
+      # (1.3.0) skips interpolation when the variable name matches the key it
+      # is assigned to, and writes this literal string in as the password —
+      # baking it into the data volume on first start. POSTGRES_PASSWORD must
+      # really be set; .env.example sets it and `make db` writes .env first.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-volunteerdb}
       POSTGRES_DB: volunteerdb
     ports:
@@ -29,7 +34,11 @@ services:
     build: .
     environment:
       VDB_DATABASE_URL: postgresql+asyncpg://volunteerdb:${POSTGRES_PASSWORD:-volunteerdb}@db:5432/volunteerdb
-      VDB_STORAGE_SECRET: ${VDB_STORAGE_SECRET:?set in .env}
+      # Empty is valid (a random per-boot secret; sessions reset on restart),
+      # so this must not be `:?` — that rejects empty as well as unset, and
+      # compose interpolates every service before starting the one you asked
+      # for, which made an empty secret block even `up -d db`.
+      VDB_STORAGE_SECRET: ${VDB_STORAGE_SECRET-}
     ports:
       - "8080:8080"
     depends_on:

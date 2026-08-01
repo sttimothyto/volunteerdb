@@ -93,9 +93,24 @@ Consumed by the PostgreSQL 17 container, not by VolunteerDB itself
 (`compose.yaml` in development, `/etc/volunteerdb/db.env` in production):
 
 `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
-: All default to `volunteerdb` in development. Under podman-compose the
-  `.env` file is **mandatory**: `${VAR:-default}` fallbacks are not applied,
-  so a missing `.env` bakes the literal placeholder into the database volume.
+: All default to `volunteerdb` in development.
+
+:::{warning}
+`POSTGRES_PASSWORD` must be **actually set** — in `.env` or the environment —
+before you first start the db container. podman-compose (checked on 1.3.0)
+does not apply the `${VAR:-default}` fallback when the variable name matches
+the key it is assigned to, as in
+`POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-volunteerdb}`; it writes the literal
+string `${POSTGRES_PASSWORD:-volunteerdb}` into the container instead, baking
+that placeholder into the data volume as the real password. An empty `.env`,
+or one without this key, does not help — only a set value does.
+
+`.env.example` sets it, so a copied `.env` is enough, and `make db` creates
+that file before starting anything. If you started the container by hand
+without one, reset it: `make clean` (or `podman compose down -v`) and start
+again. A fallback whose variable name *differs* from the key interpolates
+normally, so this affects only the `POSTGRES_*` entries.
+:::
 
 :::{warning}
 `POSTGRES_*` values are applied only when the data volume is first

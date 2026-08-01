@@ -1,26 +1,23 @@
 # Run the test suite
 
-The suite (29 modules under `tests/`) runs against a real PostgreSQL — the
+The suite (32 modules under `tests/`) runs against a real PostgreSQL — the
 same dev container the app uses — in a separate `volunteerdb_test` database.
 
-**Prerequisite:** the database container is up:
+**Prerequisite:** the database container is up. `make test` does that for you
+— it starts the container, waits until Postgres actually accepts queries, and
+then runs the suite. To start it by hand:
 
 ```sh
 podman compose up -d db
 ```
 
-If that command fails with `RuntimeError: set in .env`, set a non-empty
-`VDB_STORAGE_SECRET` in your `.env`. podman-compose interpolates *every*
-service before starting the one you asked for, including the profiled `app`
-service whose `${VDB_STORAGE_SECRET:?set in .env}` rejects an empty value — so
-an unset secret blocks even `up -d db`. Setting a real secret is worth doing
-anyway: an empty one means a fresh random key per boot, logging everyone out
-on every restart. See [Install and run](../tutorials/install-and-run.md).
-
 ## Run
 
 ```sh
-uv run pytest                       # whole suite
+make test                           # whole suite (starts the db first)
+make test ARGS="-k roster"          # extra pytest arguments
+
+uv run pytest                       # or drive pytest directly
 uv run pytest tests/test_api.py     # one module
 uv run pytest -k roster             # by keyword
 uv run pytest --cov                 # with coverage (skip_covered configured)
@@ -43,8 +40,9 @@ fight over logging configuration.
 ## Failure modes
 
 Suite fails immediately with "Postgres unavailable"
-: The database is unreachable. Start the db container (see above) and check
-  `podman ps`. This is a **failure**, not a skip, on purpose: a skip exits 0,
+: The database is unreachable. Use `make test`, which starts the container and
+  waits for it, or start it yourself and check `podman ps`. This is a
+  **failure**, not a skip, on purpose: a skip exits 0,
   so a suite that never reached the database would report the same green as a
   suite that passed. To run the handful of DB-free tests anyway, set
   `VDB_TEST_ALLOW_NO_DB=1`.

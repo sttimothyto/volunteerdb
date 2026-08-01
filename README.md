@@ -31,18 +31,32 @@ uv run --group docs sphinx-build -W -b html docs docs/_build/html
 Requires [uv](https://docs.astral.sh/uv/) and podman (`sudo apt install podman podman-compose`).
 
 ```sh
-cp .env.example .env            # set VDB_STORAGE_SECRET to something random
+make seed   # .env, db container, schema, demo data (prints logins)
+make dev    # serve http://localhost:8080 with auto-reload
+```
+
+`make` on its own lists every target. The long form is no secret — each
+target is a one-line wrapper:
+
+```sh
+cp .env.example .env            # VDB_STORAGE_SECRET may stay empty in dev
 podman compose up -d db         # PostgreSQL 17 with a persistent volume
 uv run alembic upgrade head     # create the schema
 uv run python scripts/seed.py   # demo data + admin account (prints logins)
 uv run volunteerdb              # serve http://localhost:8080
 ```
 
-The `.env` step is not optional under podman-compose: it does not apply
-`${VAR:-default}` fallbacks for unset variables, so without `.env` the db
-container initializes with a literal `${POSTGRES_PASSWORD:-volunteerdb}` as
-its password. If that happened, recreate it: `podman compose down -v && podman
-compose up -d db`.
+`make seed` writes `.env` with a generated `VDB_STORAGE_SECRET` if the file is
+missing, and never touches one you have already edited. An empty secret works
+too — the app falls back to a random per-boot key, which just means sessions
+reset on restart.
+
+If you start the db by hand, the `.env` step is **not** optional: podman-compose
+does not apply a `${VAR:-default}` fallback when the variable name matches the
+key it is assigned to, so with no `POSTGRES_PASSWORD` set the db container bakes
+the literal `${POSTGRES_PASSWORD:-volunteerdb}` in as its password. If that
+happened, recreate it with `make clean` (`podman compose down -v`). Going
+through `make` avoids this entirely — it writes `.env` first.
 
 Sign in with the printed admin login. Seeded demo logins:
 `admin@sttimothy.example` (admin), `maria.alvarez@example.org` (a ministry
@@ -148,7 +162,12 @@ The GUI always dry-runs first and shows the report before you apply.
   encrypted upload to Google Drive via an rclone crypt remote; see the
   manual's backup how-to). Ad-hoc:
   `podman exec <db-container> pg_dump -U volunteerdb volunteerdb > backup.sql`
-- **Migrations**: `uv run alembic upgrade head` after pulling changes
-- **Tests**: `uv run pytest` (needs the db container running; uses a separate
-  `volunteerdb_test` database)
-- Dev auto-reload: `VDB_RELOAD=true uv run python -m volunteerdb.main`
+- **Migrations**: `make migrate` (`uv run alembic upgrade head`) after pulling
+- **Tests**: `make test` — starts the db container if needed, then runs
+  `uv run pytest` against a separate `volunteerdb_test` database. Pass extra
+  arguments with `make test ARGS="-k roster"`.
+- **Start over**: `make fresh` wipes the database volume, re-migrates, re-seeds
+- Dev auto-reload: `make dev` (`VDB_RELOAD=true uv run python -m
+  volunteerdb.main`). It must be the `python -m` form — under the
+  `volunteerdb` console script, reload respawns a worker that never reaches
+  the `__mp_main__` guard, and startup fails with "You must call ui.run()".
