@@ -47,7 +47,7 @@ how-to/backup-restore
 how-to/rotate-secrets
 how-to/manage-users
 how-to/import-export
-how-to/custom-fields-and-capacity
+how-to/custom-fields-and-workload
 how-to/api-recipes
 how-to/audit-logs
 how-to/write-a-migration
@@ -62,7 +62,7 @@ explanation/architecture
 explanation/permissions
 explanation/history
 explanation/auth
-explanation/capacity
+explanation/workload
 explanation/deployment
 ```
 

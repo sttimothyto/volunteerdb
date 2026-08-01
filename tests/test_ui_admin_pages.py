@@ -29,14 +29,20 @@ async def test_admin_pages_render(database):
         await user.open("/admin/fields")
         await user.should_see("New field")
 
-        await user.open("/admin/capacity")
+        await user.open("/admin/workload")
         await user.should_see("Role multipliers")
 
         await user.open("/import")
         await user.should_see("Full parish export")
 
         await user.open("/")
-        await user.should_see("Holes to fill")
+        await user.should_see("Focus on team")  # the merged ministry graph
+
+        await user.open("/teams")
+        user.find(kind=ui.table)  # the coverage table moved here
+
+        await user.open("/planning")
+        await user.should_see("Vacancies")
 
         # a non-admin gets the polite refusals, not the admin controls
         await user.open(f"/login-dev/{member_id}")
@@ -44,6 +50,8 @@ async def test_admin_pages_render(database):
         await user.should_see("Admins only.")
         await user.open("/import")
         await user.should_see("Import/Export is available to admins and to team leaders/seconds.")
+        await user.open("/planning")
+        await user.should_see("Planning is available to admins and to team leaders/seconds.")
 
 
 async def test_leader_import_page_scoped(database):

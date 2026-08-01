@@ -1,8 +1,8 @@
-# The capacity model
+# The workload model
 
 Volunteer burnout in a parish has a familiar shape: the same five reliable
 people quietly accumulate ministries until one of them moves away — and the
-[impact report](history.md) suddenly shows six holes. Capacity makes that
+[impact report](history.md) suddenly shows six holes. Workload makes that
 accumulation visible *before* it breaks.
 
 ## The score
@@ -24,7 +24,7 @@ team weight × role multiplier
 The score is then bucketed into colored **bands** (defaults: green ≤ 4,
 amber ≤ 8, red above) that appear as badges on volunteer pages and lists
 and as node colors in the graph. Multipliers, bands, and weights are all
-[configurable](../how-to/custom-fields-and-capacity.md); the defaults are a
+[configurable](../how-to/custom-fields-and-workload.md); the defaults are a
 starting point, not a doctrine.
 
 ## Worked example
@@ -43,7 +43,7 @@ counts. That is the feature: whoever is about to ask Maria for one more
 favor should see that *other* commitments already have her in the red.
 (Only the score is global; who may see it is still gated.)
 
-**Visibility is admin-only.** Only admins see capacity; team leaders and
+**Visibility is admin-only.** Only admins see workload; team leaders and
 seconds don't, core members don't, and neither does the volunteer themself.
 It is a planning signal for the people overseeing the whole parish — not a
 leaderboard, and not a number to feel guilty about. The

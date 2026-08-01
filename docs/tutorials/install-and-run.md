@@ -79,10 +79,10 @@ signed in" ticked if you like — that's the 90-day session).
 
 You land on the **Dashboard**. Three things confirm the seed did its job:
 
-- **Holes to fill** lists *Hospitality* — the demo team seeded without a
-  leader.
+- Header → **Planning**: **Vacancies** lists *Hospitality* — the demo team
+  seeded without a leader.
 - Search for `maria` in the quick-search box and open **Maria Alvarez**:
-  she leads two ministries, her capacity badge is deep in the red, and her
+  she leads two ministries, her workload badge is deep in the red, and her
   timeline chart shows an ended Youth Group spell.
 - Header → **Teams** → *Liturgy*: a team with sub-teams and a roster you
   can manage; try the "View as of" date picker with last year's date and

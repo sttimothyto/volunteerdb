@@ -35,6 +35,28 @@ def children_map(teams: list[Team]) -> dict[int | None, list[Team]]:
     return by_parent
 
 
+async def search(
+    session: AsyncSession, query: str, at: datetime | None = None
+) -> list[tuple[Team, str]]:
+    """Active teams whose name, description, or display path contains `query`
+    (case-insensitive), as (team, path) sorted by path. Done in Python over
+    list_all: paths are computed recursively, and the whole table is ~60 rows.
+    No actor: the team directory is visible to every signed-in user."""
+    q = query.strip().lower()
+    if not q:
+        return []
+    all_teams = await list_all(session, at)
+    paths = team_paths(all_teams)
+    hits = [
+        (t, paths[t.id])
+        for t in all_teams
+        if t.is_active
+        and (q in t.name.lower() or q in (t.description or "").lower() or q in paths[t.id].lower())
+    ]
+    hits.sort(key=lambda pair: pair[1].lower())
+    return hits
+
+
 def descendant_ids(teams: list[Team], root_id: int) -> set[int]:
     """root_id plus all transitive sub-team ids."""
     by_parent = children_map(teams)
@@ -77,7 +99,7 @@ def team_paths(teams: list[Team]) -> dict[int, str]:
 
 def _check_workload_weight(workload_weight: Decimal | None) -> None:
     """Shared by create and update: they disagreed once, and a negative weight
-    silently corrupts every capacity band downstream."""
+    silently corrupts every workload band downstream."""
     if workload_weight is not None and workload_weight < 0:
         raise ValueError("workload weight must not be negative")
 

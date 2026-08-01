@@ -38,7 +38,7 @@ async def test_anonymous_redirect_and_login_guards(database):
         user.find(kind=ui.input, content="Email").type("admin@example.org")
         user.find(kind=ui.input, content="Password (optional)").type("correct-pw-1")
         user.find(kind=ui.input, content="Password (optional)").trigger("keydown.enter")
-        await user.should_see("Find a volunteer…", retries=30)
+        await user.should_see("Find volunteers or teams…", retries=30)
 
 
 async def test_invite_redemption_flow(database, monkeypatch):
@@ -74,7 +74,7 @@ async def test_invite_redemption_flow(database, monkeypatch):
         user.find(kind=ui.input, content="Repeat password").clear()
         user.find(kind=ui.input, content="Repeat password").type("long-enough-1")
         user.find("Finish setup and sign in", kind=ui.button).click()
-        await user.should_see("Find a volunteer…", retries=30)
+        await user.should_see("Find volunteers or teams…", retries=30)
         assert sent and sent[-1][0] == "new@example.org"
         assert sent[-1][1] == "Your VolunteerDB account is ready"
         assert "with your email and password" in sent[-1][2]

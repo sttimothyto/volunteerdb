@@ -4,6 +4,7 @@ from nicegui import ui
 
 from ..models import ROLE_LABELS, TeamRole
 from ..services import memberships as membership_service
+from ..services import reports as report_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..sheets import exporter
@@ -15,9 +16,14 @@ ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
 
 @ui.page("/teams")
-async def teams_page():
+async def teams_page(as_of: str = ""):
+    at = parse_as_of(as_of)
     async with page_session() as (session, actor):
-        all_teams = await team_service.list_all(session)
+        all_teams = await team_service.list_all(session, at)
+        show_coverage = actor.is_admin or bool(actor.managed_team_ids)
+        coverage = await report_service.coverage(session, at) if show_coverage else []
+        if not actor.is_admin:
+            coverage = [r for r in coverage if r.team.id in actor.managed_team_ids]
 
     by_parent = team_service.children_map(all_teams)
 
@@ -27,14 +33,41 @@ async def teams_page():
             for t in by_parent.get(parent_id, [])
         ]
 
+    suffix = f"?as_of={as_of}" if as_of else ""
     with frame("Teams", actor):
-        if actor.is_admin:
+        asof_banner(at, "/teams")
+        if actor.is_admin and at is None:
             with ui.row().classes("gap-2"):
                 ui.button("New team", icon="add", on_click=lambda: _team_dialog(all_teams)).props(
                     "dense"
                 )
+        if show_coverage:
+            columns = [
+                {"name": "path", "label": "Team", "field": "path", "align": "left", "sortable": True},
+                {"name": "leader", "label": ROLE_LABELS[TeamRole.leader], "field": "leader"},
+                {"name": "second", "label": ROLE_LABELS[TeamRole.second], "field": "second"},
+                {"name": "core", "label": ROLE_LABELS[TeamRole.core], "field": "core"},
+                {"name": "member", "label": ROLE_LABELS[TeamRole.member], "field": "member"},
+                {"name": "total", "label": "Total", "field": "total", "sortable": True},
+            ]
+            rows = [
+                {
+                    "id": r.team.id,
+                    "path": r.path,
+                    "leader": r.counts.get(TeamRole.leader, 0),
+                    "second": r.counts.get(TeamRole.second, 0),
+                    "core": r.counts.get(TeamRole.core, 0),
+                    "member": r.counts.get(TeamRole.member, 0),
+                    "total": r.total,
+                }
+                for r in coverage
+            ]
+            table = ui.table(columns=columns, rows=rows, row_key="id", pagination=15).classes(
+                "w-full vdb-clickable-rows"
+            )
+            table.on("rowClick", lambda e: ui.navigate.to(f"/teams/{e.args[1]['id']}{suffix}"))
         tree = ui.tree(nodes(None), label_key="label", node_key="id").classes("w-full")
-        tree.on_select(lambda e: e.value and ui.navigate.to(f"/teams/{e.value}"))
+        tree.on_select(lambda e: e.value and ui.navigate.to(f"/teams/{e.value}{suffix}"))
         if not all_teams:
             ui.label("No teams yet.").classes("text-gray-500")
 
@@ -57,12 +90,12 @@ def _team_dialog(all_teams, team=None) -> None:
             "Description", value=(team.description or "") if team else ""
         ).props("outlined dense").classes("w-full")
         weight = ui.number(
-            "Workload weight (capacity, optional)",
+            "Workload weight (optional)",
             value=float(team.workload_weight) if team is not None and team.workload_weight is not None else None,
             min=0,
             step=0.5,
         ).props("outlined dense clearable").classes("w-full")
-        weight.tooltip("How work-heavy this ministry is; leave empty to exclude it from capacity")
+        weight.tooltip("How work-heavy this ministry is; leave empty to exclude it from workload scores")
 
         @notify_errors
         async def save() -> None:

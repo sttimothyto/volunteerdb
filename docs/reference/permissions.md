@@ -18,25 +18,28 @@ GUI and the API. For the rationale, see
 | Manage roster (add/remove/change roles), their teams | ✓ | ✓ | | | |
 | Edit contact info of volunteers on their teams | ✓ | ✓ | | | |
 | Spreadsheet import/export, their teams | ✓ | ✓ | | | |
-| See capacity scores/bands (all volunteers) | ✓ | | | | |
+| See workload scores/bands (all volunteers) | ✓ | | | | |
 | View full roster incl. contact details, their teams | ✓ | ✓ | ✓ | | |
 | View full volunteer profiles (shared team) | ✓ | ✓ | ✓ | | |
 | View roster names (no contact details), own team | ✓ | ✓ | ✓ | ✓ | |
 | Browse the team directory | ✓ | ✓ | ✓ | ✓ | ✓ |
 | View and edit own profile | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Coverage report | ✓ | their teams | | | |
+| Planning: see vacancies, propose volunteers | ✓ | their teams | | | |
 | Create/edit/delete teams | ✓ | | | | |
 | Create/delete volunteers; toggle active | ✓ | | | | |
 | Parish-wide import/export | ✓ | | | | |
-| Accounts, custom fields, capacity config | ✓ | | | | |
+| Accounts, custom fields, workload config | ✓ | | | | |
 
 Additional rules:
 
 - Volunteers may always view and edit their **own** contact info, whatever
   their roles.
-- Capacity is admin-only — deliberately hidden from team leaders, core
+- Workload is admin-only — deliberately hidden from team leaders, core
   members, *and the volunteer themself*; it is a parish-wide planning
-  signal (`Actor.can_view_capacity`).
+  signal (`Actor.can_view_workload`).
+- Accepting a planning proposal (which creates the membership) requires
+  manage rights on that team — the same rule as editing the roster directly.
 - Redaction, not denial: lists and rosters show `•••` for contact fields the
   viewer may not see.
 - Headshots are a deliberate exception to the edit matrix: **any signed-in
@@ -51,20 +54,22 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 
 | Route | Page | Minimum access |
 |---|---|---|
-| `/` | Dashboard: quick search, holes-to-fill, my teams | signed in (reports: admin/leaders) |
+| `/` | Dashboard: quick search, ministry graph, my teams; as-of picker | signed in |
 | `/login` | Password or email-OTP sign-in | public |
 | `/invite/{token}` | Redeem invite, optionally set password | public (valid token) |
-| `/teams` | Team tree browser | signed in ("New team": admin) |
+| `/teams` | Team coverage table + tree browser, as-of picker | signed in (coverage table: admin/leaders; "New team": admin) |
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export | signed in; roster per matrix |
-| `/volunteers` | Volunteer list, search; capacity filter for admins | signed in; fields redacted per matrix |
+| `/volunteers` | Volunteer + team search; workload filter for admins | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
-| `/graph` | Cytoscape ministry graph, as-of picker | signed in |
+| `/planning` | Vacancies + proposals | admin or leader/second (accept: managers of that team) |
 | `/import` | Spreadsheet import/export | admin or leader/second (scoped to their teams) |
 | `/manual` | This documentation (book icon in the header) | signed in |
 | `/admin/users` | Accounts: create, invite, bulk provision | admin |
 | `/admin/fields` | Custom field definitions | admin |
-| `/admin/capacity` | Capacity multipliers, bands, team weights | admin |
+| `/admin/workload` | Workload multipliers, bands, team weights | admin |
 
-The header nav shows Import/Export to admins and team leaders/seconds, and
-Accounts, Fields, and Capacity entries to admins only; direct navigation
-without the required role is rejected server-side.
+The header nav shows Planning and Import/Export to admins and team
+leaders/seconds, and Accounts, Fields, and Workload entries to admins only;
+on narrow screens the nav collapses into a menu button with the same
+entries. Direct navigation without the required role is rejected
+server-side.

@@ -9,7 +9,7 @@ from nicegui import ui
 
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType
 from ..permissions import volunteer_team_ids
-from ..services import capacity as capacity_service
+from ..services import workload as workload_service
 from ..services import custom_fields as custom_field_service
 from ..services import photos as photo_service
 from ..services import teams as team_service
@@ -46,7 +46,7 @@ class VolunteerPanel:
             can_view = actor.can_view_volunteer(volunteer_id, team_ids)
             can_edit = actor.can_edit_volunteer(volunteer_id, team_ids)
             field_defs = await custom_field_service.list_defs(session)
-            cap = await capacity_service.visible_scores(
+            wl = await workload_service.visible_scores(
                 session, actor, {volunteer_id: team_ids}, at=self.at
             )
             assignments = await volunteer_service.assignments(session, volunteer_id, at=self.at)
@@ -68,13 +68,13 @@ class VolunteerPanel:
                 ui.label(volunteer.full_name).classes("text-lg font-medium")
                 ui.space()
                 ui.button(icon="close", on_click=self.drawer.hide).props("flat dense round")
-            if not volunteer.is_active or volunteer_id in cap:
+            if not volunteer.is_active or volunteer_id in wl:
                 with ui.row().classes("items-center gap-2"):
                     if not volunteer.is_active:
                         ui.badge("inactive", color="grey")
-                    if volunteer_id in cap:
-                        score, band = cap[volunteer_id]
-                        ui.badge(f"capacity: {band.label} · {float(score):g}").style(
+                    if volunteer_id in wl:
+                        score, band = wl[volunteer_id]
+                        ui.badge(f"workload: {band.label} · {float(score):g}").style(
                             f"background-color: {band.color}"
                         ).tooltip(
                             "Workload score: team weights × role multipliers, all ministries"

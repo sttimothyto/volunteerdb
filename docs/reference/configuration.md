@@ -121,8 +121,8 @@ change the database password — see
 
 ## Configuration stored in the database
 
-Capacity settings (role multipliers and color bands) are not environment
-variables: they live in the `app_setting` table under the key `"capacity"`
-and are edited on the `/admin/capacity` page or via
-`PUT /api/capacity/config`. See [The capacity model](../explanation/capacity.md)
+Workload settings (role multipliers and color bands) are not environment
+variables: they live in the `app_setting` table under the key `"workload"`
+and are edited on the `/admin/workload` page or via
+`PUT /api/workload/config`. See [The workload model](../explanation/workload.md)
 and the {ref}`schema reference <app_setting>`.

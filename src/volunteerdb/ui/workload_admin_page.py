@@ -1,4 +1,4 @@
-"""Admin screen for capacity: role multipliers, colour band thresholds, team weights."""
+"""Admin screen for workload: role multipliers, colour band thresholds, team weights."""
 
 from decimal import Decimal
 
@@ -6,29 +6,28 @@ from nicegui import ui
 
 from ..models import ROLE_LABELS, TeamRole
 from ..permissions import require
-from ..services import capacity as capacity_service
+from ..services import workload as workload_service
 from ..services import teams as team_service
 from .context import action_session, notify_errors, page_session
 from .layout import frame
 
 
-@ui.page("/admin/capacity")
-async def capacity_page():
+@ui.page("/admin/workload")
+async def workload_page():
     async with page_session() as (session, actor):
         if not actor.is_admin:
-            with frame("Capacity", actor):
+            with frame("Workload", actor):
                 ui.label("Admins only.").classes("text-gray-500")
             return
-        config = await capacity_service.get_config(session)
+        config = await workload_service.get_config(session)
         all_teams = await team_service.list_all(session)
         paths = team_service.team_paths(all_teams)
 
-    with frame("Capacity", actor):
+    with frame("Workload", actor):
         ui.label(
             "A volunteer's workload score is the sum, over every team they serve on, of the "
             "team's workload weight × their role's multiplier. Bands colour-code the score on "
-            "the volunteers list and the graph. Visible to admins and to leaders/seconds for "
-            "the volunteers on their teams."
+            "the volunteers list and the graph. Visible to admins only."
         ).classes("text-sm text-gray-500")
 
         with ui.card().classes("w-full gap-2 p-4"):
@@ -63,13 +62,13 @@ async def capacity_page():
 
             @notify_errors
             async def save_config() -> None:
-                new_config = capacity_service.CapacityConfig(
+                new_config = workload_service.WorkloadConfig(
                     multipliers={
                         role: Decimal(str(inp.value or 0))
                         for role, inp in multiplier_inputs.items()
                     },
                     bands=[
-                        capacity_service.Band(
+                        workload_service.Band(
                             (label.value or "").strip(),
                             color.value or "#9e9e9e",
                             None if upper is None else Decimal(str(upper.value or 0)),
@@ -78,9 +77,9 @@ async def capacity_page():
                     ],
                 )
                 async with action_session() as (session, actor):
-                    require(actor.is_admin, "only admins configure capacity")
-                    await capacity_service.set_config(session, new_config)
-                ui.notify("Capacity settings saved", color="positive")
+                    require(actor.is_admin, "only admins configure workload")
+                    await workload_service.set_config(session, new_config)
+                ui.notify("Workload settings saved", color="positive")
 
             ui.button("Save settings", icon="save", on_click=save_config).props("dense")
 

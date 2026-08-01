@@ -32,7 +32,7 @@ leader
 
 second
   *Second-in-command.* Same rights as the {term}`leader`; a team with a
-  leader but no second still counts as a {term}`hole`.
+  leader but no second still counts as a {term}`vacancy`.
 
 core
   *Core team member.* Sees the full roster including contact details of the
@@ -43,9 +43,18 @@ member
   only.
 
 hole
-  A leadership gap: a team missing a leader or a second. The dashboard's
-  "holes to fill" report and a volunteer's {term}`impact report` are both
-  expressed in holes.
+  A leadership gap: a team missing a leader or a second. A volunteer's
+  {term}`impact report` is expressed in holes; the open holes parish-wide
+  are listed as {term}`vacancy`s on the Planning page.
+
+vacancy
+  A currently unfilled {term}`leader` or {term}`second` slot, listed on the
+  Planning page (`/planning`), where planners attach {term}`proposal`s.
+
+proposal
+  A planner's suggestion to fill a {term}`vacancy`: a volunteer, a role, and
+  an optional note, tracked from *proposed* to *accepted*, *declined*, or
+  *withdrawn*. Accepting a proposal creates the membership.
 
 impact report
   The answer to "if this volunteer leaves, what holes appear?" — shown on
@@ -53,16 +62,16 @@ impact report
 
 workload weight
   An optional per-team number expressing how demanding serving on that team
-  is. Unweighted teams count as 0 in capacity scores.
+  is. Unweighted teams count as 0 in workload scores.
 
-capacity
+workload
   A volunteer's global workload score: the sum over all their memberships of
   team {term}`workload weight` × role multiplier, bucketed into colored
-  {term}`capacity band`s. See [The capacity model](../explanation/capacity.md).
+  {term}`workload band`s. See [The workload model](../explanation/workload.md).
 
-capacity band
+workload band
   A labeled, colored score range (default: green ≤ 4, amber ≤ 8, red above)
-  configured on `/admin/capacity`.
+  configured on `/admin/workload`.
 
 custom field
   An admin-defined volunteer attribute (text, number, select, date, or

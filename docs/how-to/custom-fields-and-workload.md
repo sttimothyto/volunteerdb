@@ -1,4 +1,4 @@
-# Configure custom fields and capacity
+# Configure custom fields and workload
 
 Both are admin configuration pages that shape how volunteers are displayed
 parish-wide.
@@ -27,13 +27,13 @@ Notes:
 - Custom-field columns in spreadsheet exports are informational; imports
   ignore them ([format reference](../reference/spreadsheets.md)).
 
-## Configure capacity
+## Configure workload
 
-Capacity turns "how loaded is this volunteer?" into a number and a color.
-The model is explained in [The capacity model](../explanation/capacity.md);
+Workload turns "how loaded is this volunteer?" into a number and a color.
+The model is explained in [The workload model](../explanation/workload.md);
 this page is the knobs.
 
-1. Open **`/admin/capacity`** (header → *Capacity*).
+1. Open **`/admin/workload`** (header → *Workload*).
 2. **Role multipliers** — how much each role weighs (defaults: leader 3,
    second 2, core 1.5, member 1).
 3. **Bands** — ascending score thresholds with a label and color each
@@ -43,12 +43,12 @@ this page is the knobs.
    count 0, so weight only the ministries that represent real load.
 
 Changes apply immediately (no restart): volunteer lists, the graph's
-capacity coloring, and profile badges all recompute on next load.
+workload coloring, and profile badges all recompute on next load.
 
 ## Verify
 
 Give a test team a weight, then check a member of that team on
-`/volunteers` while signed in as an admin: their capacity badge should
+`/volunteers` while signed in as an admin: their workload badge should
 reflect weight × role multiplier, in the band your thresholds put it in.
-Remember capacity is visible to admins only — team leaders and seconds do
+Remember workload is visible to admins only — team leaders and seconds do
 not see it.

@@ -62,9 +62,9 @@ class Actor:
             return True
         return bool(self.full_view_team_ids & volunteer_team_ids)
 
-    def can_view_capacity(self, volunteer_team_ids: set[int]) -> bool:
-        """Capacity band/score: admins only. Deliberately hidden from
-        leaders, core members AND the volunteer themself — capacity is an
+    def can_view_workload(self, volunteer_team_ids: set[int]) -> bool:
+        """Workload band/score: admins only. Deliberately hidden from
+        leaders, core members AND the volunteer themself — workload is an
         admin planning signal, not a leaderboard."""
         return self.is_admin
 

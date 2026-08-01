@@ -1,82 +1,92 @@
+from urllib.parse import quote_plus
+
 from nicegui import ui
 
-from ..models import ROLE_LABELS, TeamRole
-from ..services import reports as report_service
+from ..models import ROLE_LABELS
+from ..services import graph as graph_service
+from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
-from .context import page_session
+from ..services import workload as workload_service
+from .context import action_session, asof_banner, page_session, parse_as_of
+from .cytoscape_element import CytoscapeGraph
 from .layout import frame
+from .volunteer_panel import VolunteerPanel
 
 
 @ui.page("/")
-async def dashboard():
+async def dashboard(as_of: str = ""):
+    at = parse_as_of(as_of)
     async with page_session() as (session, actor):
-        show_coverage = actor.is_admin or bool(actor.managed_team_ids)
-        coverage = await report_service.coverage(session) if show_coverage else []
-        if not actor.is_admin:
-            coverage = [r for r in coverage if r.team.id in actor.managed_team_ids]
+        elements = await graph_service.elements(session, actor, at=at)
+        all_teams = await team_service.list_all(session, at=at)
+        paths = team_service.team_paths(all_teams)
+        team_options = {0: "— whole parish —"} | {
+            t.id: paths[t.id]
+            for t in all_teams
+            if actor.is_admin or actor.can_view_roster_names(t.id)
+        }
         my_assignments = (
-            await volunteer_service.assignments(session, actor.volunteer_id)
+            await volunteer_service.assignments(session, actor.volunteer_id, at=at)
             if actor.volunteer_id
             else []
         )
+        # band chips in the legend; workload is admin-only everywhere
+        bands = (await workload_service.get_config(session)).bands if actor.is_admin else []
 
+    panel = VolunteerPanel(as_of)
     with frame("Dashboard", actor):
+        asof_banner(at, "/")
+
         with ui.row().classes("items-center gap-2 w-full"):
-            search = ui.input("Find a volunteer…").props("outlined dense clearable").classes("w-72")
-            search.on(
-                "keydown.enter", lambda: ui.navigate.to(f"/volunteers?q={search.value or ''}")
-            )
-            ui.button(
-                "Search", on_click=lambda: ui.navigate.to(f"/volunteers?q={search.value or ''}")
-            ).props("dense")
+            search = ui.input("Find volunteers or teams…").props(
+                "outlined dense clearable"
+            ).classes("w-72")
 
-        if show_coverage:
-            holes = [r for r in coverage if r.missing_leader or r.missing_second]
-            ui.label("Holes to fill").classes("text-lg font-medium mt-2")
-            if not holes:
-                ui.label("Every team has a leader and a second-in-command. 🎉").classes(
-                    "text-positive"
-                )
-            with ui.column().classes("w-full gap-1"):
-                for r in holes:
-                    with ui.row().classes(
-                        "w-full items-center gap-2 p-2 rounded bg-red-50 cursor-pointer"
-                    ).on("click", lambda _, tid=r.team.id: ui.navigate.to(f"/teams/{tid}")):
-                        ui.label(r.path).classes("font-medium")
-                        if r.missing_leader:
-                            ui.badge("no leader", color="negative")
-                        if r.missing_second:
-                            ui.badge("no second-in-command", color="warning")
-                        ui.space()
-                        ui.label(f"{r.total} member{'s' if r.total != 1 else ''}").classes(
-                            "text-sm text-gray-600"
-                        )
+            def go() -> None:
+                ui.navigate.to(f"/volunteers?q={quote_plus(search.value or '')}")
 
-            ui.label("All teams").classes("text-lg font-medium mt-4")
-            columns = [
-                {"name": "path", "label": "Team", "field": "path", "align": "left", "sortable": True},
-                {"name": "leader", "label": ROLE_LABELS[TeamRole.leader], "field": "leader"},
-                {"name": "second", "label": ROLE_LABELS[TeamRole.second], "field": "second"},
-                {"name": "core", "label": ROLE_LABELS[TeamRole.core], "field": "core"},
-                {"name": "member", "label": ROLE_LABELS[TeamRole.member], "field": "member"},
-                {"name": "total", "label": "Total", "field": "total", "sortable": True},
-            ]
-            rows = [
-                {
-                    "id": r.team.id,
-                    "path": r.path,
-                    "leader": r.counts.get(TeamRole.leader, 0),
-                    "second": r.counts.get(TeamRole.second, 0),
-                    "core": r.counts.get(TeamRole.core, 0),
-                    "member": r.counts.get(TeamRole.member, 0),
-                    "total": r.total,
-                }
-                for r in coverage
-            ]
-            table = ui.table(columns=columns, rows=rows, row_key="id", pagination=15).classes(
-                "w-full"
-            )
-            table.on("rowClick", lambda e: ui.navigate.to(f"/teams/{e.args[1]['id']}"))
+            search.on("keydown.enter", go)
+            ui.button("Search", on_click=go).props("dense")
+
+        with ui.row().classes("items-center gap-2 w-full"):
+            team_filter = ui.select(
+                team_options, label="Focus on team", value=0, with_input=True
+            ).props("outlined dense").classes("w-72")
+
+            async def refilter() -> None:
+                async with action_session() as (session, actor):
+                    new_elements = await graph_service.elements(
+                        session, actor, team_id=team_filter.value or None, at=at
+                    )
+                graph.refresh(new_elements)
+
+            team_filter.on_value_change(refilter)
+            ui.button(icon="fit_screen", on_click=lambda: graph.fit()).props(
+                "dense flat"
+            ).tooltip("Fit the whole graph in view")
+            ui.space()
+            with ui.row().classes("items-center gap-3 flex-wrap"):
+                _legend_entry("team", "background: var(--vdb-graph-team)")
+                _legend_entry("volunteer", "background: var(--vdb-graph-node)", dot=True)
+                _legend_entry("leadership", "background: var(--vdb-graph-leader)", edge=True)
+                _legend_entry("sub-team", "background: var(--vdb-graph-hier)", edge=True)
+                for band in bands:
+                    _legend_entry(band.label, f"background: {band.color}", dot=True)
+
+        async def on_node_click(e) -> None:
+            data = e.args
+            if data.get("type") == "volunteer":
+                await panel.open(data["volunteer_id"])
+                return
+            suffix = f"?as_of={as_of}" if as_of else ""
+            ui.navigate.to(f"/teams/{data['team_id']}{suffix}")
+
+        graph = CytoscapeGraph(elements, on_node_click=on_node_click).classes(
+            "w-full border rounded"
+        )
+        ui.label(
+            "Click a team to open its page; click a volunteer to open their side panel."
+        ).classes("text-sm text-gray-400")
 
         if my_assignments:
             ui.label("My teams").classes("text-lg font-medium mt-4")
@@ -87,3 +97,10 @@ async def dashboard():
                     ).on("click", lambda _, tid=team.id: ui.navigate.to(f"/teams/{tid}")):
                         ui.label(team.name).classes("font-medium")
                         ui.badge(ROLE_LABELS[membership.role])
+
+
+def _legend_entry(label: str, swatch_style: str, dot: bool = False, edge: bool = False) -> None:
+    classes = "vdb-legend-edge" if edge else "vdb-legend-swatch" + (" vdb-legend-dot" if dot else "")
+    with ui.row().classes("items-center gap-1"):
+        ui.element("span").classes(classes).style(swatch_style)
+        ui.label(label).classes("text-xs text-gray-500")

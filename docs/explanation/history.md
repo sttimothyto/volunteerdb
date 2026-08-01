@@ -50,7 +50,7 @@ promotions) are reconstructed from the archived versions.
 - **Not everything is versioned.** Accounts, custom-field *definitions*, and
   settings (`app_user`, `custom_field_def`, `app_setting`) have no twins;
   as-of pages show today's field definitions applied to yesterday's data.
-  Likewise [capacity](capacity.md) as-of scores use historical memberships
+  Likewise [workload](workload.md) as-of scores use historical memberships
   but *today's* multipliers and thresholds — the config isn't versioned.
 - **History is append-only in practice but not immutable in principle** — a
   superuser can edit twins in SQL. Backups are still the durability story

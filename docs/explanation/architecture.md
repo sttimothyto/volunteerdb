@@ -47,13 +47,13 @@ data model to reconcile.
 Three tables carry the parish; the rest is supporting cast:
 
 - **volunteer** — a person, with contact info and an admin-extensible JSONB
-  `custom` bag ([custom fields](../how-to/custom-fields-and-capacity.md)).
+  `custom` bag ([custom fields](../how-to/custom-fields-and-workload.md)).
 - **team** — a ministry; self-referencing `parent_team_id` makes it a tree,
   and role rights cascade down it. An optional `workload_weight` feeds
-  [capacity](capacity.md).
+  [workload](workload.md).
 - **membership** — the pivotal entity: *volunteer X serves on team Y as
   role Z* (unique per volunteer+team). Nearly every question the app
-  answers — rosters, holes, impact, the graph, capacity — is a query over
+  answers — rosters, vacancies, impact, the graph, workload — is a query over
   memberships.
 
 Accounts (`app_user`) are deliberately separate from volunteers: most

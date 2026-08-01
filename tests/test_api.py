@@ -238,7 +238,7 @@ async def test_custom_fields_flow(client, seeded):
     assert r.status_code == 204
 
 
-async def test_capacity_flow(client, seeded):
+async def test_workload_flow(client, seeded):
     admin = await _token(client, "admin@example.org", "secret-pw")
     member = await _token(client, "member@example.org", "member-pw")
 
@@ -260,18 +260,18 @@ async def test_capacity_flow(client, seeded):
     )
     assert r.status_code == 201
 
-    r = await client.get("/api/capacity/scores", headers=admin)
+    r = await client.get("/api/workload/scores", headers=admin)
     assert r.status_code == 200
     (row,) = [s for s in r.json() if s["volunteer_id"] == seeded["volunteer_id"]]
     assert row["score"] == 9.0 and row["band"] == "red"
 
-    # Maria leads the team now, but capacity is admin-only: leadership grants
+    # Maria leads the team now, but workload is admin-only: leadership grants
     # neither the scores (empty list, not 403 — the endpoint filters) nor the
     # config (hard 403)
-    r = await client.get("/api/capacity/scores", headers=member)
+    r = await client.get("/api/workload/scores", headers=member)
     assert r.status_code == 200
     assert r.json() == []
-    r = await client.get("/api/capacity/config", headers=member)
+    r = await client.get("/api/workload/config", headers=member)
     assert r.status_code == 403
 
     # config writes are admin-only, and invalid configs are rejected
@@ -282,16 +282,16 @@ async def test_capacity_flow(client, seeded):
             {"label": "over", "color": "#e53935", "upper": None},
         ],
     }
-    r = await client.put("/api/capacity/config", json=good, headers=member)
+    r = await client.put("/api/workload/config", json=good, headers=member)
     assert r.status_code == 403
-    r = await client.put("/api/capacity/config", json=good, headers=admin)
+    r = await client.put("/api/workload/config", json=good, headers=admin)
     assert r.status_code == 200
 
     bad = {**good, "bands": [{"label": "only", "color": "#000", "upper": 5}]}
-    r = await client.put("/api/capacity/config", json=bad, headers=admin)
+    r = await client.put("/api/workload/config", json=bad, headers=admin)
     assert r.status_code == 422
 
     # new config applies: 3 × 2 = 6 -> "ok" band now
-    r = await client.get("/api/capacity/scores", headers=admin)
+    r = await client.get("/api/workload/scores", headers=admin)
     (row,) = [s for s in r.json() if s["volunteer_id"] == seeded["volunteer_id"]]
     assert row["score"] == 6.0 and row["band"] == "ok"

@@ -36,7 +36,7 @@ from volunteerdb import db
 from volunteerdb.db import db_session
 from volunteerdb.models import FieldType, Membership, TeamRole, Volunteer
 from volunteerdb.permissions import load_actor, team_ids_map
-from volunteerdb.services import capacity as capacity_service
+from volunteerdb.services import workload as workload_service
 from volunteerdb.services import custom_fields as custom_field_service
 from volunteerdb.services import teams as team_service
 from volunteerdb.services import users as user_service
@@ -273,8 +273,8 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
             found = await volunteer_service.search(session, "", include_inactive=actor.is_admin)
             team_sets = await team_ids_map(session, [v.id for v in found])
             [d for d in await custom_field_service.list_defs(session) if d.show_in_list]
-            await capacity_service.get_config(session)
-            await capacity_service.visible_scores(session, actor, team_sets)
+            await workload_service.get_config(session)
+            await workload_service.visible_scores(session, actor, team_sets)
 
     async def search_blank():
         async with db_session() as session:

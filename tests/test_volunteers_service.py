@@ -52,6 +52,66 @@ async def test_search_by_name_email_and_inactive_flag(database):
         assert "Ghost" in {v.last_name for v in withall}
 
 
+async def test_search_private_fields_are_scope_aware(database):
+    from volunteerdb.permissions import load_actor
+    from volunteerdb.services import custom_fields, users
+
+    async with db_session() as session:
+        liturgy = await teams.create(session, "Liturgy")
+        garden = await teams.create(session, "Garden")
+        insider = await volunteers.create(session, "Inne", "Sider", None, "555-0100")
+        outsider = await volunteers.create(
+            session, "Outt", "Sider", None, "555-0200", "keeps the secret recipe"
+        )
+        plain = await volunteers.create(session, "Plain", "Member", None, "555-0300")
+        await memberships.assign(session, insider.id, liturgy.id, TeamRole.member)
+        await memberships.assign(session, outsider.id, garden.id, TeamRole.member)
+        await memberships.assign(session, plain.id, liturgy.id, TeamRole.member)
+        await custom_fields.create_def(session, "Training", "text")
+        await custom_fields.set_values(session, insider.id, {"training": "lector-certified"})
+
+        leader_v = await volunteers.create(session, "Lena", "Leader")
+        await memberships.assign(session, leader_v.id, liturgy.id, TeamRole.leader)
+        leader = await load_actor(
+            session, await users.create(session, "lena@example.org", volunteer_id=leader_v.id)
+        )
+        admin = await load_actor(
+            session, await users.create(session, "admin@example.org", is_admin=True)
+        )
+        member = await load_actor(
+            session, await users.create(session, "plain@example.org", volunteer_id=plain.id)
+        )
+
+        # admins (and trusted internal callers, actor=None) match every column
+        assert [v.id for v in await volunteers.search(session, "555-0200", actor=admin)] == [
+            outsider.id
+        ]
+        assert [v.id for v in await volunteers.search(session, "secret recipe")] == [outsider.id]
+        assert [v.id for v in await volunteers.search(session, "lector-certified", actor=admin)] == [
+            insider.id
+        ], "custom-field values are searchable"
+
+        # a leader matches private fields only inside their full-view subtree
+        assert [v.id for v in await volunteers.search(session, "555-0100", actor=leader)] == [
+            insider.id
+        ]
+        assert await volunteers.search(session, "555-0200", actor=leader) == [], (
+            "another ministry's phone number must not confirm by row presence"
+        )
+        assert {v.id for v in await volunteers.search(session, "Sider", actor=leader)} == {
+            insider.id,
+            outsider.id,
+        }, "names stay searchable for everyone"
+
+        # a plain member matches private fields on themself only
+        assert [v.id for v in await volunteers.search(session, "555-0300", actor=member)] == [
+            plain.id
+        ]
+        assert await volunteers.search(session, "555-0100", actor=member) == [], (
+            "member role grants names, not private-field search, even on their own team"
+        )
+
+
 async def test_missing_volunteer_raises_lookup(database):
     async with db_session() as session:
         assert await volunteers.get(session, 424242) is None

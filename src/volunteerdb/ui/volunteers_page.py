@@ -1,8 +1,10 @@
+from urllib.parse import quote_plus
+
 from nicegui import app, ui
 
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import require, team_ids_map, volunteer_team_ids
-from ..services import capacity as capacity_service
+from ..services import workload as workload_service
 from ..services import custom_fields as custom_field_service
 from ..services import memberships as membership_service
 from ..services import photos as photo_service
@@ -20,38 +22,41 @@ ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 @ui.page("/volunteers")
 async def volunteers_page(q: str = "", band: str = ""):
     async with page_session() as (session, actor):
-        found = await volunteer_service.search(session, q, include_inactive=actor.is_admin)
-        # one query for all listed volunteers' team memberships (drives redaction + capacity)
+        found = await volunteer_service.search(
+            session, q, include_inactive=actor.is_admin, actor=actor
+        )
+        team_hits = await team_service.search(session, q) if q else []
+        # one query for all listed volunteers' team memberships (drives redaction + workload)
         team_sets = await team_ids_map(session, [v.id for v in found])
         list_defs = [d for d in await custom_field_service.list_defs(session) if d.show_in_list]
-        config = await capacity_service.get_config(session)
-        cap = await capacity_service.visible_scores(session, actor, team_sets)
+        config = await workload_service.get_config(session)
+        wl = await workload_service.visible_scores(session, actor, team_sets)
 
-    shows_capacity = actor.is_admin
+    shows_workload = actor.is_admin
     if band:
-        # filtering happens strictly within the permitted set — no capacity leak
-        found = [v for v in found if v.id in cap and cap[v.id][1].label == band]
+        # filtering happens strictly within the permitted set — no workload leak
+        found = [v for v in found if v.id in wl and wl[v.id][1].label == band]
 
     panel = VolunteerPanel()
     with frame("Volunteers", actor):
         with ui.row().classes("items-center gap-2 w-full"):
             band_select: ui.select | None = None
-            search = ui.input("Search by name or email…", value=q).props(
+            search = ui.input("Search volunteers…", value=q).props(
                 "outlined dense clearable"
             ).classes("w-72")
 
             def go() -> None:
-                target = f"/volunteers?q={search.value or ''}"
+                target = f"/volunteers?q={quote_plus(search.value or '')}"
                 if band_select is not None and band_select.value:
                     target += f"&band={band_select.value}"
                 ui.navigate.to(target)
 
             search.on("keydown.enter", go)
             ui.button("Search", on_click=go).props("dense")
-            if shows_capacity:
+            if shows_workload:
                 band_select = ui.select(
                     {b.label: b.label for b in config.bands},
-                    label="Capacity",
+                    label="Workload",
                     value=band or None,
                     clearable=True,
                 ).props("outlined dense").classes("w-40")
@@ -62,14 +67,22 @@ async def volunteers_page(q: str = "", band: str = ""):
                     "dense"
                 )
 
+        if team_hits:
+            ui.label("Matching teams").classes("text-lg font-medium")
+            with ui.row().classes("gap-2 w-full flex-wrap"):
+                for team, path in team_hits:
+                    ui.button(
+                        path, on_click=lambda _, tid=team.id: ui.navigate.to(f"/teams/{tid}")
+                    ).props("outline dense")
+
         columns = [
             {"name": "name", "label": "Name", "field": "name", "align": "left", "sortable": True},
             {"name": "email", "label": "Email", "field": "email", "align": "left"},
             {"name": "phone", "label": "Phone", "field": "phone", "align": "left"},
         ]
-        if shows_capacity:
+        if shows_workload:
             columns.append(
-                {"name": "capacity", "label": "Capacity", "field": "capacity", "align": "left"}
+                {"name": "workload", "label": "Workload", "field": "workload", "align": "left"}
             )
         for d in list_defs:
             columns.append(
@@ -87,24 +100,26 @@ async def volunteers_page(q: str = "", band: str = ""):
                 "phone": (v.phone or "") if visible else "•••",
                 "status": "" if v.is_active else "inactive",
             }
-            if shows_capacity:
-                score_band = cap.get(v.id)
-                row["capacity"] = score_band[1].label if score_band else ""
-                row["capacity_color"] = score_band[1].color if score_band else ""
-                row["capacity_score"] = f"{float(score_band[0]):g}" if score_band else ""
+            if shows_workload:
+                score_band = wl.get(v.id)
+                row["workload"] = score_band[1].label if score_band else ""
+                row["workload_color"] = score_band[1].color if score_band else ""
+                row["workload_score"] = f"{float(score_band[0]):g}" if score_band else ""
             for d in list_defs:
                 value = (v.custom or {}).get(d.key)
                 row[f"cf_{d.key}"] = format_custom(d, value, missing="") if visible else "•••"
             rows.append(row)
-        table = ui.table(columns=columns, rows=rows, row_key="id", pagination=20).classes("w-full")
-        if shows_capacity:
+        table = ui.table(columns=columns, rows=rows, row_key="id", pagination=20).classes(
+            "w-full vdb-clickable-rows"
+        )
+        if shows_workload:
             table.add_slot(
-                "body-cell-capacity",
+                "body-cell-workload",
                 """
-                <q-td key="capacity" :props="props">
-                    <q-badge v-if="props.row.capacity"
-                             :style="{backgroundColor: props.row.capacity_color}">
-                        {{ props.row.capacity }} · {{ props.row.capacity_score }}
+                <q-td key="workload" :props="props">
+                    <q-badge v-if="props.row.workload"
+                             :style="{backgroundColor: props.row.workload_color}">
+                        {{ props.row.workload }} · {{ props.row.workload_score }}
                     </q-badge>
                 </q-td>
                 """,
@@ -155,7 +170,7 @@ async def volunteer_detail(volunteer_id: int):
         can_view = actor.can_view_volunteer(volunteer_id, team_ids)
         can_edit = actor.can_edit_volunteer(volunteer_id, team_ids)
         field_defs = await custom_field_service.list_defs(session)
-        cap = await capacity_service.visible_scores(session, actor, {volunteer_id: team_ids})
+        wl = await workload_service.visible_scores(session, actor, {volunteer_id: team_ids})
         assignments = await volunteer_service.assignments(session, volunteer_id)
         impact = (
             await volunteer_service.impact(session, volunteer_id) if can_view else []
@@ -176,9 +191,9 @@ async def volunteer_detail(volunteer_id: int):
                 ui.label(volunteer.full_name).classes("text-lg font-medium")
                 if not volunteer.is_active:
                     ui.badge("inactive", color="grey")
-                if volunteer_id in cap:
-                    score, band = cap[volunteer_id]
-                    ui.badge(f"capacity: {band.label} · {float(score):g}").style(
+                if volunteer_id in wl:
+                    score, band = wl[volunteer_id]
+                    ui.badge(f"workload: {band.label} · {float(score):g}").style(
                         f"background-color: {band.color}"
                     ).tooltip("Workload score: team weights × role multipliers, all ministries")
                 ui.space()

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..history import entity
 from ..models import Membership, TeamRole, Volunteer
 from ..permissions import Actor
-from . import capacity as capacity_service
+from . import workload as workload_service
 from . import photos as photo_service
 from . import teams as team_service
 
@@ -42,7 +42,7 @@ async def elements(
         )
     ).all() if visible_ids else []
 
-    # capacity colouring: the permission check needs each volunteer's FULL team
+    # workload colouring: the permission check needs each volunteer's FULL team
     # set (the visible edges above are only a subset), and the score is global
     volunteer_ids = {v_id for _, _, v_id, _, _ in rows}
     team_sets: dict[int, set[int]] = {v_id: set() for v_id in volunteer_ids}
@@ -52,10 +52,10 @@ async def elements(
         )
         for v_id, t_id in all_memberships:
             team_sets[v_id].add(t_id)
-    capacity_bands = {
+    workload_bands = {
         v_id: band
         for v_id, (_score, band) in (
-            await capacity_service.visible_scores(session, actor, team_sets, at=at)
+            await workload_service.visible_scores(session, actor, team_sets, at=at)
         ).items()
     }
     # ids + uploaded_at only, never the blobs; the canvas fetches each image
@@ -85,8 +85,8 @@ async def elements(
                 "type": "volunteer",
                 "volunteer_id": v_id,
             }
-            band = capacity_bands.get(v_id)
-            if band is not None:  # viewers without capacity rights keep grey dots
+            band = workload_bands.get(v_id)
+            if band is not None:  # viewers without workload rights keep grey dots
                 data["band"] = band.label
                 data["color"] = band.color
             uploaded_at = photo_versions.get(v_id)

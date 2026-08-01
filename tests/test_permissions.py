@@ -113,7 +113,7 @@ async def test_import_export_rights(parish):
         assert not actor.can_import_export, f"{name} may not import/export"
 
 
-async def test_capacity_view_rights(parish):
+async def test_workload_view_rights(parish):
     accounts, ids = parish
     async with db_session() as session:
         member_teams = await volunteer_team_ids(session, ids["member_vid"])
@@ -121,15 +121,15 @@ async def test_capacity_view_rights(parish):
 
     for name in ("leader", "second"):
         actor = await _actor(accounts, name)
-        assert not actor.can_view_capacity(member_teams), f"{name} no longer sees capacity"
-        assert not actor.can_view_capacity(outsider_teams), "not other ministries' people"
+        assert not actor.can_view_workload(member_teams), f"{name} no longer sees workload"
+        assert not actor.can_view_workload(outsider_teams), "not other ministries' people"
 
     core = await _actor(accounts, "core")
-    assert not core.can_view_capacity(member_teams), "core members never see capacity"
+    assert not core.can_view_workload(member_teams), "core members never see workload"
 
     member = await _actor(accounts, "member")
-    assert not member.can_view_capacity(member_teams), "not even one's own capacity"
+    assert not member.can_view_workload(member_teams), "not even one's own workload"
 
     admin = await _actor(accounts, "admin")
-    assert admin.can_view_capacity(member_teams)
-    assert admin.can_view_capacity(outsider_teams)
+    assert admin.can_view_workload(member_teams)
+    assert admin.can_view_workload(outsider_teams)

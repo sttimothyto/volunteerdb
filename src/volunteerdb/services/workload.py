@@ -1,10 +1,10 @@
-"""Volunteer capacity: workload score = Σ team.workload_weight × role multiplier.
+"""Volunteer workload: score = Σ team.workload_weight × role multiplier.
 
 Admin-configured role multipliers and color bands live in app_setting under
-"capacity" (missing key ⇒ DEFAULT_CONFIG); team weights on team.workload_weight
+"workload" (missing key ⇒ DEFAULT_CONFIG); team weights on team.workload_weight
 (NULL ⇒ counts 0). Scores are GLOBAL over all of a volunteer's memberships —
 deliberately, so a leader can spot someone overloaded by *other* ministries.
-Per-viewer visibility is gated by Actor.can_view_capacity.
+Per-viewer visibility is gated by Actor.can_view_workload.
 
 Config is not versioned: as-of scores use historical memberships and weights
 but today's multipliers/thresholds.
@@ -22,7 +22,7 @@ from ..history import entity
 from ..models import AppSetting, Membership, Team, TeamRole
 from ..permissions import Actor
 
-SETTING_KEY = "capacity"
+SETTING_KEY = "workload"
 
 
 @dataclass(frozen=True)
@@ -33,12 +33,12 @@ class Band:
 
 
 @dataclass(frozen=True)
-class CapacityConfig:
+class WorkloadConfig:
     multipliers: dict[TeamRole, Decimal]
     bands: list[Band]  # ascending thresholds
 
 
-DEFAULT_CONFIG = CapacityConfig(
+DEFAULT_CONFIG = WorkloadConfig(
     multipliers={
         TeamRole.leader: Decimal("3"),
         TeamRole.second: Decimal("2"),
@@ -53,7 +53,7 @@ DEFAULT_CONFIG = CapacityConfig(
 )
 
 
-def _to_json(config: CapacityConfig) -> dict:
+def _to_json(config: WorkloadConfig) -> dict:
     return {
         "multipliers": {role.value: float(m) for role, m in config.multipliers.items()},
         "bands": [
@@ -67,7 +67,7 @@ def _to_json(config: CapacityConfig) -> dict:
     }
 
 
-def _from_json(value: dict) -> CapacityConfig:
+def _from_json(value: dict) -> WorkloadConfig:
     # JSON numbers arrive as floats; go through str() to keep Decimals exact
     multipliers = {
         role: Decimal(str(value["multipliers"].get(role.value, DEFAULT_CONFIG.multipliers[role])))
@@ -81,10 +81,10 @@ def _from_json(value: dict) -> CapacityConfig:
         )
         for b in value.get("bands", [])
     ]
-    return CapacityConfig(multipliers=multipliers, bands=bands or DEFAULT_CONFIG.bands)
+    return WorkloadConfig(multipliers=multipliers, bands=bands or DEFAULT_CONFIG.bands)
 
 
-def validate_config(config: CapacityConfig) -> None:
+def validate_config(config: WorkloadConfig) -> None:
     if set(config.multipliers) != set(TeamRole):
         raise ValueError("multipliers must cover all four roles")
     if any(m < 0 for m in config.multipliers.values()):
@@ -102,12 +102,12 @@ def validate_config(config: CapacityConfig) -> None:
         raise ValueError("band labels must be unique")
 
 
-async def get_config(session: AsyncSession) -> CapacityConfig:
+async def get_config(session: AsyncSession) -> WorkloadConfig:
     setting = await session.get(AppSetting, SETTING_KEY)
     return _from_json(setting.value) if setting else DEFAULT_CONFIG
 
 
-async def set_config(session: AsyncSession, config: CapacityConfig) -> None:
+async def set_config(session: AsyncSession, config: WorkloadConfig) -> None:
     validate_config(config)
     stmt = pg_insert(AppSetting).values(key=SETTING_KEY, value=_to_json(config))
     stmt = stmt.on_conflict_do_update(
@@ -117,7 +117,7 @@ async def set_config(session: AsyncSession, config: CapacityConfig) -> None:
     await session.execute(stmt)
 
 
-def band_for(score: Decimal, config: CapacityConfig) -> Band:
+def band_for(score: Decimal, config: WorkloadConfig) -> Band:
     for band in config.bands:
         if band.upper is None or score <= band.upper:
             return band
@@ -128,7 +128,7 @@ async def scores(
     session: AsyncSession,
     volunteer_ids: list[int] | None = None,
     at: datetime | None = None,
-    config: CapacityConfig | None = None,
+    config: WorkloadConfig | None = None,
 ) -> dict[int, Decimal]:
     """Global workload score per volunteer. With `volunteer_ids`, every requested
     id is present in the result (no memberships ⇒ 0). Scalar rows, so no fetch()
@@ -161,9 +161,9 @@ async def visible_scores(
     team_sets: dict[int, set[int]],
     at: datetime | None = None,
 ) -> dict[int, tuple[Decimal, Band]]:
-    """(score, band) for exactly those volunteers whose capacity `actor` may see.
+    """(score, band) for exactly those volunteers whose workload `actor` may see.
     `team_sets` maps volunteer id -> ALL their team ids (drives the permission)."""
-    permitted = [vid for vid, tids in team_sets.items() if actor.can_view_capacity(tids)]
+    permitted = [vid for vid, tids in team_sets.items() if actor.can_view_workload(tids)]
     if not permitted:
         return {}
     config = await get_config(session)

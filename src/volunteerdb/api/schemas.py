@@ -93,7 +93,7 @@ class TeamOut(ORMModel):
     parent_team_id: int | None
     description: str | None
     is_active: bool
-    workload_weight: float | None = None  # capacity weight; null = unweighted
+    workload_weight: float | None = None  # null = unweighted
 
 
 class TeamWithPath(TeamOut):
@@ -145,7 +145,7 @@ class RosterEntry(BaseModel):
     joined_on: date | None
 
 
-# --- capacity ---
+# --- workload ---
 
 
 class BandOut(BaseModel):
@@ -154,20 +154,44 @@ class BandOut(BaseModel):
     upper: float | None  # inclusive threshold; null = unbounded (last band)
 
 
-class CapacityConfigOut(BaseModel):
+class WorkloadConfigOut(BaseModel):
     multipliers: dict[TeamRole, float]
     bands: list[BandOut]
 
 
-class CapacityConfigIn(CapacityConfigOut):
+class WorkloadConfigIn(WorkloadConfigOut):
     pass
 
 
-class CapacityScoreOut(BaseModel):
+class WorkloadScoreOut(BaseModel):
     volunteer_id: int
     score: float
     band: str
     color: str
+
+
+# --- planning ---
+
+
+class ProposalIn(BaseModel):
+    team_id: int
+    volunteer_id: int
+    role: TeamRole
+    note: str | None = None
+
+
+class ProposalOut(ORMModel):
+    id: int
+    team_id: int
+    volunteer_id: int
+    role: TeamRole
+    role_label: str = ""
+    status: str
+    note: str | None
+    proposed_by: int | None
+    created_at: datetime
+    decided_at: datetime | None
+    decided_by: int | None
 
 
 # --- reports ---

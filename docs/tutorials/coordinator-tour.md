@@ -23,19 +23,23 @@ minutes.)
 ## 2. Read the dashboard
 
 - **My teams** lists Maria's three ministries with her role in each.
-- **Holes to fill** shows leadership gaps — but only in the teams *you*
-  lead. Maria's ministries are fully staffed, so her report is quiet; an
-  administrator would see *Hospitality* flagged here (the demo team seeded
-  without a leader).
-- The **search box** finds any volunteer by name or email — try `felix`.
+- The **ministry graph** shows the whole parish as a network — more on it
+  in step 7.
+- The **search box** finds any volunteer or team — try `felix`.
+- Header → **Planning**: **Vacancies** shows leadership gaps — but only in
+  the teams *you* lead. Maria's ministries are fully staffed, so her page
+  is quiet; an administrator would see *Hospitality* flagged there (the
+  demo team seeded without a leader) and could propose a volunteer to fill
+  the role — a proposal that whoever manages the team then accepts
+  (creating the membership) or declines.
 
 ## 3. Open a team and manage its roster
 
 Header → **Teams** → *Liturgy*. Because Maria leads it:
 
 - The roster shows every member **with contact details** and their role.
-  (Administrators additionally see a capacity badge per volunteer —
-  [capacity](../explanation/capacity.md) is admin-only.)
+  (Administrators additionally see a workload badge per volunteer —
+  [workload](../explanation/workload.md) is admin-only.)
 - Sub-teams (*Altar Servers*, *Lectors*, *Music Ministry*, *Sacristans*)
   are listed — Maria's leadership covers them too.
 - **Add a member:** pick any volunteer, role *Member*. **Change a role:**
@@ -73,20 +77,20 @@ This is the app's core question, answerable for anyone, as of any date.
 
 ## 7. See the whole parish as a graph
 
-Header → **Graph**. Volunteers and teams as a network: gold edges mark
-leadership. Use the team filter to focus on *Liturgy* and click a team node
-to jump to its page. To an administrator the dots are also colored by
-capacity band — Maria's would be red: three weighted ministries, two of
-them led. That red dot is *why* capacity exists: it's what the next "could
-you also…?" conversation should know. As a coordinator, Maria herself sees
-plain grey dots.
+Back on the **Dashboard**: volunteers and teams as a network, gold edges
+marking leadership. Use the team filter to focus on *Liturgy* and click a
+team node to jump to its page. To an administrator the dots are also
+colored by workload band — Maria's would be red: three weighted
+ministries, two of them led. That red dot is *why* workload exists: it's
+what the next "could you also…?" conversation should know. As a
+coordinator, Maria herself sees plain grey dots.
 
 ## 8. Know what you can't see
 
 Sign out (header menu) and sign in as `felix.garcia@example.org` /
 `volunteer` — a plain member of Altar Servers and Youth Group. The same
 pages now show less: rosters list names but contact details are `•••`, no
-holes report, no roster editing. Same data, same pages — access follows
+Planning page, no roster editing. Same data, same pages — access follows
 the fourfold role, as laid out in the
 [permission matrix](../reference/permissions.md#permission-matrix).
 
@@ -97,4 +101,4 @@ the fourfold role, as laid out in the
 - The ideas behind what you just saw:
   [permissions](../explanation/permissions.md),
   [history](../explanation/history.md),
-  [capacity](../explanation/capacity.md).
+  [workload](../explanation/workload.md).

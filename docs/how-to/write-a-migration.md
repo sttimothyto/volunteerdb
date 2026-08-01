@@ -48,7 +48,7 @@ name at runtime. Tables that are *not* versioned (`app_user`,
 `custom_field_def`, `app_setting`) take plain `add_column` (see `0003`).
 
 Consider whether a schema change is needed at all: per-volunteer attributes
-are usually better served by a [custom field](custom-fields-and-capacity.md),
+are usually better served by a [custom field](custom-fields-and-workload.md),
 which needs no migration.
 
 ## Verify

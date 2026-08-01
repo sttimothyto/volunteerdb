@@ -145,13 +145,26 @@ Workbook layout: see the [spreadsheet format](spreadsheets.md).
 | `PATCH /api/custom-fields/{id}` | admin | Label/options/position/visibility; `key` immutable |
 | `DELETE /api/custom-fields/{id}` | admin | 204 |
 
-### Capacity — `api/capacity.py`
+### Workload — `api/workload.py`
 
 | Method & path | Permission | Notes |
 |---|---|---|
-| `GET /api/capacity/config` | admin or any leader/second | Multipliers + bands |
-| `PUT /api/capacity/config` | admin | Validated (see [capacity model](../explanation/capacity.md)) |
-| `GET /api/capacity/scores` | signed in | Only volunteers whose capacity the caller may see; `as_of=` |
+| `GET /api/workload/config` | admin | Multipliers + bands |
+| `PUT /api/workload/config` | admin | Validated (see [workload model](../explanation/workload.md)) |
+| `GET /api/workload/scores` | signed in | Only volunteers whose workload the caller may see (admins); `as_of=` |
+
+### Planning — `api/planning.py`
+
+Vacancies need no endpoint of their own: `GET /api/reports/coverage` already
+returns `missing_leader`/`missing_second` with the same scoping.
+
+| Method & path | Permission | Notes |
+|---|---|---|
+| `GET /api/planning/proposals` | admin or any leader/second | Scoped to managed teams for non-admins; `team_id=`, `status=` filters |
+| `POST /api/planning/proposals` | manage the team | 201; duplicate open (team, role, volunteer) → 409 |
+| `POST /api/planning/proposals/{id}/accept` | manage the team | Flips status *and* creates/upgrades the membership; already decided → 422 |
+| `POST /api/planning/proposals/{id}/decline` | manage the team | |
+| `POST /api/planning/proposals/{id}/withdraw` | proposer or manage the team | |
 
 ## Worked examples
 

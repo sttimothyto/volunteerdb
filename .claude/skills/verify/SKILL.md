@@ -40,7 +40,7 @@ background; ready when `curl http://127.0.0.1:8123/login` returns 200.
   Seed logins: admin@sttimothy.example (admin), maria.alvarez@example.org
   (leader), felix.garcia@example.org (member).
 - Page evidence: the initial element tree is JSON embedded in the GET HTML —
-  grep for row dicts (e.g. `"capacity":"red"`), labels, or "Admins only.".
+  grep for row dicts (e.g. `"workload":"red"`), labels, or "Admins only.".
 - JSON API: `POST /api/auth/login {"email","password"}` → Bearer token
   (seed passwords: changeme / volunteer / volunteer).
 - History spot-checks go straight to Postgres via

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
 from ..models import Membership, Team, TeamRole, Volunteer, membership_history, team_history
+from ..permissions import Actor
 
 _UNSET: object = object()
 
@@ -21,17 +22,50 @@ async def search(
     query: str = "",
     at: datetime | None = None,
     include_inactive: bool = False,
+    *,
+    actor: Actor | None = None,
 ) -> list[Volunteer]:
+    """Substring search over every volunteer column.
+
+    Name and email match for everyone (and keep the rev-0005 trigram indexes).
+    Phone, notes, and custom-field values additionally match — but, unless the
+    actor is an admin (or None: trusted internal caller), only among volunteers
+    the actor can already view unredacted, mirroring can_view_volunteer: self,
+    plus anyone on a team in full_view_team_ids. Matching a private field a
+    viewer can't see would leak its content by the row's mere presence.
+    """
     V = entity(Volunteer, at)
     stmt = sa.select(V).order_by(V.last_name, V.first_name)
     if query.strip():
         pattern = f"%{query.strip()}%"
-        stmt = stmt.where(
-            sa.or_(
-                (V.first_name + " " + V.last_name).ilike(pattern),
-                V.email.ilike(pattern),
-            )
+        public_match = sa.or_(
+            (V.first_name + " " + V.last_name).ilike(pattern),
+            V.email.ilike(pattern),
         )
+        private_match = sa.or_(
+            V.phone.ilike(pattern),
+            V.notes.ilike(pattern),
+            # serialized JSONB: matches values (and keys) as text
+            sa.cast(V.custom, sa.Text).ilike(pattern),
+        )
+        if actor is None or actor.is_admin:
+            stmt = stmt.where(sa.or_(public_match, private_match))
+        else:
+            M = entity(Membership, at)
+            visible_preds = []
+            if actor.volunteer_id is not None:
+                visible_preds.append(V.id == actor.volunteer_id)
+            if actor.full_view_team_ids:
+                visible_preds.append(
+                    sa.exists(
+                        sa.select(sa.literal(1)).where(
+                            M.volunteer_id == V.id,
+                            M.team_id.in_(actor.full_view_team_ids),
+                        )
+                    )
+                )
+            visible = sa.or_(*visible_preds) if visible_preds else sa.false()
+            stmt = stmt.where(sa.or_(public_match, sa.and_(private_match, visible)))
     if not include_inactive:
         stmt = stmt.where(V.is_active)
     return [row[0] for row in await fetch(session, stmt, at)]

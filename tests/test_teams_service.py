@@ -57,7 +57,7 @@ def test_team_paths_terminates_on_a_cycle():
 
 async def test_create_rejects_a_negative_workload_weight(database):
     """update validates the weight; create must too, or POST /api/teams accepts
-    what PATCH refuses and the negative flows into every capacity band."""
+    what PATCH refuses and the negative flows into every workload band."""
     async with db_session() as session:
         with pytest.raises(ValueError):
             await teams.create(session, "Negative", workload_weight=Decimal("-2"))
@@ -134,3 +134,25 @@ async def test_missing_team_raises_lookup(database):
             await teams.update(session, 424242, name="X")
         with pytest.raises(LookupError):
             await teams.delete(session, 424242)
+
+
+async def test_search_matches_name_description_and_path(database):
+    async with db_session() as session:
+        liturgy = await teams.create(session, "Liturgy")
+        await teams.create(
+            session, "Altar Servers", parent_team_id=liturgy.id, description="robes and candles"
+        )
+        retired = await teams.create(session, "Old Guild")
+        await teams.update(session, retired.id, is_active=False)
+
+        assert [t.name for t, _ in await teams.search(session, "altar")] == ["Altar Servers"]
+        assert [t.name for t, _ in await teams.search(session, "candles")] == ["Altar Servers"], (
+            "description matches"
+        )
+        hits = await teams.search(session, "liturgy")
+        assert [(t.name, path) for t, path in hits] == [
+            ("Liturgy", "Liturgy"),
+            ("Altar Servers", "Liturgy / Altar Servers"),
+        ], "a parent's name matches its children through the path, sorted by path"
+        assert await teams.search(session, "old guild") == [], "inactive teams excluded"
+        assert await teams.search(session, "   ") == [], "blank query matches nothing"

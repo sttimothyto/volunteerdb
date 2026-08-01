@@ -7,7 +7,7 @@ Deliberate demo shapes:
 - 'Hospitality' has no leader (shows up in the coverage report)
 - Maria Alvarez is sole leader of two teams (dramatic impact report)
 - Only some teams carry workload weights, and Maria lands deep in the red
-  capacity band (colour-coding demo); two custom fields come pre-defined
+  workload band (colour-coding demo); two custom fields come pre-defined
 - Backdated joins plus a few ended/rejoined memberships feed the service
   timeline chart (Maria's ended Youth Group spell, Grace's split Music
   Ministry spells, Peter's mid-spell promotion)
@@ -25,7 +25,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import FieldType, TeamRole, Volunteer
 from volunteerdb.services import custom_fields, memberships, teams, users, volunteers
 
-# optional capacity weights; unlisted teams stay unweighted (count 0)
+# optional workload weights; unlisted teams stay unweighted (count 0)
 WEIGHTS: dict[str, Decimal] = {
     "Liturgy": Decimal("3"),
     "Faith Formation": Decimal("2"),
@@ -219,7 +219,7 @@ async def seed() -> None:
 
     print("Seeded:")
     print(f"  {sum(len(s) + 1 for s in TEAMS.values())} teams, {len(VOLUNTEERS)} volunteers")
-    print(f"  {len(WEIGHTS)} weighted teams + 2 custom fields (capacity/fields demo)")
+    print(f"  {len(WEIGHTS)} weighted teams + 2 custom fields (workload/fields demo)")
     print(
         f"  {len(PAST_SPELLS)} ended spells, {len(JOINED)} backdated joins,"
         " 1 promotion (timeline demo)"

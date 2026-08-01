@@ -12,7 +12,9 @@ to fill?"**
 - Full **history tracking**: view any team, volunteer, or the whole graph
   *as of any past date*
 - Spreadsheet **import/export** (.xlsx) that round-trips
-- **Cytoscape.js graph** of volunteers ↔ teams
+- **Cytoscape.js graph** of volunteers ↔ teams, front and center on the dashboard
+- Collaborative **planning**: leadership vacancies with volunteer proposals
+  (propose → accept/decline), and admin-only **workload** scoring
 
 ## Documentation
 
@@ -95,8 +97,8 @@ trigger: every UPDATE/DELETE archives the old row into `<table>_history` with
 its validity period (`sys_period tstzrange`) and the acting user
 (`changed_by`, from the transaction-local `app.user_id` setting).
 
-- GUI: every team/volunteer/graph page has a "View as of" date picker
-  (read-only snapshot, amber banner)
+- GUI: the dashboard (with its graph) and every team/volunteer page has a
+  "View as of" date picker (read-only snapshot, amber banner)
 - API: add `?as_of=2026-01-01T00:00:00+02:00` to any GET
 
 **Migration note:** any future column change on a versioned table must be

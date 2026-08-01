@@ -39,7 +39,9 @@ async def list_volunteers(
     if include_inactive:
         # matches the GUI, which offers the archived toggle to admins only
         require(ctx.actor.is_admin, "only admins list archived volunteers")
-    found = await service.search(ctx.session, q, at=as_of, include_inactive=include_inactive)
+    found = await service.search(
+        ctx.session, q, at=as_of, include_inactive=include_inactive, actor=ctx.actor
+    )
     teams_map = await team_ids_map(ctx.session, [v.id for v in found], as_of)
     photo_ids = await photo_service.versions(ctx.session, [v.id for v in found])
     out = [redacted(ctx.actor, v, teams_map.get(v.id, set())) for v in found]

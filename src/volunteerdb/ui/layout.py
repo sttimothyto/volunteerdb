@@ -10,32 +10,34 @@ from .theme import apply_theme
 @contextmanager
 def frame(title: str, actor: Actor):
     dark = apply_theme()
+    nav_items = [("Teams", "/teams"), ("Volunteers", "/volunteers")]
+    if actor.is_admin or actor.managed_team_ids:
+        nav_items.append(("Planning", "/planning"))
+    if actor.can_import_export:
+        nav_items.append(("Import/Export", "/import"))
+    if actor.is_admin:
+        nav_items += [
+            ("Accounts", "/admin/users"),
+            ("Fields", "/admin/fields"),
+            ("Workload", "/admin/workload"),
+        ]
     with ui.header().classes("items-center text-white px-4 vdb-header"):
         ui.label("VDB").classes("text-lg cursor-pointer vdb-brand").on(
             "click", lambda: ui.navigate.to("/")
         )
         ui.space()
-        ui.button("Teams", on_click=lambda: ui.navigate.to("/teams")).props("flat color=white dense")
-        ui.button("Volunteers", on_click=lambda: ui.navigate.to("/volunteers")).props(
-            "flat color=white dense"
-        )
-        ui.button("Graph", on_click=lambda: ui.navigate.to("/graph")).props("flat color=white dense")
-        if actor.can_import_export:
-            ui.button("Import/Export", on_click=lambda: ui.navigate.to("/import")).props(
-                "flat color=white dense"
-            )
-        if actor.is_admin:
-            ui.button("Accounts", on_click=lambda: ui.navigate.to("/admin/users")).props(
-                "flat color=white dense"
-            )
-            ui.button("Fields", on_click=lambda: ui.navigate.to("/admin/fields")).props(
-                "flat color=white dense"
-            )
-            ui.button("Capacity", on_click=lambda: ui.navigate.to("/admin/capacity")).props(
-                "flat color=white dense"
-            )
+        # full button row on md+ screens; a single menu button below that
+        with ui.row().classes("items-center gap-0 hidden md:flex"):
+            for label, target in nav_items:
+                ui.button(label, on_click=lambda t=target: ui.navigate.to(t)).props(
+                    "flat color=white dense"
+                )
+        with ui.button(icon="menu").props("flat color=white dense round").classes("md:hidden"):
+            with ui.menu():
+                for label, target in nav_items:
+                    ui.menu_item(label, on_click=lambda t=target: ui.navigate.to(t))
         ui.space()
-        ui.label(actor.user.email).classes("text-sm opacity-80")
+        ui.label(actor.user.email).classes("text-sm opacity-80 hidden md:block")
         ui.button(icon="menu_book", on_click=lambda: ui.navigate.to("/manual", new_tab=True)).props(
             "flat color=white dense round"
         ).tooltip("Manual")

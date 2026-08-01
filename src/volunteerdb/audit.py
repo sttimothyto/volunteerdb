@@ -155,7 +155,7 @@ def _log_execute(execute_state: ORMExecuteState) -> None:
         else:
             _read_logger.info("db.read", table=tables)
     elif execute_state.is_insert or execute_state.is_update or execute_state.is_delete:
-        # Core DML bypassing the unit of work (today: capacity.set_config upsert)
+        # Core DML bypassing the unit of work (today: workload.set_config upsert)
         op = (
             "db.insert"
             if execute_state.is_insert

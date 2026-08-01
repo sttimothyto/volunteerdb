@@ -8,7 +8,7 @@ import csv
 from io import StringIO
 
 from volunteerdb.db import db_session
-from volunteerdb.services import capacity, users, volunteers
+from volunteerdb.services import workload, users, volunteers
 from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import VOLUNTEER_HEADERS
 
@@ -165,7 +165,7 @@ async def test_reads_logged_at_info(database, log_records):
 
 async def test_core_upsert_logged(database, log_records):
     async with db_session(user_id=3) as session:
-        await capacity.set_config(session, capacity.DEFAULT_CONFIG)
+        await workload.set_config(session, workload.DEFAULT_CONFIG)
     core_writes = [r for r in _by_event(log_records, "db.insert") if r.get("core")]
     assert core_writes and core_writes[0]["table"] == "app_setting"
     assert core_writes[0]["user"] == "3"

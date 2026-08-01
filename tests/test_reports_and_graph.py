@@ -76,7 +76,7 @@ async def test_graph_admin_sees_everything(database):
         assert edges[f"h{child.id}"]["hierarchy"] is True, "sub-team edge present"
 
         leader_node = next(n for n in data["nodes"] if n["data"]["id"] == f"v{on_parent.id}")
-        assert "band" in leader_node["data"], "admins see capacity colouring"
+        assert "band" in leader_node["data"], "admins see workload colouring"
 
 
 async def test_graph_member_sees_only_own_team(database):
@@ -97,7 +97,7 @@ async def test_graph_member_sees_only_own_team(database):
         assert f"h{child.id}" not in edge_ids, "hierarchy edge dropped: parent invisible"
 
         own_node = next(n for n in data["nodes"] if n["data"]["id"] == f"v{on_child.id}")
-        assert "band" not in own_node["data"], "capacity is a leadership-only signal"
+        assert "band" not in own_node["data"], "workload is a leadership-only signal"
 
 
 async def test_graph_photo_datum_only_on_photographed_volunteers(database):

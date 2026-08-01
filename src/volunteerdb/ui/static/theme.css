@@ -39,6 +39,8 @@
   --vdb-graph-leader: #b07d2b;
   --vdb-graph-hier: #8a7550;
   --vdb-graph-selected: #2e5e7e;
+
+  --vdb-row-hover: #f5ecd7;
 }
 
 body.body--dark {
@@ -60,6 +62,8 @@ body.body--dark {
   --vdb-graph-leader: #d9a662;
   --vdb-graph-hier: #a8916b;
   --vdb-graph-selected: #9dc1d9;
+
+  --vdb-row-hover: #332e29;
 
   /* brand vars are inline on <body>; author-!important beats inline-normal */
   --q-primary: #c97b5d !important;
@@ -188,9 +192,41 @@ a:hover,
   background: var(--vdb-rule);
 }
 
-/* keeps white badge text legible on admin-picked capacity colors */
+/* keeps white badge text legible on admin-picked workload colors */
 .q-badge {
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+
+/* ---------- dashboard graph legend ---------- */
+
+.vdb-legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.vdb-legend-dot {
+  border-radius: 50%;
+}
+
+.vdb-legend-edge {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* ---------- clickable table rows (mark the table with .vdb-clickable-rows) ---------- */
+
+.vdb-clickable-rows tbody tr {
+  cursor: pointer;
+}
+
+.vdb-clickable-rows tbody tr:hover {
+  background-color: var(--vdb-row-hover);
 }
 
 /* ---------- dark-mode remaps for fixed Tailwind tints ---------- */

@@ -21,3 +21,7 @@ class CytoscapeGraph(Element, component="cytoscape_graph.js"):
     def refresh(self, elements: dict) -> None:
         self._props["elements"] = elements
         self.run_method("refresh", elements)
+
+    def fit(self) -> None:
+        """Reset zoom/pan so the whole graph is in view."""
+        self.run_method("fit")

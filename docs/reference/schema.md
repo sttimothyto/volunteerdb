@@ -45,7 +45,7 @@ Relationships: `memberships` (cascade delete-orphan), optional one-to-one
 | `description` | text | |
 | `is_active` | boolean | |
 | `sys_period` | tstzrange | |
-| `workload_weight` | numeric(8,2) | nullable; NULL counts as 0 in capacity scores |
+| `workload_weight` | numeric(8,2) | nullable; NULL counts as 0 in workload scores |
 
 ## `membership` (versioned)
 
@@ -106,8 +106,31 @@ Values are stored per volunteer in `volunteer.custom` under `key`.
 | `value` | jsonb | |
 | `updated_at` | timestamptz | |
 
-Currently holds one key, `"capacity"`: role multipliers and color bands
-(see [The capacity model](../explanation/capacity.md)).
+Currently holds one key, `"workload"`: role multipliers and color bands
+(see [The workload model](../explanation/workload.md)).
+
+(proposal)=
+## `proposal` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `team_id` | integer | FK → `team.id` ON DELETE CASCADE, indexed |
+| `volunteer_id` | integer | FK → `volunteer.id` ON DELETE CASCADE |
+| `role` | team_role | reuses the enum from `0001` |
+| `status` | varchar(20) | CHECK `proposed / accepted / declined / withdrawn` (string + CHECK, like `custom_field_def.field_type`) |
+| `note` | text | the "why them?" pitch |
+| `proposed_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `created_at` | timestamptz | |
+| `decided_at` | timestamptz | |
+| `decided_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+
+Partial unique index `uq_proposal_open` on `(team_id, role, volunteer_id)
+WHERE status = 'proposed'`: at most one *open* proposal per triple, while
+decided ones accumulate as history and re-proposing after a decline stays
+legal. Deliberately not versioned: workflow data whose lifecycle is already
+self-recorded in `status`/`decided_*`; the membership an accepted proposal
+creates *is* versioned.
 
 (volunteer_photo)=
 ## `volunteer_photo` (not versioned)
@@ -150,3 +173,4 @@ why adding a live column requires rebuilding the twin; see
 | `0004` | Nulls all `api_token` values — switch to stored SHA-256 digests (irreversible; existing tokens invalidated) |
 | `0005` | Performance indexes: pg_trgm search on volunteer, `membership_history.volunteer_id`, `(last_name, first_name)` |
 | `0006` | `volunteer_photo` (not versioned — no twin rebuild) |
+| `0007` | `proposal` (not versioned); renames the `app_setting` key `capacity` → `workload` |

@@ -28,6 +28,21 @@ ROLE_LABELS: dict[TeamRole, str] = {
 team_role_enum = sa.Enum(TeamRole, name="team_role")
 
 
+class ProposalStatus(enum.StrEnum):
+    proposed = "proposed"
+    accepted = "accepted"
+    declined = "declined"
+    withdrawn = "withdrawn"
+
+
+PROPOSAL_STATUS_LABELS: dict[ProposalStatus, str] = {
+    ProposalStatus.proposed: "Proposed",
+    ProposalStatus.accepted: "Accepted",
+    ProposalStatus.declined: "Declined",
+    ProposalStatus.withdrawn: "Withdrawn",
+}
+
+
 class FieldType(enum.StrEnum):
     text = "text"
     number = "number"
@@ -96,7 +111,7 @@ class Team(Base):
     sys_period: Mapped[Range[datetime]] = mapped_column(
         TSTZRANGE, server_default=SYS_PERIOD_DEFAULT
     )
-    # optional capacity weight ("how work-heavy is this ministry"); NULL counts as 0.
+    # optional workload weight ("how work-heavy is this ministry"); NULL counts as 0.
     # keep this the LAST column so the history twin's order matches the DB
     workload_weight: Mapped[Decimal | None] = mapped_column(sa.Numeric(8, 2))
 
@@ -116,6 +131,48 @@ class Membership(Base):
     sys_period: Mapped[Range[datetime]] = mapped_column(
         TSTZRANGE, server_default=SYS_PERIOD_DEFAULT
     )
+
+
+class Proposal(Base):
+    """A planner's suggestion to fill a vacant role on a team.
+
+    Not system-versioned (like custom_field_def): workflow data whose
+    lifecycle is already self-recorded in status/created_at/decided_*.
+    The membership an accepted proposal creates *is* versioned.
+    """
+
+    __tablename__ = "proposal"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('proposed', 'accepted', 'declined', 'withdrawn')",
+            name="ck_proposal_status",
+        ),
+        # at most one OPEN proposal per (team, role, volunteer)
+        sa.Index(
+            "uq_proposal_open",
+            "team_id",
+            "role",
+            "volunteer_id",
+            unique=True,
+            postgresql_where=sa.text("status = 'proposed'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(sa.ForeignKey("team.id", ondelete="CASCADE"), index=True)
+    volunteer_id: Mapped[int] = mapped_column(sa.ForeignKey("volunteer.id", ondelete="CASCADE"))
+    role: Mapped[TeamRole] = mapped_column(team_role_enum)
+    # plain string + CHECK, not a PG enum, so adding statuses never needs ALTER TYPE
+    status: Mapped[str] = mapped_column(
+        sa.String(20), default=ProposalStatus.proposed.value, server_default="proposed"
+    )
+    note: Mapped[str | None] = mapped_column(sa.Text)
+    proposed_by: Mapped[int | None] = mapped_column(sa.ForeignKey("app_user.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    decided_by: Mapped[int | None] = mapped_column(sa.ForeignKey("app_user.id", ondelete="SET NULL"))
 
 
 class AppUser(Base):
@@ -172,7 +229,7 @@ class CustomFieldDef(Base):
 
 
 class AppSetting(Base):
-    """Key/JSON application settings (e.g. capacity config). Not versioned."""
+    """Key/JSON application settings (e.g. workload config). Not versioned."""
 
     __tablename__ = "app_setting"
 

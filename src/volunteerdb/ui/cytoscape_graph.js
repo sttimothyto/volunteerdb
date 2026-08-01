@@ -1,15 +1,3 @@
-const TINT_OPACITY = 0.45;
-
-// Semi-transparent solid-colour layer drawn OVER a node's photo so the
-// capacity band stays readable. Kept at module level: styleFor() is re-run
-// by the dark-mode observer and must not rebuild closures per restyle.
-function tintLayer(color) {
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">' +
-    `<rect width="16" height="16" fill="${color}" fill-opacity="${TINT_OPACITY}"/></svg>`;
-  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
-}
-
 export default {
   template: '<div style="width: 100%; height: 70vh; min-height: 420px;"></div>',
   props: {
@@ -30,9 +18,22 @@ export default {
       if (this.cy) this.cy.style(this.styleFor(this.themeColors()));
     });
     this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    // the canvas caches its container size at init; follow later layout
+    // changes, and fit once when the element first gains real dimensions
+    // (e.g. mounted inside a container that was hidden or still reflowing)
+    this.hadSize = this.$el.clientWidth > 0 && this.$el.clientHeight > 0;
+    this.resizeObserver = new ResizeObserver(() => {
+      if (!this.cy) return;
+      this.cy.resize();
+      const hasSize = this.$el.clientWidth > 0 && this.$el.clientHeight > 0;
+      if (hasSize && !this.hadSize) this.cy.fit(undefined, 30);
+      this.hadSize = hasSize;
+    });
+    this.resizeObserver.observe(this.$el);
   },
   beforeUnmount() {
     if (this.themeObserver) this.themeObserver.disconnect();
+    if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.cy) this.cy.destroy();
   },
   methods: {
@@ -86,22 +87,28 @@ export default {
           },
         },
         {
-          // capacity colouring; nodes without a color datum keep the neutral above
+          // workload colouring; nodes without a color datum keep the neutral above
           selector: 'node[type="volunteer"][color]',
           style: { "background-color": "data(color)" },
         },
         {
-          // headshot fills the bubble; capacity tint (when visible) is a second
-          // image layer drawn on top of it. Model size stays 16px — the canvas
+          // headshot fills the bubble. Model size stays 16px — the canvas
           // renders the photo at screen resolution, so it resolves on zoom.
           selector: 'node[type="volunteer"][photo]',
           style: {
-            "background-image": (ele) =>
-              ele.data("color")
-                ? [ele.data("photo"), tintLayer(ele.data("color"))]
-                : [ele.data("photo")],
-            "background-fit": (ele) => (ele.data("color") ? "cover cover" : "cover"),
+            "background-image": "data(photo)",
+            "background-fit": "cover",
             "background-clip": "node",
+          },
+        },
+        {
+          // workload ring around the headshot — a tint over the photo is
+          // illegible, so the band colour becomes an outline instead.
+          // node:selected sits later in this sheet and overrides it.
+          selector: 'node[type="volunteer"][photo][color]',
+          style: {
+            "border-width": 2.5,
+            "border-color": "data(color)",
           },
         },
         {
@@ -142,6 +149,9 @@ export default {
       this.cy.add(elements);
       this.cy.layout(this.layoutOptions()).run();
       this.cy.fit(undefined, 30);
+    },
+    fit() {
+      if (this.cy) this.cy.fit(undefined, 30);
     },
   },
 };
