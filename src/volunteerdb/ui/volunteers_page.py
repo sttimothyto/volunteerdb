@@ -4,12 +4,12 @@ from nicegui import app, ui
 
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import require, team_ids_map, volunteer_team_ids
-from ..services import workload as workload_service
 from ..services import custom_fields as custom_field_service
 from ..services import memberships as membership_service
 from ..services import photos as photo_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
+from ..services import workload as workload_service
 from .context import action_session, notify_errors, page_session
 from .layout import frame
 from .photo_dialog import photo_avatar

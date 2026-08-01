@@ -15,7 +15,7 @@ DB_USER := volunteerdb
 # Extra arguments for `make test`, e.g. make test ARGS="-k roster -x"
 ARGS ?=
 
-.PHONY: help db down clean migrate seed dev serve test docs fresh
+.PHONY: help db down clean migrate seed dev serve test lint docs fresh
 
 help: ## list these targets
 	@echo "VolunteerDB developer tasks"
@@ -63,6 +63,12 @@ serve: db ## serve http://localhost:8080 without auto-reload
 
 test: db ## run the test suite (scratch volunteerdb_test database)
 	$(UV) run pytest $(ARGS)
+
+# Lint only. `ruff format` is configured (100 columns, see pyproject.toml) but
+# the source has never been run through it, so the first pass would rewrite most
+# of the repo — do that deliberately, not as a side effect of `make lint`.
+lint: ## check the source with ruff
+	$(UV) run ruff check .
 
 docs: ## build the HTML manual into docs/_build/html
 	$(UV) run --group docs sphinx-build -W -b html docs docs/_build/html

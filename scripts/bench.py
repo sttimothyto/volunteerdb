@@ -36,11 +36,11 @@ from volunteerdb import db
 from volunteerdb.db import db_session
 from volunteerdb.models import FieldType, Membership, TeamRole, Volunteer
 from volunteerdb.permissions import load_actor, team_ids_map
-from volunteerdb.services import workload as workload_service
 from volunteerdb.services import custom_fields as custom_field_service
 from volunteerdb.services import teams as team_service
 from volunteerdb.services import users as user_service
 from volunteerdb.services import volunteers as volunteer_service
+from volunteerdb.services import workload as workload_service
 from volunteerdb.sheets.exporter import export_workbook
 from volunteerdb.sheets.importer import run_import
 

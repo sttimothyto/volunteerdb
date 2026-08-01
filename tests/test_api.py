@@ -5,10 +5,10 @@ from datetime import UTC, date, datetime
 
 from volunteerdb.api.deps import as_of_param
 from volunteerdb.db import db_session
-from volunteerdb.ui.context import parse_as_of
 from volunteerdb.models import TeamRole
 from volunteerdb.services import custom_fields as custom_fields_service
 from volunteerdb.services import memberships, volunteers
+from volunteerdb.ui.context import parse_as_of
 
 from tests.conftest import _token
 

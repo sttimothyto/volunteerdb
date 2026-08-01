@@ -8,7 +8,7 @@ import csv
 from io import StringIO
 
 from volunteerdb.db import db_session
-from volunteerdb.services import workload, users, volunteers
+from volunteerdb.services import users, volunteers, workload
 from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import VOLUNTEER_HEADERS
 

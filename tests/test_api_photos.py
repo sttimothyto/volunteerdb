@@ -24,8 +24,8 @@ async def test_any_signed_in_account_may_manage_any_photo(client, seeded, token_
     async with db_session() as session:
         other_team = await teams.create(session, "Hospitality")
         zoe = await volunteers.create(session, "Zoe", "Zimmer", "zoe@example.org")
-        from volunteerdb.services import memberships
         from volunteerdb.models import TeamRole
+        from volunteerdb.services import memberships
 
         await memberships.assign(session, zoe.id, other_team.id, TeamRole.member)
         zoe_id = zoe.id

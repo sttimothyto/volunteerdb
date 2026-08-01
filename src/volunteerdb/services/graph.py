@@ -12,9 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..history import entity
 from ..models import Membership, TeamRole, Volunteer
 from ..permissions import Actor
-from . import workload as workload_service
 from . import photos as photo_service
 from . import teams as team_service
+from . import workload as workload_service
 
 
 async def elements(

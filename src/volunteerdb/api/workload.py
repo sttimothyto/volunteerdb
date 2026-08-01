@@ -2,12 +2,11 @@ from decimal import Decimal
 
 from fastapi import APIRouter
 
-from ..permissions import require
-from ..services import workload as service
+from ..permissions import require, team_ids_map
 from ..services import volunteers as volunteer_service
+from ..services import workload as service
 from .deps import AsOf, CtxDep
 from .schemas import BandOut, WorkloadConfigIn, WorkloadConfigOut, WorkloadScoreOut
-from ..permissions import team_ids_map
 
 router = APIRouter(prefix="/workload", tags=["workload"])
 

@@ -107,7 +107,9 @@ BACKUP_ALERT_EMAIL = ADMIN_EMAIL  # "" disables the failure email
 # Reuse secrets already on the server; generate once if absent.
 def _remote_env() -> dict[str, str]:
     lines = host.get_fact(FileContents, path=ENV_FILE) or []
-    pairs = (l.split("=", 1) for l in lines if "=" in l and not l.lstrip().startswith("#"))
+    pairs = (
+        line.split("=", 1) for line in lines if "=" in line and not line.lstrip().startswith("#")
+    )
     return {k.strip(): v.strip() for k, v in pairs}
 
 

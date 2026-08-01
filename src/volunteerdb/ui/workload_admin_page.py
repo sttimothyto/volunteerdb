@@ -6,8 +6,8 @@ from nicegui import ui
 
 from ..models import ROLE_LABELS, TeamRole
 from ..permissions import require
-from ..services import workload as workload_service
 from ..services import teams as team_service
+from ..services import workload as workload_service
 from .context import action_session, notify_errors, page_session
 from .layout import frame
 

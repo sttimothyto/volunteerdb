@@ -17,11 +17,11 @@ from nicegui.testing.user_simulation import user_simulation
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from volunteerdb import audit, db, log, throttle
-from volunteerdb.log import shared_processors
 from volunteerdb.api import api_router
 from volunteerdb.api.deps import install_exception_handlers
 from volunteerdb.config import settings
 from volunteerdb.db import db_session
+from volunteerdb.log import shared_processors
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
