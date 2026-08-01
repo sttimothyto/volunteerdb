@@ -26,18 +26,21 @@ def frame(title: str, actor: Actor):
             "click", lambda: ui.navigate.to("/")
         )
         ui.space()
-        # full button row on md+ screens; a single menu button below that
-        with ui.row().classes("items-center gap-0 hidden md:flex"):
+        # Full button row on wide screens, a single menu button below 1024px.
+        # Use Quasar's gt-sm/lt-md helpers, never Tailwind's `hidden md:flex`:
+        # Quasar ships `.hidden{display:none!important}`, which beats Tailwind's
+        # plain `display:flex` and hides the row at every width.
+        with ui.row().classes("items-center gap-0 gt-sm"):
             for label, target in nav_items:
                 ui.button(label, on_click=lambda t=target: ui.navigate.to(t)).props(
                     "flat color=white dense"
                 )
-        with ui.button(icon="menu").props("flat color=white dense round").classes("md:hidden"):
+        with ui.button(icon="menu").props("flat color=white dense round").classes("lt-md"):
             with ui.menu():
                 for label, target in nav_items:
                     ui.menu_item(label, on_click=lambda t=target: ui.navigate.to(t))
         ui.space()
-        ui.label(actor.user.email).classes("text-sm opacity-80 hidden md:block")
+        ui.label(actor.user.email).classes("text-sm opacity-80 gt-sm")
         ui.button(icon="menu_book", on_click=lambda: ui.navigate.to("/manual", new_tab=True)).props(
             "flat color=white dense round"
         ).tooltip("Manual")
