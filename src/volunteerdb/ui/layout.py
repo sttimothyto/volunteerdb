@@ -15,7 +15,6 @@ def frame(title: str, actor: Actor):
             "click", lambda: ui.navigate.to("/")
         )
         ui.space()
-        ui.button("Dashboard", on_click=lambda: ui.navigate.to("/")).props("flat color=white dense")
         ui.button("Teams", on_click=lambda: ui.navigate.to("/teams")).props("flat color=white dense")
         ui.button("Volunteers", on_click=lambda: ui.navigate.to("/volunteers")).props(
             "flat color=white dense"
