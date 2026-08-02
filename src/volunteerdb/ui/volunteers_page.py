@@ -303,7 +303,9 @@ async def volunteer_detail(volunteer_id: int):
         timeline_chart(spells, paths, dark=app.storage.user.get("dark_mode", False))
 
         if can_view:
-            ui.label("If they leave, what holes appear?").classes("text-lg font-medium")
+            ui.label("If they leave, what vacancies appear?").classes(
+                "text-lg font-medium"
+            )
             if not impact:
                 ui.label("No memberships — no holes.").classes("text-gray-500")
             for row in impact:

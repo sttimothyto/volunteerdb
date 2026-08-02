@@ -21,23 +21,74 @@ from .volunteer_panel import VolunteerPanel
 ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
 
+def _hierarchy_rows(all_teams, coverage, actor) -> list[dict]:
+    """One row per team in depth-first order, so every child sits directly under
+    its parent and `depth` can indent it into the shape the old tree drew.
+
+    Counts are blanked server-side rather than hidden client-side: a Quasar
+    column the browser does not render still receives its row data, so a hidden
+    column would ship every team's headcounts to every signed-in member.
+    """
+    by_parent = team_service.children_map(all_teams)
+    paths = team_service.team_paths(all_teams)
+    by_team = {r.team.id: r for r in coverage}
+    rows: list[dict] = []
+    seen: set[int] = set()
+
+    def emit(team, depth: int) -> None:
+        # cycles cannot occur live, but as-of snapshots are unvalidated
+        if team.id in seen:
+            return
+        seen.add(team.id)
+        row = {
+            "id": team.id,
+            "order": len(rows),
+            "name": team.name,
+            "path": paths[team.id],
+            "depth": depth,
+            "inactive": not team.is_active,
+        }
+        # coverage() is empty for actors who manage nothing, and skips inactive teams
+        r = by_team.get(team.id) if actor.can_manage_team(team.id) else None
+        if r is None:
+            row |= dict.fromkeys(("leader", "second", "core", "member", "total"), "")
+            row |= {"gaps": "", "gap_leader": False, "gap_second": False}
+        else:
+            row |= {
+                "leader": r.counts.get(TeamRole.leader, 0),
+                "second": r.counts.get(TeamRole.second, 0),
+                "core": r.counts.get(TeamRole.core, 0),
+                "member": r.counts.get(TeamRole.member, 0),
+                "total": r.total,
+                "gaps": int(r.missing_leader) + int(r.missing_second),
+                "gap_leader": r.missing_leader,
+                "gap_second": r.missing_second,
+            }
+        rows.append(row)
+        for child in by_parent.get(team.id, []):
+            emit(child, depth + 1)
+
+    for team in by_parent.get(None, []):
+        emit(team, 0)
+    for team in all_teams:
+        # parent outside this snapshot: list it as a root rather than drop it
+        emit(team, 0)
+    return rows
+
+
 @ui.page("/teams")
 async def teams_page(as_of: str = ""):
     at = parse_as_of(as_of)
     async with page_session() as (session, actor):
         all_teams = await team_service.list_all(session, at)
         show_coverage = actor.is_admin or bool(actor.managed_team_ids)
-        coverage = await report_service.coverage(session, at) if show_coverage else []
-        if not actor.is_admin:
-            coverage = [r for r in coverage if r.team.id in actor.managed_team_ids]
+        coverage = (
+            await report_service.coverage(session, at, teams=all_teams)
+            if show_coverage
+            else []
+        )
 
-    by_parent = team_service.children_map(all_teams)
-
-    def nodes(parent_id: int | None) -> list[dict]:
-        return [
-            {"id": t.id, "label": t.name, "children": nodes(t.id)}
-            for t in by_parent.get(parent_id, [])
-        ]
+    rows = _hierarchy_rows(all_teams, coverage, actor)
 
     suffix = f"?as_of={as_of}" if as_of else ""
     with frame("Teams", actor):
@@ -47,15 +98,19 @@ async def teams_page(as_of: str = ""):
                 ui.button(
                     "New team", icon="add", on_click=lambda: _team_dialog(all_teams)
                 ).props("dense")
+        columns = [
+            {
+                "name": "team",
+                "label": "Team",
+                # sorted on the depth-first ordinal, not the name: clicking "Team"
+                # restores the hierarchy instead of flattening it into an A-Z list.
+                "field": "order",
+                "align": "left",
+                "sortable": True,
+            }
+        ]
         if show_coverage:
-            columns = [
-                {
-                    "name": "path",
-                    "label": "Team",
-                    "field": "path",
-                    "align": "left",
-                    "sortable": True,
-                },
+            columns += [
                 {
                     "name": "leader",
                     "label": ROLE_LABELS[TeamRole.leader],
@@ -73,29 +128,46 @@ async def teams_page(as_of: str = ""):
                     "field": "member",
                 },
                 {"name": "total", "label": "Total", "field": "total", "sortable": True},
+                # A hierarchy cannot also honour coverage()'s holes-first row
+                # order, so the holes become a column here: sort descending to
+                # float them up. Chasing them is /planning's job now anyway.
+                {"name": "gaps", "label": "Gaps", "field": "gaps", "sortable": True},
             ]
-            rows = [
-                {
-                    "id": r.team.id,
-                    "path": r.path,
-                    "leader": r.counts.get(TeamRole.leader, 0),
-                    "second": r.counts.get(TeamRole.second, 0),
-                    "core": r.counts.get(TeamRole.core, 0),
-                    "member": r.counts.get(TeamRole.member, 0),
-                    "total": r.total,
-                }
-                for r in coverage
-            ]
-            table = ui.table(
-                columns=columns, rows=rows, row_key="id", pagination=15
-            ).classes("w-full vdb-clickable-rows")
-            table.on(
-                "rowClick",
-                lambda e: ui.navigate.to(f"/teams/{e.args[1]['id']}{suffix}"),
+        # no pagination: the tree showed the whole parish at once and this replaces it
+        table = ui.table(
+            columns=columns, rows=rows, row_key="id", pagination=0
+        ).classes("w-full vdb-clickable-rows")
+        table.add_slot(
+            "body-cell-team",
+            """
+            <q-td key="team" :props="props"
+                  :style="{paddingLeft: (16 + props.row.depth * 22) + 'px'}">
+                <span v-if="props.row.depth" class="text-grey-5 q-mr-xs">└</span>
+                {{ props.row.name }}
+                <q-badge v-if="props.row.inactive" color="grey" class="q-ml-sm">
+                    inactive
+                </q-badge>
+                <q-tooltip v-if="props.row.depth">{{ props.row.path }}</q-tooltip>
+            </q-td>
+            """,
+        )
+        if show_coverage:
+            table.add_slot(
+                "body-cell-gaps",
+                """
+                <q-td key="gaps" :props="props">
+                    <q-badge v-if="props.row.gap_leader" color="warning">
+                        no leader
+                    </q-badge>
+                    <q-badge v-if="props.row.gap_second" color="warning" class="q-ml-xs">
+                        no second
+                    </q-badge>
+                </q-td>
+                """,
             )
-        tree = ui.tree(nodes(None), label_key="label", node_key="id").classes("w-full")
-        tree.on_select(
-            lambda e: e.value and ui.navigate.to(f"/teams/{e.value}{suffix}")
+        table.on(
+            "rowClick",
+            lambda e: ui.navigate.to(f"/teams/{e.args[1]['id']}{suffix}"),
         )
         if not all_teams:
             ui.label("No teams yet.").classes("text-gray-500")
