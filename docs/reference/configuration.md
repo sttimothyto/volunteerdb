@@ -70,6 +70,12 @@ ignored. Copy `.env.example` as a starting point.
 `VDB_MAIL_FROM_NAME`
 : Sender display name. Default: `VolunteerDB`.
 
+`VDB_TIMEZONE`
+: IANA zone the parish lives in. Default: `America/Toronto`. Date-typed
+  values like planning deadlines mean "through the end of that day *here*":
+  the phase of an open proposal is computed against today's date in this
+  zone, not against the container's clock (UTC in production).
+
 `VDB_DOCS_DIR`
 : Directory of built documentation HTML served at `/manual` (signed-in
   users). Default: `docs/_build/html`, resolved against the working
@@ -125,4 +131,6 @@ Workload settings (role multipliers and color bands) are not environment
 variables: they live in the `app_setting` table under the key `"workload"`
 and are edited on the `/admin/workload` page or via
 `PUT /api/workload/config`. See [The workload model](../explanation/workload.md)
-and the {ref}`schema reference <app_setting>`.
+and the {ref}`schema reference <app_setting>`. The planning clergy team —
+whose members join every new proposal's voting roll — is stored the same
+way under `"planning"` and edited by admins on the `/planning` page.

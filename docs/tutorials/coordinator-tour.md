@@ -29,9 +29,13 @@ minutes.)
 - Header → **Planning**: **Vacancies** shows leadership gaps — but only in
   the teams *you* lead. Maria's ministries are fully staffed, so her page
   is quiet; an administrator would see *Hospitality* flagged there (the
-  demo team seeded without a leader) and could propose a volunteer to fill
-  the role — a proposal that whoever manages the team then accepts
-  (creating the membership) or declines.
+  demo team seeded without a leader) and could **start a proposal** for the
+  seat: candidates are nominated (each with a "why them?" note and their
+  current commitments in plain view) until a nomination deadline, a voting
+  roll — the team's leadership and core plus the clergy team — scores them
+  by [STAR voting](../explanation/planning.md) until a voting deadline, and
+  only then does a manager appoint someone (creating the membership) or
+  send the question around again.
 
 ## 3. Open a team and manage its roster
 

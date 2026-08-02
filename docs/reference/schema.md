@@ -106,31 +106,86 @@ Values are stored per volunteer in `volunteer.custom` under `key`.
 | `value` | jsonb | |
 | `updated_at` | timestamptz | |
 
-Currently holds one key, `"workload"`: role multipliers and color bands
-(see [The workload model](../explanation/workload.md)).
+Holds two keys: `"workload"` — role multipliers and color bands (see
+[The workload model](../explanation/workload.md)) — and `"planning"` —
+the clergy team whose members join every new proposal's voting roll
+(see [Planning by nomination and vote](../explanation/planning.md)).
 
 (proposal)=
 ## `proposal` (not versioned)
+
+One run at filling a (team, role) seat by nomination and STAR vote (see
+[Planning by nomination and vote](../explanation/planning.md)). The phase
+of an open proposal — nominating, voting, or concluded — derives from
+today's date against the two deadlines and is never stored.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | integer | PK |
 | `team_id` | integer | FK → `team.id` ON DELETE CASCADE, indexed |
-| `volunteer_id` | integer | FK → `volunteer.id` ON DELETE CASCADE |
 | `role` | team_role | reuses the enum from `0001` |
-| `status` | varchar(20) | CHECK `proposed / accepted / declined / withdrawn` (string + CHECK, like `custom_field_def.field_type`) |
-| `note` | text | the "why them?" pitch |
-| `proposed_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `status` | varchar(20) | CHECK `open / appointed / cancelled` (string + CHECK, like `custom_field_def.field_type`) |
+| `notes` | text | the proposer's framing of the seat |
+| `nomination_deadline` | date | last day to nominate, inclusive, in the parish's day (`VDB_TIMEZONE`) |
+| `voting_deadline` | date | last day to vote, inclusive; CHECK `nomination_deadline < voting_deadline` |
+| `appointed_candidate_id` | integer | FK → `proposal_candidate.id` ON DELETE SET NULL (circular FK, added after both tables) |
+| `created_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
 | `created_at` | timestamptz | |
-| `decided_at` | timestamptz | |
 | `decided_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `decided_at` | timestamptz | |
 
-Partial unique index `uq_proposal_open` on `(team_id, role, volunteer_id)
-WHERE status = 'proposed'`: at most one *open* proposal per triple, while
-decided ones accumulate as history and re-proposing after a decline stays
-legal. Deliberately not versioned: workflow data whose lifecycle is already
-self-recorded in `status`/`decided_*`; the membership an accepted proposal
-creates *is* versioned.
+Partial unique index `uq_proposal_open` on `(team_id, role) WHERE status =
+'open'`: at most one *open* proposal per seat, while decided ones
+accumulate as history and a fresh round for the same seat stays legal.
+Deliberately not versioned (as are the three tables below): workflow data
+whose lifecycle is already self-recorded in `status`/`decided_*`; the
+membership an appointment creates *is* versioned.
+
+## `proposal_candidate` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `proposal_id` | integer | FK → `proposal.id` ON DELETE CASCADE |
+| `volunteer_id` | integer | FK → `volunteer.id` ON DELETE CASCADE |
+| `note` | text | the nominator's "why them?" pitch |
+| `nominated_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `created_at` | timestamptz | |
+
+Unique on `(proposal_id, volunteer_id)`. The candidate set freezes when
+voting begins (the nomination deadline passes).
+
+## `proposal_voter` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `proposal_id` | integer | FK → `proposal.id` ON DELETE CASCADE |
+| `volunteer_id` | integer | FK → `volunteer.id` ON DELETE CASCADE, indexed |
+| `added_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `created_at` | timestamptz | |
+
+Unique on `(proposal_id, volunteer_id)`. The roll is prefilled at creation
+(target team's leader/second/core + the configured clergy team) and, like
+the candidate set, freezes when voting begins. The `volunteer_id` index
+serves the per-request "which rolls am I on?" lookup in `load_actor`.
+
+## `proposal_ballot` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `proposal_id` | integer | FK → `proposal.id` ON DELETE CASCADE, indexed (denormalized: one-query tally/turnout) |
+| `voter_id` | integer | FK → `proposal_voter.id` ON DELETE CASCADE |
+| `candidate_id` | integer | FK → `proposal_candidate.id` ON DELETE CASCADE, indexed |
+| `score` | smallint | CHECK `BETWEEN 0 AND 5` |
+| `updated_at` | timestamptz | ballots are revisable until the voting deadline |
+
+Unique on `(voter_id, candidate_id)`. Casting writes a row for **every**
+candidate (missing form entries become explicit 0s), so "has voted" is
+simply "has any row". Ballots are secret: the API and GUI expose only
+turnout flags and post-conclusion aggregates, and `score` is listed in
+`audit.REDACTED_COLUMNS` so values never reach a log line.
 
 (volunteer_photo)=
 ## `volunteer_photo` (not versioned)
@@ -174,3 +229,4 @@ why adding a live column requires rebuilding the twin; see
 | `0005` | Performance indexes: pg_trgm search on volunteer, `membership_history.volunteer_id`, `(last_name, first_name)` |
 | `0006` | `volunteer_photo` (not versioned — no twin rebuild) |
 | `0007` | `proposal` (not versioned); renames the `app_setting` key `capacity` → `workload` |
+| `0008` | Replaces `proposal` with the nomination + STAR-voting pipeline: `proposal`, `proposal_candidate`, `proposal_voter`, `proposal_ballot` (all not versioned; 0007 rows dropped) |

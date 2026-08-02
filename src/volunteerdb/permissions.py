@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .history import entity
-from .models import AppUser, Membership, TeamRole
+from .models import AppUser, Membership, ProposalVoter, TeamRole
 from .services import teams as team_service
 
 
@@ -29,6 +29,7 @@ class Actor:
     managed_team_ids: set[int]  # leader/second teams incl. sub-teams
     full_view_team_ids: set[int]  # + core teams incl. sub-teams
     names_view_team_ids: set[int]  # + member teams (direct only)
+    voter_proposal_ids: frozenset[int] = frozenset()  # rolls the actor sits on
 
     @property
     def is_admin(self) -> bool:
@@ -36,6 +37,19 @@ class Actor:
 
     def can_manage_team(self, team_id: int) -> bool:
         return self.is_admin or team_id in self.managed_team_ids
+
+    @property
+    def can_access_planning(self) -> bool:
+        """Planning page and nav: admins, managers, and anyone on a roll
+        (voters keep access after a proposal is decided, to see the result)."""
+        return (
+            self.is_admin
+            or bool(self.managed_team_ids)
+            or bool(self.voter_proposal_ids)
+        )
+
+    def can_view_proposal(self, proposal_id: int, team_id: int) -> bool:
+        return self.can_manage_team(team_id) or proposal_id in self.voter_proposal_ids
 
     @property
     def can_import_export(self) -> bool:
@@ -75,6 +89,7 @@ class Actor:
 
 async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
     roles_by_team: dict[int, TeamRole] = {}
+    voter_proposal_ids: frozenset[int] = frozenset()
     if user.volunteer_id is not None:
         rows = await session.execute(
             sa.select(Membership.team_id, Membership.role).where(
@@ -82,6 +97,12 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
             )
         )
         roles_by_team = dict(rows.all())
+        rolls = await session.execute(
+            sa.select(ProposalVoter.proposal_id).where(
+                ProposalVoter.volunteer_id == user.volunteer_id
+            )
+        )
+        voter_proposal_ids = frozenset(rolls.scalars())
 
     managed: set[int] = set()
     full_view: set[int] = set()
@@ -104,6 +125,7 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
         managed_team_ids=managed,
         full_view_team_ids=full_view,
         names_view_team_ids=names_view,
+        voter_proposal_ids=voter_proposal_ids,
     )
 
 

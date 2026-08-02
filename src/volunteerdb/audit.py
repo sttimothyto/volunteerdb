@@ -25,9 +25,9 @@ from .log import audit_log
 
 _read_logger = structlog.get_logger("volunteerdb.audit")
 
-# Column names whose VALUES must never reach a log line (AppUser credentials).
-# Keep in sync with models.AppUser.
-REDACTED_COLUMNS = {"password_hash", "otp_hash", "api_token", "invite_token"}
+# Column names whose VALUES must never reach a log line: AppUser credentials,
+# plus proposal_ballot.score (ballots are secret). Keep in sync with models.
+REDACTED_COLUMNS = {"password_hash", "otp_hash", "api_token", "invite_token", "score"}
 _MAX_VALUE_LEN = 120  # verbosity vs. one-line readability (notes/custom get truncated)
 
 

@@ -49,12 +49,45 @@ hole
 
 vacancy
   A currently unfilled {term}`leader` or {term}`second` slot, listed on the
-  Planning page (`/planning`), where planners attach {term}`proposal`s.
+  Planning page (`/planning`), where managers open {term}`proposal`s.
 
 proposal
-  A planner's suggestion to fill a {term}`vacancy`: a volunteer, a role, and
-  an optional note, tracked from *proposed* to *accepted*, *declined*, or
-  *withdrawn*. Accepting a proposal creates the membership.
+  One run at filling a (team, role) seat: one or more {term}`candidate`s, a
+  {term}`voting roll`, and two deadlines. Candidates may be nominated until
+  the *nomination deadline*; the roll then scores them by {term}`STAR
+  voting` until the *voting deadline*; finally a manager appoints a
+  candidate (creating the membership) or starts a new round. Statuses:
+  *open* → *appointed* or *cancelled*. The phase of an open proposal
+  (nominating / voting / awaiting decision) derives from today's date.
+
+candidate
+  A volunteer put forward for the seat a {term}`proposal` is about,
+  together with the nominator's "why them?" note and, on display, their
+  current commitments — the guard against overloading the familiar few.
+
+voting roll
+  The {term}`voting member`s of one {term}`proposal`. Prefilled at creation
+  with the target team's leader, second, and core members plus the
+  {term}`clergy team`; managers may edit it until nominations close, after
+  which it freezes.
+
+voting member
+  A volunteer on a {term}`voting roll`: may nominate candidates until the
+  nomination deadline and cast (and revise) a secret STAR ballot until the
+  voting deadline. Casting a ballot requires an active linked
+  {term}`app user`.
+
+clergy team
+  The team configured by admins on `/planning` whose members join every new
+  proposal's {term}`voting roll` — typically the parish clergy.
+
+STAR voting
+  *Score Then Automatic Runoff.* Each ballot scores every candidate 0–5;
+  the two highest score totals enter an automatic runoff, won by the
+  finalist preferred (scored higher) on more ballots. Similar candidates
+  never split the vote, so there is no first-past-the-post spoiler effect.
+  Unresolvable ties are reported, not coin-flipped — the tally is advisory
+  and the appointment stays a human act.
 
 impact report
   The answer to "if this volunteer leaves, what holes appear?" — shown on

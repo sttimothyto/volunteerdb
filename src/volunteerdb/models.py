@@ -29,17 +29,15 @@ team_role_enum = sa.Enum(TeamRole, name="team_role")
 
 
 class ProposalStatus(enum.StrEnum):
-    proposed = "proposed"
-    accepted = "accepted"
-    declined = "declined"
-    withdrawn = "withdrawn"
+    open = "open"
+    appointed = "appointed"
+    cancelled = "cancelled"
 
 
 PROPOSAL_STATUS_LABELS: dict[ProposalStatus, str] = {
-    ProposalStatus.proposed: "Proposed",
-    ProposalStatus.accepted: "Accepted",
-    ProposalStatus.declined: "Declined",
-    ProposalStatus.withdrawn: "Withdrawn",
+    ProposalStatus.open: "Open",
+    ProposalStatus.appointed: "Appointed",
+    ProposalStatus.cancelled: "Cancelled",
 }
 
 
@@ -140,27 +138,33 @@ class Membership(Base):
 
 
 class Proposal(Base):
-    """A planner's suggestion to fill a vacant role on a team.
+    """One run at filling a (team, role) seat: candidates are nominated until
+    the nomination deadline, the voting roll scores them (STAR) until the
+    voting deadline, then a manager appoints — or starts a new round. The
+    phase within an open proposal derives from today's date, never stored.
 
     Not system-versioned (like custom_field_def): workflow data whose
     lifecycle is already self-recorded in status/created_at/decided_*.
-    The membership an accepted proposal creates *is* versioned.
+    The membership an appointment creates *is* versioned.
     """
 
     __tablename__ = "proposal"
     __table_args__ = (
         sa.CheckConstraint(
-            "status IN ('proposed', 'accepted', 'declined', 'withdrawn')",
+            "status IN ('open', 'appointed', 'cancelled')",
             name="ck_proposal_status",
         ),
-        # at most one OPEN proposal per (team, role, volunteer)
+        sa.CheckConstraint(
+            "nomination_deadline < voting_deadline",
+            name="ck_proposal_deadlines",
+        ),
+        # at most one OPEN proposal per seat
         sa.Index(
             "uq_proposal_open",
             "team_id",
             "role",
-            "volunteer_id",
             unique=True,
-            postgresql_where=sa.text("status = 'proposed'"),
+            postgresql_where=sa.text("status = 'open'"),
         ),
     )
 
@@ -168,24 +172,117 @@ class Proposal(Base):
     team_id: Mapped[int] = mapped_column(
         sa.ForeignKey("team.id", ondelete="CASCADE"), index=True
     )
-    volunteer_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("volunteer.id", ondelete="CASCADE")
-    )
     role: Mapped[TeamRole] = mapped_column(team_role_enum)
     # plain string + CHECK, not a PG enum, so adding statuses never needs ALTER TYPE
     status: Mapped[str] = mapped_column(
-        sa.String(20), default=ProposalStatus.proposed.value, server_default="proposed"
+        sa.String(20), default=ProposalStatus.open.value, server_default="open"
     )
-    note: Mapped[str | None] = mapped_column(sa.Text)
-    proposed_by: Mapped[int | None] = mapped_column(
+    notes: Mapped[str | None] = mapped_column(sa.Text)
+    # last day to nominate / last day to vote, inclusive, in the parish's day
+    # (settings().timezone) — the phase boundaries of an open proposal
+    nomination_deadline: Mapped[date]
+    voting_deadline: Mapped[date]
+    appointed_candidate_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey(
+            "proposal_candidate.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_proposal_appointed_candidate",
+        )
+    )
+    created_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
-    decided_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
     decided_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+
+
+class ProposalCandidate(Base):
+    """A volunteer put forward for the seat, with the nominator's reasoning."""
+
+    __tablename__ = "proposal_candidate"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "proposal_id", "volunteer_id", name="uq_proposal_candidate"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    proposal_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("proposal.id", ondelete="CASCADE")
+    )
+    volunteer_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("volunteer.id", ondelete="CASCADE")
+    )
+    note: Mapped[str | None] = mapped_column(sa.Text)
+    nominated_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+
+
+class ProposalVoter(Base):
+    """A member of the proposal's voting roll. Casting a ballot additionally
+    requires an active account linked to the volunteer (AppUser.volunteer_id).
+    """
+
+    __tablename__ = "proposal_voter"
+    __table_args__ = (
+        sa.UniqueConstraint("proposal_id", "volunteer_id", name="uq_proposal_voter"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    proposal_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("proposal.id", ondelete="CASCADE")
+    )
+    # index serves load_actor's "which rolls am I on?" per-request lookup
+    volunteer_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("volunteer.id", ondelete="CASCADE"), index=True
+    )
+    added_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+
+
+class ProposalBallot(Base):
+    """One voter's 0-5 score for one candidate. Ballots are secret: scores
+    leave the planning service only as aggregates, and the score column is
+    redacted from audit logs (audit.REDACTED_COLUMNS).
+    """
+
+    __tablename__ = "proposal_ballot"
+    __table_args__ = (
+        sa.UniqueConstraint("voter_id", "candidate_id", name="uq_proposal_ballot"),
+        sa.CheckConstraint("score BETWEEN 0 AND 5", name="ck_proposal_ballot_score"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # denormalized so tally/turnout are one query; the service guarantees the
+    # voter and candidate rows belong to this proposal
+    proposal_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("proposal.id", ondelete="CASCADE"), index=True
+    )
+    voter_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("proposal_voter.id", ondelete="CASCADE")
+    )
+    candidate_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("proposal_candidate.id", ondelete="CASCADE"), index=True
+    )
+    score: Mapped[int] = mapped_column(sa.SmallInteger)
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
     )
 
 

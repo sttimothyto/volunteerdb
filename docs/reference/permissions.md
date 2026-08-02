@@ -25,7 +25,8 @@ GUI and the API. For the rationale, see
 | Browse the team directory | ✓ | ✓ | ✓ | ✓ | ✓ |
 | View and edit own profile | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Coverage report | ✓ | their teams | | | |
-| Planning: see vacancies, propose volunteers | ✓ | their teams | | | |
+| Planning: see vacancies, open proposals, edit deadlines/rolls, appoint, cancel, new round | ✓ | their teams | | | |
+| Planning: nominate candidates and vote (STAR) | ✓* | ✓* | ✓* | ✓* | |
 | Create/edit/delete teams | ✓ | | | | |
 | Create/delete volunteers; toggle active | ✓ | | | | |
 | Parish-wide import/export | ✓ | | | | |
@@ -33,13 +34,22 @@ GUI and the API. For the rationale, see
 
 Additional rules:
 
+- \* Nominating and voting are granted by sitting on a proposal's **voting
+  roll** (`proposal_voter`), not by team role: the roll is prefilled with
+  the target team's leader/second/core plus the configured clergy team, and
+  managers may edit it while nominations are open. Voting additionally
+  requires an active account linked to the volunteer. Voters keep read
+  access to their proposals (and tallies) after the decision.
 - Volunteers may always view and edit their **own** contact info, whatever
   their roles.
 - Workload is admin-only — deliberately hidden from team leaders, core
   members, *and the volunteer themself*; it is a parish-wide planning
   signal (`Actor.can_view_workload`).
-- Accepting a planning proposal (which creates the membership) requires
-  manage rights on that team — the same rule as editing the roster directly.
+- Appointing a candidate (which creates the membership) requires manage
+  rights on that team — the same rule as editing the roster directly. The
+  STAR tally is advisory: any candidate may be appointed.
+- Ballots are secret. Individual scores are never exposed to anyone —
+  only per-voter turnout flags and, once voting concludes, aggregates.
 - Redaction, not denial: lists and rosters show `•••` for contact fields the
   viewer may not see.
 - Headshots are a deliberate exception to the edit matrix: **any signed-in
@@ -61,15 +71,17 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export | signed in; roster per matrix |
 | `/volunteers` | Volunteer + team search; workload filter for admins | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
-| `/planning` | Vacancies + proposals | admin or leader/second (accept: managers of that team) |
+| `/planning` | Vacancies + the proposal pipeline; clergy-team setting (admins) | admin, leader/second, or voting member of any proposal |
+| `/planning/{id}` | One proposal: candidates, roll, ballot form, tally, appoint | managers of that team or its voting members |
 | `/import` | Spreadsheet import/export | admin or leader/second (scoped to their teams) |
 | `/manual` | This documentation (book icon in the header) | signed in |
 | `/admin/users` | Accounts: create, invite, bulk provision | admin |
 | `/admin/fields` | Custom field definitions | admin |
 | `/admin/workload` | Workload multipliers, bands, team weights | admin |
 
-The header nav shows Planning and Import/Export to admins and team
-leaders/seconds, and Accounts, Fields, and Workload entries to admins only;
-on narrow screens the nav collapses into a menu button with the same
+The header nav shows Planning to admins, team leaders/seconds, and anyone
+sitting on a proposal's voting roll; Import/Export to admins and team
+leaders/seconds; and Accounts, Fields, and Workload entries to admins only.
+On narrow screens the nav collapses into a menu button with the same
 entries. Direct navigation without the required role is rejected
 server-side.
