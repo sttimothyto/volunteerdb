@@ -137,6 +137,44 @@ async def test_roll_dedupes_clergy_who_also_lead(database):
         assert [v.volunteer.id for v in view.voters].count(p.pete_id) == 1
 
 
+# --- the clergy-team invariant -----------------------------------------------
+#
+# One team votes on every proposal, and it is the team named "Clergy". The
+# setting holds a bare id in JSONB, so the rule needs guarding at all three
+# doors: pointing it elsewhere, renaming the team, deleting the team.
+
+
+async def test_only_a_team_named_clergy_may_be_the_clergy_team(database):
+    async with db_session() as session:
+        p = await _parish(session)
+        with pytest.raises(ValueError, match="must be the team named"):
+            await planning.set_config(
+                session, planning.PlanningConfig(clergy_team_id=p.liturgy_id)
+            )
+        assert (await planning.get_config(session)).clergy_team_id == p.clergy_id
+
+
+async def test_configured_clergy_team_cannot_be_renamed_away(database):
+    async with db_session() as session:
+        p = await _parish(session)
+        with pytest.raises(ValueError, match="must keep the name"):
+            await teams.update(session, p.clergy_id, name="Presbyterate")
+        assert (await teams.get(session, p.clergy_id)).name == "Clergy"
+        # any other team renames freely, and so does a no-op on the clergy team
+        await teams.update(session, p.liturgy_id, name="Liturgy Committee")
+        await teams.update(session, p.clergy_id, name="  Clergy  ")
+
+
+async def test_configured_clergy_team_cannot_be_deleted(database):
+    async with db_session() as session:
+        p = await _parish(session)
+        with pytest.raises(ValueError, match="configured clergy team"):
+            await teams.delete(session, p.clergy_id)
+        await planning.set_config(session, planning.PlanningConfig(clergy_team_id=None))
+        await teams.delete(session, p.clergy_id)
+        assert await teams.get(session, p.clergy_id) is None
+
+
 async def test_create_validations(database):
     async with db_session() as session:
         p = await _parish(session)

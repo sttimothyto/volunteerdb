@@ -52,6 +52,23 @@ async def dashboard(as_of: str = ""):
             search.on("keydown.enter", go)
             ui.button("Search", on_click=go).props("dense")
 
+        if my_assignments:
+            ui.label("My teams").classes("text-lg font-medium mt-4")
+            with ui.column().classes("w-full gap-1"):
+                for membership, team in my_assignments:
+                    with (
+                        ui.row()
+                        .classes(
+                            "items-center gap-2 p-2 rounded bg-blue-50 cursor-pointer w-full"
+                        )
+                        .on(
+                            "click",
+                            lambda _, tid=team.id: ui.navigate.to(f"/teams/{tid}"),
+                        )
+                    ):
+                        ui.label(team.name).classes("font-medium")
+                        ui.badge(ROLE_LABELS[membership.role])
+
         with ui.row().classes("items-center gap-2 w-full"):
             team_filter = (
                 ui.select(team_options, label="Focus on team", value=0, with_input=True)
@@ -99,23 +116,6 @@ async def dashboard(as_of: str = ""):
         ui.label(
             "Click a team to open its page; click a volunteer to open their side panel."
         ).classes("text-sm text-gray-400")
-
-        if my_assignments:
-            ui.label("My teams").classes("text-lg font-medium mt-4")
-            with ui.column().classes("w-full gap-1"):
-                for membership, team in my_assignments:
-                    with (
-                        ui.row()
-                        .classes(
-                            "items-center gap-2 p-2 rounded bg-blue-50 cursor-pointer w-full"
-                        )
-                        .on(
-                            "click",
-                            lambda _, tid=team.id: ui.navigate.to(f"/teams/{tid}"),
-                        )
-                    ):
-                        ui.label(team.name).classes("font-medium")
-                        ui.badge(ROLE_LABELS[membership.role])
 
 
 def _legend_entry(

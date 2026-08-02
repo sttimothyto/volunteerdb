@@ -53,14 +53,20 @@ traceback.
 uv run python scripts/seed.py
 ```
 
-This loads 16 teams, 30 volunteers, membership history for the timeline
-features, two custom fields, and three logins. It ends by printing:
+This loads 17 teams, 33 volunteers, membership history for the timeline
+features, two custom fields, and four logins. It ends by printing:
 
 ```
+  Clergy team filled and set as the planning clergy team
   admin login:  admin@sttimothy.example / changeme
   leader login: maria.alvarez@example.org / volunteer
   member login: felix.garcia@example.org / volunteer
+  clergy login: dominic.ferraro@example.org / volunteer
 ```
+
+The clergy login is the useful one for trying out planning: those three
+volunteers sit on *every* proposal's voting roll, so Fr. Dominic can score a
+ballot on any seat in the parish.
 
 (The script refuses to run on a non-empty database — that's it working as
 designed.)

@@ -32,7 +32,8 @@ minutes.)
   demo team seeded without a leader) and could **start a proposal** for the
   seat: candidates are nominated (each with a "why them?" note and their
   current commitments in plain view) until a nomination deadline, a voting
-  roll — the team's leadership and core plus the clergy team — scores them
+  roll — the team's leadership and core plus the **Clergy** team, who vote
+  on every seat in the parish — scores them
   by [STAR voting](../explanation/planning.md) until a voting deadline, and
   only then does a manager appoint someone (creating the membership) or
   send the question around again.

@@ -28,12 +28,13 @@ ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 IGNATIAN_NOTE = (
     "Ignatian election: 1. pray separately, 2. vote separately, "
     "then 3. debate together — and repeat as needed. "
-    "The tally is advisory; the appointment is a deliberate act."
+    "This is a consulatative vote; the final appointment is an act proper to the pastor of the parish. See Code of Canon Law 536 §1, 515 §1."
 )
 STAR_NOTE = (
     "STAR voting: score every candidate 0–5 on their own merits. Unlike "
     "first-past-the-post, similar candidates don't split the vote — there "
     "is no spoiler effect, so score honestly."
+    "Individual votes are secret. Final points will be visible."
 )
 
 Phase = planning_service.ProposalPhase
@@ -97,8 +98,23 @@ async def planning_page():
         config = clergy_options = None
         if actor.is_admin:
             config = await planning_service.get_config(session)
-            paths = team_service.team_paths(await team_service.list_all(session))
-            clergy_options = {0: "— none —"} | dict(sorted(paths.items()))
+            all_teams = await team_service.list_all(session)
+            paths = team_service.team_paths(all_teams)
+            # set_config accepts only a team named "Clergy", so offering the
+            # other forty-odd would be forty-odd ways to get an error toast
+            eligible = {
+                t.id: paths[t.id]
+                for t in all_teams
+                if t.name == planning_service.CLERGY_TEAM_NAME
+            }
+            current = config.clergy_team_id
+            if current is not None and current not in eligible and current in paths:
+                # configured before the name rule existed: show it, so the
+                # select has a value to display and an admin can correct it
+                eligible[current] = f"{paths[current]} (wrong name)"
+            clergy_options = {0: "— none —"} | dict(
+                sorted(eligible.items(), key=lambda kv: kv[1])
+            )
 
     open_rows = [s for s in summaries if s.proposal.status == ProposalStatus.open.value]
     decided_rows = [
@@ -223,8 +239,16 @@ async def planning_page():
                 ui.label("Clergy team").classes("text-lg font-medium")
                 ui.label(
                     "Members of this team join every new proposal's voting roll "
-                    "alongside the target team's leadership and core members."
+                    "alongside the target team's leadership and core members — "
+                    "the only team that votes on every seat. It must be the "
+                    f"team named “{planning_service.CLERGY_TEAM_NAME}”."
                 ).classes("text-sm text-gray-500")
+                if len(clergy_options) == 1:
+                    ui.label(
+                        f"No team named “{planning_service.CLERGY_TEAM_NAME}” "
+                        "exists yet — create one under Teams and it will appear "
+                        "here."
+                    ).classes("text-sm text-warning")
                 clergy = (
                     ui.select(
                         clergy_options,
@@ -429,7 +453,7 @@ async def proposal_detail(proposal_id: int):
 
         with ui.card().classes("w-full p-3"):
             with ui.row().classes("items-center gap-2 no-wrap"):
-                ui.icon("self_improvement", size="sm").classes("text-primary")
+                ui.icon("campaign", size="sm").classes("text-primary")
                 ui.label(IGNATIAN_NOTE).classes("text-sm italic")
 
         ui.label("Candidates").classes("text-lg font-medium mt-2")

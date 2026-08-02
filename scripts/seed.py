@@ -11,6 +11,10 @@ Deliberate demo shapes:
 - Backdated joins plus a few ended/rejoined memberships feed the service
   timeline chart (Maria's ended Youth Group spell, Grace's split Music
   Ministry spells, Peter's mid-spell promotion)
+- 'Clergy' is filled and registered as the planning clergy team, so every
+  proposal's voting roll is prefilled with it; Fr. Dominic also sits on
+  Finance Council, which exercises the roll's dedupe path and gives him
+  commitments to show on a candidate card
 """
 
 import asyncio
@@ -23,7 +27,14 @@ import sqlalchemy as sa
 
 from volunteerdb.db import db_session
 from volunteerdb.models import FieldType, TeamRole, Volunteer
-from volunteerdb.services import custom_fields, memberships, teams, users, volunteers
+from volunteerdb.services import (
+    custom_fields,
+    memberships,
+    planning,
+    teams,
+    users,
+    volunteers,
+)
 
 # optional workload weights; unlisted teams stay unweighted (count 0)
 WEIGHTS: dict[str, Decimal] = {
@@ -46,6 +57,9 @@ TEAMS: dict[str, list[str]] = {
     "Finance Council": [],
     "Communications": [],
     "Altar Society": [],
+    # appended last so the ids above stay put; must be named exactly "Clergy"
+    # (services/planning.CLERGY_TEAM_NAME) to be the parish's clergy team
+    "Clergy": [],
 }
 
 # (first, last, email, [(team, role)])
@@ -196,6 +210,15 @@ VOLUNTEERS: list[tuple[str, str, str | None, list[tuple[str, TeamRole]]]] = [
         "leo.brennan@example.org",
         [("St. Vincent de Paul", M), ("Finance Council", M)],
     ),
+    # the clergy: on every proposal's voting roll, whatever their role here
+    (
+        "Dominic",
+        "Ferraro",
+        "dominic.ferraro@example.org",
+        [("Clergy", L), ("Finance Council", C)],
+    ),
+    ("Stephen", "Bianchi", "stephen.bianchi@example.org", [("Clergy", S)]),
+    ("Joseph", "Tran", "joseph.tran@example.org", [("Clergy", M), ("RCIA", C)]),
 ]
 
 # real-world join dates for some current memberships (varied bar lengths)
@@ -216,6 +239,9 @@ JOINED: dict[tuple[str, str], date] = {
     ("Emmanuel Diallo", "Youth Group"): date(2023, 9, 10),
     ("Felix Garcia", "Altar Servers"): date(2024, 1, 8),
     ("Beatrice Laurent", "Lectors"): date(2025, 3, 30),
+    ("Dominic Ferraro", "Clergy"): date(2018, 7, 1),
+    ("Stephen Bianchi", "Clergy"): date(2024, 8, 15),
+    ("Joseph Tran", "Clergy"): date(2021, 5, 22),
 }
 
 # ended memberships: (person, team, role, joined, left) — created and removed
@@ -312,6 +338,12 @@ async def seed() -> None:
             session, volunteer_ids[PROMOTED[0]], team_ids[PROMOTED[1]], L
         )
 
+        # the clergy sit on every proposal's voting roll; set_config accepts
+        # this team only because it is named "Clergy"
+        await planning.set_config(
+            session, planning.PlanningConfig(clergy_team_id=team_ids["Clergy"])
+        )
+
         # demo custom fields (admin-extensible volunteer properties)
         await custom_fields.create_def(
             session, "Safeguarding training", FieldType.date, show_in_list=True
@@ -354,6 +386,14 @@ async def seed() -> None:
             volunteer_id=volunteer_ids["Felix Garcia"],
             password="volunteer",
         )
+        # a clergy account: sits on every proposal's roll, so this is the login
+        # that can actually cast a STAR ballot on any seat in the parish
+        await users.create(
+            session,
+            "dominic.ferraro@example.org",
+            volunteer_id=volunteer_ids["Dominic Ferraro"],
+            password="volunteer",
+        )
 
     print("Seeded:")
     print(
@@ -364,9 +404,11 @@ async def seed() -> None:
         f"  {len(PAST_SPELLS)} ended spells, {len(JOINED)} backdated joins,"
         " 1 promotion (timeline demo)"
     )
+    print("  Clergy team filled and set as the planning clergy team")
     print(f"  admin login:  admin@sttimothy.example / {admin_password}")
     print("  leader login: maria.alvarez@example.org / volunteer")
     print("  member login: felix.garcia@example.org / volunteer")
+    print("  clergy login: dominic.ferraro@example.org / volunteer")
 
 
 if __name__ == "__main__":

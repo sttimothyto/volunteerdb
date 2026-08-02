@@ -40,6 +40,14 @@ Additional rules:
   managers may edit it while nominations are open. Voting additionally
   requires an active account linked to the volunteer. Voters keep read
   access to their proposals (and tallies) after the decision.
+- The **Clergy** team is the only team on every proposal's roll. Its
+  members vote on all seats parish-wide; every other volunteer votes only
+  on seats for the team they lead or hold core membership in. Exactly one
+  team can be the clergy team (a single `clergy_team_id`), admins set it on
+  `/planning`, and it must be the team named **Clergy** — enforced, and the
+  team cannot be renamed or deleted while it holds the role. Managers may
+  still add or drop individual voters on one proposal while nominations are
+  open; that edits a roll, it does not move the standing.
 - Volunteers may always view and edit their **own** contact info, whatever
   their roles.
 - Workload is admin-only — deliberately hidden from team leaders, core

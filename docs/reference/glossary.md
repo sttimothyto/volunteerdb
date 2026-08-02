@@ -78,8 +78,15 @@ voting member
   {term}`app user`.
 
 clergy team
-  The team configured by admins on `/planning` whose members join every new
-  proposal's {term}`voting roll` — typically the parish clergy.
+  The parish clergy: the one team — always named **Clergy** — whose members
+  join every new proposal's {term}`voting roll`. It is the *only* team with
+  that parish-wide standing; every other team's leadership and core join a
+  roll solely for their own seat. Admins select it on `/planning`, and it
+  is stored as a single `clergy_team_id` under the `"planning"`
+  `app_setting` key, so exactly one team can hold the standing at a time.
+  The name is enforced, not merely conventional: the setting rejects any
+  other team, and the **Clergy** team can be neither renamed nor deleted
+  while it holds the role.
 
 STAR voting
   *Score Then Automatic Runoff.* Each ballot scores every candidate 0–5;
@@ -139,6 +146,7 @@ API token
   `POST /api/auth/login` and stored server-side only as a SHA-256 digest.
 
 seeded data
-  The demo dataset created by `scripts/seed.py` — teams, 30 volunteers,
-  history spells, and three demo logins — used by the tutorials and tests.
+  The demo dataset created by `scripts/seed.py` — teams (including a filled
+  {term}`clergy team`), 33 volunteers, history spells, and four demo logins —
+  used by the tutorials and tests.
 ```

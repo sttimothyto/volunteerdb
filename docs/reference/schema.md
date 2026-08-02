@@ -111,6 +111,14 @@ Holds two keys: `"workload"` — role multipliers and color bands (see
 the clergy team whose members join every new proposal's voting roll
 (see [Planning by nomination and vote](../explanation/planning.md)).
 
+The `"planning"` value is `{"clergy_team_id": <id> | null}`: a single id,
+so exactly one team — always the one named **Clergy**, an invariant the
+planning and teams services enforce — can be the team that votes on every
+proposal. `null` means no clergy team is configured and rolls are prefilled
+from the target team alone. There is no foreign key on the id (it is inside
+a JSONB value), which is why `teams.delete` refuses to remove the team
+while it is configured.
+
 (proposal)=
 ## `proposal` (not versioned)
 

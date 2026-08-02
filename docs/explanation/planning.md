@@ -39,6 +39,24 @@ second-in-command, and core members, plus every member of the configured
 **clergy team** (an `app_setting`, edited by admins on `/planning`).
 Managers adjust it per proposal while nominations are open.
 
+The clergy team — always the team named **Clergy** — is the only team that
+votes on *every* proposal. Everyone else joins a roll because of the seat
+in question: the leadership and core of the team that is actually filling
+it. The clergy sit on all of them because the appointment is finally the
+pastor's act (see below), so the people who make that act must be
+consulted on every seat, not invited seat by seat. Only one team can hold
+this standing: the setting is a single `clergy_team_id`, not a list.
+
+That the team is *named* **Clergy** is enforced rather than trusted, which
+is a deliberate choice about where a rule this quiet should live. Nothing
+about a wrong clergy team looks wrong: rolls still fill, ballots still
+tally, and the only symptom is that the people who should have been
+consulted were not — a fact that surfaces, if at all, after the
+appointment. So the name is checked when the setting is saved, and the team
+is protected from being renamed or deleted while it holds the role. See
+[Configuration stored in the database](../reference/configuration.md) for
+how to move the role when a parish genuinely needs to.
+
 ## The Ignatian frame
 
 The pipeline deliberately mirrors the Ignatian communal election: **pray

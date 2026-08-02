@@ -134,3 +134,22 @@ and are edited on the `/admin/workload` page or via
 and the {ref}`schema reference <app_setting>`. The planning clergy team —
 whose members join every new proposal's voting roll — is stored the same
 way under `"planning"` and edited by admins on the `/planning` page.
+
+That team is always the one named **Clergy**, and it is the only team
+whose members vote on every proposal; all other voting members are drawn
+from the team whose seat is being filled. The value is a single
+`clergy_team_id`, so the standing belongs to exactly one team at a time.
+
+The name is an enforced invariant, guarded at all three doors:
+
+- Saving the setting with any other team fails (`422` over the API,
+  an error toast on `/planning`), and the page's picker lists only teams
+  actually named **Clergy**.
+- Renaming that team fails while it is the configured clergy team.
+- Deleting that team fails for the same reason — `clergy_team_id` lives in
+  JSONB with no foreign key behind it, so an unguarded delete would leave a
+  dangling id that silently empties the clergy half of every future roll.
+
+To move or retire the role, set the clergy team to *— none —* first; the
+rename or delete then goes through. If no team named **Clergy** exists yet,
+create one under **Teams** and it will appear in the picker.

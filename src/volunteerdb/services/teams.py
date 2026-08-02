@@ -12,6 +12,14 @@ class CycleError(ValueError):
     pass
 
 
+def _planning():
+    """services.planning imports permissions, which imports this module, so the
+    clergy guards below reach for it at call time rather than at import time."""
+    from . import planning
+
+    return planning
+
+
 _UNSET: object = object()
 
 
@@ -143,7 +151,16 @@ async def update(
     if team is None:
         raise LookupError(f"team {team_id} not found")
     if name is not None:
-        team.name = name.strip()
+        planning, new_name = _planning(), name.strip()
+        if new_name != planning.CLERGY_TEAM_NAME and await planning.is_clergy_team(
+            session, team_id
+        ):
+            raise ValueError(
+                f"{team.name!r} is the configured clergy team and must keep the "
+                f"name {planning.CLERGY_TEAM_NAME!r}; clear the clergy team on "
+                "/planning before renaming it"
+            )
+        team.name = new_name
     if parent_team_id is not _UNSET:
         await _check_no_cycle(session, team_id, parent_team_id)  # type: ignore[arg-type]
         team.parent_team_id = parent_team_id  # type: ignore[assignment]
@@ -172,6 +189,13 @@ async def delete(session: AsyncSession, team_id: int) -> None:
     team = await get(session, team_id)
     if team is None:
         raise LookupError(f"team {team_id} not found")
+    if await _planning().is_clergy_team(session, team_id):
+        # clergy_team_id is JSONB, so nothing at the database level would stop
+        # this from leaving a dangling id that silently empties every roll
+        raise ValueError(
+            f"{team.name!r} is the configured clergy team; clear the clergy "
+            "team on /planning before deleting it"
+        )
     await session.delete(team)
     await session.flush()
 

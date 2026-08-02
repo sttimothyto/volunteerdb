@@ -40,6 +40,7 @@ async def _parish(session):
     admin_u = await users.create(session, "admin@example.org", is_admin=True)
     return {
         "liturgy": liturgy.id,
+        "clergy": clergy.id,
         "lena": lena.id,
         "cora": cora.id,
         "vera": vera.id,
@@ -184,3 +185,33 @@ async def test_concluded_tally_and_appointment(database):
 
         await user.open(f"/teams/{ids['liturgy']}")
         await user.should_see("Vera Volunteer")
+
+
+async def test_clergy_card_enforces_the_name_invariant(database):
+    """The card is the only writer of clergy_team_id, so the picker offers
+    nothing the service would reject — and rejects it anyway if forced."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open("/planning")
+        await user.should_see("Clergy team")
+        select = user.find(kind=ui.select, content="Clergy team").elements.pop()
+        assert set(select.options.values()) == {"— none —", "Clergy"}, (
+            "Liturgy is a team but not a candidate for the clergy seat"
+        )
+
+        # the picker cannot offer it; the service refuses it regardless
+        select.value = ids["liturgy"]
+        user.find("Save", kind=ui.button).click()
+        await user.should_see("must be the team named", retries=30)
+
+    async with db_session() as session:
+        await planning.set_config(session, planning.PlanningConfig(clergy_team_id=None))
+        await teams.delete(session, ids["clergy"])  # only allowed once unset
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open("/planning")
+        await user.should_see("No team named")

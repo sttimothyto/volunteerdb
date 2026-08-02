@@ -112,6 +112,14 @@ def _check_deadlines(
 
 PLANNING_SETTING_KEY = "planning"
 
+# The clergy team is the only team that votes on every proposal, so it is
+# pinned by name and not merely by id: pointing the setting at some other team
+# would quietly rewrite the electorate for every future seat. set_config
+# refuses any other team, and teams.update/teams.delete refuse to rename or
+# remove the configured one (see is_clergy_team) — the invariant has to hold
+# from both ends, since clergy_team_id lives in JSONB with no FK behind it.
+CLERGY_TEAM_NAME = "Clergy"
+
 
 @dataclass(frozen=True)
 class PlanningConfig:
@@ -125,10 +133,22 @@ async def get_config(session: AsyncSession) -> PlanningConfig:
     return PlanningConfig(clergy_team_id=setting.value.get("clergy_team_id"))
 
 
+async def is_clergy_team(session: AsyncSession, team_id: int) -> bool:
+    """Whether this team is the configured clergy team — the guard the teams
+    service consults before a rename or a delete."""
+    return (await get_config(session)).clergy_team_id == team_id
+
+
 async def set_config(session: AsyncSession, config: PlanningConfig) -> None:
     if config.clergy_team_id is not None:
-        if await session.get(Team, config.clergy_team_id) is None:
+        team = await session.get(Team, config.clergy_team_id)
+        if team is None:
             raise ValueError(f"team {config.clergy_team_id} does not exist")
+        if team.name != CLERGY_TEAM_NAME:
+            raise ValueError(
+                f"the clergy team must be the team named {CLERGY_TEAM_NAME!r}, "
+                f"not {team.name!r}"
+            )
     value = {"clergy_team_id": config.clergy_team_id}
     stmt = pg_insert(AppSetting).values(key=PLANNING_SETTING_KEY, value=value)
     stmt = stmt.on_conflict_do_update(

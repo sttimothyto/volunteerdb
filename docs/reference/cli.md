@@ -36,9 +36,11 @@ uv run python scripts/seed.py
 ```
 
 Seeds a fresh database with demo data shaped to exercise every feature:
-16 teams (with sub-teams), 30 volunteers, weighted teams, two custom fields,
+17 teams (with sub-teams), 33 volunteers, weighted teams, two custom fields,
 ended/rejoined membership spells and a mid-spell promotion for the timeline
-chart. Refuses to run if any volunteers exist.
+chart. **Clergy** is filled and registered as the {term}`clergy team`, so
+proposals opened on the demo data get a realistic voting roll. Refuses to run
+if any volunteers exist.
 
 Environment: `VDB_SEED_ADMIN_PASSWORD` (default `changeme`).
 
@@ -49,6 +51,7 @@ Created logins:
 | `admin@sttimothy.example` | `$VDB_SEED_ADMIN_PASSWORD` | admin |
 | `maria.alvarez@example.org` | `volunteer` | ministry leader (two teams) |
 | `felix.garcia@example.org` | `volunteer` | plain member |
+| `dominic.ferraro@example.org` | `volunteer` | clergy — sits on every voting roll |
 
 ## `deploy/files/create_admin.py` — admin bootstrap
 
