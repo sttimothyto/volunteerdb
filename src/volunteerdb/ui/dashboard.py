@@ -30,9 +30,11 @@ async def dashboard(as_of: str = ""):
             if actor.volunteer_id
             else []
         )
-        # band chips in the legend; workload is admin-only everywhere
+        # band chips in the legend, for the viewers who see coloured dots at all
         bands = (
-            (await workload_service.get_config(session)).bands if actor.is_admin else []
+            (await workload_service.get_config(session)).bands
+            if actor.is_admin or actor.managed_team_ids
+            else []
         )
 
     panel = VolunteerPanel(as_of)

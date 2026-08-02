@@ -15,7 +15,8 @@ double-tasks a soldier because the system shows the load before the order
 is cut. The planning pipeline borrows exactly that: a deliberate candidate
 pool built by more eyes than one, and each candidate's **current
 commitments displayed at the moment of decision** (managers additionally
-see the admin-only [workload](workload.md) signal).
+see the leadership-only [workload](workload.md) signal for their own
+people).
 
 ## The pipeline
 

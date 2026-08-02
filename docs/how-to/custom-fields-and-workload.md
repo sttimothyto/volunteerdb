@@ -48,7 +48,6 @@ workload coloring, and profile badges all recompute on next load.
 ## Verify
 
 Give a test team a weight, then check a member of that team on
-`/volunteers` while signed in as an admin: their workload badge should
-reflect weight × role multiplier, in the band your thresholds put it in.
-Remember workload is visible to admins only — team leaders and seconds do
-not see it.
+`/volunteers`: their workload badge should reflect weight × role
+multiplier, in the band your thresholds put it in. Remember workload is
+visible only to admins and to leaders/seconds of the volunteer's teams.

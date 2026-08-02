@@ -18,7 +18,7 @@ GUI and the API. For the rationale, see
 | Manage roster (add/remove/change roles), their teams | ✓ | ✓ | | | |
 | Edit contact info of volunteers on their teams | ✓ | ✓ | | | |
 | Spreadsheet import/export, their teams | ✓ | ✓ | | | |
-| See workload scores/bands (all volunteers) | ✓ | | | | |
+| See workload scores/bands of volunteers on their teams | ✓ | ✓ | | | |
 | View full roster incl. contact details, their teams | ✓ | ✓ | ✓ | | |
 | View full volunteer profiles (shared team) | ✓ | ✓ | ✓ | | |
 | View roster names (no contact details), own team | ✓ | ✓ | ✓ | ✓ | |
@@ -50,9 +50,10 @@ Additional rules:
   open; that edits a roll, it does not move the standing.
 - Volunteers may always view and edit their **own** contact info, whatever
   their roles.
-- Workload is admin-only — deliberately hidden from team leaders, core
-  members, *and the volunteer themself*; it is a parish-wide planning
-  signal (`Actor.can_view_workload`).
+- Workload is deliberately hidden from core members *and from the volunteer
+  themself* — it is a leadership planning signal
+  (`Actor.can_view_workload`). The score itself is parish-wide even when
+  the viewer only leads one of the volunteer's teams.
 - Appointing a candidate (which creates the membership) requires manage
   rights on that team — the same rule as editing the roster directly. The
   STAR tally is advisory: any candidate may be appointed.
@@ -77,7 +78,7 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/invite/{token}` | Redeem invite, optionally set password | public (valid token) |
 | `/teams` | Team coverage table + tree browser, as-of picker | signed in (coverage table: admin/leaders; "New team": admin) |
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export | signed in; roster per matrix |
-| `/volunteers` | Volunteer + team search; workload filter for admins | signed in; fields redacted per matrix |
+| `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
 | `/planning` | Vacancies + the proposal pipeline; clergy-team setting (admins) | admin, leader/second, or voting member of any proposal |
 | `/planning/{id}` | One proposal: candidates, roll, ballot form, tally, appoint | managers of that team or its voting members |

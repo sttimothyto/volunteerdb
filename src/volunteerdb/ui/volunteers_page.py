@@ -34,7 +34,7 @@ async def volunteers_page(q: str = "", band: str = ""):
         config = await workload_service.get_config(session)
         wl = await workload_service.visible_scores(session, actor, team_sets)
 
-    shows_workload = actor.is_admin
+    shows_workload = actor.is_admin or bool(actor.managed_team_ids)
     if band:
         # filtering happens strictly within the permitted set — no workload leak
         found = [v for v in found if v.id in wl and wl[v.id][1].label == band]

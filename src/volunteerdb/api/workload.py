@@ -27,8 +27,10 @@ def _config_out(config: service.WorkloadConfig) -> WorkloadConfigOut:
 
 @router.get("/config")
 async def get_config(ctx: CtxDep) -> WorkloadConfigOut:
-    """Multipliers and band colors/thresholds; admin-only like the scores themselves."""
-    require(ctx.actor.is_admin, "view workload config")
+    """Multipliers and band colors/thresholds; leaders need them to render workload."""
+    require(
+        ctx.actor.is_admin or bool(ctx.actor.managed_team_ids), "view workload config"
+    )
     return _config_out(await service.get_config(ctx.session))
 
 

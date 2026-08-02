@@ -43,8 +43,8 @@ minutes.)
 Header → **Teams** → *Liturgy*. Because Maria leads it:
 
 - The roster shows every member **with contact details** and their role.
-  (Administrators additionally see a workload badge per volunteer —
-  [workload](../explanation/workload.md) is admin-only.)
+  Click anyone to open their side panel: because Maria leads their team,
+  it carries a [workload](../explanation/workload.md) badge.
 - Sub-teams (*Altar Servers*, *Lectors*, *Music Ministry*, *Sacristans*)
   are listed — Maria's leadership covers them too.
 - **Add a member:** pick any volunteer, role *Member*. **Change a role:**
@@ -83,19 +83,20 @@ This is the app's core question, answerable for anyone, as of any date.
 ## 7. See the whole parish as a graph
 
 Back on the **Dashboard**: volunteers and teams as a network, gold edges
-marking leadership. Use the team filter to focus on *Liturgy* and click a
-team node to jump to its page. To an administrator the dots are also
-colored by workload band — Maria's would be red: three weighted
-ministries, two of them led. That red dot is *why* workload exists: it's
-what the next "could you also…?" conversation should know. As a
-coordinator, Maria herself sees plain grey dots.
+marking leadership, dots colored by workload band where you may see it.
+Use the team filter to focus on *Liturgy* and click a team node to jump to
+its page. Maria's own dot stays grey — nobody sees their own workload —
+but an administrator would see it red: three weighted ministries, two of
+them led. That red dot is *why* workload exists: it's what the next "could
+you also…?" conversation should know.
 
 ## 8. Know what you can't see
 
 Sign out (header menu) and sign in as `felix.garcia@example.org` /
 `volunteer` — a plain member of Altar Servers and Youth Group. The same
 pages now show less: rosters list names but contact details are `•••`, no
-Planning page, no roster editing. Same data, same pages — access follows
+workload badges, no Planning page, no roster editing. Same data, same
+pages — access follows
 the fourfold role, as laid out in the
 [permission matrix](../reference/permissions.md#permission-matrix).
 

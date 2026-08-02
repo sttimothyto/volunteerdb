@@ -149,9 +149,9 @@ Workbook layout: see the [spreadsheet format](spreadsheets.md).
 
 | Method & path | Permission | Notes |
 |---|---|---|
-| `GET /api/workload/config` | admin | Multipliers + bands |
+| `GET /api/workload/config` | admin or leader/second | Multipliers + bands |
 | `PUT /api/workload/config` | admin | Validated (see [workload model](../explanation/workload.md)) |
-| `GET /api/workload/scores` | signed in | Only volunteers whose workload the caller may see (admins); `as_of=` |
+| `GET /api/workload/scores` | signed in | Only volunteers whose workload the caller may see; `as_of=` |
 
 ### Planning — `api/planning.py`
 

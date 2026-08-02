@@ -14,7 +14,7 @@ to fill?"**
 - Spreadsheet **import/export** (.xlsx) that round-trips
 - **Cytoscape.js graph** of volunteers ↔ teams, front and center on the dashboard
 - Collaborative **planning**: leadership vacancies with volunteer proposals
-  (propose → accept/decline), and admin-only **workload** scoring
+  (propose → accept/decline), and leadership-only **workload** scoring
 
 ## Documentation
 

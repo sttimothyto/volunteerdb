@@ -27,7 +27,8 @@ async def workload_page():
         ui.label(
             "A volunteer's workload score is the sum, over every team they serve on, of the "
             "team's workload weight × their role's multiplier. Bands colour-code the score on "
-            "the volunteers list and the graph. Visible to admins only."
+            "the volunteers list and the graph. Visible to admins and to the "
+            "leaders/seconds of a volunteer's teams; configured here by admins only."
         ).classes("text-sm text-gray-500")
 
         with ui.card().classes("w-full gap-2 p-4"):

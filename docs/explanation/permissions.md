@@ -34,10 +34,10 @@ Two design details follow the same "least surprise, least exposure" line:
 - **Redaction over denial.** A member sees the roster with contact fields
   as `•••` rather than being locked out of the page — you may know *who*
   serves without harvesting their phone numbers.
-- **Workload is admin-only.** Scores are visible only to admins — not to
-  team leaders or seconds, not to core members, and not to the volunteer
-  themself. It is a parish-wide planning signal, not a scoreboard
-  ([why it exists](workload.md)).
+- **Workload is leadership-only.** Scores are visible to admins and to
+  leaders/seconds of the volunteer's teams — not to core members and not to
+  the volunteer themself. It is a planning signal for people who assign
+  work, not a scoreboard ([why it exists](workload.md)).
 
 ## One enforcement point
 

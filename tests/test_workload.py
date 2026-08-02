@@ -148,9 +148,9 @@ async def test_visible_scores_respects_permissions(database):
             follower.id: {liturgy.id, garden.id},
             outsider.id: {garden.id},
         }
-        # workload is admin-only: leading a team grants no visibility at all
+        # a leader sees their own people, including their load elsewhere
         visible = await workload.visible_scores(session, lead_actor, team_sets)
-        assert visible == {}
+        assert set(visible) == {lead.id, follower.id}, "outsider's workload is hidden"
 
         visible = await workload.visible_scores(session, admin_actor, team_sets)
         assert set(visible) == {lead.id, follower.id, outsider.id}
@@ -193,19 +193,20 @@ async def test_graph_colors_only_permitted_nodes(database):
                 if n["data"]["type"] == "volunteer"
             }
 
-        # an admin sees bands; follower's band reflects the Garden team too,
-        # even when the graph is focused on Liturgy only
-        graph = volunteer_nodes(
-            await graph_service.elements(session, admin_actor, team_id=liturgy.id)
-        )
-        assert graph[follower.id]["band"] == "amber", (
-            "2×1 + 1×3 = 5, includes unseen Garden"
-        )
-        assert graph[follower.id]["color"] == "#ffb300"
-        assert graph[lead.id]["band"] == "amber", "leader of weight-2 team: 2×3 = 6"
+        # the leader sees bands on their people, as does an admin; follower's
+        # band reflects the Garden team too, even when the graph is focused on
+        # Liturgy only
+        for actor in (lead_actor, admin_actor):
+            graph = volunteer_nodes(
+                await graph_service.elements(session, actor, team_id=liturgy.id)
+            )
+            assert graph[follower.id]["band"] == "amber", (
+                "2×1 + 1×3 = 5, includes unseen Garden"
+            )
+            assert graph[follower.id]["color"] == "#ffb300"
+            assert graph[lead.id]["band"] == "amber", "leader of weight-2 team: 2×3 = 6"
 
-        # leaders and core members see the same people but never their workload
-        for actor in (lead_actor, core_actor):
-            graph = volunteer_nodes(await graph_service.elements(session, actor))
-            assert follower.id in graph and lead.id in graph
-            assert all("color" not in d and "band" not in d for d in graph.values())
+        # a core member sees the same people but never their workload
+        graph = volunteer_nodes(await graph_service.elements(session, core_actor))
+        assert follower.id in graph and lead.id in graph
+        assert all("color" not in d and "band" not in d for d in graph.values())

@@ -125,8 +125,8 @@ async def test_workload_view_rights(parish):
 
     for name in ("leader", "second"):
         actor = await _actor(accounts, name)
-        assert not actor.can_view_workload(member_teams), (
-            f"{name} no longer sees workload"
+        assert actor.can_view_workload(member_teams), (
+            f"{name} sees their people's workload"
         )
         assert not actor.can_view_workload(outsider_teams), (
             "not other ministries' people"
