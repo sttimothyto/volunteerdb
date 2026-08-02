@@ -11,7 +11,7 @@ from .theme import apply_theme
 def frame(title: str, actor: Actor):
     dark = apply_theme()
     nav_items = [("Teams", "/teams"), ("Volunteers", "/volunteers")]
-    if actor.is_admin or actor.managed_team_ids:
+    if actor.can_access_planning:
         nav_items.append(("Planning", "/planning"))
     if actor.can_import_export:
         nav_items.append(("Import/Export", "/import"))

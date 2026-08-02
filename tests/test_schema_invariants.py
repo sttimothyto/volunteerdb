@@ -9,7 +9,7 @@ the README all say so; these are the first checks that would actually notice.
 import sqlalchemy as sa
 
 from volunteerdb.audit import REDACTED_COLUMNS
-from volunteerdb.models import HISTORY_TABLES, AppUser
+from volunteerdb.models import HISTORY_TABLES, AppUser, ProposalBallot
 
 _COLUMN_META = sa.text(
     """
@@ -80,15 +80,23 @@ async def test_versioning_trigger_is_installed_on_every_versioned_table(database
 def test_redacted_columns_cover_every_appuser_secret():
     """audit._fmt redacts by column name, so a new credential column is logged
     in the clear until someone remembers to list it."""
-    columns = {c.name for c in AppUser.__table__.columns}
-    credentials = {c for c in columns if c.endswith(("_hash", "_token"))}
+    appuser_columns = {c.name for c in AppUser.__table__.columns}
+    credentials = {c for c in appuser_columns if c.endswith(("_hash", "_token"))}
 
     assert credentials <= REDACTED_COLUMNS, (
         f"{sorted(credentials - REDACTED_COLUMNS)} look like credentials, but audit._fmt "
         "would write their values to the log verbatim — add them to audit.REDACTED_COLUMNS "
         "(models.py: 'adding a secret column? add it to audit.REDACTED_COLUMNS')."
     )
-    assert REDACTED_COLUMNS <= columns, (
-        f"{sorted(REDACTED_COLUMNS - columns)} are redacted but no longer exist on "
-        "app_user; prune them so the set keeps documenting what is actually secret"
+
+    # ballots are secret: the score value must never reach a log line either
+    assert "score" in REDACTED_COLUMNS
+
+    secret_columns = appuser_columns | {
+        c.name for c in ProposalBallot.__table__.columns
+    }
+    assert REDACTED_COLUMNS <= secret_columns, (
+        f"{sorted(REDACTED_COLUMNS - secret_columns)} are redacted but no longer exist "
+        "on app_user or proposal_ballot; prune them so the set keeps documenting what "
+        "is actually secret"
     )

@@ -55,9 +55,7 @@ async def test_admin_pages_render(database):
             "Import/Export is available to admins and to team leaders/seconds."
         )
         await user.open("/planning")
-        await user.should_see(
-            "Planning is available to admins and to team leaders/seconds."
-        )
+        await user.should_see("Planning is available to admins")
 
 
 async def test_leader_import_page_scoped(database):

@@ -170,30 +170,6 @@ class WorkloadScoreOut(BaseModel):
     color: str
 
 
-# --- planning ---
-
-
-class ProposalIn(BaseModel):
-    team_id: int
-    volunteer_id: int
-    role: TeamRole
-    note: str | None = None
-
-
-class ProposalOut(ORMModel):
-    id: int
-    team_id: int
-    volunteer_id: int
-    role: TeamRole
-    role_label: str = ""
-    status: str
-    note: str | None
-    proposed_by: int | None
-    created_at: datetime
-    decided_at: datetime | None
-    decided_by: int | None
-
-
 # --- reports ---
 
 
@@ -240,6 +216,108 @@ class CoverageOut(BaseModel):
     total: int
     missing_leader: bool
     missing_second: bool
+
+
+# --- planning ---
+
+
+class CandidateIn(BaseModel):
+    volunteer_id: int
+    note: str | None = None  # the nominator's "why them" reasoning
+
+
+class ProposalCreateIn(BaseModel):
+    team_id: int
+    role: TeamRole
+    nomination_deadline: date  # last day to nominate, inclusive
+    voting_deadline: date  # last day to vote, inclusive
+    notes: str | None = None
+    candidates: list[CandidateIn] = Field(min_length=1)
+
+
+class ProposalPatch(BaseModel):
+    # None = leave unchanged
+    nomination_deadline: date | None = None
+    voting_deadline: date | None = None
+    notes: str | None = None
+
+
+class ProposalOut(ORMModel):
+    id: int
+    team_id: int
+    role: TeamRole
+    role_label: str = ""
+    status: str
+    phase: str | None = None  # nominating/voting/concluded; null once decided
+    notes: str | None
+    nomination_deadline: date
+    voting_deadline: date
+    appointed_candidate_id: int | None
+    created_by: int | None
+    created_at: datetime
+    decided_by: int | None
+    decided_at: datetime | None
+
+
+class CandidateOut(ORMModel):
+    id: int
+    volunteer_id: int
+    volunteer_name: str = ""
+    note: str | None
+    nominated_by: int | None
+    created_at: datetime
+    # the candidate's current commitments — the overwork check
+    assignments: list[AssignmentOut] = []
+
+
+class VoterIn(BaseModel):
+    volunteer_id: int
+
+
+class VoterOut(ORMModel):
+    id: int
+    volunteer_id: int
+    volunteer_name: str = ""
+    has_account: bool = False  # without an active account they cannot vote
+    has_voted: bool = False  # turnout flag; scores are never exposed
+
+
+class BallotIn(BaseModel):
+    scores: dict[int, int]  # candidate id -> 0-5; omitted candidates score 0
+
+
+class CandidateTallyOut(BaseModel):
+    candidate_id: int
+    volunteer_name: str
+    total: int  # scoring-round sum
+
+
+class TallyOut(BaseModel):
+    ballot_count: int
+    totals: list[CandidateTallyOut]  # sorted by total, best first
+    finalist_ids: list[int] | None
+    runoff: dict[int, int] | None  # finalist id -> ballots preferring them
+    no_preference: int | None
+    winner_candidate_id: int | None  # null: no candidates, or a reported tie
+    tie: bool
+    tied_candidate_ids: list[int]
+
+
+class ProposalDetailOut(BaseModel):
+    proposal: ProposalOut
+    path: str
+    candidates: list[CandidateOut]
+    voters: list[VoterOut]
+    tally: TallyOut | None  # null until voting has concluded
+
+
+class AppointIn(BaseModel):
+    candidate_id: int
+
+
+class NewRoundIn(BaseModel):
+    nomination_deadline: date
+    voting_deadline: date
 
 
 # --- users ---
