@@ -56,6 +56,17 @@ async def test_search_by_name_email_and_inactive_flag(database):
         assert "Ghost" in {v.last_name for v in withall}
 
 
+async def test_search_limit_caps_rows_in_name_order(database):
+    async with db_session() as session:
+        for last in ("Delta", "Alpha", "Charlie", "Bravo"):
+            await volunteers.create(session, "Sam", last, f"sam.{last}@example.org")
+
+        assert len(await volunteers.search(session, "Sam")) == 4, "unlimited by default"
+
+        capped = await volunteers.search(session, "Sam", limit=2)
+        assert [v.last_name for v in capped] == ["Alpha", "Bravo"]
+
+
 async def test_search_private_fields_are_scope_aware(database):
     from volunteerdb.permissions import load_actor
     from volunteerdb.services import custom_fields, users

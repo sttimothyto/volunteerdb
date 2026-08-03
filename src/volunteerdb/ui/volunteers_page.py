@@ -13,6 +13,7 @@ from ..services import workload as workload_service
 from .context import action_session, notify_errors, page_session
 from .layout import frame
 from .photo_dialog import photo_avatar
+from .search_box import search_box
 from .timeline_chart import timeline_chart
 from .volunteer_panel import VolunteerPanel, format_custom
 
@@ -43,20 +44,19 @@ async def volunteers_page(q: str = "", band: str = ""):
     with frame("Volunteers", actor):
         with ui.row().classes("items-center gap-2 w-full"):
             band_select: ui.select | None = None
-            search = (
-                ui.input("Search volunteers…", value=q)
-                .props("outlined dense clearable")
-                .classes("w-72")
-            )
 
-            def go() -> None:
-                target = f"/volunteers?q={quote_plus(search.value or '')}"
+            def go(text: str) -> None:
+                target = f"/volunteers?q={quote_plus(text)}"
                 if band_select is not None and band_select.value:
                     target += f"&band={band_select.value}"
                 ui.navigate.to(target)
 
-            search.on("keydown.enter", go)
-            ui.button("Search", on_click=go).props("dense")
+            search = search_box(
+                "Search volunteers…",
+                on_submit=go,
+                on_pick_volunteer=panel.open,
+                value=q,
+            )
             if shows_workload:
                 band_select = (
                     ui.select(
@@ -68,7 +68,7 @@ async def volunteers_page(q: str = "", band: str = ""):
                     .props("outlined dense")
                     .classes("w-40")
                 )
-                band_select.on_value_change(go)
+                band_select.on_value_change(lambda: go(search.value or ""))
             ui.space()
             if actor.is_admin:
                 ui.button(

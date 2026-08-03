@@ -10,6 +10,7 @@ from ..services import workload as workload_service
 from .context import action_session, asof_banner, page_session, parse_as_of
 from .cytoscape_element import CytoscapeGraph
 from .layout import frame
+from .search_box import search_box
 from .volunteer_panel import VolunteerPanel
 
 
@@ -42,17 +43,15 @@ async def dashboard(as_of: str = ""):
         asof_banner(at, "/")
 
         with ui.row().classes("items-center gap-2 w-full"):
-            search = (
-                ui.input("Find volunteers or teams…")
-                .props("outlined dense clearable")
-                .classes("w-72")
+            search_box(
+                "Find volunteers or teams…",
+                on_submit=lambda text: ui.navigate.to(
+                    f"/volunteers?q={quote_plus(text)}"
+                ),
+                on_pick_volunteer=panel.open,
+                at=at,
+                as_of=as_of,
             )
-
-            def go() -> None:
-                ui.navigate.to(f"/volunteers?q={quote_plus(search.value or '')}")
-
-            search.on("keydown.enter", go)
-            ui.button("Search", on_click=go).props("dense")
 
         if my_assignments:
             ui.label("My teams").classes("text-lg font-medium mt-4")

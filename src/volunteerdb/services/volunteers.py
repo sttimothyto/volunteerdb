@@ -33,6 +33,7 @@ async def search(
     include_inactive: bool = False,
     *,
     actor: Actor | None = None,
+    limit: int | None = None,
 ) -> list[Volunteer]:
     """Substring search over every volunteer column.
 
@@ -42,6 +43,9 @@ async def search(
     the actor can already view unredacted, mirroring can_view_volunteer: self,
     plus anyone on a team in full_view_team_ids. Matching a private field a
     viewer can't see would leak its content by the row's mere presence.
+
+    `limit` caps the rows the database returns (for the search-box typeahead);
+    since the order is by name, that is the alphabetically first N matches.
     """
     V = entity(Volunteer, at)
     stmt = sa.select(V).order_by(V.last_name, V.first_name)
@@ -77,6 +81,8 @@ async def search(
             stmt = stmt.where(sa.or_(public_match, sa.and_(private_match, visible)))
     if not include_inactive:
         stmt = stmt.where(V.is_active)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     return [row[0] for row in await fetch(session, stmt, at)]
 
 

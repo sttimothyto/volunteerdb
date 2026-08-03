@@ -197,6 +197,27 @@ a:hover,
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
 }
 
+/* ---------- search-box suggestions (the QMenu is portaled to <body>) ---------- */
+
+.vdb-suggest {
+  background-color: var(--vdb-surface);
+  border: 1px solid var(--vdb-rule);
+}
+
+.vdb-suggest .q-item__label--header {
+  font-family: var(--vdb-display);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vdb-heading);
+  padding: 6px 16px 2px;
+}
+
+.vdb-suggest .q-item.q-hoverable:hover > .q-focus-helper {
+  background: var(--vdb-row-hover);
+  opacity: 1;
+}
+
 /* ---------- dashboard graph legend ---------- */
 
 .vdb-legend-swatch {

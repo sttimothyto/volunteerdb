@@ -25,7 +25,10 @@ minutes.)
 - **My teams** lists Maria's three ministries with her role in each.
 - The **ministry graph** shows the whole parish as a network — more on it
   in step 7.
-- The **search box** finds any volunteer or team — try `felix`.
+- The **search box** finds any volunteer or team — try `felix`. Matches appear
+  in a dropdown as you type (from two letters on): pick a team to open its
+  page, a volunteer to open their side panel, or press Enter for the full
+  result list.
 - Header → **Planning**: **Vacancies** shows leadership gaps — but only in
   the teams *you* lead. Maria's ministries are fully staffed, so her page
   is quiet; an administrator would see *Hospitality* flagged there (the
