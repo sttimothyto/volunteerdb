@@ -1,0 +1,127 @@
+name: CI
+
+# Every push runs lint + tests + docs. A green push to main deploys to
+# sttimothyto-prod via the same pyinfra script used by hand
+# (docs/how-to/deploy.md), from a clean checkout of that commit.
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run pyinfra --dry (preview only, changes nothing)"
+        type: boolean
+        default: false
+
+# Superseded runs are cancelled on feature branches, but never on main: a
+# second merge must not kill a pyinfra run half-applied.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: ruff check
+        run: uv run ruff check --output-format=github .
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: volunteerdb
+          POSTGRES_PASSWORD: volunteerdb
+          POSTGRES_DB: volunteerdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U volunteerdb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Every setting in src/volunteerdb/config.py has a default, so no .env is
+      # needed — only the database URL differs from the defaults.
+      VDB_DATABASE_URL: postgresql+asyncpg://volunteerdb:volunteerdb@localhost:5432/volunteerdb
+      # tests/conftest.py shells out to `uv run alembic upgrade head`; keep that
+      # nested call from trying to re-resolve the lockfile.
+      UV_FROZEN: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      # Deliberately not setting VDB_TEST_ALLOW_NO_DB: an unreachable database
+      # must fail the run, not skip into a green one.
+      - name: pytest
+        run: uv run pytest -q
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      # The Containerfile's docs stage builds with -W, so a new sphinx warning
+      # would otherwise fail the image build on the production host mid-deploy.
+      - name: sphinx -W
+        run: uv run --group docs sphinx-build -W -b html docs docs/_build/html
+
+  deploy:
+    needs: [lint, test, docs]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://vdb.sttimothyto.org
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+
+      # Secrets go through env, never interpolated into the shell body: ${{ }}
+      # expands before bash parses the script.
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+
+      # Pinned: an unpinned `uvx pyinfra` could take a new major into a
+      # production deploy. deploy.py smoke-tests /login itself and exits
+      # non-zero if the app does not come back, so this step is the gate.
+      - name: pyinfra deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          # Unset expands to "" — falsy, so deploy.py keeps the key already on
+          # the host. Setting it rotates the key.
+          VDB_SMTP2GO_API_KEY: ${{ secrets.VDB_SMTP2GO_API_KEY }}
+          MODE: ${{ inputs.dry_run && '--dry' || '-y' }}
+        run: |
+          uvx pyinfra==3.10.0 "$DEPLOY_HOST" deploy/deploy.py \
+            --ssh-user root --ssh-key ~/.ssh/id_deploy "$MODE"

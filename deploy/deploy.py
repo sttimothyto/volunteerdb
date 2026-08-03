@@ -164,6 +164,7 @@ files.sync(
     ],
     exclude_dir=[  # traversal only — NOT applied to deletion
         ".git",
+        ".github",  # CI workflows: not part of the app or the build context
         ".venv",
         ".nicegui",
         ".claude",

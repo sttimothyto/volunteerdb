@@ -9,11 +9,42 @@ first-time installs and routine upgrades.
 Drive remote **and its encrypting crypt wrapper** must be provisioned
 once — [one-time Drive setup](backup-restore.md#one-time-drive-setup).
 
-## Deploy or upgrade
+## Deploy from CI (normal path)
+
+**Pushing to `main` deploys.** `.github/workflows/ci.yml` runs lint, the test
+suite, and the `-W` docs build; if all three pass, the `deploy` job runs the
+same pyinfra script below against `sttimothyto-prod` from a clean checkout of
+that commit. Watch it in the repository's Actions tab.
+
+Because CI deploys a git checkout rather than a working tree, what is running
+in production is exactly one commit — see the warning under
+[Deploy or upgrade by hand](#deploy-or-upgrade-by-hand).
+
+The job runs in the `production` GitHub Environment, which holds three
+secrets: `DEPLOY_SSH_KEY` (the root SSH key for the host), `DEPLOY_HOST`, and
+`DEPLOY_KNOWN_HOSTS` (the host's pinned SSH host key). Adding a required
+reviewer to that environment turns the deploy into a manual approval without
+any workflow change.
+
+To preview from CI without changing anything:
+
+```sh
+gh workflow run ci.yml --ref main -f dry_run=true   # runs pyinfra --dry
+```
+
+## Deploy or upgrade by hand
+
+The break-glass path, and what CI runs under the hood:
 
 ```sh
 uvx pyinfra sttimothyto-prod deploy/deploy.py --dry   # preview
 uvx pyinfra sttimothyto-prod deploy/deploy.py -y      # apply
+```
+
+```{warning}
+A hand-run deploy syncs your **working tree**, not a commit: uncommitted edits
+and untracked files ship to production, and the deployed state is no longer
+identifiable by SHA. Commit and push instead unless CI is unavailable.
 ```
 
 Optional environment on the command line:
@@ -65,12 +96,19 @@ server. See [Production deployment architecture](../explanation/deployment.md).
 ## Roll back an upgrade
 
 The image is rebuilt from the synced source, so rolling back application
-code = deploying an older commit:
+code = deploying an older commit. Prefer reverting on `main` so CI redeploys
+and history stays honest about what is live:
+
+```sh
+git revert <bad-commit> && git push origin main
+```
+
+Break-glass, if CI is unavailable:
 
 ```sh
 git checkout <known-good-commit>
 uvx pyinfra sttimothyto-prod deploy/deploy.py -y
-git checkout develop
+git checkout main
 ```
 
 Migrations are not automatically downgraded; if the bad release included
