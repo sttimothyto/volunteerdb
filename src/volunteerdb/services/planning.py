@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..models import (
-    AppSetting,
     AppUser,
     Membership,
     Proposal,
@@ -108,54 +107,15 @@ def _check_deadlines(
         raise ValueError("voting deadline must fall after the nomination deadline")
 
 
-# --- config ------------------------------------------------------------------
+# --- the clergy team ----------------------------------------------------------
 
-PLANNING_SETTING_KEY = "planning"
-
-# The clergy team is the only team that votes on every proposal, so it is
-# pinned by name and not merely by id: pointing the setting at some other team
-# would quietly rewrite the electorate for every future seat. set_config
-# refuses any other team, and teams.update/teams.delete refuse to rename or
-# remove the configured one (see is_clergy_team) — the invariant has to hold
-# from both ends, since clergy_team_id lives in JSONB with no FK behind it.
+# One team votes on every proposal — the parish clergy — and _default_roll
+# finds it by this name when it builds a roll, rather than from a stored id.
+# Nothing to configure and nothing to dangle: rename or delete the team and
+# rolls simply stop including it, which is the intended way to retire the
+# standing. If no team is named this, a roll is the target team's own
+# leadership and core members alone.
 CLERGY_TEAM_NAME = "Clergy"
-
-
-@dataclass(frozen=True)
-class PlanningConfig:
-    clergy_team_id: int | None = None  # its members join every new voting roll
-
-
-async def get_config(session: AsyncSession) -> PlanningConfig:
-    setting = await session.get(AppSetting, PLANNING_SETTING_KEY)
-    if setting is None:
-        return PlanningConfig()
-    return PlanningConfig(clergy_team_id=setting.value.get("clergy_team_id"))
-
-
-async def is_clergy_team(session: AsyncSession, team_id: int) -> bool:
-    """Whether this team is the configured clergy team — the guard the teams
-    service consults before a rename or a delete."""
-    return (await get_config(session)).clergy_team_id == team_id
-
-
-async def set_config(session: AsyncSession, config: PlanningConfig) -> None:
-    if config.clergy_team_id is not None:
-        team = await session.get(Team, config.clergy_team_id)
-        if team is None:
-            raise ValueError(f"team {config.clergy_team_id} does not exist")
-        if team.name != CLERGY_TEAM_NAME:
-            raise ValueError(
-                f"the clergy team must be the team named {CLERGY_TEAM_NAME!r}, "
-                f"not {team.name!r}"
-            )
-    value = {"clergy_team_id": config.clergy_team_id}
-    stmt = pg_insert(AppSetting).values(key=PLANNING_SETTING_KEY, value=value)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[AppSetting.key],
-        set_={"value": stmt.excluded.value, "updated_at": sa.func.now()},
-    )
-    await session.execute(stmt)
 
 
 # --- views -------------------------------------------------------------------
@@ -405,20 +365,19 @@ class CandidateInput:
 
 async def _default_roll(session: AsyncSession, team_id: int) -> list[int]:
     """The voting-member template: leader + second + core of the target team,
-    plus every member (any role) of the configured clergy team, deduped."""
-    config = await get_config(session)
+    plus every member (any role) of the clergy team, deduped. No team named
+    CLERGY_TEAM_NAME just means the second half contributes nobody."""
     stmt = sa.select(Membership.volunteer_id).where(
         Membership.team_id == team_id,
         Membership.role.in_([TeamRole.leader, TeamRole.second, TeamRole.core]),
     )
     volunteer_ids = list((await session.execute(stmt)).scalars())
-    if config.clergy_team_id is not None:
-        clergy = await session.execute(
-            sa.select(Membership.volunteer_id).where(
-                Membership.team_id == config.clergy_team_id
-            )
-        )
-        volunteer_ids += list(clergy.scalars())
+    clergy = await session.execute(
+        sa.select(Membership.volunteer_id)
+        .join(Team, Team.id == Membership.team_id)
+        .where(Team.name == CLERGY_TEAM_NAME)
+    )
+    volunteer_ids += list(clergy.scalars())
     return list(dict.fromkeys(volunteer_ids))
 
 

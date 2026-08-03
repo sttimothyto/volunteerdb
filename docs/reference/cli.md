@@ -38,9 +38,9 @@ uv run python scripts/seed.py
 Seeds a fresh database with demo data shaped to exercise every feature:
 17 teams (with sub-teams), 33 volunteers, weighted teams, two custom fields,
 ended/rejoined membership spells and a mid-spell promotion for the timeline
-chart. **Clergy** is filled and registered as the {term}`clergy team`, so
-proposals opened on the demo data get a realistic voting roll. Refuses to run
-if any volunteers exist.
+chart. A team named **Clergy** is filled, which is all it takes to be the
+{term}`clergy team`, so proposals opened on the demo data get a realistic
+voting roll. Refuses to run if any volunteers exist.
 
 Environment: `VDB_SEED_ADMIN_PASSWORD` (default `changeme`).
 

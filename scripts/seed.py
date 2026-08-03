@@ -11,7 +11,7 @@ Deliberate demo shapes:
 - Backdated joins plus a few ended/rejoined memberships feed the service
   timeline chart (Maria's ended Youth Group spell, Grace's split Music
   Ministry spells, Peter's mid-spell promotion)
-- 'Clergy' is filled and registered as the planning clergy team, so every
+- 'Clergy' is filled, and the roll builder finds it by that name, so every
   proposal's voting roll is prefilled with it; Fr. Dominic also sits on
   Finance Council, which exercises the roll's dedupe path and gives him
   commitments to show on a candidate card
@@ -30,7 +30,6 @@ from volunteerdb.models import FieldType, TeamRole, Volunteer
 from volunteerdb.services import (
     custom_fields,
     memberships,
-    planning,
     teams,
     users,
     volunteers,
@@ -338,12 +337,6 @@ async def seed() -> None:
             session, volunteer_ids[PROMOTED[0]], team_ids[PROMOTED[1]], L
         )
 
-        # the clergy sit on every proposal's voting roll; set_config accepts
-        # this team only because it is named "Clergy"
-        await planning.set_config(
-            session, planning.PlanningConfig(clergy_team_id=team_ids["Clergy"])
-        )
-
         # demo custom fields (admin-extensible volunteer properties)
         await custom_fields.create_def(
             session, "Safeguarding training", FieldType.date, show_in_list=True
@@ -404,7 +397,7 @@ async def seed() -> None:
         f"  {len(PAST_SPELLS)} ended spells, {len(JOINED)} backdated joins,"
         " 1 promotion (timeline demo)"
     )
-    print("  Clergy team filled and set as the planning clergy team")
+    print("  Clergy team filled — its members join every proposal's voting roll")
     print(f"  admin login:  admin@sttimothy.example / {admin_password}")
     print("  leader login: maria.alvarez@example.org / volunteer")
     print("  member login: felix.garcia@example.org / volunteer")

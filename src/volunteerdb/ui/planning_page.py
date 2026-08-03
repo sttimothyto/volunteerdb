@@ -16,7 +16,6 @@ from nicegui import ui
 from ..models import ROLE_LABELS, ProposalStatus, TeamRole
 from ..permissions import require, team_ids_map
 from ..services import planning as planning_service
-from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from ..star import StarResult
@@ -95,26 +94,6 @@ async def planning_page():
             if can_create
             else {}
         )
-        config = clergy_options = None
-        if actor.is_admin:
-            config = await planning_service.get_config(session)
-            all_teams = await team_service.list_all(session)
-            paths = team_service.team_paths(all_teams)
-            # set_config accepts only a team named "Clergy", so offering the
-            # other forty-odd would be forty-odd ways to get an error toast
-            eligible = {
-                t.id: paths[t.id]
-                for t in all_teams
-                if t.name == planning_service.CLERGY_TEAM_NAME
-            }
-            current = config.clergy_team_id
-            if current is not None and current not in eligible and current in paths:
-                # configured before the name rule existed: show it, so the
-                # select has a value to display and an admin can correct it
-                eligible[current] = f"{paths[current]} (wrong name)"
-            clergy_options = {0: "— none —"} | dict(
-                sorted(eligible.items(), key=lambda kv: kv[1])
-            )
 
     open_rows = [s for s in summaries if s.proposal.status == ProposalStatus.open.value]
     decided_rows = [
@@ -233,46 +212,6 @@ async def planning_page():
             with ui.column().classes("w-full gap-1"):
                 for s in decided_rows[:20]:
                     summary_row(s)
-
-        if actor.is_admin and clergy_options is not None:
-            with ui.card().classes("w-full gap-2 p-3 mt-4"):
-                ui.label("Clergy team").classes("text-lg font-medium")
-                ui.label(
-                    "Members of this team join every new proposal's voting roll "
-                    "alongside the target team's leadership and core members — "
-                    "the only team that votes on every seat. It must be the "
-                    f"team named “{planning_service.CLERGY_TEAM_NAME}”."
-                ).classes("text-sm text-gray-500")
-                if len(clergy_options) == 1:
-                    ui.label(
-                        f"No team named “{planning_service.CLERGY_TEAM_NAME}” "
-                        "exists yet — create one under Teams and it will appear "
-                        "here."
-                    ).classes("text-sm text-warning")
-                clergy = (
-                    ui.select(
-                        clergy_options,
-                        value=config.clergy_team_id or 0,
-                        with_input=True,
-                        label="Clergy team",
-                    )
-                    .props("outlined dense")
-                    .classes("w-96")
-                )
-
-                @notify_errors
-                async def save_clergy() -> None:
-                    async with action_session() as (session, actor):
-                        require(actor.is_admin, "configure planning")
-                        await planning_service.set_config(
-                            session,
-                            planning_service.PlanningConfig(
-                                clergy_team_id=clergy.value or None
-                            ),
-                        )
-                    ui.notify("Clergy team saved", color="positive")
-
-                ui.button("Save", on_click=save_clergy).props("dense")
 
 
 @ui.page("/planning/{proposal_id}")

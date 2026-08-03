@@ -42,7 +42,7 @@ class Parish:
 
 async def _parish(session) -> Parish:
     """Liturgy has a leader but no second; Garden has nobody; Clergy is the
-    configured clergy team."""
+    team the roll builder finds by name."""
     liturgy = await teams.create(session, "Liturgy")
     garden = await teams.create(session, "Garden")
     clergy = await teams.create(session, "Clergy")
@@ -62,9 +62,6 @@ async def _parish(session) -> Parish:
     await users.create(session, "cora@example.org", volunteer_id=cora.id)
     pete_user = await users.create(session, "pete@example.org", volunteer_id=pete.id)
     admin_user = await users.create(session, "admin@example.org", is_admin=True)
-    await planning.set_config(
-        session, planning.PlanningConfig(clergy_team_id=clergy.id)
-    )
     return Parish(
         liturgy_id=liturgy.id,
         garden_id=garden.id,
@@ -119,10 +116,12 @@ async def test_default_roll_leadership_core_plus_clergy(database):
         assert not any(v.has_voted for v in view.voters)
 
 
-async def test_default_roll_without_clergy_config(database):
+async def test_default_roll_without_a_clergy_team(database):
+    """No team named "Clergy" is not an error: the roll is simply the target
+    team's own leadership and core members."""
     async with db_session() as session:
         p = await _parish(session)
-        await planning.set_config(session, planning.PlanningConfig(clergy_team_id=None))
+        await teams.delete(session, p.clergy_id)
         proposal = await _open_proposal(session, p)
         view = await planning.detail(session, proposal.id, today=TODAY)
         assert {v.volunteer.id for v in view.voters} == {p.lena_id, p.cora_id}
@@ -137,42 +136,49 @@ async def test_roll_dedupes_clergy_who_also_lead(database):
         assert [v.volunteer.id for v in view.voters].count(p.pete_id) == 1
 
 
-# --- the clergy-team invariant -----------------------------------------------
+# --- the clergy standing -----------------------------------------------------
 #
-# One team votes on every proposal, and it is the team named "Clergy". The
-# setting holds a bare id in JSONB, so the rule needs guarding at all three
-# doors: pointing it elsewhere, renaming the team, deleting the team.
+# One team votes on every proposal, and it is whichever team is named
+# "Clergy" when the roll is built. Renaming is how the standing is retired,
+# and it only reaches future rolls: an open proposal's roll is already
+# materialised as ProposalVoter rows.
 
 
-async def test_only_a_team_named_clergy_may_be_the_clergy_team(database):
+async def test_renaming_the_clergy_team_retires_the_standing(database):
     async with db_session() as session:
         p = await _parish(session)
-        with pytest.raises(ValueError, match="must be the team named"):
-            await planning.set_config(
-                session, planning.PlanningConfig(clergy_team_id=p.liturgy_id)
-            )
-        assert (await planning.get_config(session)).clergy_team_id == p.clergy_id
+        before = await _open_proposal(session, p)
+        await teams.update(session, p.clergy_id, name="Presbyterate")
+        after = await _open_proposal(session, p, team_id=p.garden_id)
+
+        rolls = {
+            proposal.id: {
+                v.volunteer.id
+                for v in (
+                    await planning.detail(session, proposal.id, today=TODAY)
+                ).voters
+            }
+            for proposal in (before, after)
+        }
+        assert rolls[before.id] == {p.lena_id, p.cora_id, p.pete_id, p.dan_id}, (
+            "an already-open proposal keeps the roll it was created with"
+        )
+        assert rolls[after.id] == set(), "Garden has no leadership and no clergy join"
 
 
-async def test_configured_clergy_team_cannot_be_renamed_away(database):
+async def test_a_team_renamed_to_clergy_takes_up_the_standing(database):
+    """Nothing registers the clergy team, so the name alone confers it."""
     async with db_session() as session:
         p = await _parish(session)
-        with pytest.raises(ValueError, match="must keep the name"):
-            await teams.update(session, p.clergy_id, name="Presbyterate")
-        assert (await teams.get(session, p.clergy_id)).name == "Clergy"
-        # any other team renames freely, and so does a no-op on the clergy team
-        await teams.update(session, p.liturgy_id, name="Liturgy Committee")
-        await teams.update(session, p.clergy_id, name="  Clergy  ")
-
-
-async def test_configured_clergy_team_cannot_be_deleted(database):
-    async with db_session() as session:
-        p = await _parish(session)
-        with pytest.raises(ValueError, match="configured clergy team"):
-            await teams.delete(session, p.clergy_id)
-        await planning.set_config(session, planning.PlanningConfig(clergy_team_id=None))
         await teams.delete(session, p.clergy_id)
-        assert await teams.get(session, p.clergy_id) is None
+        await teams.update(session, p.liturgy_id, name="Clergy")
+        proposal = await _open_proposal(session, p, team_id=p.garden_id)
+        view = await planning.detail(session, proposal.id, today=TODAY)
+        assert {v.volunteer.id for v in view.voters} == {
+            p.lena_id,
+            p.cora_id,
+            p.mia_id,
+        }, "every member of the now-Clergy team, whatever their role"
 
 
 async def test_create_validations(database):

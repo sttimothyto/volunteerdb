@@ -57,7 +57,7 @@ This loads 17 teams, 33 volunteers, membership history for the timeline
 features, two custom fields, and four logins. It ends by printing:
 
 ```
-  Clergy team filled and set as the planning clergy team
+  Clergy team filled — its members join every proposal's voting roll
   admin login:  admin@sttimothy.example / changeme
   leader login: maria.alvarez@example.org / volunteer
   member login: felix.garcia@example.org / volunteer

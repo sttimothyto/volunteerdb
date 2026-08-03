@@ -106,18 +106,14 @@ Values are stored per volunteer in `volunteer.custom` under `key`.
 | `value` | jsonb | |
 | `updated_at` | timestamptz | |
 
-Holds two keys: `"workload"` — role multipliers and color bands (see
-[The workload model](../explanation/workload.md)) — and `"planning"` —
-the clergy team whose members join every new proposal's voting roll
-(see [Planning by nomination and vote](../explanation/planning.md)).
+Holds one key: `"workload"` — role multipliers and color bands (see
+[The workload model](../explanation/workload.md)).
 
-The `"planning"` value is `{"clergy_team_id": <id> | null}`: a single id,
-so exactly one team — always the one named **Clergy**, an invariant the
-planning and teams services enforce — can be the team that votes on every
-proposal. `null` means no clergy team is configured and rolls are prefilled
-from the target team alone. There is no foreign key on the id (it is inside
-a JSONB value), which is why `teams.delete` refuses to remove the team
-while it is configured.
+Revision 0008 also stored a `"planning"` key, `{"clergy_team_id": <id>}`,
+naming the team whose members join every new proposal's voting roll.
+Revision 0009 deleted it: the answer was always the team named **Clergy**,
+so the roll builder resolves that name directly and no id is stored (see
+[Planning by nomination and vote](../explanation/planning.md)).
 
 (proposal)=
 ## `proposal` (not versioned)
@@ -174,8 +170,8 @@ voting begins (the nomination deadline passes).
 | `created_at` | timestamptz | |
 
 Unique on `(proposal_id, volunteer_id)`. The roll is prefilled at creation
-(target team's leader/second/core + the configured clergy team) and, like
-the candidate set, freezes when voting begins. The `volunteer_id` index
+(target team's leader/second/core + whichever team is named **Clergy** at
+that moment) and, like the candidate set, freezes when voting begins. The `volunteer_id` index
 serves the per-request "which rolls am I on?" lookup in `load_actor`.
 
 ## `proposal_ballot` (not versioned)

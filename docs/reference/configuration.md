@@ -131,25 +131,30 @@ Workload settings (role multipliers and color bands) are not environment
 variables: they live in the `app_setting` table under the key `"workload"`
 and are edited on the `/admin/workload` page or via
 `PUT /api/workload/config`. See [The workload model](../explanation/workload.md)
-and the {ref}`schema reference <app_setting>`. The planning clergy team —
-whose members join every new proposal's voting roll — is stored the same
-way under `"planning"` and edited by admins on the `/planning` page.
+and the {ref}`schema reference <app_setting>`.
 
-That team is always the one named **Clergy**, and it is the only team
+## The clergy team
+
+The clergy team is not configured at all: it is whichever team is named
+**Clergy** when a proposal's voting roll is built. It is the only team
 whose members vote on every proposal; all other voting members are drawn
-from the team whose seat is being filled. The value is a single
-`clergy_team_id`, so the standing belongs to exactly one team at a time.
+from the team whose seat is being filled.
 
-The name is an enforced invariant, guarded at all three doors:
+Because the name *is* the standing, there is nothing to set and nothing to
+keep in sync:
 
-- Saving the setting with any other team fails (`422` over the API,
-  an error toast on `/planning`), and the page's picker lists only teams
-  actually named **Clergy**.
-- Renaming that team fails while it is the configured clergy team.
-- Deleting that team fails for the same reason — `clergy_team_id` lives in
-  JSONB with no foreign key behind it, so an unguarded delete would leave a
-  dangling id that silently empties the clergy half of every future roll.
+- Create a team named **Clergy** under **Teams** and its members begin
+  joining new rolls.
+- Rename it — or delete it — to retire the standing. Both are ordinary
+  team edits; no setting has to be cleared first.
+- With no team by that name, rolls are simply the target team's own
+  leader, second-in-command, and core members.
 
-To move or retire the role, set the clergy team to *— none —* first; the
-rename or delete then goes through. If no team named **Clergy** exists yet,
-create one under **Teams** and it will appear in the picker.
+Changing the name reaches only *future* rolls. An open proposal's roll is
+already materialised as `proposal_voter` rows and is unaffected, so no
+election's electorate shifts underneath it.
+
+:::{note}
+Team names are unique per parent, not globally, so a *sub-team* also named
+**Clergy** would likewise join every roll. Keep the parish to one.
+:::

@@ -36,16 +36,16 @@ Additional rules:
 
 - \* Nominating and voting are granted by sitting on a proposal's **voting
   roll** (`proposal_voter`), not by team role: the roll is prefilled with
-  the target team's leader/second/core plus the configured clergy team, and
-  managers may edit it while nominations are open. Voting additionally
-  requires an active account linked to the volunteer. Voters keep read
-  access to their proposals (and tallies) after the decision.
+  the target team's leader/second/core plus the clergy team, and managers
+  may edit it while nominations are open. Voting additionally requires an
+  active account linked to the volunteer. Voters keep read access to their
+  proposals (and tallies) after the decision.
 - The **Clergy** team is the only team on every proposal's roll. Its
   members vote on all seats parish-wide; every other volunteer votes only
-  on seats for the team they lead or hold core membership in. Exactly one
-  team can be the clergy team (a single `clergy_team_id`), admins set it on
-  `/planning`, and it must be the team named **Clergy** — enforced, and the
-  team cannot be renamed or deleted while it holds the role. Managers may
+  on seats for the team they lead or hold core membership in. Nothing
+  grants the standing but the name: the roll builder looks up the team
+  called **Clergy** when it fills a roll, so creating, renaming, or
+  deleting that team confers or retires it for future rolls. Managers may
   still add or drop individual voters on one proposal while nominations are
   open; that edits a roll, it does not move the standing.
 - Volunteers may always view and edit their **own** contact info, whatever
@@ -80,7 +80,7 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export | signed in; roster per matrix |
 | `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
-| `/planning` | Vacancies + the proposal pipeline; clergy-team setting (admins) | admin, leader/second, or voting member of any proposal |
+| `/planning` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |
 | `/planning/{id}` | One proposal: candidates, roll, ballot form, tally, appoint | managers of that team or its voting members |
 | `/import` | Spreadsheet import/export | admin or leader/second (scoped to their teams) |
 | `/manual` | This documentation (book icon in the header) | signed in |
