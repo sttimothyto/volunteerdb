@@ -47,6 +47,87 @@ async def test_bulk_provision_second_run_is_noop(database):
         assert [reason for _, reason in second.skipped] == ["already has an account"]
 
 
+async def test_create_links_to_the_volunteer_at_the_same_address(database):
+    async with db_session() as session:
+        v = await volunteers.create(session, "Bruno", "Cordeiro", "bruno@example.org")
+
+        user = await users.create(session, "  Bruno@Example.ORG ")
+
+        assert user.volunteer_id == v.id, "an account is somebody's login"
+
+
+async def test_create_declines_ambiguous_or_unavailable_matches(database):
+    async with db_session() as session:
+        await volunteers.create(session, "Ana", "Family", "family@example.org")
+        await volunteers.create(session, "Bob", "Family", "family@example.org")
+        taken = await volunteers.create(session, "Cara", "Taken", "cara@example.org")
+        await users.create(session, "cara-old@example.org", volunteer_id=taken.id)
+        gone = await volunteers.create(session, "Dora", "Gone", "dora@example.org")
+        await volunteers.update(session, gone.id, is_active=False)
+
+        family = await users.create(session, "family@example.org")
+        second = await users.create(session, "cara@example.org")
+        inactive = await users.create(session, "dora@example.org")
+        explicit = await users.create(session, "bruno@example.org", volunteer_id=None)
+
+        assert family.volunteer_id is None, "families share an address: no coin flip"
+        assert second.volunteer_id is None, "one account per volunteer"
+        assert inactive.volunteer_id is None
+        assert explicit.volunteer_id is None, "nobody holds that address"
+
+
+async def test_create_can_opt_out_of_linking(database):
+    async with db_session() as session:
+        await volunteers.create(session, "Sync", "Bot", "bot@example.org")
+
+        user = await users.create(session, "bot@example.org", link_by_email=False)
+
+        assert user.volunteer_id is None
+
+
+async def test_bulk_provision_adopts_an_unlinked_account(database):
+    """The bcordeiro case: the account was made before the volunteer existed."""
+    async with db_session() as session:
+        orphan = await users.create(session, "bruno@example.org")
+        assert orphan.volunteer_id is None
+        v = await volunteers.create(session, "Bruno", "Cordeiro", "bruno@example.org")
+
+        report = await users.bulk_provision(session)
+
+        assert report.created == []
+        assert [(vol.id, u.id) for vol, u in report.linked] == [(v.id, orphan.id)]
+        assert orphan.volunteer_id == v.id
+
+    async with db_session() as session:
+        again = await users.bulk_provision(session)
+        assert again.linked == []
+        assert [reason for _, reason in again.skipped] == ["already has an account"]
+
+
+async def test_set_volunteer_relinks_unlinks_and_refuses_a_taken_volunteer(database):
+    async with db_session() as session:
+        maria = await volunteers.create(session, "Maria", "Alvarez", "m@example.org")
+        pedro = await volunteers.create(session, "Pedro", "Sousa", "p@example.org")
+        user = await users.create(session, "typo@example.org")
+        assert user.volunteer_id is None
+
+        await users.set_volunteer(session, user.id, maria.id)
+        assert user.volunteer_id == maria.id
+
+        await users.set_volunteer(session, user.id, None)
+        assert user.volunteer_id is None, "an auto-link can be undone"
+
+        await users.set_volunteer(session, user.id, pedro.id)
+        rival = await users.create(session, "rival@example.org")
+        with pytest.raises(ValueError, match="already linked to typo@example.org"):
+            await users.set_volunteer(session, rival.id, pedro.id)
+
+        with pytest.raises(LookupError):
+            await users.set_volunteer(session, user.id, 424242)
+        with pytest.raises(LookupError):
+            await users.set_volunteer(session, 424242, maria.id)
+
+
 async def test_issue_api_token_revokes_previous(database):
     async with db_session() as session:
         user = await users.create(session, "api@example.org", password="pw-123456")

@@ -115,10 +115,10 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | Method & path | Notes |
 |---|---|
 | `GET /api/users` | List accounts |
-| `POST /api/users` | 201; returns invite token |
-| `PATCH /api/users/{id}` | `is_admin`, `is_active` |
+| `POST /api/users` | 201; returns invite token. Omitting `volunteer_id` links the volunteer at that address, if exactly one holds it |
+| `PATCH /api/users/{id}` | `is_admin`, `is_active`, `volunteer_id` (`null` unlinks; omit to leave alone) |
 | `POST /api/users/{id}/reinvite` | Invalidates password, fresh invite token |
-| `POST /api/users/provision` | Bulk-create accounts for volunteers with email → `{created, skipped}` |
+| `POST /api/users/provision` | Bulk-create accounts for volunteers with email, and link existing unlinked accounts → `{created, linked, skipped}` |
 
 (api-import-export)=
 ### Import / export — `api/io.py`

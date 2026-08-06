@@ -352,6 +352,7 @@ class UserIn(BaseModel):
 class UserPatch(BaseModel):
     is_admin: bool | None = None
     is_active: bool | None = None
+    volunteer_id: int | None = None  # explicit null unlinks; omit to leave alone
 
 
 # --- auth ---

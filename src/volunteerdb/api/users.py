@@ -31,9 +31,13 @@ async def create_user(ctx: CtxDep, data: UserIn) -> UserOut:
 @router.patch("/{user_id}")
 async def update_user(ctx: CtxDep, user_id: int, data: UserPatch) -> UserOut:
     require(ctx.actor.is_admin, "manage accounts")
-    user = await service.set_flags(
-        ctx.session, user_id, **data.model_dump(exclude_unset=True)
-    )
+    fields = data.model_dump(exclude_unset=True)
+    # volunteer_id is a link, not a flag, and null means unlink — hence
+    # exclude_unset above and a separate call rather than a None-means-skip arg
+    link = fields.pop("volunteer_id", ...)
+    user = await service.set_flags(ctx.session, user_id, **fields)
+    if link is not ...:
+        user = await service.set_volunteer(ctx.session, user_id, link)
     return _user_out(user)
 
 
@@ -47,17 +51,20 @@ async def reinvite(ctx: CtxDep, user_id: int) -> UserOut:
 
 class ProvisionOut(BaseModel):
     created: list[UserOut]
+    linked: list[UserOut]
     skipped: list[dict]
 
 
 @router.post("/provision")
 async def provision(ctx: CtxDep) -> ProvisionOut:
     """Create invite-token accounts for all active volunteers with an email
-    and no account yet."""
+    and no account yet, and link existing unlinked accounts to the volunteer
+    at the same address."""
     require(ctx.actor.is_admin, "manage accounts")
     report = await service.bulk_provision(ctx.session)
     return ProvisionOut(
         created=[_user_out(u) for _, u in report.created],
+        linked=[_user_out(u) for _, u in report.linked],
         skipped=[
             {"volunteer_id": v.id, "name": v.full_name, "reason": reason}
             for v, reason in report.skipped

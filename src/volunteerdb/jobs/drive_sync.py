@@ -92,7 +92,10 @@ async def _ensure_sync_user() -> int:
         user = await user_service.get_by_email(session, SYNC_USER_EMAIL)
         if user is None:
             user = await user_service.create(
-                session, SYNC_USER_EMAIL, password=secrets.token_urlsafe(32)
+                session,
+                SYNC_USER_EMAIL,
+                password=secrets.token_urlsafe(32),
+                link_by_email=False,  # a bot, never a volunteer's login
             )
             user.is_active = False
             await session.flush()

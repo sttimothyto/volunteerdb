@@ -28,7 +28,13 @@ password), which in practice affects only the administrator.
 ## No self-signup, invites instead
 
 Accounts are [provisioned by an admin](../how-to/manage-users.md) and
-activated through single-use invite links. In a parish the population is
+activated through single-use invite links. An account is created *for*
+somebody, so it adopts the volunteer record at the same email address
+unless the admin picks one explicitly — an unlinked account signs in
+successfully and then sees an empty app, which reads as a broken login
+rather than as missing configuration. The match is refused when it is not
+unambiguous: a family-shared address holds two volunteers, and a volunteer
+may hold only one account. In a parish the population is
 *known* — an open registration form would only add spam handling and
 identity doubt. The invite link doubles as the password-reset mechanism
 (re-invite = fresh link, old password invalidated), so there is exactly one

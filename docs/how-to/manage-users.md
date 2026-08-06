@@ -6,9 +6,12 @@ endpoints are under [`/api/users`](../reference/http-api.md).
 
 ## Create one account
 
-1. *New account*: enter the email and, usually, link it to the volunteer
-   record it belongs to (team rights come from the linked volunteer's
-   memberships).
+1. *New account*: enter the email. Team rights come from the linked
+   volunteer's memberships, so leaving the picker on *"— match by email —"*
+   links the account to the volunteer holding that address. Pick a volunteer
+   explicitly when nobody holds the address yet, or when the address is
+   shared by a family — an address held by two volunteers is left unlinked
+   rather than guessed at.
 2. The account is created with an **invite link** (`/invite/<token>`).
    If outbound email is configured, the invite is emailed; the dialog also
    shows the link so you can hand it out in person or by other means.
@@ -22,8 +25,19 @@ endpoints are under [`/api/users`](../reference/http-api.md).
 
 *Create accounts for all volunteers with email* provisions one account per
 volunteer that has an email address and no account yet (one account per
-shared family email). The result reports how many were created and skipped.
-Invite links are emailed/available per account as above.
+shared family email). An account that already exists at a volunteer's
+address but is linked to nobody is linked to them instead of being skipped —
+run this after an import to adopt accounts created before their volunteer
+record existed. The result reports how many were created, linked, and
+skipped. Invite links are emailed/available per account as above.
+
+## Fix a wrong or missing link
+
+The link-icon button on the account row opens *Linked volunteer*: pick a
+volunteer, or *"— not linked —"* to detach. One account per volunteer, so
+claiming a volunteer another account already holds is refused. Over the
+API this is `PATCH /api/users/{id}` with `{"volunteer_id": 12}` (or `null`
+to unlink); omitting the field leaves the link alone.
 
 ## Reset access ("forgot password", lost invite)
 

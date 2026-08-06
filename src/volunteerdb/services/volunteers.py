@@ -86,6 +86,29 @@ async def search(
     return [row[0] for row in await fetch(session, stmt, at)]
 
 
+async def find_by_email(session: AsyncSession, email: str) -> list[Volunteer]:
+    """Active volunteers holding exactly this address, oldest first.
+
+    A list, not a row: volunteer.email is deliberately not unique — families
+    share an address — so the caller decides what an ambiguous match means.
+    lower() on the column as well as the argument, since rows written before
+    create/update normalized (or written by SQL) may be mixed case; that skips
+    ix_volunteer_email, which at parish scale costs nothing.
+    """
+    addr = email.strip().lower()
+    if not addr:
+        return []
+    return list(
+        (
+            await session.execute(
+                sa.select(Volunteer)
+                .where(Volunteer.is_active, sa.func.lower(Volunteer.email) == addr)
+                .order_by(Volunteer.id)
+            )
+        ).scalars()
+    )
+
+
 async def create(
     session: AsyncSession,
     first_name: str,

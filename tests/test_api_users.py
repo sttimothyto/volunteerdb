@@ -49,6 +49,56 @@ async def test_create_and_list_users(client, seeded):
     assert {"admin@example.org", "member@example.org", "zed@example.org"} <= set(emails)
 
 
+async def test_create_links_by_email_and_patch_relinks(client, seeded):
+    admin = await _token(client, "admin@example.org", "secret-pw")
+
+    async with db_session() as session:
+        bruno = await volunteers.create(session, "Bruno", "Cordeiro", "bc@example.org")
+        pedro = await volunteers.create(session, "Pedro", "Sousa", "ps@example.org")
+
+    r = await client.post("/api/users", json={"email": "bc@example.org"}, headers=admin)
+    assert r.status_code == 201
+    user_id = r.json()["id"]
+    assert r.json()["volunteer_id"] == bruno.id
+
+    r = await client.patch(
+        f"/api/users/{user_id}", json={"volunteer_id": pedro.id}, headers=admin
+    )
+    assert r.status_code == 200 and r.json()["volunteer_id"] == pedro.id
+
+    r = await client.patch(
+        f"/api/users/{user_id}", json={"is_admin": True}, headers=admin
+    )
+    assert r.json()["volunteer_id"] == pedro.id, "omitting the field leaves it alone"
+
+    r = await client.patch(
+        f"/api/users/{user_id}", json={"volunteer_id": None}, headers=admin
+    )
+    assert r.json()["volunteer_id"] is None, "explicit null unlinks"
+
+    r = await client.patch(
+        f"/api/users/{user_id}", json={"volunteer_id": 424242}, headers=admin
+    )
+    assert r.status_code == 404
+
+
+async def test_provision_endpoint_adopts_an_unlinked_account(client, seeded):
+    admin = await _token(client, "admin@example.org", "secret-pw")
+
+    r = await client.post(
+        "/api/users", json={"email": "late@example.org"}, headers=admin
+    )
+    assert r.json()["volunteer_id"] is None, "nobody holds that address yet"
+    async with db_session() as session:
+        late = await volunteers.create(session, "Late", "Arrival", "late@example.org")
+
+    r = await client.post("/api/users/provision", headers=admin)
+    assert r.status_code == 200
+    linked = r.json()["linked"]
+    assert [u["email"] for u in linked] == ["late@example.org"]
+    assert [u["volunteer_id"] for u in linked] == [late.id]
+
+
 async def test_patch_flags_deactivation_kills_token(client, seeded):
     admin = await _token(client, "admin@example.org", "secret-pw")
 

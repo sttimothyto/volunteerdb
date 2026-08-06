@@ -103,3 +103,27 @@ async def test_admin_users_provision_button(database, monkeypatch):
         user.find("Create and email invites", kind=ui.button).click()
         await user.should_see("vera@example.org", retries=30)
         await user.should_see("2 accounts", retries=30)
+
+
+async def test_admin_users_relink_dialog(database):
+    async with db_session() as session:
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="pw"
+        )
+        orphan = await users.create(session, "orphan@example.org", password="pw")
+        vera = await volunteers.create(session, "Vera", "Volunteer", "vera@example.org")
+        admin_id, orphan_id, vera_id = admin.id, orphan.id, vera.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{admin_id}")
+        await user.open("/admin/users")
+        await user.should_see("not linked to a volunteer")
+
+        user.find(marker=f"relink-{orphan_id}").click()
+        await user.should_see("Linked volunteer for orphan@example.org", retries=30)
+        user.find(marker=f"relink-pick-{orphan_id}").elements.pop().set_value(vera_id)
+        user.find("Save", kind=ui.button).click()
+        await user.should_see("orphan@example.org → Vera Volunteer", retries=30)
+
+    async with db_session() as session:
+        assert (await users.get(session, orphan_id)).volunteer_id == vera_id

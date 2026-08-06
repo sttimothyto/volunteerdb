@@ -64,7 +64,9 @@ async def users_page(request: Request):
                 with ui.dialog() as confirm_dialog, ui.card().classes("w-96 gap-3"):
                     ui.label(
                         "Create accounts for every active volunteer with an email "
-                        "address and send each of them an invite email?"
+                        "address and send each of them an invite email? Existing "
+                        "accounts that aren't linked to anyone are linked to the "
+                        "volunteer at the same address."
                     )
                     with ui.row().classes("justify-end w-full gap-2"):
                         ui.button(
@@ -80,7 +82,7 @@ async def users_page(request: Request):
                     require(actor.is_admin, "manage accounts")
                     report = await user_service.bulk_provision(session)
                     created = [(u.email, u.invite_token) for _, u in report.created]
-                    skipped = len(report.skipped)
+                    relinked, skipped = len(report.linked), len(report.skipped)
                 emailed = sum(
                     [await email_invite(addr, token) for addr, token in created]
                 )
@@ -88,7 +90,13 @@ async def users_page(request: Request):
                 ui.notify(
                     f"Created {len(created)} accounts ({emailed} invites emailed"
                     + (f", {failed} failed" if failed else "")
-                    + f"), skipped {skipped}",
+                    + ")"
+                    + (
+                        f", linked {relinked} existing accounts to their volunteer"
+                        if relinked
+                        else ""
+                    )
+                    + f", skipped {skipped}",
                     color="positive",
                 )
                 ui.navigate.reload()
@@ -110,13 +118,17 @@ async def users_page(request: Request):
                 )
                 link = (
                     ui.select(
-                        {0: "— not linked —"} | volunteer_names,
+                        {0: "— match by email —"} | volunteer_names,
                         label="Linked volunteer",
                         value=0,
                         with_input=True,
                     )
                     .props("outlined dense")
                     .classes("w-full")
+                    .tooltip(
+                        "Left as-is, the account is linked to the volunteer with "
+                        "the same email address, if exactly one has it."
+                    )
                 )
                 admin_flag = ui.switch("Parish admin (full access)")
 
@@ -131,7 +143,14 @@ async def users_page(request: Request):
                             is_admin=admin_flag.value,
                         )
                         token, addr = user.invite_token, user.email
+                        matched = user.volunteer_id if not link.value else None
                     dialog.close()
+                    if matched is not None:
+                        ui.notify(
+                            f"Linked to {volunteer_names.get(matched, matched)} "
+                            "by email address",
+                            color="info",
+                        )
                     sent = await email_invite(addr, token)
                     show_invite(token, addr, sent)
 
@@ -200,6 +219,41 @@ async def users_page(request: Request):
                         )
                     ui.navigate.reload()
 
+                def relink_dialog(
+                    uid=account.id, addr=account.email, current=account.volunteer_id
+                ) -> None:
+                    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+                        ui.label(f"Linked volunteer for {addr}").classes("font-medium")
+                        pick = (
+                            ui.select(
+                                {0: "— not linked —"} | volunteer_names,
+                                value=current or 0,
+                                with_input=True,
+                            )
+                            .props("outlined dense")
+                            .classes("w-full")
+                            .mark(f"relink-pick-{uid}")
+                        )
+
+                        @notify_errors
+                        async def save_link() -> None:
+                            async with action_session() as (session, actor):
+                                require(actor.is_admin, "manage accounts")
+                                await user_service.set_volunteer(
+                                    session, uid, pick.value or None
+                                )
+                            dialog.close()
+                            ui.notify(
+                                f"{addr} → {volunteer_names.get(pick.value, 'nobody')}",
+                                color="positive",
+                            )
+                            ui.navigate.reload()
+
+                        with ui.row().classes("justify-end w-full gap-2"):
+                            ui.button("Cancel", on_click=dialog.close).props("flat")
+                            ui.button("Save", on_click=save_link)
+                    dialog.open()
+
                 @notify_errors
                 async def reinvite(_, uid=account.id, addr=account.email) -> None:
                     async with action_session() as (session, actor):
@@ -208,6 +262,9 @@ async def users_page(request: Request):
                     sent = await email_invite(addr, token)
                     show_invite(token, addr, sent)
 
+                ui.button(icon="link", on_click=relink_dialog).props("dense flat").mark(
+                    f"relink-{account.id}"
+                ).tooltip("Change linked volunteer")
                 ui.button(
                     icon="key_off" if account.is_admin else "key", on_click=toggle_admin
                 ).props("dense flat").tooltip(
