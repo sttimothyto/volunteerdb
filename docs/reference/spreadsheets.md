@@ -1,11 +1,18 @@
 # Spreadsheet format
 
-One `.xlsx` workbook, two sheets, designed to round-trip: export, edit in
-any spreadsheet program, re-import. A **CSV variant** carries one sheet per
-file (see below). Implementation in `src/volunteerdb/sheets/` (`common.py`,
-`exporter.py`, `importer.py`). Uploads are capped at **10 MB**.
+One roster `.csv`, one row per person per team, designed to round-trip:
+export, edit in any spreadsheet program, re-import. Implementation in
+`src/volunteerdb/sheets/` (`common.py`, `exporter.py`, `importer.py`).
+Uploads are capped at **10 MB**.
 
-## Sheet "Volunteers"
+```{note}
+Earlier releases used a two-sheet `.xlsx` workbook (Volunteers +
+Memberships). That format is retired: uploading an `.xlsx` is rejected with
+a pointer to export a fresh roster CSV. The same CSV also serves as the
+nightly Google Drive roster sync format.
+```
+
+## Columns
 
 | Column | Import behavior |
 |---|---|
@@ -13,47 +20,23 @@ file (see below). Implementation in `src/volunteerdb/sheets/` (`common.py`,
 | Last name | required |
 | Email | matching key; may be blank or family-shared |
 | Phone | free text |
-| Notes | free text |
-| Active | boolean-ish (`yes`/`no`, `true`/`false`, `1`/`0`) |
-| Photo | base64 of the stored 400×400 JPEG headshot (≤ 24 KB, so it always fits an Excel cell). **Optional on import**: pre-photo 6-column files still work. Blank leaves the stored photo unchanged — removal happens in the app or API, never via spreadsheet. A byte-identical value is skipped, so re-importing an export is a no-op; anything else is decoded, validated and re-normalized |
+| Volunteer notes | free text (on the person) |
+| Active | allow-list both ways: `yes`/`y`/`true`/`1`/`x` or `no`/`n`/`false`/`0`. **Blank = leave unchanged** (new volunteers default to active). Anything else is a row **error** — a typo must never archive someone silently |
+| Team | full path with ` / ` separator, e.g. `Liturgy / Music Ministry`; a bare unambiguous name also works. **Blank = volunteer-only row** (contact update without touching memberships) |
+| Role | short value (`leader`) or display label (`Ministry leader`); required when Team is set |
+| Joined on | ISO date (`2026-05-03`) |
+| Membership notes | free text (on the membership) |
 
-Exports place the **Photo** column right after the six base columns, then
-append one column per active custom field (e.g. *Safeguarding training*).
-The custom-field columns are currently **ignored on import** with a
-warning — custom-field values are edited in the app.
+A volunteer serving on several teams appears once per team; the volunteer
+columns of later rows update the same person (harmlessly, since the values
+match). Parish-wide exports list volunteers with no membership at the end,
+with blank team columns.
 
-Because photos are not history-versioned, an as-of export carries the
-*current* photo alongside the historical roster.
-
-## Sheet "Memberships"
-
-| Column | Import behavior |
-|---|---|
-| Volunteer email | primary matching key |
-| Volunteer name | disambiguates family-shared emails; fallback key when email is blank |
-| Team path | full path with ` / ` separator, e.g. `Liturgy / Music Ministry`; a bare unambiguous name also works |
-| Role | short value (`leader`) or display label (`Ministry leader`); dropdown-validated in the template |
-| Joined on | date |
-| Notes | free text |
-
-## CSV variant
-
-Since CSV is single-table, the workbook splits into two files —
-`volunteers.csv` and `memberships.csv` — with exactly the columns above.
-On import the file's **header row** identifies which sheet it is; the
-format itself is detected from the content (zip magic bytes → `.xlsx`,
-otherwise CSV), so the extension is informational. Details:
-
-- Encoding is UTF-8; exports carry a BOM so Excel opens them correctly, and
-  imports accept files with or without one. Non-UTF-8 files are rejected
-  with an explicit error.
-- A CSV import touches only the sheet it carries — importing
-  `volunteers.csv` never affects memberships, and vice versa.
-- Extra columns beyond the standard headers are ignored with a warning,
-  as in the workbook.
-- Formula-injection escaping applies to CSV exactly as to `.xlsx`.
-- The role dropdown of the `.xlsx` template cannot be expressed in CSV;
-  the CSV templates are headers only.
+Exports append one column per active custom field (e.g. *Safeguarding
+training*) after the ten base columns. The custom-field columns are
+currently **ignored on import** with a warning — custom-field values are
+edited in the app. Photos are managed in the app and API only; they do not
+travel through spreadsheets.
 
 ## Matching rules
 
@@ -79,30 +62,37 @@ it.
 ## What an import will not do
 
 - **A blank cell never clears a field.** Only non-empty values are written
-  back, so deleting a phone number in an exported workbook and re-importing is
-  a no-op. Clear a field in the app instead. This protects against a truncated
-  paste silently wiping contact details parish-wide.
+  back, so deleting a phone number in an export and re-importing is a no-op.
+  Clear a field in the app instead. This protects against a truncated paste
+  silently wiping contact details parish-wide. (This now includes `Active`:
+  a blank cell leaves an archived volunteer archived.)
 - **Custom field values are not imported.** They are exported for reference;
   extra columns are ignored with a warning.
 - **`Joined on` values it cannot read are dropped**, with a warning, and the
   membership is imported without a date. Warnings do not block an import — a
   file whose dates are all `03/05/2026` applies successfully with every join
-  date missing. Use ISO dates (`2026-05-03`) or real date cells.
-- **`Active` is an allow-list**: `yes`, `y`, `true`, `1`, `x` (and an empty
-  cell) mean active. Anything else archives the volunteer, with a warning
-  naming them.
+  date missing. Use ISO dates (`2026-05-03`).
+
+## Encoding and safety
+
+- Encoding is UTF-8; exports carry a BOM so Excel opens them correctly, and
+  imports accept files with or without one. Non-UTF-8 files are rejected
+  with an explicit error.
+- Formula-injection protection: exported cell values that could be
+  interpreted as formulas (leading `=`, `+`, `-`, `@`) are escaped with a
+  quote, and imports strip it back.
 
 ## Import semantics
 
-- **Add and update only** — an import never deletes volunteers or
-  memberships.
+- **Add and update only** — a manual import never deletes volunteers or
+  memberships. (The nightly Drive roster sync is the one deliberate
+  exception: a team's synced sheet is treated as that team's complete
+  roster.)
 - **All-or-nothing** — any error rejects the entire file; nothing is
   written. The response is a row-by-row report of issues.
 - **Dry run** — the GUI always validates first and shows the report before
   offering "Apply this import"; the API exposes the same via
   `POST /api/import?dry_run=true`.
-- Formula-injection protection: exported cell values that could be
-  interpreted as formulas are escaped, and imports sanitize them back.
 
 ## Scoped imports (leaders and seconds)
 
@@ -111,11 +101,11 @@ import too, limited **row by row** to the teams they lead (sub-teams
 included); out-of-scope rows are reported as errors and, as always,
 any error blocks the whole file:
 
-- **Memberships rows** must target a managed team.
-- **Volunteers rows** may update people who are on a managed team
+- **Rows with a Team** must target a managed team.
+- **Volunteer columns** may update people who are on a managed team
   (evaluated against pre-import memberships, plus anyone the same file adds
   to a managed team).
-- **New volunteers** are created only when the same file also gives them a
+- **New volunteers** are created only when a row also gives them a
   membership on a managed team.
 - Out-of-scope volunteer rows are rejected even when they would change
   nothing — a dry-run must not confirm guessed contact details.
@@ -128,18 +118,15 @@ volunteer, and is rejected unless they are within scope.
 
 | File | Contents | Access |
 |---|---|---|
-| `template.xlsx` | Empty sheets with headers and a role dropdown | signed in |
-| `template/{sheet}.csv` | Headers only (`volunteers` or `memberships`) | signed in |
-| `parish.xlsx` | Every volunteer and membership (plus custom-field columns) | admin |
-| `parish/{sheet}.csv` | One sheet of the above | admin |
-| `team/{id}.xlsx` | One team's roster | full-roster rights on the team |
-| `team/{id}/{sheet}.csv` | One sheet of the above | full-roster rights on the team |
-| `my-teams.xlsx` | Union of the caller's managed teams | leads/seconds any team |
-| `my-teams/{sheet}.csv` | One sheet of the above | leads/seconds any team |
+| `template.csv` | Header row only | signed in |
+| `parish.csv` | Every membership row, then membership-less volunteers, plus custom-field columns | admin |
+| `team/{id}.csv` | One team's roster (sub-teams included) | full-roster rights on the team |
+| `my-teams.csv` | Union of the caller's managed teams | leads/seconds any team |
 
 All data exports accept `as_of=` over the API for historical snapshots
 (`my-teams` applies the *current* set of managed teams to the historical
-data). GUI entry points: the `/import` page and the "Export roster" menu on
-team pages. See [Import and export spreadsheets](../how-to/import-export.md)
-for the workflow and the {ref}`HTTP API reference <api-import-export>` for
-the endpoints.
+data). GUI entry points: the `/import` page and the "Export roster (.csv)"
+button on team pages. See
+[Import and export spreadsheets](../how-to/import-export.md) for the
+workflow and the {ref}`HTTP API reference <api-import-export>` for the
+endpoints.

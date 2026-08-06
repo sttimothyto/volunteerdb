@@ -64,9 +64,9 @@ for an existing pair changes the role.
 ## Export and import
 
 ```sh
-curl -s -H "Authorization: Bearer $TOKEN" -o parish.xlsx \
-  localhost:8080/api/export/parish.xlsx
-curl -s -H "Authorization: Bearer $TOKEN" -F file=@parish.xlsx \
+curl -s -H "Authorization: Bearer $TOKEN" -o parish.csv \
+  localhost:8080/api/export/parish.csv
+curl -s -H "Authorization: Bearer $TOKEN" -F file=@parish.csv \
   'localhost:8080/api/import?dry_run=true' | jq
 ```
 

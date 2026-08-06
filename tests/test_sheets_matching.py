@@ -8,25 +8,21 @@ second record rather than updating the first. The name index is consulted only
 when the email cell is blank.
 """
 
-from io import BytesIO
-
-from openpyxl import load_workbook
+import csv
+from io import StringIO
 
 from volunteerdb.db import db_session
 from volunteerdb.services import teams, volunteers
-from volunteerdb.sheets import exporter, importer
-from volunteerdb.sheets.common import MEMBERSHIP_SHEET, VOLUNTEER_SHEET
+from volunteerdb.sheets import importer
+from volunteerdb.sheets.common import ROSTER_HEADERS, ROSTER_SHEET
 
 
-def _workbook_bytes(volunteer_rows: list = (), membership_rows: list = ()) -> bytes:
-    wb = load_workbook(BytesIO(exporter.template_workbook()))
-    for row in volunteer_rows:
-        wb[VOLUNTEER_SHEET].append(row)
-    for row in membership_rows:
-        wb[MEMBERSHIP_SHEET].append(row)
-    buffer = BytesIO()
-    wb.save(buffer)
-    return buffer.getvalue()
+def _csv_bytes(rows: list[list]) -> bytes:
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(ROSTER_HEADERS)
+    writer.writerows(rows)
+    return buffer.getvalue().encode("utf-8-sig")
 
 
 async def test_unmatched_email_does_not_fall_back_to_name(database):
@@ -36,10 +32,8 @@ async def test_unmatched_email_does_not_fall_back_to_name(database):
     async with db_session() as session:
         await volunteers.create(session, "Andrea", "Smart")
 
-    content = _workbook_bytes(
-        volunteer_rows=[
-            ["Andrea", "Smart", "a.smart705@outlook.com", None, None, "yes"]
-        ]
+    content = _csv_bytes(
+        [["Andrea", "Smart", "a.smart705@outlook.com", "", "", "yes", "", "", "", ""]]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert report.applied and report.volunteers_created == 1
@@ -57,8 +51,8 @@ async def test_a_blank_email_still_matches_by_name(database):
     async with db_session() as session:
         await volunteers.create(session, "Andrea", "Smart")
 
-    content = _workbook_bytes(
-        volunteer_rows=[["Andrea", "Smart", None, "555-0143", None, "yes"]]
+    content = _csv_bytes(
+        [["Andrea", "Smart", "", "555-0143", "", "yes", "", "", "", ""]]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert report.applied
@@ -76,10 +70,21 @@ async def test_new_email_on_an_existing_name_warns_before_duplicating(database):
         await volunteers.create(session, "Andrea", "Smart")
         await volunteers.create(session, "Bruno", "Newcomer")
 
-    content = _workbook_bytes(
-        volunteer_rows=[
-            ["Andrea", "Smart", "a.smart705@outlook.com", None, None, "yes"],
-            ["Cora", "Fresh", "cora@example.org", None, None, "yes"],
+    content = _csv_bytes(
+        [
+            [
+                "Andrea",
+                "Smart",
+                "a.smart705@outlook.com",
+                "",
+                "",
+                "yes",
+                "",
+                "",
+                "",
+                "",
+            ],
+            ["Cora", "Fresh", "cora@example.org", "", "", "yes", "", "", "", ""],
         ]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
@@ -87,7 +92,7 @@ async def test_new_email_on_an_existing_name_warns_before_duplicating(database):
     assert not report.has_errors, "a warning must not block the import"
 
     (warning,) = report.warnings
-    assert warning.sheet == VOLUNTEER_SHEET and warning.row == 2
+    assert warning.sheet == ROSTER_SHEET and warning.row == 2
     assert "a.smart705@outlook.com" in warning.message
     assert "Andrea Smart" in warning.message
     assert "already exists" in warning.message, (
@@ -103,9 +108,20 @@ async def test_family_shared_email_is_disambiguated_by_name(database):
         await volunteers.create(session, "Maria", "Alvarez", "family@example.org")
         await volunteers.create(session, "Jose", "Alvarez", "family@example.org")
 
-    content = _workbook_bytes(
-        volunteer_rows=[
-            ["Maria", "Alvarez", "family@example.org", "555-0100", None, "yes"]
+    content = _csv_bytes(
+        [
+            [
+                "Maria",
+                "Alvarez",
+                "family@example.org",
+                "555-0100",
+                "",
+                "yes",
+                "",
+                "",
+                "",
+                "",
+            ]
         ]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
@@ -118,8 +134,26 @@ async def test_family_shared_email_is_disambiguated_by_name(database):
         }
     assert found == {"Maria": "555-0100", "Jose": None}, "only the named spouse changed"
 
-    ambiguous = _workbook_bytes(
-        membership_rows=[["family@example.org", None, "Liturgy", "member", None, None]]
+    # both spouses share the email AND the surname-only name cannot break the
+    # tie for a row that names neither exactly — force the ambiguity with a
+    # same-named third record
+    async with db_session() as session:
+        await volunteers.create(session, "Maria", "Alvarez", "family@example.org")
+    ambiguous = _csv_bytes(
+        [
+            [
+                "Maria",
+                "Alvarez",
+                "family@example.org",
+                "",
+                "",
+                "",
+                "Liturgy",
+                "member",
+                "",
+                "",
+            ]
+        ]
     )
     report = await importer.run_import(ambiguous, dry_run=False, user_id=None)
     assert not report.applied

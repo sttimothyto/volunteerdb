@@ -297,28 +297,16 @@ async def team_detail(team_id: int, as_of: str = ""):
             if can_full:
                 slug = team.name.lower().replace(" ", "-")
 
-                async def export_xlsx() -> None:
-                    async with action_session() as (session, _):
-                        content = await exporter.export_workbook(
-                            session, team_id=team_id, at=at
-                        )
-                    ui.download(content, f"{slug}.xlsx")
-
-                async def export_csv(sheet: str) -> None:
+                async def export_roster() -> None:
                     async with action_session() as (session, _):
                         content = await exporter.export_csv(
-                            session, sheet, team_id=team_id, at=at
+                            session, team_id=team_id, at=at
                         )
-                    ui.download(content, f"{slug}-{sheet}.csv")
+                    ui.download(content, f"{slug}.csv")
 
-                with ui.dropdown_button("Export roster", icon="download").props(
-                    "dense outline"
-                ):
-                    ui.item("Excel workbook (.xlsx)", on_click=export_xlsx)
-                    ui.item("volunteers.csv", on_click=lambda: export_csv("volunteers"))
-                    ui.item(
-                        "memberships.csv", on_click=lambda: export_csv("memberships")
-                    )
+                ui.button(
+                    "Export roster (.csv)", icon="download", on_click=export_roster
+                ).props("dense outline")
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")

@@ -15,11 +15,9 @@ _METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
 
 _PUBLIC = {("POST", "/api/auth/login")}  # the only unauthenticated route
 
-_PLACEHOLDERS = {"sheet": "volunteers"}  # everything else is an integer id
-
 
 def _concrete(path: str) -> str:
-    return re.sub(r"\{(\w+)\}", lambda m: _PLACEHOLDERS.get(m.group(1), "1"), path)
+    return re.sub(r"\{(\w+)\}", "1", path)  # every placeholder is an integer id
 
 
 async def test_every_api_route_rejects_an_anonymous_request(client, api_app):

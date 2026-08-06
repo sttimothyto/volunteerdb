@@ -23,16 +23,10 @@ async def import_page():
 
         @notify_errors
         async def download_template() -> None:
-            ui.download(exporter.template_workbook(), "volunteerdb-template.xlsx")
+            ui.download(exporter.template_csv(), "volunteerdb-template.csv")
 
         @notify_errors
-        async def download_template_csv(sheet: str) -> None:
-            ui.download(
-                exporter.template_csv(sheet), f"volunteerdb-template-{sheet}.csv"
-            )
-
-        @notify_errors
-        async def download_data(sheet: str | None = None) -> None:
+        async def download_data() -> None:
             """Parish for admins; the union of managed teams for leaders/seconds."""
             async with action_session() as (session, actor):
                 if actor.is_admin:
@@ -40,12 +34,8 @@ async def import_page():
                 else:
                     require(bool(actor.managed_team_ids), "export your teams")
                     scope, name = actor.managed_team_ids, "my-teams"
-                if sheet is None:
-                    content = await exporter.export_workbook(session, team_ids=scope)
-                else:
-                    content = await exporter.export_csv(session, sheet, team_ids=scope)
-            suffix = ".xlsx" if sheet is None else f"-{sheet}.csv"
-            ui.download(content, f"volunteerdb-{name}{suffix}")
+                content = await exporter.export_csv(session, team_ids=scope)
+            ui.download(content, f"volunteerdb-{name}.csv")
 
         data_label = "Full parish export" if actor.is_admin else "My teams export"
         with ui.row().classes("gap-2"):
@@ -53,28 +43,7 @@ async def import_page():
                 "dense"
             )
             ui.button(
-                "volunteers.csv",
-                icon="download",
-                on_click=lambda: download_data("volunteers"),
-            ).props("dense outline")
-            ui.button(
-                "memberships.csv",
-                icon="download",
-                on_click=lambda: download_data("memberships"),
-            ).props("dense outline")
-        with ui.row().classes("gap-2"):
-            ui.button(
                 "Empty template", icon="description", on_click=download_template
-            ).props("outline dense")
-            ui.button(
-                "template volunteers.csv",
-                icon="description",
-                on_click=lambda: download_template_csv("volunteers"),
-            ).props("outline dense")
-            ui.button(
-                "template memberships.csv",
-                icon="description",
-                on_click=lambda: download_template_csv("memberships"),
             ).props("outline dense")
         ui.label(
             "The export round-trips: edit it in a spreadsheet program and import it below."
@@ -88,17 +57,18 @@ async def import_page():
         ui.separator()
         ui.label("Import").classes("text-lg font-medium")
         ui.label(
-            "Excel workbooks carry two sheets: Volunteers and Memberships (volunteer + "
-            "team path + role); a .csv carries one of the two, identified by its header "
-            "row. Rows with an email are matched on that email alone — only a blank "
-            "email cell matches by name, so a new address for someone already on file "
-            "creates a second record. Imports never delete anything and a blank cell "
-            "never clears a field; they only add and update. All-or-nothing on errors."
+            "One .csv, one row per person per team: name and contact columns, then "
+            "Team, Role and Joined on. A row with a blank Team just adds or updates "
+            "the person. Rows with an email are matched on that email alone — only a "
+            "blank email cell matches by name, so a new address for someone already "
+            "on file creates a second record. Imports never delete anything and a "
+            "blank cell never clears a field; they only add and update. "
+            "All-or-nothing on errors."
             + (
                 ""
                 if actor.is_admin
                 else " Rows are limited to the teams you lead; new volunteers must be "
-                "added to one of your teams in the same file."
+                "put on one of your teams in the same file."
             )
         ).classes("text-sm text-gray-500")
 
@@ -121,18 +91,17 @@ async def import_page():
                     )
                 ui.label(
                     f"volunteers: +{report.volunteers_created} new, {report.volunteers_updated} updated · "
-                    f"memberships: +{report.memberships_created} new, {report.memberships_updated} updated · "
-                    f"photos: {report.photos_set} set"
+                    f"memberships: +{report.memberships_created} new, {report.memberships_updated} updated"
                 )
                 if report.warnings:
                     count = len(report.warnings)
                     # Warnings never block an import, so the ones that quietly lose
-                    # data (dropped join dates, archived volunteers, duplicates) are
-                    # easy to scroll past. Put the count where the eye already is.
+                    # data (dropped join dates, possible duplicates) are easy to
+                    # scroll past. Put the count where the eye already is.
                     ui.label(
                         f"⚠️ {count} warning{'' if count == 1 else 's'} — these do not stop "
-                        "the import. Dropped join dates, archived volunteers and possible "
-                        "duplicates all appear here."
+                        "the import. Dropped join dates and possible duplicates all "
+                        "appear here."
                     ).classes("text-amber-700 font-medium")
                 for issue in report.errors:
                     ui.label(
@@ -172,8 +141,8 @@ async def import_page():
                 ui.notify(f"Imported {state['filename']}", color="positive")
 
         ui.upload(
-            label="Drop a .xlsx or .csv file here (validated before anything is written)",
+            label="Drop a .csv file here (validated before anything is written)",
             on_upload=on_upload,
             auto_upload=True,
             max_file_size=10_000_000,
-        ).props('accept=".xlsx,.csv"').classes("w-full")
+        ).props('accept=".csv"').classes("w-full")

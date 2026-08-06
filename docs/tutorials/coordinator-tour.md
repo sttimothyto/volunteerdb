@@ -65,9 +65,9 @@ change you make is preserved this way, with who-changed-what recorded.
 
 ## 5. Export a roster
 
-Still on the team page, **Export roster** downloads an `.xlsx` of the team —
-handy for a printed phone list. What lands in the file respects your
-permissions: it contains contact details because Maria may see them.
+Still on the team page, **Export roster (.csv)** downloads the team's
+roster — handy for a printed phone list. What lands in the file respects
+your permissions: it contains contact details because Maria may see them.
 
 ## 6. Read a volunteer in depth
 

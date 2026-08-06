@@ -1,8 +1,8 @@
 # Import and export spreadsheets
 
-Bulk data moves through one `.xlsx` workbook that round-trips: export, edit,
-re-import — or through single-sheet `.csv` files (`volunteers.csv`,
-`memberships.csv`). Column semantics, matching rules, and limits are in the
+Bulk data moves through one roster `.csv` that round-trips: export, edit,
+re-import. One row per person per team; column semantics, matching rules,
+and limits are in the
 [spreadsheet format reference](../reference/spreadsheets.md). The GUI lives
 at **`/import`** (header → *Import/Export*) and is available to admins and
 to team leaders/seconds; leader imports and exports cover only the teams
@@ -10,46 +10,39 @@ they lead (sub-teams included).
 
 ## Export
 
-- **Full parish** — `/import` → *Full parish export*: every volunteer
-  (including custom-field columns) and every membership. Admin only.
+- **Full parish** — `/import` → *Full parish export*: every membership row,
+  then volunteers with no membership, including custom-field columns.
+  Admin only.
 - **My teams** — for leaders/seconds, `/import` → *My teams export*: the
   union of their managed teams.
-- **One team's roster** — the *Export roster* menu on a team page;
+- **One team's roster** — the *Export roster (.csv)* button on a team page;
   available to anyone with full-roster rights on that team.
-- **Empty template** — `/import` → *Empty template*: headers and a role
-  dropdown, for building an import from scratch.
+- **Empty template** — `/import` → *Empty template*: the header row, for
+  building an import from scratch.
 
-Each is offered as an `.xlsx` workbook or as `volunteers.csv` /
-`memberships.csv`. Via the API, the data exports accept `as_of=` for
-historical snapshots — see the {ref}`endpoints <api-import-export>`.
+Via the API, the data exports accept `as_of=` for historical snapshots —
+see the {ref}`endpoints <api-import-export>`.
 
 ## Import
 
 1. Prepare the file — an export is the best starting point for bulk edits;
-   the template for new data. A `.csv` carries one sheet, identified by its
-   header row, and only touches that sheet's data.
+   the template for new data. A row with a blank **Team** just adds or
+   updates the person; a row with a **Team** and **Role** also puts them on
+   that team.
 2. On `/import`, upload the file. The app **always dry-runs first**: nothing
    is written, and you get a row-by-row report of what would be created,
    updated, and any problems.
 3. Read the report. Any error (unknown team, ambiguous volunteer, invalid
-   role, …) blocks the whole file — imports are all-or-nothing, so fix the
-   spreadsheet and re-upload rather than hoping for partial application.
-   For leaders/seconds, rows outside their teams are errors too, and a new
-   volunteer needs a membership row on one of their teams in the same file.
+   role, unrecognised Active value, …) blocks the whole file — imports are
+   all-or-nothing, so fix the spreadsheet and re-upload rather than hoping
+   for partial application. For leaders/seconds, rows outside their teams
+   are errors too, and a new volunteer needs a Team on one of their teams
+   in some row of the same file.
 4. When the report is clean, click **Apply this import**.
 
-Remember: imports only **add and update**. Removing a volunteer or
+Remember: manual imports only **add and update**. Removing a volunteer or
 membership is done in the app, never via a spreadsheet with rows deleted.
-
-### Photos
-
-Exports carry each volunteer's headshot as base64 in the **Photo** column
-(column 7, before the custom-field columns); the report counts imported
-photos as `photos set`. A blank cell leaves the stored photo alone, a
-byte-identical value is skipped (so re-importing an export is a no-op), and
-anything else is decoded, validated and normalized to a 400×400 JPEG.
-Pre-photo 6-column volunteer files import unchanged. Photos cannot be
-removed via spreadsheet — use the app or the API.
+Photos are managed in the app and API only.
 
 ## Verify
 
@@ -61,11 +54,11 @@ the as-of picker; the `changed_by` audit column records who ran the import.
 ## Scripted use
 
 ```sh
-curl -s -H "Authorization: Bearer $TOKEN" -o parish.xlsx \
-  https://vdb.sttimothyto.org/api/export/parish.xlsx
-curl -s -H "Authorization: Bearer $TOKEN" -o volunteers.csv \
-  https://vdb.sttimothyto.org/api/export/my-teams/volunteers.csv
-curl -s -H "Authorization: Bearer $TOKEN" -F file=@parish.xlsx \
+curl -s -H "Authorization: Bearer $TOKEN" -o parish.csv \
+  https://vdb.sttimothyto.org/api/export/parish.csv
+curl -s -H "Authorization: Bearer $TOKEN" -o my-teams.csv \
+  https://vdb.sttimothyto.org/api/export/my-teams.csv
+curl -s -H "Authorization: Bearer $TOKEN" -F file=@parish.csv \
   'https://vdb.sttimothyto.org/api/import?dry_run=true'
 ```
 

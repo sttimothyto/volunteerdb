@@ -1,25 +1,20 @@
-"""Shared spreadsheet format: one workbook, two sheets, round-trippable
-(export → edit → import)."""
+"""Shared roster-spreadsheet format: one sheet, one row per membership,
+round-trippable (export → edit → import)."""
 
 from ..models import ROLE_LABELS, TeamRole
 
-VOLUNTEER_SHEET = "Volunteers"
-VOLUNTEER_HEADERS = ["First name", "Last name", "Email", "Phone", "Notes", "Active"]
-# Base64 of the stored headshot (a <=24 KB JPEG, so it always fits an Excel
-# cell). Always exported as column 7, right after VOLUNTEER_HEADERS and before
-# any custom-field columns; optional on import so 6-column files keep working.
-# Never append it to VOLUNTEER_HEADERS: that list's length is the prefix the
-# importer uses to identify a volunteers CSV.
-PHOTO_HEADER = "Photo"
-
-MEMBERSHIP_SHEET = "Memberships"
-MEMBERSHIP_HEADERS = [
-    "Volunteer email",
-    "Volunteer name",
-    "Team path",
+ROSTER_SHEET = "Roster"
+ROSTER_HEADERS = [
+    "First name",
+    "Last name",
+    "Email",
+    "Phone",
+    "Volunteer notes",
+    "Active",
+    "Team",
     "Role",
     "Joined on",
-    "Notes",
+    "Membership notes",
 ]
 
 # A cell opening with one of these is evaluated as a formula by Excel and
@@ -27,6 +22,26 @@ MEMBERSHIP_HEADERS = [
 # so the two halves cannot drift apart. Leading whitespace is deliberately not
 # included: the importer strips it before it could ever be interpreted.
 FORMULA_STARTERS = ("=", "+", "-", "@")
+
+
+def safe_cell(value):
+    """Strings starting with a formula character would become live formulas when
+    opened in a spreadsheet program; prefix a quote (stripped again by the
+    importer on round-trip). '+' matters as much as '=': a phone number written
+    '+1 416 555 0100' otherwise opens as arithmetic."""
+    if isinstance(value, str) and value.startswith(FORMULA_STARTERS):
+        return "'" + value
+    return value
+
+
+def clean_cell(value) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if len(text) > 1 and text[0] == "'" and text[1] in FORMULA_STARTERS:
+        text = text[1:]  # undo the exporter's formula-injection escape
+    return text or None
+
 
 _ROLE_LOOKUP: dict[str, TeamRole] = {
     **{role.value: role for role in TeamRole},

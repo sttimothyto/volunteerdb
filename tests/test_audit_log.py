@@ -10,7 +10,7 @@ from io import StringIO
 from volunteerdb.db import db_session
 from volunteerdb.services import users, volunteers, workload
 from volunteerdb.sheets import importer
-from volunteerdb.sheets.common import VOLUNTEER_HEADERS
+from volunteerdb.sheets.common import ROSTER_HEADERS
 
 
 def _by_event(records, event):
@@ -128,7 +128,8 @@ async def test_secrets_never_logged(database, log_records):
 
 async def test_dry_run_import_rollback_marked(database, log_records):
     content = _csv_bytes(
-        VOLUNTEER_HEADERS, [["Cara", "White", "cara@example.org", "555-9", "", "yes"]]
+        ROSTER_HEADERS,
+        [["Cara", "White", "cara@example.org", "555-9", "", "yes", "", "", "", ""]],
     )
     report = await importer.run_import(content, dry_run=True, user_id=None)
     assert not report.applied

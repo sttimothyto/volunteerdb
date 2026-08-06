@@ -1,14 +1,25 @@
-"""Spreadsheet export → import round-trip, validation, and dry-run."""
+"""Roster CSV export → import round-trip, validation, and dry-run."""
 
-from io import BytesIO
-
-from openpyxl import load_workbook
+import csv
+from io import StringIO
 
 from volunteerdb.db import db_session
 from volunteerdb.models import FieldType, TeamRole
 from volunteerdb.services import custom_fields, memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
-from volunteerdb.sheets.common import MEMBERSHIP_SHEET, VOLUNTEER_SHEET
+from volunteerdb.sheets.common import ROSTER_HEADERS
+
+
+def _csv_bytes(rows: list[list], header: list[str] = ROSTER_HEADERS) -> bytes:
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+    writer.writerows(rows)
+    return buffer.getvalue().encode("utf-8-sig")
+
+
+def _rows(content: bytes) -> list[list[str]]:
+    return list(csv.reader(StringIO(content.decode("utf-8-sig"))))
 
 
 async def _setup(session):
@@ -23,13 +34,22 @@ async def _setup(session):
     return liturgy, music, anna, ben
 
 
+async def test_template_csv_header_and_bom():
+    content = exporter.template_csv()
+    assert content.startswith(b"\xef\xbb\xbf"), "BOM so Excel detects UTF-8"
+    assert _rows(content) == [ROSTER_HEADERS]
+
+
 async def test_roundtrip_reimport_is_a_noop(database):
     async with db_session() as session:
         await _setup(session)
-        content = await exporter.export_workbook(session)
+        # an unassigned volunteer exercises the blank-Team parish rows too
+        await volunteers.create(session, "Ursula", "Unassigned", "u@example.org")
+        content = await exporter.export_csv(session)
 
+    assert _rows(content)[0] == ROSTER_HEADERS
     report = await importer.run_import(content, dry_run=False, user_id=None)
-    assert not report.has_errors
+    assert not report.has_errors, report.errors
     assert report.applied
     assert report.volunteers_created == 0
     assert report.volunteers_updated == 0
@@ -40,23 +60,32 @@ async def test_roundtrip_reimport_is_a_noop(database):
 async def test_import_applies_edits_and_additions(database):
     async with db_session() as session:
         await _setup(session)
-        content = await exporter.export_workbook(session)
+        content = await exporter.export_csv(session)
 
-    wb = load_workbook(BytesIO(content))
-    vs, ms = wb[VOLUNTEER_SHEET], wb[MEMBERSHIP_SHEET]
-    # promote Ben to Music leader (role is column D on his existing row)
-    for row in ms.iter_rows(min_row=2):
-        if row[0].value == "ben@example.org":
-            row[3].value = "Ministry leader"
+    rows = _rows(content)
+    # promote Ben to Music leader (Role is column 8 of his membership row)
+    for row in rows[1:]:
+        if row[2] == "ben@example.org":
+            row[7] = "Ministry leader"
     # add a brand-new volunteer with a membership by team path
-    vs.append(["Cara", "White", "cara@example.org", "555-9", None, "yes"])
-    ms.append(
-        ["cara@example.org", "Cara White", "Liturgy / Music", "member", None, None]
+    rows.append(
+        [
+            "Cara",
+            "White",
+            "cara@example.org",
+            "555-9",
+            "",
+            "yes",
+            "Liturgy / Music",
+            "member",
+            "",
+            "",
+        ]
     )
-    buffer = BytesIO()
-    wb.save(buffer)
 
-    report = await importer.run_import(buffer.getvalue(), dry_run=False, user_id=None)
+    report = await importer.run_import(
+        _csv_bytes(rows[1:], header=rows[0]), dry_run=False, user_id=None
+    )
     assert not report.has_errors, report.errors
     assert report.applied
     assert report.volunteers_created == 1
@@ -71,20 +100,40 @@ async def test_import_applies_edits_and_additions(database):
         assert ben_assignments[0][0].role == TeamRole.leader
 
 
+async def test_parish_export_lists_unassigned_after_memberships(database):
+    async with db_session() as session:
+        await _setup(session)
+        await volunteers.create(session, "Ursula", "Unassigned", "u@example.org")
+        content = await exporter.export_csv(session)
+
+    rows = _rows(content)[1:]
+    assert rows[-1][0] == "Ursula" and rows[-1][6] == "", (
+        "membership-less volunteers come last, with blank team columns"
+    )
+    assert all(r[6] for r in rows[:-1]), "every other row carries its team path"
+
+
 async def test_unknown_team_blocks_everything(database):
     async with db_session() as session:
         await _setup(session)
-        content = await exporter.export_workbook(session)
 
-    wb = load_workbook(BytesIO(content))
-    wb[VOLUNTEER_SHEET].append(["Dave", "Black", "dave@example.org", None, None, "yes"])
-    wb[MEMBERSHIP_SHEET].append(
-        ["dave@example.org", "Dave Black", "No Such Team", "member", None, None]
+    content = _csv_bytes(
+        [
+            [
+                "Dave",
+                "Black",
+                "dave@example.org",
+                "",
+                "",
+                "yes",
+                "No Such Team",
+                "member",
+                "",
+                "",
+            ]
+        ]
     )
-    buffer = BytesIO()
-    wb.save(buffer)
-
-    report = await importer.run_import(buffer.getvalue(), dry_run=False, user_id=None)
+    report = await importer.run_import(content, dry_run=False, user_id=None)
     assert report.has_errors
     assert not report.applied
     assert "No Such Team" in report.errors[0].message
@@ -99,21 +148,62 @@ async def test_dry_run_writes_nothing(database):
     async with db_session() as session:
         await teams.create(session, "Liturgy")
 
-    wb = load_workbook(BytesIO(exporter.template_workbook()))
-    wb[VOLUNTEER_SHEET].append(["Eve", "Green", "eve@example.org", None, None, "yes"])
-    wb[MEMBERSHIP_SHEET].append(
-        ["eve@example.org", "Eve Green", "Liturgy", "leader", None, None]
+    content = _csv_bytes(
+        [
+            [
+                "Eve",
+                "Green",
+                "eve@example.org",
+                "",
+                "",
+                "yes",
+                "Liturgy",
+                "leader",
+                "",
+                "",
+            ]
+        ]
     )
-    buffer = BytesIO()
-    wb.save(buffer)
-
-    report = await importer.run_import(buffer.getvalue(), dry_run=True, user_id=None)
+    report = await importer.run_import(content, dry_run=True, user_id=None)
     assert not report.has_errors
     assert not report.applied
     assert report.volunteers_created == 1  # would be created
 
     async with db_session() as session:
         assert await volunteers.search(session, "Eve") == []
+
+
+async def test_volunteer_only_row_needs_no_team(database):
+    async with db_session() as session:
+        await _setup(session)
+
+    content = _csv_bytes(
+        [["Cara", "White", "cara@example.org", "555-9", "", "yes", "", "", "", ""]]
+    )
+    report = await importer.run_import(content, dry_run=False, user_id=None)
+    assert not report.has_errors, report.errors
+    assert report.applied and report.volunteers_created == 1
+    assert report.memberships_created == 0
+
+
+async def test_xlsx_upload_rejected_with_pointer_to_csv(database):
+    report = await importer.run_import(
+        b"PK\x03\x04 pretend workbook", dry_run=False, user_id=None
+    )
+    assert report.has_errors and not report.applied
+    assert "no longer supported" in report.errors[0].message
+
+
+async def test_unrecognized_header_rejected(database):
+    report = await importer.run_import(b"foo,bar\n1,2\n", dry_run=False, user_id=None)
+    assert report.has_errors and not report.applied
+    assert "cannot identify CSV" in report.errors[0].message
+
+
+async def test_non_utf8_rejected(database):
+    report = await importer.run_import(b"\xc3\x28\xa0\xa1", dry_run=False, user_id=None)
+    assert report.has_errors and not report.applied
+    assert "cannot read file" in report.errors[0].message
 
 
 async def test_export_includes_custom_columns_and_reimport_ignores_them(database):
@@ -124,16 +214,12 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
         await custom_fields.set_values(
             session, anna.id, {"shirt_size": "M", "trained": True}
         )
-        content = await exporter.export_workbook(session)
+        content = await exporter.export_csv(session)
 
-    vs = load_workbook(BytesIO(content))[VOLUNTEER_SHEET]
-    headers = [c.value for c in vs[1]]
-    assert headers[-2:] == ["Shirt size", "Trained"]
-    anna_row = next(
-        r for r in vs.iter_rows(min_row=2, values_only=True) if r[0] == "Anna"
-    )
-    # custom values sit after the Photo column (index 6)
-    assert anna_row[7] == "M" and anna_row[8] == "yes"
+    rows = _rows(content)
+    assert rows[0][-2:] == ["Shirt size", "Trained"]
+    anna_row = next(r for r in rows[1:] if r[0] == "Anna")
+    assert anna_row[10] == "M" and anna_row[11] == "yes"
 
     # round-trip stays safe: the extra columns are ignored with a warning
     report = await importer.run_import(content, dry_run=False, user_id=None)

@@ -41,7 +41,7 @@ from volunteerdb.services import teams as team_service
 from volunteerdb.services import users as user_service
 from volunteerdb.services import volunteers as volunteer_service
 from volunteerdb.services import workload as workload_service
-from volunteerdb.sheets.exporter import export_workbook
+from volunteerdb.sheets.exporter import export_csv
 from volunteerdb.sheets.importer import run_import
 
 BASE_URL = os.environ.get(
@@ -355,7 +355,7 @@ async def find_landmarks() -> dict[str, int]:
 async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
     asof_ts = datetime.now(UTC)
     async with db_session() as session:
-        parish_workbook = await export_workbook(session)  # for the re-import pattern
+        parish_roster = await export_csv(session)  # for the re-import pattern
 
     async def page_volunteers_list():
         # mirrors the data block of ui/volunteers_page.py — keep in sync
@@ -405,7 +405,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
     async def import_reimport():
         # idempotent parish re-import; dry_run rolls back so runs are repeatable
         report = await run_import(
-            parish_workbook, dry_run=True, user_id=marks["admin_user"]
+            parish_roster, dry_run=True, user_id=marks["admin_user"]
         )
         assert not report.has_errors, report.errors[:3]
 
