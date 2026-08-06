@@ -64,6 +64,20 @@ untouched. Baked into the container image at `/app/create_admin.py`; the
 deploy runs it as a one-shot container when `VDB_ADMIN_PASSWORD` is passed.
 Requires `VDB_ADMIN_EMAIL` and `VDB_ADMIN_PASSWORD`.
 
+## `volunteerdb.jobs` — scheduled one-shot jobs
+
+```sh
+python -m volunteerdb.jobs.fetch_pages
+```
+
+Refreshes every team home page from its public Google Doc (see
+[Publish a team home page](../how-to/team-home-pages.md)). Needs
+`VDB_DATABASE_URL`; each team fetches in its own transaction, so one bad doc
+cannot block the rest. In production the host crontab runs it at 03:00 in a
+one-shot app container (journal tag `volunteerdb-fetch-pages`). Nothing
+inside the app schedules jobs — periodic work belongs to the host crontab
+(see the backup pattern in `deploy/deploy.py`).
+
 ## `healthcheck.py` — container health probe
 
 ```sh

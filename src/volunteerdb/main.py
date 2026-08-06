@@ -26,6 +26,7 @@ UNRESTRICTED_PREFIXES = (
     "/_nicegui",
     "/static/",
     "/favicon",
+    "/ministries",  # public ministry home pages (ui/ministries_routes.py)
 )
 # /photos/ is cookie-authed but asset-like: skipping the session re-issue keeps
 # its long-lived Cache-Control effective (a Set-Cookie per image defeats caching)

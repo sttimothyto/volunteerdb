@@ -3,9 +3,11 @@ from decimal import Decimal
 from fastapi import APIRouter
 
 from ..permissions import require
+from ..services import pages as page_service
 from ..services import teams as service
 from .deps import AsOf, CtxDep
 from .schemas import (
+    HomeDocPatch,
     RosterEntry,
     TeamIn,
     TeamOut,
@@ -71,6 +73,16 @@ async def update_team(ctx: CtxDep, team_id: int, data: TeamPatch) -> TeamOut:
 async def delete_team(ctx: CtxDep, team_id: int) -> None:
     require(ctx.actor.is_admin, "only admins delete teams")
     await service.delete(ctx.session, team_id)
+
+
+@router.patch("/{team_id}/home-doc")
+async def set_home_doc(ctx: CtxDep, team_id: int, data: HomeDocPatch) -> TeamOut:
+    """Set (or clear, with url=null) the public Google Doc behind the team's
+    /ministries/ page. Unlike PATCH /teams/{id}, this is open to the team's
+    leaders, seconds and core members."""
+    require(ctx.actor.can_view_full_roster(team_id), "manage this team's home page")
+    team = await page_service.set_home_doc_url(ctx.session, team_id, data.url)
+    return TeamOut.model_validate(team)
 
 
 @router.get("/{team_id}/roster")

@@ -94,6 +94,14 @@ class TeamOut(ORMModel):
     description: str | None
     is_active: bool
     workload_weight: float | None = None  # null = unweighted
+    home_doc_url: str | None = None  # public Google Doc behind /ministries/
+
+
+class HomeDocPatch(BaseModel):
+    """Body of PATCH /teams/{id}/home-doc — deliberately separate from the
+    admin-only TeamPatch: leaders/seconds/core members may set only this."""
+
+    url: str | None = Field(default=None, max_length=500)
 
 
 class TeamWithPath(TeamOut):

@@ -20,6 +20,7 @@ GUI and the API. For the rationale, see
 | Spreadsheet import/export, their teams | ✓ | ✓ | | | |
 | See workload scores/bands of volunteers on their teams | ✓ | ✓ | | | |
 | View full roster incl. contact details, their teams | ✓ | ✓ | ✓ | | |
+| Set the team's public home-page doc, their teams | ✓ | ✓ | ✓ | | |
 | View full volunteer profiles (shared team) | ✓ | ✓ | ✓ | | |
 | View roster names (no contact details), own team | ✓ | ✓ | ✓ | ✓ | |
 | Browse the team directory | ✓ | ✓ | ✓ | ✓ | ✓ |

@@ -113,9 +113,11 @@ class Team(Base):
     sys_period: Mapped[Range[datetime]] = mapped_column(
         TSTZRANGE, server_default=SYS_PERIOD_DEFAULT
     )
-    # optional workload weight ("how work-heavy is this ministry"); NULL counts as 0.
-    # keep this the LAST column so the history twin's order matches the DB
+    # optional workload weight ("how work-heavy is this ministry"); NULL counts as 0
     workload_weight: Mapped[Decimal | None] = mapped_column(sa.Numeric(8, 2))
+    # public Google Doc used as the team's volunteer home page (services/pages.py).
+    # keep this the LAST column so the history twin's order matches the DB
+    home_doc_url: Mapped[str | None] = mapped_column(sa.String(500))
 
 
 class Membership(Base):
@@ -373,6 +375,50 @@ class VolunteerPhoto(Base):
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
     uploaded_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+
+
+class TeamPage(Base):
+    """Sanitized HTML of the team's public Google Doc, fetched nightly (and on
+    demand) by jobs.fetch_pages and served at /ministries/<slug>.html.
+
+    Not system-versioned: a cache of an external document, current-state only.
+    A failed fetch keeps the last good html alongside status='error'.
+    """
+
+    __tablename__ = "team_page"
+
+    team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE"), primary_key=True
+    )
+    html: Mapped[str | None] = mapped_column(sa.Text)
+    fetched_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    status: Mapped[str] = mapped_column(
+        sa.String(20), default="pending", server_default="pending"
+    )
+    error: Mapped[str | None] = mapped_column(sa.Text)
+
+
+class TeamSheet(Base):
+    """Identity of the team's roster spreadsheet in Google Drive, maintained by
+    jobs.drive_sync. The stable file_id (not the name) is what keeps the
+    leader-facing sheet link working across team renames.
+
+    Not system-versioned: a pointer to an external artifact, current-state only.
+    """
+
+    __tablename__ = "team_sheet"
+
+    team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE"), primary_key=True
+    )
+    file_id: Mapped[str | None] = mapped_column(sa.String(128), unique=True)
+    file_name: Mapped[str | None] = mapped_column(sa.String(300))
+    last_synced_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    last_status: Mapped[str | None] = mapped_column(sa.String(20))
+    last_error: Mapped[str | None] = mapped_column(sa.Text)
+    created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
 

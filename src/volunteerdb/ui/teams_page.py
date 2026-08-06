@@ -1,9 +1,11 @@
 from decimal import Decimal
 
+import httpx
 from nicegui import ui
 
-from ..models import ROLE_LABELS, TeamRole
+from ..models import ROLE_LABELS, TeamPage, TeamRole
 from ..services import memberships as membership_service
+from ..services import pages as page_service
 from ..services import reports as report_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
@@ -252,6 +254,110 @@ def _team_dialog(all_teams, team=None) -> None:
     dialog.open()
 
 
+def _home_page_section(team, team_page, team_id: int, slug: str | None) -> None:
+    """Home-page controls for leaders/seconds/core members (and admins): link a
+    public Google Doc, preview-fetch it, and reach the published page."""
+    ui.label("Volunteer home page").classes("text-lg font-medium")
+    if not team.home_doc_url:
+        with ui.row().classes("items-center gap-2"):
+            ui.button(
+                "Set home page doc",
+                icon="add_link",
+                on_click=lambda: _home_doc_dialog(team_id, None),
+            ).props("dense outline")
+            ui.label(
+                "Link a public Google Doc to publish this team's page under "
+                "/ministries/ — no sign-in needed to read it."
+            ).classes("text-sm text-gray-500")
+        return
+
+    published = team_page is not None and team_page.html
+    with ui.row().classes("items-center gap-2"):
+        ui.link("Google Doc", team.home_doc_url, new_tab=True)
+        if published and slug:
+            ui.link("Public page", f"/ministries/{slug}.html", new_tab=True)
+        ui.button(
+            "Fetch now",
+            icon="refresh",
+            on_click=lambda: _fetch_home_page(team_id),
+        ).props("dense outline")
+        ui.button(
+            "Change",
+            icon="edit",
+            on_click=lambda: _home_doc_dialog(team_id, team.home_doc_url),
+        ).props("dense flat")
+    if team_page is not None and team_page.status == "error":
+        ui.label(f"Last fetch failed: {team_page.error}").classes(
+            "text-negative text-sm"
+        )
+    elif not published:
+        ui.label(
+            "Not published yet — Fetch now downloads the doc, or wait for the "
+            "nightly refresh (3:00)."
+        ).classes("text-sm text-gray-500")
+    elif team_page.fetched_at is not None:
+        ui.label(
+            f"Refreshed nightly · last fetched {team_page.fetched_at:%Y-%m-%d %H:%M}"
+        ).classes("text-sm text-gray-500")
+
+
+def _home_doc_dialog(team_id: int, current: str | None) -> None:
+    """Set or clear the home-page doc. Leader/second/core/admin — enforced
+    server-side on save."""
+    with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
+        ui.label("Team home page doc").classes("text-lg font-medium")
+        ui.label(
+            "Paste the link of a Google Doc shared as “anyone with the link can "
+            "view”. Its content is published on the public ministries index and "
+            "refreshed nightly."
+        ).classes("text-sm text-gray-500")
+        url = (
+            ui.input("Google Doc link", value=current or "")
+            .props("outlined dense")
+            .classes("w-full")
+        )
+
+        @notify_errors
+        async def save(new_value: str | None) -> None:
+            async with action_session() as (session, actor):
+                from ..permissions import require
+
+                require(
+                    actor.can_view_full_roster(team_id),
+                    "manage this team's home page",
+                )
+                await page_service.set_home_doc_url(session, team_id, new_value)
+            dialog.close()
+            ui.navigate.to(f"/teams/{team_id}")
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            if current:
+                ui.button("Clear", on_click=lambda: save(None)).props(
+                    "flat color=negative"
+                )
+            ui.button("Save", on_click=lambda: save(url.value))
+    dialog.open()
+
+
+@notify_errors
+async def _fetch_home_page(team_id: int) -> None:
+    async with action_session() as (session, actor):
+        from ..permissions import require
+
+        require(actor.can_view_full_roster(team_id), "manage this team's home page")
+        team = await team_service.get(session, team_id)
+        if team is None or not team.home_doc_url:
+            raise LookupError("this team has no home page doc")
+        async with httpx.AsyncClient() as client:
+            page = await page_service.fetch_and_store(session, team, client)
+    if page.status == "ok":
+        ui.notify("Home page updated", color="positive")
+    else:
+        ui.notify(f"Fetch failed: {page.error}", color="negative")
+    ui.navigate.to(f"/teams/{team_id}")
+
+
 @ui.page("/teams/{team_id}")
 async def team_detail(team_id: int, as_of: str = ""):
     at = parse_as_of(as_of)
@@ -273,6 +379,10 @@ async def team_detail(team_id: int, as_of: str = ""):
             if can_manage
             else {}
         )
+        team_page = (
+            await session.get(TeamPage, team_id) if can_full and at is None else None
+        )
+    slug = page_service.slug_map(paths).get(team_id)
 
     panel = VolunteerPanel(as_of)
     with frame(paths.get(team_id, team.name), actor):
@@ -307,6 +417,9 @@ async def team_detail(team_id: int, as_of: str = ""):
                 ui.button(
                     "Export roster (.csv)", icon="download", on_click=export_roster
                 ).props("dense outline")
+
+        if can_full and at is None:
+            _home_page_section(team, team_page, team_id, slug)
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")

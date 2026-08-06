@@ -46,6 +46,7 @@ Relationships: `memberships` (cascade delete-orphan), optional one-to-one
 | `is_active` | boolean | |
 | `sys_period` | tstzrange | |
 | `workload_weight` | numeric(8,2) | nullable; NULL counts as 0 in workload scores |
+| `home_doc_url` | varchar(500) | nullable; public Google Doc behind the team's `/ministries/` page |
 
 ## `membership` (versioned)
 
@@ -206,6 +207,36 @@ Deliberately not versioned (like `custom_field_def`): photos are
 current-state only, so as-of views show the current photo. Keeping the blob
 out of `volunteer` also keeps it out of every list query and as-of UNION.
 
+## `team_page` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `team_id` | integer | PK, FK → `team.id` ON DELETE CASCADE |
+| `html` | text | sanitized doc HTML; a failed refetch keeps the last good value |
+| `fetched_at` | timestamptz | last successful fetch |
+| `status` | varchar(20) | `pending` / `ok` / `error` |
+| `error` | text | why the last fetch failed |
+
+Cache of the team's public Google Doc (`team.home_doc_url`), refreshed
+nightly by `jobs.fetch_pages` and served at `/ministries/`. A cache of an
+external document is current-state by nature — nothing to version.
+
+## `team_sheet` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `team_id` | integer | PK, FK → `team.id` ON DELETE CASCADE |
+| `file_id` | varchar(128) | unique; Drive file id — survives renames, backs the leader-facing sheet link |
+| `file_name` | varchar(300) | name the sheet currently has on Drive |
+| `last_synced_at` | timestamptz | Drive ModTime recorded after the last upload; sheets not newer than this skip the apply leg |
+| `last_status` | varchar(20) | outcome of the last sync for this team |
+| `last_error` | text | |
+| `created_at` | timestamptz | |
+
+Identity of the team's roster spreadsheet in Google Drive, maintained by
+`jobs.drive_sync` (see the Drive roster sync how-to). A pointer to an
+external artifact — current-state only.
+
 ## History twins and triggers
 
 `volunteer_history`, `team_history`, `membership_history` each hold the live
@@ -234,3 +265,5 @@ why adding a live column requires rebuilding the twin; see
 | `0006` | `volunteer_photo` (not versioned — no twin rebuild) |
 | `0007` | `proposal` (not versioned); renames the `app_setting` key `capacity` → `workload` |
 | `0008` | Replaces `proposal` with the nomination + STAR-voting pipeline: `proposal`, `proposal_candidate`, `proposal_voter`, `proposal_ballot` (all not versioned; 0007 rows dropped) |
+| `0009` | Deletes the stored `planning` app_setting row; the clergy team is resolved by name |
+| `0010` | `team.home_doc_url` (rebuilds `team_history`); `team_page` and `team_sheet` (not versioned) |

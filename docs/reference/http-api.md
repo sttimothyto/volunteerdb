@@ -91,6 +91,7 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | `POST /api/teams` | admin | 201 |
 | `GET /api/teams/{id}` | signed in | `as_of=` |
 | `PATCH /api/teams/{id}` | admin | `clear_parent`, `clear_workload_weight` flags |
+| `PATCH /api/teams/{id}/home-doc` | full roster on the team (leader/second/core, admin) | `{"url": "https://docs.google.com/document/d/…"}`, or `null` to unpublish |
 | `DELETE /api/teams/{id}` | admin | 204; parent of sub-teams is protected |
 | `GET /api/teams/{id}/roster` | roster names on the team | Contact details/notes redacted per role, `as_of=` |
 

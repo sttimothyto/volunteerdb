@@ -71,3 +71,16 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
     assert response.status_code == 200, (
         "the /static mount must serve without auth, or every page loads unstyled"
     )
+
+    # the ministries pages are deliberately public (UNRESTRICTED_PREFIXES):
+    # anonymous parishioners read them without an account
+    response = await real_app_client.get("/ministries/", follow_redirects=False)
+    assert response.status_code == 200, (
+        "/ministries/ must serve anonymous browsers, not bounce them to /login"
+    )
+    response = await real_app_client.get(
+        "/ministries/never-heard-of-it.html", follow_redirects=False
+    )
+    assert response.status_code == 404, (
+        "an unknown ministry page is a 404, not a login redirect"
+    )

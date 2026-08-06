@@ -113,3 +113,22 @@ async def test_teams_table_nests_and_blanks_counts_by_permission(database):
         for row in table.rows:
             for field in (*COUNT_FIELDS, "gaps"):
                 assert row[field] == "", f"{field} leaked to a plain member"
+
+
+async def test_home_page_controls_gated_by_full_roster_rights(database):
+    """The home-page section shows for leaders (and core/admin) on the live
+    team page, and not at all for plain members."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        await user.should_see("Volunteer home page")
+        await user.should_see("Set home page doc")
+
+        # Mia is a plain member of Music: roster names, no home-page controls
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        await user.should_see("Roster")
+        await user.should_not_see("Volunteer home page")
