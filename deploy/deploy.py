@@ -107,6 +107,16 @@ BACKUP_RETAIN_LOCAL_DAYS = 14
 BACKUP_RETAIN_REMOTE_DAYS = 730
 BACKUP_ALERT_EMAIL = ADMIN_EMAIL  # "" disables the failure email
 
+# Nightly Drive roster sync (02:30, AFTER the 02:00 backup: the dump is then a
+# restore point taken right before the only automated bulk write) and the
+# 03:00 team home-page fetch. The sync uses the PLAIN Drive remote, not the
+# crypt wrapper — leaders edit these sheets in the Drive UI.
+SHEETS_FOLDER = "volunteerdb-spreadsheets"
+SYNC_WORKDIR = "/var/lib/volunteerdb-drive-sync"
+DRIVE_SYNC_SCRIPT = "/usr/local/bin/volunteerdb-drive-sync"
+FETCH_PAGES_SCRIPT = "/usr/local/bin/volunteerdb-fetch-pages"
+APP_UID = 10001  # the image's `app` user; owns the bind-mounted sync workdir
+
 
 # Reuse secrets already on the server; generate once if absent.
 def _remote_env() -> dict[str, str]:
@@ -376,5 +386,66 @@ crontab.crontab(
     cron_name="volunteerdb-backup",
     minute="0",
     hour="2",
+    user="root",
+)
+
+# --- nightly Drive roster sync + team home-page fetch ------------------------
+# Same placement rationale as the backup block: a Drive problem must never
+# block the app deploy. The sync must NOT go live before the one-time rclone
+# round-trip verification in docs/how-to/drive-roster-sync.md has been run on
+# this host (file ids must survive re-upload, or every shared link breaks).
+files.directory(
+    name="Drive sync work dir (writable by the container app user)",
+    path=SYNC_WORKDIR,
+    mode="750",
+    user=str(APP_UID),
+    group=str(APP_UID),
+)
+files.template(
+    name="Install drive-sync script",
+    src=str(HERE / "templates" / "volunteerdb-drive-sync.sh.j2"),
+    dest=DRIVE_SYNC_SCRIPT,
+    mode="700",
+    user="root",
+    group="root",
+    rclone_conf=RCLONE_CONF,
+    rclone_remote=RCLONE_REMOTE,
+    sheets_folder=SHEETS_FOLDER,
+    workdir=SYNC_WORKDIR,
+    image=IMAGE,
+    net=NET,
+    env_file=ENV_FILE,
+    alert_email=BACKUP_ALERT_EMAIL,
+    mail_from="no-reply@sttimothyto.org",
+    mail_from_name="VolunteerDB",
+)
+files.template(
+    name="Install fetch-pages script",
+    src=str(HERE / "templates" / "volunteerdb-fetch-pages.sh.j2"),
+    dest=FETCH_PAGES_SCRIPT,
+    mode="700",
+    user="root",
+    group="root",
+    image=IMAGE,
+    net=NET,
+    env_file=ENV_FILE,
+    alert_email=BACKUP_ALERT_EMAIL,
+    mail_from="no-reply@sttimothyto.org",
+    mail_from_name="VolunteerDB",
+)
+crontab.crontab(
+    name="Nightly Drive roster sync crontab entry (02:30 America/Toronto)",
+    command=f"systemd-cat -t volunteerdb-drive-sync {DRIVE_SYNC_SCRIPT}",
+    cron_name="volunteerdb-drive-sync",
+    minute="30",
+    hour="2",
+    user="root",
+)
+crontab.crontab(
+    name="Nightly page fetch crontab entry (03:00 America/Toronto)",
+    command=f"systemd-cat -t volunteerdb-fetch-pages {FETCH_PAGES_SCRIPT}",
+    cron_name="volunteerdb-fetch-pages",
+    minute="0",
+    hour="3",
     user="root",
 )

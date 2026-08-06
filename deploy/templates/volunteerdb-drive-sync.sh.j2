@@ -1,0 +1,97 @@
+#!/bin/bash
+# Managed by volunteerdb deploy/deploy.py - do not edit by hand.
+# Nightly two-way roster sync (02:30, after the 02:00 backup so a restore
+# point always precedes the only automated bulk write in the system):
+#   1. rclone: list + export every Google Sheet in {{ sheets_folder }} as CSV
+#   2. container: python -m volunteerdb.jobs.drive_sync apply  (sheets -> DB,
+#      regenerate rosters from post-apply DB state)
+#   3. rclone: apply renames, upload regenerated CSVs (convert-on-upload
+#      keeps each file a native Google Sheet, updated IN PLACE so shared
+#      links keep working — verified per docs/how-to/drive-roster-sync.md)
+#   4. rclone: relist; container: drive_sync record  (store file ids +
+#      sync marks)
+# Alerts: any script failure, or a non-empty alerts.txt from the apply leg.
+set -Eeuo pipefail
+shopt -s nullglob
+
+RCLONE_CONF='{{ rclone_conf }}'
+REMOTE='{{ rclone_remote }}:{{ sheets_folder }}'
+WORKDIR='{{ workdir }}'
+IMAGE='{{ image }}'
+NET='{{ net }}'
+ENV_FILE='{{ env_file }}'
+
+RCLONE="rclone --config $RCLONE_CONF --drive-export-formats csv --drive-import-formats csv"
+PODMAN_RUN="podman run --rm --network $NET --env-file $ENV_FILE -v $WORKDIR:/sync"
+
+ERR_CTX="(startup)"
+trap 'ERR_CTX="line $LINENO: $BASH_COMMAND"' ERR
+
+{% if alert_email %}
+send_alert() {
+    local key msg detail=""
+    [ -s "$WORKDIR/alerts.txt" ] && detail=$(head -c 2000 "$WORKDIR/alerts.txt")
+    msg="volunteerdb drive sync PROBLEM on $(hostname) at $(date -Is) - $ERR_CTX. ${detail} Details: journalctl -t volunteerdb-drive-sync"
+    key=$(sed -n 's/^VDB_SMTP2GO_API_KEY=//p' '{{ env_file }}')
+    [ -n "$key" ] || { echo "no VDB_SMTP2GO_API_KEY in {{ env_file }} - cannot send alert" >&2; return 0; }
+    curl -sSf --max-time 30 -X POST https://api.smtp2go.com/v3/email/send \
+        -H 'Content-Type: application/json' \
+        -H "X-Smtp2go-Api-Key: $key" \
+        -d "$(python3 -c 'import json,sys; print(json.dumps({
+            "sender": "{{ mail_from_name }} <{{ mail_from }}>",
+            "to": ["{{ alert_email }}"],
+            "subject": "[volunteerdb] drive roster sync PROBLEM",
+            "text_body": sys.argv[1]}))' "$msg")" \
+        >/dev/null || echo "alert email failed" >&2
+}
+{% endif %}
+
+cleanup() {
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "drive sync FAILED ($ERR_CTX)" >&2
+        {% if alert_email %}send_alert{% endif %}
+    fi
+}
+trap cleanup EXIT
+
+# fresh run state; the workdir itself persists (owned by the container user)
+rm -rf "$WORKDIR/in" "$WORKDIR/out" "$WORKDIR/post"
+rm -f "$WORKDIR/renames.txt" "$WORKDIR/alerts.txt"
+install -d -o 10001 -g 10001 "$WORKDIR/in" "$WORKDIR/out" "$WORKDIR/post"
+
+# --- 1. download ------------------------------------------------------------
+$RCLONE mkdir "$REMOTE"
+$RCLONE lsjson "$REMOTE" > "$WORKDIR/in/listing.json"
+chown 10001:10001 "$WORKDIR/in/listing.json"
+$RCLONE copy "$REMOTE" "$WORKDIR/in/"
+chown -R 10001:10001 "$WORKDIR/in"
+
+# --- 2. apply (sheets -> DB) + regenerate -----------------------------------
+$PODMAN_RUN "$IMAGE" python -m volunteerdb.jobs.drive_sync apply /sync
+
+# --- 3. renames + upload ----------------------------------------------------
+if [ -s "$WORKDIR/renames.txt" ]; then
+    while IFS=$'\t' read -r old new; do
+        [ -n "$old" ] && [ -n "$new" ] || continue
+        $RCLONE moveto "$REMOTE/$old.csv" "$REMOTE/$new.csv"
+        echo "renamed sheet: $old -> $new"
+    done < "$WORKDIR/renames.txt"
+fi
+for f in "$WORKDIR"/out/*.csv; do
+    $RCLONE copyto "$f" "$REMOTE/$(basename "$f")"
+    echo "uploaded $(basename "$f")"
+done
+
+# --- 4. record --------------------------------------------------------------
+$RCLONE lsjson "$REMOTE" > "$WORKDIR/post/listing.json"
+chown 10001:10001 "$WORKDIR/post/listing.json"
+$PODMAN_RUN "$IMAGE" python -m volunteerdb.jobs.drive_sync record /sync
+
+if [ -s "$WORKDIR/alerts.txt" ]; then
+    echo "sync completed with per-team problems:" >&2
+    cat "$WORKDIR/alerts.txt" >&2
+    {% if alert_email %}send_alert{% endif %}
+else
+    echo "drive sync OK"
+fi

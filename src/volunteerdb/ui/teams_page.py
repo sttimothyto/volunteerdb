@@ -3,7 +3,7 @@ from decimal import Decimal
 import httpx
 from nicegui import ui
 
-from ..models import ROLE_LABELS, TeamPage, TeamRole
+from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
 from ..services import memberships as membership_service
 from ..services import pages as page_service
 from ..services import reports as report_service
@@ -301,6 +301,37 @@ def _home_page_section(team, team_page, team_id: int, slug: str | None) -> None:
         ).classes("text-sm text-gray-500")
 
 
+def _sheet_section(team_sheet: TeamSheet | None) -> None:
+    """The team's Google Drive roster sheet, for leaders/seconds: the nightly
+    sync applies sheet edits to the database and mirrors the database back."""
+    ui.label("Roster spreadsheet").classes("text-lg font-medium")
+    if team_sheet is None or not team_sheet.file_id:
+        ui.label(
+            "The nightly sync (2:30) creates a Google Sheet for this team's "
+            "roster; the link will appear here."
+        ).classes("text-sm text-gray-500")
+        return
+    with ui.row().classes("items-center gap-2"):
+        ui.link(
+            "Google Sheet",
+            f"https://docs.google.com/spreadsheets/d/{team_sheet.file_id}",
+            new_tab=True,
+        )
+        ui.label(
+            "Edits sync into the database nightly (2:30); rows removed from "
+            "the sheet leave the roster. Ask an admin for edit access — it is "
+            "granted on the Google side."
+        ).classes("text-sm text-gray-500")
+    if team_sheet.last_status == "error":
+        ui.label(f"Last sync failed: {team_sheet.last_error}").classes(
+            "text-negative text-sm"
+        )
+    elif team_sheet.last_synced_at is not None:
+        ui.label(f"Last synced {team_sheet.last_synced_at:%Y-%m-%d %H:%M}").classes(
+            "text-sm text-gray-500"
+        )
+
+
 def _home_doc_dialog(team_id: int, current: str | None) -> None:
     """Set or clear the home-page doc. Leader/second/core/admin — enforced
     server-side on save."""
@@ -382,6 +413,7 @@ async def team_detail(team_id: int, as_of: str = ""):
         team_page = (
             await session.get(TeamPage, team_id) if can_full and at is None else None
         )
+        team_sheet = await session.get(TeamSheet, team_id) if can_manage else None
     slug = page_service.slug_map(paths).get(team_id)
 
     panel = VolunteerPanel(as_of)
@@ -420,6 +452,8 @@ async def team_detail(team_id: int, as_of: str = ""):
 
         if can_full and at is None:
             _home_page_section(team, team_page, team_id, slug)
+        if can_manage:
+            _sheet_section(team_sheet)
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")

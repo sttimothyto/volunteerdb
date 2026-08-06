@@ -44,6 +44,11 @@ them would add no protection, and plain files keep restores and drills
 simple. The Drive leg is where the exposure lives (a shared cloud
 account, two years of retention), and that leg is ciphertext.
 
+The 02:00 slot is deliberate: the [Drive roster sync](drive-roster-sync.md)
+runs at **02:30**, so every night's dump is a restore point taken
+immediately *before* the only automated bulk write in the system. Restoring
+last night's backup undoes a bad sync exactly.
+
 Output goes to journald: `journalctl -t volunteerdb-backup`. On any
 failure, an alert email is sent to `admin@sttimothyto.org` via SMTP2GO
 (same account the app uses; key read from `/etc/volunteerdb/env` at run

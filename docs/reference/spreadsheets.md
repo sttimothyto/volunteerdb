@@ -85,7 +85,8 @@ it.
 ## Import semantics
 
 - **Add and update only** — a manual import never deletes volunteers or
-  memberships. (The nightly Drive roster sync is the one deliberate
+  memberships. (The nightly
+  [Drive roster sync](../how-to/drive-roster-sync.md) is the one deliberate
   exception: a team's synced sheet is treated as that team's complete
   roster.)
 - **All-or-nothing** — any error rejects the entire file; nothing is

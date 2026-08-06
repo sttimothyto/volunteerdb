@@ -48,6 +48,7 @@ how-to/rotate-secrets
 how-to/manage-users
 how-to/import-export
 how-to/team-home-pages
+how-to/drive-roster-sync
 how-to/custom-fields-and-workload
 how-to/api-recipes
 how-to/audit-logs

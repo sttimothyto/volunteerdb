@@ -1,0 +1,40 @@
+#!/bin/bash
+# Managed by volunteerdb deploy/deploy.py - do not edit by hand.
+# Nightly (03:00): refresh every team home page from its public Google Doc,
+# via a one-shot app container. Per-team failures are handled inside the job
+# (status recorded on team_page, last good HTML kept); this wrapper alerts
+# only when the job itself dies.
+set -Eeuo pipefail
+
+IMAGE='{{ image }}'
+NET='{{ net }}'
+ENV_FILE='{{ env_file }}'
+
+ERR_CTX="(startup)"
+trap 'ERR_CTX="line $LINENO: $BASH_COMMAND"' ERR
+
+{% if alert_email %}
+send_alert() {
+    local key msg
+    msg="volunteerdb page fetch FAILED on $(hostname) at $(date -Is) - $ERR_CTX. Details: journalctl -t volunteerdb-fetch-pages"
+    key=$(sed -n 's/^VDB_SMTP2GO_API_KEY=//p' '{{ env_file }}')
+    [ -n "$key" ] || { echo "no VDB_SMTP2GO_API_KEY in {{ env_file }} - cannot send alert" >&2; return 0; }
+    curl -sSf --max-time 30 -X POST https://api.smtp2go.com/v3/email/send \
+        -H 'Content-Type: application/json' \
+        -H "X-Smtp2go-Api-Key: $key" \
+        -d "{\"sender\":\"{{ mail_from_name }} <{{ mail_from }}>\",\"to\":[\"{{ alert_email }}\"],\"subject\":\"[volunteerdb] nightly page fetch FAILED\",\"text_body\":\"$msg\"}" \
+        >/dev/null || echo "alert email failed" >&2
+}
+{% endif %}
+
+cleanup() {
+    local status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "page fetch FAILED ($ERR_CTX)" >&2
+        {% if alert_email %}send_alert{% endif %}
+    fi
+}
+trap cleanup EXIT
+
+podman run --rm --network "$NET" --env-file "$ENV_FILE" "$IMAGE" \
+    python -m volunteerdb.jobs.fetch_pages

@@ -27,7 +27,8 @@ src/volunteerdb/
   services/      THE business layer — all reads/writes go through here
   api/           FastAPI routers: thin JSON wrappers over services/
   ui/            NiceGUI pages: call services/ directly, render widgets
-  sheets/        roster CSV template/export/import (used by both api/ and ui/)
+  sheets/        roster CSV template/export/import (used by api/, ui/, jobs/)
+  jobs/          cron-run one-shots: home-page fetch, Drive roster sync
 ```
 
 The invariant worth defending: **`services/` is the only place business

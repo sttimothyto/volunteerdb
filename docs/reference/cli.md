@@ -68,15 +68,21 @@ Requires `VDB_ADMIN_EMAIL` and `VDB_ADMIN_PASSWORD`.
 
 ```sh
 python -m volunteerdb.jobs.fetch_pages
+python -m volunteerdb.jobs.drive_sync apply /sync
+python -m volunteerdb.jobs.drive_sync record /sync
 ```
 
-Refreshes every team home page from its public Google Doc (see
-[Publish a team home page](../how-to/team-home-pages.md)). Needs
-`VDB_DATABASE_URL`; each team fetches in its own transaction, so one bad doc
-cannot block the rest. In production the host crontab runs it at 03:00 in a
-one-shot app container (journal tag `volunteerdb-fetch-pages`). Nothing
-inside the app schedules jobs — periodic work belongs to the host crontab
-(see the backup pattern in `deploy/deploy.py`).
+`fetch_pages` refreshes every team home page from its public Google Doc
+(see [Publish a team home page](../how-to/team-home-pages.md)); each team
+fetches in its own transaction, so one bad doc cannot block the rest.
+`drive_sync` is the Python half of the nightly roster sync (see
+[Sync team rosters with Google Sheets](../how-to/drive-roster-sync.md)):
+it only reads and writes a work directory — rclone on the host does all the
+Drive traffic. Both need `VDB_DATABASE_URL`. In production the host crontab
+runs them in one-shot app containers at 02:30 (`volunteerdb-drive-sync`)
+and 03:00 (`volunteerdb-fetch-pages`); journal tags match the script names.
+Nothing inside the app schedules jobs — periodic work belongs to the host
+crontab (see the backup pattern in `deploy/deploy.py`).
 
 ## `healthcheck.py` — container health probe
 
