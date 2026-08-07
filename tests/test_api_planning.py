@@ -232,3 +232,78 @@ async def test_cancel_and_new_round(client, seeded, token_leader):
     assert not any(v["has_voted"] for v in detail["voters"]), "ballots do not"
     r = await client.get(f"/api/planning/proposals/{pid}", headers=token_leader)
     assert r.json()["proposal"]["status"] == "cancelled"
+
+
+async def test_volunteer_proposals_involvement(
+    client, seeded, token_admin, token_member, token_leader
+):
+    """GET /volunteers/{id}/proposals: flags per kind of involvement, access
+    gate and scoping borrowed from the planning list."""
+    team_id, maria_id = seeded["team_id"], seeded["volunteer_id"]
+    walter_id = await _walter_id()
+    r = await client.post(
+        "/api/planning/proposals",
+        json={
+            "team_id": team_id,
+            "role": "second",
+            "nomination_deadline": _days(3),
+            "voting_deadline": _days(10),
+            "candidates": [{"volunteer_id": walter_id, "note": "willing and able"}],
+        },
+        headers=token_leader,
+    )
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+
+    # Walter: candidate only
+    r = await client.get(f"/api/volunteers/{walter_id}/proposals", headers=token_leader)
+    assert r.status_code == 200
+    [row] = r.json()
+    assert row["proposal"]["id"] == pid and row["path"] == "Liturgy"
+    assert row["as_candidate"] and not row["as_voter"] and not row["appointed"]
+    assert row["proposal"]["phase"] == "nominating"
+
+    # a plain member has no planning access at all
+    r = await client.get(f"/api/volunteers/{walter_id}/proposals", headers=token_member)
+    assert r.status_code == 403
+
+    # an uninvolved volunteer is simply an empty list
+    r = await client.get(f"/api/volunteers/{maria_id}/proposals", headers=token_admin)
+    assert r.status_code == 200 and r.json() == []
+
+    # once Maria joins the roll she gains access and appears as a voter
+    r = await client.post(
+        f"/api/planning/proposals/{pid}/voters",
+        json={"volunteer_id": maria_id},
+        headers=token_leader,
+    )
+    assert r.status_code == 201
+    r = await client.get(f"/api/volunteers/{maria_id}/proposals", headers=token_member)
+    assert r.status_code == 200
+    [row] = r.json()
+    assert row["as_voter"] and not row["as_candidate"]
+
+    # conclude voting by PATCHing the deadlines into the past, then appoint:
+    # the winner's row flips to appointed with the phase gone
+    r = await client.patch(
+        f"/api/planning/proposals/{pid}",
+        json={"nomination_deadline": _days(-10), "voting_deadline": _days(-5)},
+        headers=token_leader,
+    )
+    assert r.status_code == 200, r.text
+    r = await client.get(f"/api/planning/proposals/{pid}", headers=token_leader)
+    cand_id = r.json()["candidates"][0]["id"]
+    r = await client.post(
+        f"/api/planning/proposals/{pid}/appoint",
+        json={"candidate_id": cand_id},
+        headers=token_leader,
+    )
+    assert r.status_code == 200, r.text
+    r = await client.get(f"/api/volunteers/{walter_id}/proposals", headers=token_leader)
+    [row] = r.json()
+    assert row["appointed"] and row["proposal"]["status"] == "appointed"
+    assert row["proposal"]["phase"] is None
+
+    # an unknown volunteer id is an empty list too, like /timeline
+    r = await client.get("/api/volunteers/999999/proposals", headers=token_admin)
+    assert r.status_code == 200 and r.json() == []

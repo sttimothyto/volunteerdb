@@ -182,3 +182,48 @@ async def test_concluded_tally_and_appointment(database):
 
         await user.open(f"/teams/{ids['liturgy']}")
         await user.should_see("Vera Volunteer")
+
+
+async def test_profile_lists_proposals_involving_the_volunteer(database):
+    """The volunteer detail page shows the proposals touching them, with one
+    badge per kind of involvement, scoped to what the viewer may see."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    # a decided round first (appointing frees the open-proposal slot), then a
+    # fresh nominating round for the same seat — Vera is candidate on both,
+    # and as the newly appointed second she sits on the fresh round's roll
+    pid_done = await _seed_proposal(ids, d1_offset=-10, d2_offset=-5)
+    async with db_session() as session:
+        view = await planning.detail(session, pid_done)
+        await planning.appoint(
+            session,
+            pid_done,
+            view.candidates[0].candidate.id,
+            decided_by=ids["admin_u"],
+        )
+    await _seed_proposal(ids, d1_offset=5, d2_offset=10)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.should_see("dev-login ok")
+
+        await user.open(f"/volunteers/{ids['vera']}")
+        await user.should_see("Proposals involving them")
+        await user.should_see("Liturgy: Second-in-command")
+        await user.should_see("Appointed")  # the decided round
+        await user.should_see("Candidate")  # the fresh round
+        await user.should_see("Nominating until")
+        await user.should_see("Voting member")  # on the fresh roll as second
+
+        # Lena sits on both rolls but was never nominated
+        await user.open(f"/volunteers/{ids['lena']}")
+        await user.should_see("Voting member")
+        await user.should_not_see("Candidate")
+
+        # a plain member has no planning access: no section at all
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.should_see("dev-login ok")
+        await user.open(f"/volunteers/{ids['vera']}")
+        await user.should_see("Vera Volunteer")
+        await user.should_not_see("Proposals involving them")

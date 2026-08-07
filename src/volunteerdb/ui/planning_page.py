@@ -39,7 +39,7 @@ STAR_NOTE = (
 Phase = planning_service.ProposalPhase
 
 
-def _phase_badge(proposal, phase: Phase | None) -> None:
+def phase_badge(proposal, phase: Phase | None) -> None:
     if phase is Phase.nominating:
         ui.badge(f"Nominating until {proposal.nomination_deadline}", color="primary")
     elif phase is Phase.voting:
@@ -107,7 +107,7 @@ async def planning_page():
             ui.link(
                 f"{s.path}: {ROLE_LABELS[TeamRole(p.role)]}", f"/planning/{p.id}"
             ).classes("font-medium")
-            _phase_badge(p, s.phase)
+            phase_badge(p, s.phase)
             ui.space()
             ui.label(
                 f"{s.candidate_count} candidate{'s' if s.candidate_count != 1 else ''}"
@@ -369,7 +369,7 @@ async def proposal_detail(proposal_id: int):
         with ui.row().classes("w-full items-center gap-2"):
             ui.link(view.path, f"/teams/{p.team_id}").classes("font-medium")
             ui.badge(ROLE_LABELS[TeamRole(p.role)])
-            _phase_badge(p, phase)
+            phase_badge(p, phase)
             ui.space()
             if can_manage and p.status == ProposalStatus.open.value:
                 ui.button(

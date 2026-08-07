@@ -665,3 +665,50 @@ async def test_list_proposals_scoping(database):
             session, admin, status=ProposalStatus.open.value, today=TODAY
         )
         assert [s.proposal.id for s in open_only] == [liturgy_p.id]
+
+
+async def test_involving_flags_and_scoping(database):
+    async with db_session() as session:
+        p = await _parish(session)
+        liturgy_p = await _open_proposal(session, p)
+        garden_p = await _open_proposal(session, p, team_id=p.garden_id)
+
+        admin = await _actor(session, p.admin_user_id)
+        # Vera: a candidate on both seats, on neither roll
+        inv = await planning.involving(session, admin, p.vera_id, today=TODAY)
+        assert {i.proposal.id for i in inv} == {liturgy_p.id, garden_p.id}
+        assert all(i.as_candidate and not i.as_voter and not i.appointed for i in inv)
+        assert all(i.phase == planning.ProposalPhase.nominating for i in inv)
+
+        # Lena: on Liturgy's roll (leader), not a candidate anywhere
+        inv = await planning.involving(session, admin, p.lena_id, today=TODAY)
+        assert [i.proposal.id for i in inv] == [liturgy_p.id]
+        assert inv[0].as_voter and not inv[0].as_candidate
+
+        # Mia touches no proposal at all
+        assert await planning.involving(session, admin, p.mia_id, today=TODAY) == []
+
+        # actor scoping mirrors list_proposals: Lena manages only Liturgy,
+        # so Vera's Garden candidacy stays hidden from her
+        lena = await _actor(session, p.lena_user_id)
+        inv = await planning.involving(session, lena, p.vera_id, today=TODAY)
+        assert [i.proposal.id for i in inv] == [liturgy_p.id]
+
+        # a plain member has no planning access: nothing, not even about herself
+        mia_user = await users.create(session, "mia@example.org", volunteer_id=p.mia_id)
+        mia = await _actor(session, mia_user.id)
+        assert await planning.involving(session, mia, p.vera_id, today=TODAY) == []
+
+        # appointment flips the winner's flag on that proposal only
+        cand = await _candidate_ids(session, liturgy_p.id)
+        await planning.appoint(
+            session,
+            liturgy_p.id,
+            cand[p.vera_id],
+            decided_by=p.admin_user_id,
+            today=AFTER,
+        )
+        inv = await planning.involving(session, admin, p.vera_id, today=AFTER)
+        appointed = {i.proposal.id: i.appointed for i in inv}
+        assert appointed == {liturgy_p.id: True, garden_p.id: False}
+        assert next(i for i in inv if i.proposal.id == liturgy_p.id).phase is None

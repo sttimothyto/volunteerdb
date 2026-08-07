@@ -319,6 +319,16 @@ class ProposalDetailOut(BaseModel):
     tally: TallyOut | None  # null until voting has concluded
 
 
+class InvolvementOut(BaseModel):
+    """One proposal touching a volunteer (GET /volunteers/{id}/proposals)."""
+
+    proposal: ProposalOut
+    path: str
+    as_candidate: bool
+    as_voter: bool
+    appointed: bool  # this volunteer is the appointed candidate
+
+
 class AppointIn(BaseModel):
     candidate_id: int
 

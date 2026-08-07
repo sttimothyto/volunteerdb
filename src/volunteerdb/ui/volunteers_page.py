@@ -7,12 +7,14 @@ from ..permissions import require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import memberships as membership_service
 from ..services import photos as photo_service
+from ..services import planning as planning_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from .context import action_session, notify_errors, page_session
 from .layout import frame
 from .photo_dialog import photo_avatar
+from .planning_page import phase_badge
 from .search_box import search_box
 from .timeline_chart import timeline_chart
 from .volunteer_panel import VolunteerPanel, format_custom
@@ -210,6 +212,8 @@ async def volunteer_detail(volunteer_id: int):
         impact = (
             await volunteer_service.impact(session, volunteer_id) if can_view else []
         )
+        # scoped inside the service: only proposals this actor may see
+        involvements = await planning_service.involving(session, actor, volunteer_id)
         spells = await volunteer_service.timeline(session, volunteer_id)
         all_teams = await team_service.list_all(session)
         paths = team_service.team_paths(all_teams)
@@ -330,6 +334,28 @@ async def volunteer_detail(volunteer_id: int):
                         ui.label(
                             f"{row.leaders_left} leader(s), {row.leadership_left} leadership total remain"
                         ).classes("text-sm text-gray-600")
+
+        if involvements:
+            ui.label("Proposals involving them").classes("text-lg font-medium")
+            for inv in involvements:
+                proposal = inv.proposal
+                with ui.row().classes(
+                    "w-full items-center gap-2 p-2 rounded bg-gray-50"
+                ):
+                    ui.link(
+                        f"{inv.path}: {ROLE_LABELS[TeamRole(proposal.role)]}",
+                        f"/planning/{proposal.id}",
+                    ).classes("font-medium")
+                    if inv.appointed:
+                        # the person-badge implies the proposal state, so the
+                        # phase badge (which would repeat "Appointed") is skipped
+                        ui.badge("Appointed", color="positive")
+                    else:
+                        phase_badge(proposal, inv.phase)
+                        if inv.as_candidate:
+                            ui.badge("Candidate", color="primary").props("outline")
+                    if inv.as_voter:
+                        ui.badge("Voting member").props("outline")
 
         if assignable:
             ui.label("Add to team").classes("text-lg font-medium")

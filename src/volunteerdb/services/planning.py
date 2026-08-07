@@ -133,6 +133,19 @@ class ProposalSummary:
 
 
 @dataclass
+class ProposalInvolvement:
+    """One proposal touching a volunteer, for their profile page."""
+
+    proposal: Proposal
+    team: Team
+    path: str
+    phase: ProposalPhase | None
+    as_candidate: bool
+    as_voter: bool
+    appointed: bool  # this volunteer is the appointed candidate
+
+
+@dataclass
 class CandidateView:
     candidate: ProposalCandidate
     volunteer: Volunteer
@@ -260,6 +273,76 @@ async def list_proposals(
             candidate_count=counts[p.id][0],
             voter_count=counts[p.id][1],
             voted_count=counts[p.id][2],
+        )
+        for p, t in rows
+    ]
+
+
+async def involving(
+    session: AsyncSession,
+    actor: Actor,
+    volunteer_id: int,
+    *,
+    today: date | None = None,
+) -> list[ProposalInvolvement]:
+    """Proposals where the volunteer is a candidate or sits on the voting
+    roll, newest first, scoped exactly like list_proposals — so a nominee
+    without planning access never learns of their own nomination."""
+    today = today or local_today()
+    if (
+        not actor.is_admin
+        and not actor.managed_team_ids
+        and not actor.voter_proposal_ids
+    ):
+        return []
+    candidate_ids: dict[int, int] = dict(  # proposal id -> their candidate row id
+        (
+            await session.execute(
+                sa.select(ProposalCandidate.proposal_id, ProposalCandidate.id).where(
+                    ProposalCandidate.volunteer_id == volunteer_id
+                )
+            )
+        ).all()
+    )
+    voter_proposal_ids = set(
+        (
+            await session.execute(
+                sa.select(ProposalVoter.proposal_id).where(
+                    ProposalVoter.volunteer_id == volunteer_id
+                )
+            )
+        ).scalars()
+    )
+    involved = set(candidate_ids) | voter_proposal_ids
+    if not involved:
+        return []
+    stmt = (
+        sa.select(Proposal, Team)
+        .join(Team, Team.id == Proposal.team_id)
+        .where(Proposal.id.in_(involved))
+        .order_by(Proposal.created_at.desc(), Proposal.id.desc())
+    )
+    if not actor.is_admin:
+        stmt = stmt.where(
+            sa.or_(
+                Proposal.team_id.in_(actor.managed_team_ids),
+                Proposal.id.in_(actor.voter_proposal_ids),
+            )
+        )
+    rows = (await session.execute(stmt)).all()
+    if not rows:
+        return []
+    paths = team_service.team_paths(await team_service.list_all(session))
+    return [
+        ProposalInvolvement(
+            proposal=p,
+            team=t,
+            path=paths.get(t.id, t.name),
+            phase=phase_of(p, today),
+            as_candidate=p.id in candidate_ids,
+            as_voter=p.id in voter_proposal_ids,
+            appointed=p.appointed_candidate_id is not None
+            and p.appointed_candidate_id == candidate_ids.get(p.id),
         )
         for p, t in rows
     ]

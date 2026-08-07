@@ -5,11 +5,14 @@ from ..models import Volunteer
 from ..permissions import Actor, require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import photos as photo_service
+from ..services import planning as planning_service
 from ..services import volunteers as service
 from .deps import AsOf, CtxDep
+from .planning import proposal_out
 from .schemas import (
     AssignmentOut,
     ImpactOut,
+    InvolvementOut,
     PhotoMetaOut,
     TimelineSegmentOut,
     TimelineSpellOut,
@@ -168,6 +171,26 @@ async def volunteer_timeline(ctx: CtxDep, volunteer_id: int) -> list[TimelineSpe
             ],
         )
         for s in spells
+    ]
+
+
+@router.get("/{volunteer_id}/proposals")
+async def volunteer_proposals(ctx: CtxDep, volunteer_id: int) -> list[InvolvementOut]:
+    """Proposals where this volunteer is a candidate, a voting member, or the
+    appointee. Planning is live-only, so no as_of. Access and scoping mirror
+    GET /planning/proposals: admins see all, managers their subtree, voters
+    the rolls they sit on."""
+    require(ctx.actor.can_access_planning, "use the planning page")
+    rows = await planning_service.involving(ctx.session, ctx.actor, volunteer_id)
+    return [
+        InvolvementOut(
+            proposal=proposal_out(r.proposal),
+            path=r.path,
+            as_candidate=r.as_candidate,
+            as_voter=r.as_voter,
+            appointed=r.appointed,
+        )
+        for r in rows
     ]
 
 

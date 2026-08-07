@@ -77,6 +77,7 @@ authenticated account.
 | `GET /api/volunteers/{id}/assignments` | signed in | Team/role list, `as_of=` |
 | `GET /api/volunteers/{id}/timeline` | full profile view | All-time service spells |
 | `GET /api/volunteers/{id}/impact` | full profile view | "If they leave" hole report, `as_of=` |
+| `GET /api/volunteers/{id}/proposals` | admin, leader/second, or voting member | Proposals involving them, with `as_candidate`/`as_voter`/`appointed` flags; scoped like `GET /api/planning/proposals` |
 
 The volunteer list and detail responses carry `has_photo` (null on embedded
 volunteer objects elsewhere). Browsers load images from the cookie-

@@ -36,7 +36,7 @@ from .schemas import (
 router = APIRouter(prefix="/planning", tags=["planning"])
 
 
-def _out(proposal: Proposal) -> ProposalOut:
+def proposal_out(proposal: Proposal) -> ProposalOut:
     out = ProposalOut.model_validate(proposal)
     out.role_label = role_label(TeamRole(proposal.role))
     phase = service.phase_of(proposal, service.local_today())
@@ -87,7 +87,7 @@ def _detail_out(view: service.ProposalDetail) -> ProposalDetailOut:
         voters.append(out)
     names = {c.candidate.id: c.volunteer.full_name for c in view.candidates}
     return ProposalDetailOut(
-        proposal=_out(view.proposal),
+        proposal=proposal_out(view.proposal),
         path=view.path,
         candidates=candidates,
         voters=voters,
@@ -120,7 +120,7 @@ async def list_proposals(
     views = await service.list_proposals(
         ctx.session, ctx.actor, team_id=team_id, status=status
     )
-    return [_out(v.proposal) for v in views]
+    return [proposal_out(v.proposal) for v in views]
 
 
 @router.post("/proposals", status_code=201)
@@ -138,7 +138,7 @@ async def create_proposal(ctx: CtxDep, data: ProposalCreateIn) -> ProposalOut:
         ],
         notes=data.notes,
     )
-    return _out(proposal)
+    return proposal_out(proposal)
 
 
 @router.get("/proposals/{proposal_id}")
@@ -164,7 +164,7 @@ async def update_proposal(
         voting_deadline=data.voting_deadline,
         **extra,
     )
-    return _out(updated)
+    return proposal_out(updated)
 
 
 @router.post("/proposals/{proposal_id}/candidates", status_code=201)
@@ -254,7 +254,7 @@ async def appoint(ctx: CtxDep, proposal_id: int, data: AppointIn) -> ProposalOut
     """Appoint: flips the status and creates/upgrades the membership together.
     The tally is advisory — any candidate may be appointed."""
     await _managed(ctx, proposal_id)
-    return _out(
+    return proposal_out(
         await service.appoint(
             ctx.session, proposal_id, data.candidate_id, decided_by=ctx.actor.user.id
         )
@@ -264,7 +264,7 @@ async def appoint(ctx: CtxDep, proposal_id: int, data: AppointIn) -> ProposalOut
 @router.post("/proposals/{proposal_id}/cancel")
 async def cancel(ctx: CtxDep, proposal_id: int) -> ProposalOut:
     await _managed(ctx, proposal_id)
-    return _out(
+    return proposal_out(
         await service.cancel(ctx.session, proposal_id, decided_by=ctx.actor.user.id)
     )
 
@@ -274,7 +274,7 @@ async def new_round(ctx: CtxDep, proposal_id: int, data: NewRoundIn) -> Proposal
     """Close a concluded round and open a fresh one for the same seat with
     the same candidates and roll — the Ignatian repeat."""
     await _managed(ctx, proposal_id)
-    return _out(
+    return proposal_out(
         await service.new_round(
             ctx.session,
             proposal_id,
