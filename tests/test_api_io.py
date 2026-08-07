@@ -41,7 +41,7 @@ async def test_parish_export_admin_only(client, seeded, token_admin, token_membe
     r = await client.get("/api/export/parish.csv", headers=token_admin)
     assert r.status_code == 200
     assert 'filename="volunteerdb-parish.csv"' in r.headers["content-disposition"]
-    names = {(row[0], row[1]) for row in _rows(r.content)[1:]}
+    names = {(row[1], row[2]) for row in _rows(r.content)[1:]}
     assert ("Maria", "Alvarez") in names
 
 
@@ -86,20 +86,7 @@ async def test_my_teams_export(client, seeded, token_leader, token_member):
 async def test_leader_import_scoped_over_http(client, seeded, token_leader):
     # in scope: update Maria's phone and promote her on Liturgy
     content = _csv_bytes(
-        [
-            [
-                "Maria",
-                "Alvarez",
-                "maria@example.org",
-                "555-42",
-                "",
-                "yes",
-                "Liturgy",
-                "core",
-                "",
-                "",
-            ]
-        ]
+        [["", "Maria", "Alvarez", "maria@example.org", "555-42", "", "Liturgy", "core"]]
     )
     r = await client.post("/api/import", files=_upload(content), headers=token_leader)
     assert r.status_code == 200, r.text
@@ -111,20 +98,7 @@ async def test_leader_import_scoped_over_http(client, seeded, token_leader):
     async with db_session() as session:
         await teams.create(session, "Hospitality")
     content = _csv_bytes(
-        [
-            [
-                "Maria",
-                "Alvarez",
-                "maria@example.org",
-                "",
-                "",
-                "",
-                "Hospitality",
-                "member",
-                "",
-                "",
-            ]
-        ]
+        [["", "Maria", "Alvarez", "maria@example.org", "", "", "Hospitality", "member"]]
     )
     r = await client.post("/api/import", files=_upload(content), headers=token_leader)
     assert r.status_code == 200
@@ -135,7 +109,7 @@ async def test_leader_import_scoped_over_http(client, seeded, token_leader):
 
 async def test_leader_dry_run_over_http(client, seeded, token_leader):
     content = _csv_bytes(
-        [["Maria", "Alvarez", "maria@example.org", "555-77", "", "yes", "", "", "", ""]]
+        [["", "Maria", "Alvarez", "maria@example.org", "555-77", "", "", ""]]
     )
     r = await client.post(
         "/api/import",
@@ -153,20 +127,7 @@ async def test_import_dry_run_then_apply_over_http(
     client, seeded, token_admin, token_member
 ):
     content = _csv_bytes(
-        [
-            [
-                "Eve",
-                "Green",
-                "eve@example.org",
-                "",
-                "",
-                "yes",
-                "Liturgy",
-                "leader",
-                "",
-                "",
-            ]
-        ]
+        [["", "Eve", "Green", "eve@example.org", "", "", "Liturgy", "leader"]]
     )
 
     r = await client.post("/api/import", files=_upload(content), headers=token_member)

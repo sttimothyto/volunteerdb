@@ -26,19 +26,25 @@ see the {ref}`endpoints <api-import-export>`.
 ## Import
 
 1. Prepare the file — an export is the best starting point for bulk edits;
-   the template for new data. A row with a blank **Team** just adds or
+   the template for new data. Keep the **ID** column as exported (it pins
+   each row to its record and makes email corrections safe) and leave it
+   blank on rows for new people. A row with a blank **Team** just adds or
    updates the person; a row with a **Team** and **Role** also puts them on
    that team.
 2. On `/import`, upload the file. The app **always dry-runs first**: nothing
    is written, and you get a row-by-row report of what would be created,
    updated, and any problems.
 3. Read the report. Any error (unknown team, ambiguous volunteer, invalid
-   role, unrecognised Active value, …) blocks the whole file — imports are
-   all-or-nothing, so fix the spreadsheet and re-upload rather than hoping
-   for partial application. For leaders/seconds, rows outside their teams
-   are errors too, and a new volunteer needs a Team on one of their teams
-   in some row of the same file.
+   role, unknown ID, …) blocks the whole file — imports are all-or-nothing,
+   so fix the spreadsheet and re-upload rather than hoping for partial
+   application. For leaders/seconds, rows outside their teams are errors
+   too, and a new volunteer needs a Team on one of their teams in some row
+   of the same file.
 4. When the report is clean, click **Apply this import**.
+
+One restore caveat: a historical `as_of=` export may carry IDs of
+volunteers deleted since. Those rows are errors on re-import — blank the ID
+cells to recreate the people instead.
 
 Remember: manual imports only **add and update**. Removing a volunteer or
 membership is done in the app, never via a spreadsheet with rows deleted.

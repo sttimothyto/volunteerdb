@@ -84,12 +84,12 @@ async def build_roster_rows(
 
     def volunteer_cells(v: Volunteer) -> tuple:
         return (
+            v.id,
             v.first_name,
             v.last_name,
             v.email,
             v.phone,
             v.notes,
-            "yes" if v.is_active else "no",
         )
 
     def custom_cells(v: Volunteer) -> tuple:
@@ -110,8 +110,6 @@ async def build_roster_rows(
                 *volunteer_cells(v),
                 paths[m.team_id],
                 ROLE_LABELS[m.role],
-                m.joined_on.isoformat() if m.joined_on else None,
-                m.notes,
                 *custom_cells(v),
             )
         ]
@@ -119,11 +117,16 @@ async def build_roster_rows(
     ]
 
     if team_ids is None:
+        # Active only: without an Active column an archived volunteer's row is
+        # indistinguishable from a live one, and imports have no removal path,
+        # so leaving them out cannot lose anything.
         assigned = {v.id for _, v in membership_pairs}
         unassigned = [
             row[0]
             for row in await fetch(
-                session, sa.select(V).order_by(V.last_name, V.first_name), at
+                session,
+                sa.select(V).where(V.is_active).order_by(V.last_name, V.first_name),
+                at,
             )
             if row[0].id not in assigned
         ]
@@ -134,8 +137,6 @@ async def build_roster_rows(
                     *volunteer_cells(v),
                     None,  # Team
                     None,  # Role
-                    None,  # Joined on
-                    None,  # Membership notes
                     *custom_cells(v),
                 )
             ]

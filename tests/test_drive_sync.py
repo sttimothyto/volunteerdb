@@ -98,42 +98,9 @@ async def test_sheet_edits_apply_and_regenerate_mirrors_db(choir, tmp_path):
     (workdir / "in" / f"{NAME}.csv").write_bytes(
         _sheet_csv(
             [
-                [
-                    "Lena",
-                    "Leader",
-                    "lena@example.org",
-                    "",
-                    "",
-                    "",
-                    "Choir",
-                    "leader",
-                    "",
-                    "",
-                ],
-                [
-                    "Mia",
-                    "Member",
-                    "mia@example.org",
-                    "",
-                    "",
-                    "",
-                    "Choir",
-                    "core",
-                    "",
-                    "",
-                ],
-                [
-                    "Nora",
-                    "New",
-                    "nora@example.org",
-                    "",
-                    "",
-                    "",
-                    "Choir",
-                    "member",
-                    "",
-                    "",
-                ],
+                ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
+                ["", "Mia", "Member", "mia@example.org", "", "", "Choir", "core"],
+                ["", "Nora", "New", "nora@example.org", "", "", "Choir", "member"],
             ]
         )
     )
@@ -164,30 +131,8 @@ async def test_stale_modtime_skips_apply_but_mirrors_db_changes(choir, tmp_path)
     (workdir / "in" / f"{NAME}.csv").write_bytes(
         _sheet_csv(
             [
-                [
-                    "Lena",
-                    "Leader",
-                    "lena@example.org",
-                    "",
-                    "",
-                    "",
-                    "Choir",
-                    "leader",
-                    "",
-                    "",
-                ],
-                [
-                    "Mia",
-                    "Member",
-                    "mia@example.org",
-                    "",
-                    "",
-                    "",
-                    "Choir",
-                    "member",
-                    "",
-                    "",
-                ],
+                ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
+                ["", "Mia", "Member", "mia@example.org", "", "", "Choir", "member"],
             ]
         )
     )
@@ -247,48 +192,15 @@ async def test_failed_sheet_is_never_overwritten(choir, tmp_path):
     (workdir / "in" / f"{NAME}.csv").write_bytes(
         _sheet_csv(
             [
-                [
-                    "Lena",
-                    "Leader",
-                    "lena@example.org",
-                    "",
-                    "",
-                    "oui",
-                    "Choir",
-                    "leader",
-                    "",
-                    "",
-                ],
+                ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "oui"],
             ]
         )
     )
     (workdir / "in" / "ushers-membership-list.csv").write_bytes(
         _sheet_csv(
             [
-                [
-                    "Otto",
-                    "Usher",
-                    "otto@example.org",
-                    "",
-                    "",
-                    "",
-                    "Ushers",
-                    "leader",
-                    "",
-                    "",
-                ],
-                [
-                    "Uma",
-                    "Usher",
-                    "uma@example.org",
-                    "",
-                    "",
-                    "",
-                    "Ushers",
-                    "member",
-                    "",
-                    "",
-                ],
+                ["", "Otto", "Usher", "otto@example.org", "", "", "Ushers", "leader"],
+                ["", "Uma", "Usher", "uma@example.org", "", "", "Ushers", "member"],
             ]
         )
     )
@@ -314,6 +226,32 @@ async def test_failed_sheet_is_never_overwritten(choir, tmp_path):
     assert (workdir / "out" / "ushers-membership-list.csv").exists()
 
 
+async def test_applied_sheet_with_suspected_churn_still_alerts(choir, tmp_path):
+    """An edited email on a blank-ID row applies as remove-plus-create; the
+    sheet is fine, but the alert email must still fire so a human checks for
+    the duplicate."""
+    workdir = _workdir(tmp_path)
+    _listing(workdir, [(NAME, "f123", NOW)])
+    (workdir / "in" / f"{NAME}.csv").write_bytes(
+        _sheet_csv(
+            [
+                ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
+                ["", "Mia", "Member", "mia.new@example.org", "", "", "Choir", "member"],
+            ]
+        )
+    )
+
+    assert await drive_sync.apply(workdir) == 0
+
+    sheet = await _sheet_row(choir["choir"])
+    assert sheet.last_status == "applied" and sheet.last_error is None
+    alerts = (workdir / "alerts.txt").read_text()
+    assert "WARNING" in alerts and "duplicated person" in alerts
+    assert (workdir / "out" / f"{NAME}.csv").exists(), (
+        "an applied sheet is still regenerated — the warning does not block"
+    )
+
+
 async def test_rename_manifest_when_team_slug_changed(choir, tmp_path):
     """The sheet is matched by its stable file id; a slug change shows up as a
     rename instruction for the host script, not a new file."""
@@ -327,28 +265,24 @@ async def test_rename_manifest_when_team_slug_changed(choir, tmp_path):
         _sheet_csv(
             [
                 [
+                    "",
                     "Lena",
                     "Leader",
                     "lena@example.org",
                     "",
                     "",
-                    "",
                     "Chancel Choir",
                     "leader",
-                    "",
-                    "",
                 ],
                 [
+                    "",
                     "Mia",
                     "Member",
                     "mia@example.org",
                     "",
                     "",
-                    "",
                     "Chancel Choir",
                     "member",
-                    "",
-                    "",
                 ],
             ]
         )

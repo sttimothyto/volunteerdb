@@ -57,13 +57,15 @@ async def import_page():
         ui.separator()
         ui.label("Import").classes("text-lg font-medium")
         ui.label(
-            "One .csv, one row per person per team: name and contact columns, then "
-            "Team, Role and Joined on. A row with a blank Team just adds or updates "
-            "the person. Rows with an email are matched on that email alone — only a "
-            "blank email cell matches by name, so a new address for someone already "
-            "on file creates a second record. Imports never delete anything and a "
-            "blank cell never clears a field; they only add and update. "
-            "All-or-nothing on errors."
+            "One .csv, one row per person per team: ID, name and contact columns, "
+            "then Team and Role. The ID comes from exports and pins the row to that "
+            "exact record — it is how you safely correct an email; leave it blank "
+            "for new people (an ID that matches nobody is an error). A row with a "
+            "blank Team just adds or updates the person. Rows without an ID are "
+            "matched on their email alone — only a blank email cell matches by "
+            "name, so a new address for someone already on file creates a second "
+            "record. Imports never delete anything and a blank cell never clears a "
+            "field; they only add and update. All-or-nothing on errors."
             + (
                 ""
                 if actor.is_admin
@@ -89,18 +91,24 @@ async def import_page():
                     ui.label("Dry run — nothing written yet.").classes(
                         "text-amber-700 font-medium"
                     )
+                reactivated = (
+                    f", {report.volunteers_reactivated} reactivated"
+                    if report.volunteers_reactivated
+                    else ""
+                )
                 ui.label(
-                    f"volunteers: +{report.volunteers_created} new, {report.volunteers_updated} updated · "
+                    f"volunteers: +{report.volunteers_created} new, "
+                    f"{report.volunteers_updated} updated{reactivated} · "
                     f"memberships: +{report.memberships_created} new, {report.memberships_updated} updated"
                 )
                 if report.warnings:
                     count = len(report.warnings)
-                    # Warnings never block an import, so the ones that quietly lose
-                    # data (dropped join dates, possible duplicates) are easy to
-                    # scroll past. Put the count where the eye already is.
+                    # Warnings never block an import, so the ones that flag
+                    # possible duplicates or a suspect ID are easy to scroll
+                    # past. Put the count where the eye already is.
                     ui.label(
                         f"⚠️ {count} warning{'' if count == 1 else 's'} — these do not stop "
-                        "the import. Dropped join dates and possible duplicates all "
+                        "the import. Possible duplicates and suspect IDs all "
                         "appear here."
                     ).classes("text-amber-700 font-medium")
                 for issue in report.errors:

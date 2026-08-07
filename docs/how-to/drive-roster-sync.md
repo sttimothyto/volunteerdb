@@ -26,13 +26,24 @@ left blank in a team's own sheet.
   `admin@sttimothyto.org`.
 - Deleting a row removes that person from the roster at the next sync.
   Their history is preserved and visible in as-of views and timelines.
-- Rows are matched email-first, exactly as manual imports: give every
-  volunteer their email before renaming them, or you will create a
-  duplicate (the sync records the same warnings the import page shows).
-- A sheet with problems (unknown role, bad Active value, or a wipe of more
-  than half the team and ≥ 3 members — the safety threshold) is **skipped
-  whole**: nothing applies, the sheet is left untouched for fixing, the
-  team page shows the error, and `admin@sttimothyto.org` gets an email.
+  Re-adding a row for someone the sync had archived puts them back on the
+  team **and reactivates them** — joining implies active.
+- **Leave the ID column alone.** It pins each row to its database record;
+  correcting an email next to an ID updates the person instead of
+  duplicating them. Rows for genuinely new people get a blank ID; the sync
+  fills it in overnight.
+- Blank-ID rows are matched email-first, exactly as manual imports: a new
+  address on a blank-ID row creates a duplicate (the sync records the same
+  warnings the import page shows).
+- A sheet with problems (unknown role, unknown ID, an **empty sheet for a
+  team that has members**, or a wipe of more than half the team and ≥ 3
+  members — the safety thresholds) is **skipped whole**: nothing applies,
+  the sheet is left untouched for fixing, the team page shows the error,
+  and `admin@sttimothyto.org` gets an email.
+- The alert email can also arrive for a sheet that **did** apply: when one
+  sync both created a volunteer and removed a member (the signature of an
+  edited email on a blank-ID row, or a row deleted and re-typed), a
+  `WARNING` line asks a human to check for a duplicated person.
 - Mistakes are recoverable: the 02:00 backup immediately precedes the
   sync ([backups](backup-restore.md)); the history views show exactly what
   the sync changed (`changed_by` = `drive-sync@sttimothyto.org`).

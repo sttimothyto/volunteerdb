@@ -2,21 +2,25 @@
 
 - One CSV, one row per membership (common.ROSTER_HEADERS); the same format
   serves manual imports and the nightly Drive sync.
-- Volunteers are matched by email (plus name to break family-shared-email
-  ties). This is NOT a fallback chain: a row carrying an email that matches
-  nobody does not then try the name, it creates a volunteer (with a warning if
-  that name already exists). Only a row with a blank email matches by name.
+- A row carrying an ID (exports always write it) is pinned to that exact
+  volunteer — an unknown ID is an error, never a create — so editing an email
+  next to an ID corrects the address instead of duplicating the person.
+- Rows without an ID are matched by email (plus name to break
+  family-shared-email ties). This is NOT a fallback chain: a row carrying an
+  email that matches nobody does not then try the name, it creates a volunteer
+  (with a warning if that name already exists). Only a row with a blank email
+  matches by name.
 - Manual imports (run_import) only add and update; rows never delete existing
   memberships. The Drive sync (run_team_sync) treats a team's sheet as that
   team's complete roster: memberships absent from the sheet are removed (the
   history tables retain them) and a volunteer losing their last membership
-  anywhere is archived.
+  anywhere is archived. In either mode, a row that puts an archived volunteer
+  on a team reactivates them — joining implies active.
 - Any error rolls the whole import back; the report lists every issue.
 """
 
 import csv
 from dataclasses import dataclass, field
-from datetime import date
 from io import StringIO
 
 import sqlalchemy as sa
@@ -47,6 +51,7 @@ class ImportReport:
     memberships_updated: int = 0
     memberships_removed: int = 0  # sync mode only
     volunteers_archived: int = 0  # sync mode only
+    volunteers_reactivated: int = 0  # membership created for an archived volunteer
     errors: list[Issue] = field(default_factory=list)
     warnings: list[Issue] = field(default_factory=list)
     applied: bool = False
@@ -55,6 +60,12 @@ class ImportReport:
     def has_errors(self) -> bool:
         return bool(self.errors)
 
+    @property
+    def churn_suspected(self) -> bool:
+        """Created and removed people in the same run: the signature of an
+        edited email cell or a deleted-and-retyped row duplicating a person."""
+        return bool(self.volunteers_created and self.memberships_removed)
+
 
 class _Abort(Exception):
     pass
@@ -62,26 +73,19 @@ class _Abort(Exception):
 
 @dataclass
 class RosterRow:
-    """One data row, cells already clean_cell-ed (None = blank)."""
+    """One data row, cells already clean_cell-ed (None = blank).
+    Field order after `row` must match ROSTER_HEADERS."""
 
     row: int
+    volunteer_id: str | None
     first: str | None
     last: str | None
     email: str | None
     phone: str | None
     volunteer_notes: str | None
-    active: str | None
     team: str | None
     role: str | None
-    joined_on: str | None
-    membership_notes: str | None
 
-
-# Accepted spellings in the Active column. A blank cell means "leave unchanged"
-# (new volunteers default to active); anything outside these two sets is a row
-# error — a typo must never archive someone silently.
-ACTIVE_YES = ("yes", "y", "true", "1", "x")
-ACTIVE_NO = ("no", "n", "false", "0")
 
 _EXTRA_COLUMNS_WARNING = (
     "extra columns (custom fields) are ignored — custom values are not imported yet"
@@ -136,18 +140,6 @@ def parse_roster_csv(content: bytes, report: ImportReport) -> list[RosterRow] | 
     return rows
 
 
-def _parse_date(raw: str | None, report: ImportReport, row: int) -> date | None:
-    if raw is None:
-        return None
-    try:
-        return date.fromisoformat(raw)
-    except ValueError:
-        report.warnings.append(
-            Issue(ROSTER_SHEET, row, f"unreadable date {raw!r}, ignored")
-        )
-        return None
-
-
 async def run_import(
     content: bytes, *, dry_run: bool, user_id: int | None
 ) -> ImportReport:
@@ -183,6 +175,7 @@ async def run_import(
         ),
         volunteers_created=report.volunteers_created,
         volunteers_updated=report.volunteers_updated,
+        volunteers_reactivated=report.volunteers_reactivated,
         memberships_created=report.memberships_created,
         memberships_updated=report.memberships_updated,
         errors=len(report.errors),
@@ -218,6 +211,7 @@ async def run_team_sync(
         memberships_updated=report.memberships_updated,
         memberships_removed=report.memberships_removed,
         volunteers_archived=report.volunteers_archived,
+        volunteers_reactivated=report.volunteers_reactivated,
         errors=len(report.errors),
     )
     return report
@@ -240,10 +234,12 @@ async def apply_rows(
     (never when any row errored — an unparsable row must not read as absent).
     """
     volunteers = list((await session.execute(sa.select(Volunteer))).scalars())
+    by_id: dict[int, Volunteer] = {}
     by_email: dict[str, list[Volunteer]] = {}
     by_name: dict[str, list[Volunteer]] = {}
 
     def index(v: Volunteer) -> None:
+        by_id[v.id] = v
         if v.email:
             by_email.setdefault(v.email.lower(), []).append(v)
         by_name.setdefault(v.full_name.lower(), []).append(v)
@@ -267,6 +263,28 @@ async def apply_rows(
         if len(candidates) > 1:
             return f"ambiguous: {len(candidates)} volunteers match {email or name!r}"
         return candidates[0] if candidates else None
+
+    def resolve_row(r: RosterRow) -> Volunteer | None | str:
+        """The row's volunteer: by ID when present (authoritative, never
+        creates), else by email/name. None = no match (a new volunteer);
+        a str is an error message."""
+        if r.volunteer_id is not None:
+            try:
+                vid = int(r.volunteer_id)
+            except ValueError:
+                return (
+                    f"ID {r.volunteer_id!r} is not a number — IDs come from "
+                    "exports; leave the cell blank for new people"
+                )
+            found = by_id.get(vid)
+            if found is None:
+                return (
+                    f"ID {r.volunteer_id} matches no volunteer — leave the "
+                    "cell blank to add a new person"
+                )
+            return found
+        name = f"{r.first} {r.last}" if r.first and r.last else None
+        return match(r.email, name)
 
     restricted = actor is not None and not actor.is_admin
 
@@ -319,13 +337,13 @@ async def apply_rows(
             team_id = resolve_team(r.team)
             if isinstance(team_id, str) or team_id not in actor.managed_team_ids:
                 continue
-            name = f"{r.first} {r.last}" if r.first and r.last else None
-            found = match(r.email, name)
+            found = resolve_row(r)
             if isinstance(found, str):
-                continue
-            if found is None:
+                continue  # the main loop reports the error
+            if found is None:  # only possible for blank-ID rows
                 if r.email:
                     granted_new_keys.add(r.email.lower())
+                name = f"{r.first} {r.last}" if r.first and r.last else None
                 if name:
                     granted_new_keys.add(name.lower())
             else:
@@ -334,7 +352,7 @@ async def apply_rows(
     kept_volunteer_ids: set[int] = set()
 
     for r in rows:
-        if not any((r.first, r.last, r.email, r.team, r.role)):
+        if not any((r.volunteer_id, r.first, r.last, r.email, r.team, r.role)):
             continue
         if not r.first or not r.last:
             report.errors.append(
@@ -344,24 +362,7 @@ async def apply_rows(
         email = r.email.lower() if r.email else None
         full_name = f"{r.first} {r.last}"
 
-        if r.active is None:
-            is_active = None  # leave unchanged; new volunteers default active
-        elif r.active.lower() in ACTIVE_YES:
-            is_active = True
-        elif r.active.lower() in ACTIVE_NO:
-            is_active = False
-        else:
-            report.errors.append(
-                Issue(
-                    ROSTER_SHEET,
-                    r.row,
-                    f"Active value {r.active!r} is not recognised — use one of "
-                    f"{', '.join(ACTIVE_YES)} / {', '.join(ACTIVE_NO)}, or leave blank",
-                )
-            )
-            continue
-
-        found = match(email, full_name)
+        found = resolve_row(r)
         if isinstance(found, str):
             report.errors.append(Issue(ROSTER_SHEET, r.row, found))
             continue
@@ -399,7 +400,7 @@ async def apply_rows(
                 email=email,
                 phone=r.phone,
                 notes=r.volunteer_notes,
-                is_active=True if is_active is None else is_active,
+                is_active=True,
             )
             session.add(target)
             await session.flush()
@@ -423,6 +424,23 @@ async def apply_rows(
                     )
                 )
                 continue
+            # A copy-pasted row keeping a stale ID would silently rewrite an
+            # unrelated volunteer; both names differing is the tell (a surname
+            # change alone stays quiet).
+            if (
+                r.volunteer_id is not None
+                and r.first.lower() != found.first_name.lower()
+                and r.last.lower() != found.last_name.lower()
+            ):
+                report.warnings.append(
+                    Issue(
+                        ROSTER_SHEET,
+                        r.row,
+                        f"ID {r.volunteer_id} is {found.full_name!r} on file "
+                        f"but this row says {full_name!r} — check the ID",
+                    )
+                )
+            old_email = found.email
             changed = False
             for attr, value in (
                 ("first_name", r.first),
@@ -430,13 +448,16 @@ async def apply_rows(
                 ("email", email),
                 ("phone", r.phone),
                 ("notes", r.volunteer_notes),
-                ("is_active", is_active),
             ):
                 if value is not None and getattr(found, attr) != value:
                     setattr(found, attr, value)
                     changed = True
             if changed:
                 report.volunteers_updated += 1
+            if email and email != (old_email or "").lower():
+                # an ID row just corrected the email: a later blank-ID row
+                # carrying the new address must match this record, not create
+                by_email.setdefault(email, []).append(found)
             target = found
 
         # --- membership columns ---
@@ -483,31 +504,46 @@ async def apply_rows(
             report.errors.append(Issue(ROSTER_SHEET, r.row, f"unknown role {r.role!r}"))
             continue
 
-        joined_on = _parse_date(r.joined_on, report, r.row)
         existing = membership_by_pair.get((target.id, team_id))
-        before = (
-            (existing.role, existing.joined_on, existing.notes) if existing else None
-        )
+        before = existing.role if existing else None
         membership = await membership_service.assign(
             session,
             target.id,
             team_id,
             role,
-            joined_on=joined_on,
-            notes=r.membership_notes,
             existing=existing,
         )
         if existing is None:
             # a later sheet row for the same pair must hit the update branch
             membership_by_pair[(target.id, team_id)] = membership
             report.memberships_created += 1
-        elif before != (membership.role, membership.joined_on, membership.notes):
+            if not target.is_active:
+                # joining a team implies active — the mirror of the sync
+                # auto-archive below. Creation only: re-importing an export
+                # that still lists an archived member must not resurrect them.
+                target.is_active = True
+                report.volunteers_reactivated += 1
+        elif before != membership.role:
             report.memberships_updated += 1
         if sync_team_id is not None:
             kept_volunteer_ids.add(target.id)
 
     # --- sync mode: the sheet is the whole roster, so absence means removal ---
     if sync_team_id is None or report.has_errors:
+        return
+    if not kept_volunteer_ids and presync_members:
+        # Stronger than the percentage breaker below: a header-only download
+        # (or a sheet emptied by accident) must never wipe a team, however
+        # small the team is.
+        report.errors.append(
+            Issue(
+                ROSTER_SHEET,
+                0,
+                f"the sheet lists nobody, but {paths[sync_team_id]!r} has "
+                f"{len(presync_members)} member(s) — refusing to empty the "
+                "team. If this is intentional, remove them in the app instead.",
+            )
+        )
         return
     to_remove = [
         m for vid, m in presync_members.items() if vid not in kept_volunteer_ids
@@ -537,3 +573,15 @@ async def apply_rows(
         if remaining == 0:
             await volunteer_service.update(session, volunteer_id, is_active=False)
             report.volunteers_archived += 1
+    if report.churn_suspected:
+        report.warnings.append(
+            Issue(
+                ROSTER_SHEET,
+                0,
+                f"this sync both created {report.volunteers_created} "
+                f"volunteer(s) and removed {report.memberships_removed} "
+                "member(s) — if an email was edited or a row deleted and "
+                "re-typed, the same person may now exist twice. Check the "
+                "roster for duplicates.",
+            )
+        )

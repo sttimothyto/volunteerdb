@@ -1,11 +1,13 @@
 """How the importer decides that a spreadsheet row *is* an existing volunteer.
 
-This is the rule that produced duplicates during the July 2026 parish import
-(see ingest-data/ingest_july.py, whose IDENTITY_LINKS table exists purely to
-work around it). Matching is email-first: a row carrying an email is looked up
-by email and nothing else, so a new address on an existing person creates a
-second record rather than updating the first. The name index is consulted only
-when the email cell is blank.
+A row carrying an ID (exports always write one) is pinned to that exact
+record; matching only starts when the ID cell is blank. Blank-ID matching is
+the rule that produced duplicates during the July 2026 parish import (see
+ingest-data/ingest_july.py, whose IDENTITY_LINKS table exists purely to work
+around it): it is email-first — a row carrying an email is looked up by email
+and nothing else, so a new address on an existing person creates a second
+record rather than updating the first. The name index is consulted only when
+the email cell is blank.
 """
 
 import csv
@@ -33,7 +35,7 @@ async def test_unmatched_email_does_not_fall_back_to_name(database):
         await volunteers.create(session, "Andrea", "Smart")
 
     content = _csv_bytes(
-        [["Andrea", "Smart", "a.smart705@outlook.com", "", "", "yes", "", "", "", ""]]
+        [["", "Andrea", "Smart", "a.smart705@outlook.com", "", "", "", ""]]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert report.applied and report.volunteers_created == 1
@@ -51,9 +53,7 @@ async def test_a_blank_email_still_matches_by_name(database):
     async with db_session() as session:
         await volunteers.create(session, "Andrea", "Smart")
 
-    content = _csv_bytes(
-        [["Andrea", "Smart", "", "555-0143", "", "yes", "", "", "", ""]]
-    )
+    content = _csv_bytes([["", "Andrea", "Smart", "", "555-0143", "", "", ""]])
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert report.applied
     assert report.volunteers_created == 0 and report.volunteers_updated == 1
@@ -72,19 +72,8 @@ async def test_new_email_on_an_existing_name_warns_before_duplicating(database):
 
     content = _csv_bytes(
         [
-            [
-                "Andrea",
-                "Smart",
-                "a.smart705@outlook.com",
-                "",
-                "",
-                "yes",
-                "",
-                "",
-                "",
-                "",
-            ],
-            ["Cora", "Fresh", "cora@example.org", "", "", "yes", "", "", "", ""],
+            ["", "Andrea", "Smart", "a.smart705@outlook.com", "", "", "", ""],
+            ["", "Cora", "Fresh", "cora@example.org", "", "", "", ""],
         ]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
@@ -109,20 +98,7 @@ async def test_family_shared_email_is_disambiguated_by_name(database):
         await volunteers.create(session, "Jose", "Alvarez", "family@example.org")
 
     content = _csv_bytes(
-        [
-            [
-                "Maria",
-                "Alvarez",
-                "family@example.org",
-                "555-0100",
-                "",
-                "yes",
-                "",
-                "",
-                "",
-                "",
-            ]
-        ]
+        [["", "Maria", "Alvarez", "family@example.org", "555-0100", "", "", ""]]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert report.applied, [i.message for i in report.errors]
@@ -140,21 +116,111 @@ async def test_family_shared_email_is_disambiguated_by_name(database):
     async with db_session() as session:
         await volunteers.create(session, "Maria", "Alvarez", "family@example.org")
     ambiguous = _csv_bytes(
-        [
-            [
-                "Maria",
-                "Alvarez",
-                "family@example.org",
-                "",
-                "",
-                "",
-                "Liturgy",
-                "member",
-                "",
-                "",
-            ]
-        ]
+        [["", "Maria", "Alvarez", "family@example.org", "", "", "Liturgy", "member"]]
     )
     report = await importer.run_import(ambiguous, dry_run=False, user_id=None)
     assert not report.applied
     assert any("ambiguous: 2 volunteers match" in i.message for i in report.errors)
+
+
+async def test_id_pins_the_row_and_makes_email_edits_safe(database):
+    """The whole point of the ID column: with the row pinned, a new address is
+    a correction, not a new person — and later blank-ID rows carrying the new
+    address must find the corrected record instead of duplicating it."""
+    async with db_session() as session:
+        maria = await volunteers.create(
+            session, "Maria", "Alvarez", "maria.old@example.org"
+        )
+        maria_id = maria.id
+
+    content = _csv_bytes(
+        [
+            [
+                str(maria_id),
+                "Maria",
+                "Alvarez",
+                "maria.new@example.org",
+                "",
+                "",
+                "",
+                "",
+            ],
+            ["", "Maria", "Alvarez", "maria.new@example.org", "555-0177", "", "", ""],
+        ]
+    )
+    report = await importer.run_import(content, dry_run=False, user_id=None)
+    assert report.applied, [i.message for i in report.errors]
+    assert report.volunteers_created == 0, "no duplicate from either row"
+    assert report.volunteers_updated == 2, "both rows landed on the same record"
+
+    async with db_session() as session:
+        found = await volunteers.search(session, "Maria Alvarez")
+    assert len(found) == 1
+    assert found[0].email == "maria.new@example.org" and found[0].phone == "555-0177"
+
+
+async def test_id_takes_precedence_over_a_conflicting_email(database):
+    async with db_session() as session:
+        maria = await volunteers.create(
+            session, "Maria", "Alvarez", "maria@example.org"
+        )
+        await volunteers.create(session, "Jose", "Alvarez", "jose@example.org")
+        maria_id = maria.id
+
+    # the email cell says Jose, the ID says Maria — the ID wins
+    content = _csv_bytes(
+        [[str(maria_id), "Maria", "Alvarez", "jose@example.org", "", "", "", ""]]
+    )
+    report = await importer.run_import(content, dry_run=False, user_id=None)
+    assert report.applied and report.volunteers_created == 0
+
+    async with db_session() as session:
+        found = {
+            v.first_name: v.email for v in await volunteers.search(session, "Alvarez")
+        }
+    assert found["Maria"] == "jose@example.org", "Maria's record took the row"
+    assert found["Jose"] == "jose@example.org", "Jose untouched"
+
+
+async def test_unknown_or_malformed_id_is_a_row_error(database):
+    content = _csv_bytes(
+        [
+            ["999999", "Ghost", "Record", "ghost@example.org", "", "", "", ""],
+            ["twelve", "Word", "Number", "word@example.org", "", "", "", ""],
+        ]
+    )
+    report = await importer.run_import(content, dry_run=False, user_id=None)
+    assert report.has_errors and not report.applied
+    messages = [i.message for i in report.errors]
+    assert any("matches no volunteer" in m for m in messages)
+    assert any("is not a number" in m for m in messages)
+
+    async with db_session() as session:
+        assert await volunteers.search(session, "Ghost") == [], (
+            "an unknown ID never creates a volunteer"
+        )
+
+
+async def test_stale_id_with_a_different_name_warns(database):
+    """A copy-pasted row keeping the old ID silently rewrites an unrelated
+    volunteer — both names differing is the tell. A surname change alone
+    (marriage) stays quiet."""
+    async with db_session() as session:
+        maria = await volunteers.create(
+            session, "Maria", "Alvarez", "maria@example.org"
+        )
+        maria_id = maria.id
+
+    content = _csv_bytes(
+        [[str(maria_id), "Bob", "Smith", "bob@example.org", "", "", "", ""]]
+    )
+    report = await importer.run_import(content, dry_run=True, user_id=None)
+    assert not report.has_errors
+    (warning,) = report.warnings
+    assert "'Maria Alvarez'" in warning.message and "'Bob Smith'" in warning.message
+
+    renamed = _csv_bytes(
+        [[str(maria_id), "Maria", "Smith", "maria@example.org", "", "", "", ""]]
+    )
+    report = await importer.run_import(renamed, dry_run=True, user_id=None)
+    assert report.warnings == [], "a surname-only change does not warn"

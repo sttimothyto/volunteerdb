@@ -57,6 +57,7 @@ class ImportReportOut(BaseModel):
     applied: bool
     volunteers_created: int
     volunteers_updated: int
+    volunteers_reactivated: int
     memberships_created: int
     memberships_updated: int
     errors: list[IssueOut]
@@ -81,6 +82,7 @@ async def import_roster(
         applied=report.applied,
         volunteers_created=report.volunteers_created,
         volunteers_updated=report.volunteers_updated,
+        volunteers_reactivated=report.volunteers_reactivated,
         memberships_created=report.memberships_created,
         memberships_updated=report.memberships_updated,
         errors=[IssueOut(**vars(i)) for i in report.errors],

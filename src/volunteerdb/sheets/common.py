@@ -5,16 +5,14 @@ from ..models import ROLE_LABELS, TeamRole
 
 ROSTER_SHEET = "Roster"
 ROSTER_HEADERS = [
+    "ID",
     "First name",
     "Last name",
     "Email",
     "Phone",
     "Volunteer notes",
-    "Active",
     "Team",
     "Role",
-    "Joined on",
-    "Membership notes",
 ]
 
 # A cell opening with one of these is evaluated as a formula by Excel and

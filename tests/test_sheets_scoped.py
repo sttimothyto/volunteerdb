@@ -57,20 +57,7 @@ def _csv_bytes(rows: list[list]) -> bytes:
 
 async def test_membership_on_managed_subtree_applied(parish):
     content = _csv_bytes(
-        [
-            [
-                "Mia",
-                "Member",
-                "mia@example.org",
-                "",
-                "",
-                "",
-                "Liturgy / Music",
-                "member",
-                "",
-                "",
-            ]
-        ]
+        [["", "Mia", "Member", "mia@example.org", "", "", "Liturgy / Music", "member"]]
     )
     report = await importer.run_import(
         content, dry_run=False, user_id=parish["leader_uid"]
@@ -83,29 +70,16 @@ async def test_unmanaged_team_row_blocks_everything(parish):
     content = _csv_bytes(
         [
             [
+                "",
                 "Mia",
                 "Member",
                 "mia@example.org",
                 "",
                 "",
-                "",
                 "Liturgy / Music",
                 "member",
-                "",
-                "",
             ],
-            [
-                "Otto",
-                "Out",
-                "otto@example.org",
-                "",
-                "",
-                "",
-                "Hospitality",
-                "core",
-                "",
-                "",
-            ],
+            ["", "Otto", "Out", "otto@example.org", "", "", "Hospitality", "core"],
         ]
     )
     report = await importer.run_import(
@@ -122,20 +96,7 @@ async def test_unmanaged_team_row_blocks_everything(parish):
 
 async def test_new_volunteer_with_managed_membership_created(parish):
     content = _csv_bytes(
-        [
-            [
-                "Nora",
-                "New",
-                "nora@example.org",
-                "",
-                "",
-                "yes",
-                "Liturgy",
-                "member",
-                "",
-                "",
-            ]
-        ]
+        [["", "Nora", "New", "nora@example.org", "", "", "Liturgy", "member"]]
     )
     report = await importer.run_import(
         content, dry_run=False, user_id=parish["leader_uid"]
@@ -149,9 +110,7 @@ async def test_new_volunteer_with_managed_membership_created(parish):
 
 
 async def test_new_volunteer_without_membership_rejected(parish):
-    content = _csv_bytes(
-        [["Nora", "New", "nora@example.org", "", "", "yes", "", "", "", ""]]
-    )
+    content = _csv_bytes([["", "Nora", "New", "nora@example.org", "", "", "", ""]])
     report = await importer.run_import(
         content, dry_run=False, user_id=parish["leader_uid"]
     )
@@ -161,20 +120,7 @@ async def test_new_volunteer_without_membership_rejected(parish):
 
 async def test_new_volunteer_with_unmanaged_membership_rejected(parish):
     content = _csv_bytes(
-        [
-            [
-                "Nora",
-                "New",
-                "nora@example.org",
-                "",
-                "",
-                "yes",
-                "Hospitality",
-                "member",
-                "",
-                "",
-            ]
-        ]
+        [["", "Nora", "New", "nora@example.org", "", "", "Hospitality", "member"]]
     )
     report = await importer.run_import(
         content, dry_run=False, user_id=parish["leader_uid"]
@@ -185,7 +131,7 @@ async def test_new_volunteer_with_unmanaged_membership_rejected(parish):
 
 async def test_contact_update_of_managed_volunteer_applied(parish):
     content = _csv_bytes(
-        [["Mia", "Member", "mia@example.org", "555-99", "", "yes", "", "", "", ""]]
+        [["", "Mia", "Member", "mia@example.org", "555-99", "", "", ""]]
     )
     report = await importer.run_import(
         content, dry_run=False, user_id=parish["leader_uid"]
@@ -200,8 +146,30 @@ async def test_contact_update_of_managed_volunteer_applied(parish):
 async def test_update_of_outsider_rejected_even_when_identical(parish):
     # values match Otto's current record exactly — still denied, otherwise a
     # dry-run would confirm guessed contact details
+    content = _csv_bytes([["", "Otto", "Out", "otto@example.org", "555-2", "", "", ""]])
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
+    assert report.has_errors and not report.applied
+    assert any("not allowed to edit volunteer" in e.message for e in report.errors)
+
+
+async def test_update_of_outsider_by_id_rejected(parish):
+    """An ID pins the row to Otto just as surely as his email does — the scope
+    check must treat both the same."""
     content = _csv_bytes(
-        [["Otto", "Out", "otto@example.org", "555-2", "", "yes", "", "", "", ""]]
+        [
+            [
+                str(parish["otto_vid"]),
+                "Otto",
+                "Out",
+                "otto@example.org",
+                "555-2",
+                "",
+                "",
+                "",
+            ]
+        ]
     )
     report = await importer.run_import(
         content, dry_run=False, user_id=parish["leader_uid"]
@@ -210,22 +178,37 @@ async def test_update_of_outsider_rejected_even_when_identical(parish):
     assert any("not allowed to edit volunteer" in e.message for e in report.errors)
 
 
-async def test_update_ok_when_same_row_adds_them_to_managed_team(parish):
+async def test_id_row_on_managed_team_grants_the_contact_edit(parish):
+    """A leader's own export carries IDs on every row — the scoping pre-pass
+    must resolve them, or scoped exports stop round-tripping."""
     content = _csv_bytes(
         [
             [
+                str(parish["otto_vid"]),
                 "Otto",
                 "Out",
                 "otto@example.org",
                 "555-77",
                 "",
-                "yes",
                 "Liturgy",
                 "member",
-                "",
-                "",
             ]
         ]
+    )
+    report = await importer.run_import(
+        content, dry_run=False, user_id=parish["leader_uid"]
+    )
+    assert not report.has_errors, report.errors
+    assert (
+        report.applied
+        and report.volunteers_updated == 1
+        and report.memberships_created == 1
+    )
+
+
+async def test_update_ok_when_same_row_adds_them_to_managed_team(parish):
+    content = _csv_bytes(
+        [["", "Otto", "Out", "otto@example.org", "555-77", "", "Liturgy", "member"]]
     )
     report = await importer.run_import(
         content, dry_run=False, user_id=parish["leader_uid"]
@@ -257,8 +240,8 @@ async def test_user_without_managed_teams_gets_row_errors(parish):
     # the API gate 403s such users; the importer still refuses row-by-row
     content = _csv_bytes(
         [
-            ["Nora", "New", "nora@example.org", "", "", "yes", "", "", "", ""],
-            ["Mia", "Member", "mia@example.org", "", "", "", "Liturgy", "core", "", ""],
+            ["", "Nora", "New", "nora@example.org", "", "", "", ""],
+            ["", "Mia", "Member", "mia@example.org", "", "", "Liturgy", "core"],
         ]
     )
     report = await importer.run_import(

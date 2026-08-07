@@ -63,23 +63,21 @@ async def test_import_applies_edits_and_additions(database):
         content = await exporter.export_csv(session)
 
     rows = _rows(content)
-    # promote Ben to Music leader (Role is column 8 of his membership row)
+    # promote Ben to Music leader (Role is the last column of his row)
     for row in rows[1:]:
-        if row[2] == "ben@example.org":
+        if row[3] == "ben@example.org":
             row[7] = "Ministry leader"
-    # add a brand-new volunteer with a membership by team path
+    # add a brand-new volunteer (blank ID) with a membership by team path
     rows.append(
         [
+            "",
             "Cara",
             "White",
             "cara@example.org",
             "555-9",
             "",
-            "yes",
             "Liturgy / Music",
             "member",
-            "",
-            "",
         ]
     )
 
@@ -107,10 +105,28 @@ async def test_parish_export_lists_unassigned_after_memberships(database):
         content = await exporter.export_csv(session)
 
     rows = _rows(content)[1:]
-    assert rows[-1][0] == "Ursula" and rows[-1][6] == "", (
+    assert rows[-1][1] == "Ursula" and rows[-1][6] == "", (
         "membership-less volunteers come last, with blank team columns"
     )
     assert all(r[6] for r in rows[:-1]), "every other row carries its team path"
+    assert all(r[0].isdigit() for r in rows), "every row carries the volunteer's ID"
+
+
+async def test_parish_export_omits_archived_unassigned_but_keeps_members(database):
+    """Without an Active column an archived row would be indistinguishable from
+    a live one, so the unassigned tail lists active volunteers only. Archived
+    volunteers still holding a membership stay in: their rows are what keeps a
+    team-sheet round-trip from reading them as 'removed'."""
+    async with db_session() as session:
+        _, _, anna, _ = await _setup(session)
+        gone = await volunteers.create(session, "Gone", "Quietly", "gone@example.org")
+        await volunteers.update(session, gone.id, is_active=False)
+        await volunteers.update(session, anna.id, is_active=False)  # keeps membership
+        content = await exporter.export_csv(session)
+
+    body = content.decode("utf-8-sig")
+    assert "gone@example.org" not in body, "archived + membership-less: omitted"
+    assert "anna@example.org" in body, "archived but on a team: still exported"
 
 
 async def test_unknown_team_blocks_everything(database):
@@ -120,16 +136,14 @@ async def test_unknown_team_blocks_everything(database):
     content = _csv_bytes(
         [
             [
+                "",
                 "Dave",
                 "Black",
                 "dave@example.org",
                 "",
                 "",
-                "yes",
                 "No Such Team",
                 "member",
-                "",
-                "",
             ]
         ]
     )
@@ -151,16 +165,14 @@ async def test_dry_run_writes_nothing(database):
     content = _csv_bytes(
         [
             [
+                "",
                 "Eve",
                 "Green",
                 "eve@example.org",
                 "",
                 "",
-                "yes",
                 "Liturgy",
                 "leader",
-                "",
-                "",
             ]
         ]
     )
@@ -178,7 +190,7 @@ async def test_volunteer_only_row_needs_no_team(database):
         await _setup(session)
 
     content = _csv_bytes(
-        [["Cara", "White", "cara@example.org", "555-9", "", "yes", "", "", "", ""]]
+        [["", "Cara", "White", "cara@example.org", "555-9", "", "", ""]]
     )
     report = await importer.run_import(content, dry_run=False, user_id=None)
     assert not report.has_errors, report.errors
@@ -218,8 +230,8 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
 
     rows = _rows(content)
     assert rows[0][-2:] == ["Shirt size", "Trained"]
-    anna_row = next(r for r in rows[1:] if r[0] == "Anna")
-    assert anna_row[10] == "M" and anna_row[11] == "yes"
+    anna_row = next(r for r in rows[1:] if r[1] == "Anna")
+    assert anna_row[8] == "M" and anna_row[9] == "yes"
 
     # round-trip stays safe: the extra columns are ignored with a warning
     report = await importer.run_import(content, dry_run=False, user_id=None)

@@ -132,8 +132,8 @@ curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/teams
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/volunteers?q=alvarez
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/volunteers/1/impact
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/reports/coverage
-curl -s -H "Authorization: Bearer $TOKEN" -o parish.xlsx localhost:8080/api/export/parish.xlsx
-curl -s -H "Authorization: Bearer $TOKEN" -F file=@parish.xlsx 'localhost:8080/api/import?dry_run=true'
+curl -s -H "Authorization: Bearer $TOKEN" -o parish.csv localhost:8080/api/export/parish.csv
+curl -s -H "Authorization: Bearer $TOKEN" -F file=@parish.csv 'localhost:8080/api/import?dry_run=true'
 ```
 
 Interactive docs at `/docs`. Endpoints: `/api/volunteers` (+`/assignments`,
@@ -143,20 +143,24 @@ Interactive docs at `/docs`. Endpoints: `/api/volunteers` (+`/assignments`,
 
 ## Spreadsheets
 
-One workbook, two sheets — export, edit, re-import:
+One roster `.csv`, one row per person per team — export, edit, re-import:
 
-- **Volunteers**: First name, Last name, Email, Phone, Notes, Active
-- **Memberships**: Volunteer email, Volunteer name, Team path
-  (`Liturgy / Music Ministry`), Role (label or short value), Joined on, Notes
+**ID, First name, Last name, Email, Phone, Volunteer notes, Team path**
+(`Liturgy / Music Ministry`)**, Role** (label or short value), plus one
+read-only column per custom field. The same format drives the nightly
+two-way Google Drive roster sync.
 
-A row carrying an email is matched by email alone (the name breaks
+The ID column (written by every export) pins a row to its exact record —
+that is how an email gets corrected safely; leave it blank for new people.
+A blank-ID row carrying an email is matched by email alone (the name breaks
 family-shared-email ties); only a row with a blank email falls to exact-name
 matching. An email that matches nobody therefore creates a *new* volunteer even
 when the name is already on file — the report warns, but set the address on the
 existing record first if they are the same person. Imports only add/update —
-they never delete, and a blank cell never clears a field — and are
-**all-or-nothing**: any error rejects the whole file with a row-by-row report.
-The GUI always dry-runs first and shows the report before you apply.
+they never delete, they cannot archive anyone, and a blank cell never clears a
+field — and are **all-or-nothing**: any error rejects the whole file with a
+row-by-row report. The GUI always dry-runs first and shows the report before
+you apply.
 
 ## Operations
 

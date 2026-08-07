@@ -7,56 +7,63 @@ Uploads are capped at **10 MB**.
 
 ```{note}
 Earlier releases used a two-sheet `.xlsx` workbook (Volunteers +
-Memberships). That format is retired: uploading an `.xlsx` is rejected with
-a pointer to export a fresh roster CSV. The same CSV also serves as the
-nightly Google Drive roster sync format.
+Memberships), then a ten-column CSV with `Active`, `Joined on` and
+`Membership notes` columns. Both are retired: an `.xlsx` upload is rejected
+with a pointer to export a fresh roster CSV, and an old-layout CSV fails the
+header check ("download a fresh template or export"). The same CSV also
+serves as the nightly Google Drive roster sync format.
 ```
 
 ## Columns
 
 | Column | Import behavior |
 |---|---|
+| ID | the volunteer's database id, written by every export. **Pins the row to that exact record** — leave blank for new people. A non-numeric or unknown ID is a row **error**, never a create |
 | First name | required |
 | Last name | required |
-| Email | matching key; may be blank or family-shared |
+| Email | matching key for blank-ID rows; may be blank or family-shared. On an ID row, editing it *corrects* the address |
 | Phone | free text |
 | Volunteer notes | free text (on the person) |
-| Active | allow-list both ways: `yes`/`y`/`true`/`1`/`x` or `no`/`n`/`false`/`0`. **Blank = leave unchanged** (new volunteers default to active). Anything else is a row **error** — a typo must never archive someone silently |
 | Team | full path with ` / ` separator, e.g. `Liturgy / Music Ministry`; a bare unambiguous name also works. **Blank = volunteer-only row** (contact update without touching memberships) |
 | Role | short value (`leader`) or display label (`Ministry leader`); required when Team is set |
-| Joined on | ISO date (`2026-05-03`) |
-| Membership notes | free text (on the membership) |
 
 A volunteer serving on several teams appears once per team; the volunteer
 columns of later rows update the same person (harmlessly, since the values
 match). Parish-wide exports list volunteers with no membership at the end,
-with blank team columns.
+with blank team columns — **active volunteers only**: an archived volunteer
+with no membership appears in no export (there is no Active column to mark
+them), while an archived volunteer still on a team keeps their membership
+rows.
 
 Exports append one column per active custom field (e.g. *Safeguarding
-training*) after the ten base columns. The custom-field columns are
+training*) after the eight base columns. The custom-field columns are
 currently **ignored on import** with a warning — custom-field values are
 edited in the app. Photos are managed in the app and API only; they do not
 travel through spreadsheets.
 
 ## Matching rules
 
-1. A row **with an email** is matched by that email and nothing else. When
-   several volunteers share it (families do), the **name** breaks the tie.
-2. A row **with no email** is matched by exact **full name**.
-3. Teams are matched by full path, then by unambiguous bare name.
+1. A row **with an ID** *is* that volunteer — no matching happens. Both
+   names differing from the record raises a warning ("check the ID"), the
+   guard against a copy-pasted row that kept a stale ID.
+2. A blank-ID row **with an email** is matched by that email and nothing
+   else. When several volunteers share it (families do), the **name** breaks
+   the tie.
+3. A blank-ID row **with no email** is matched by exact **full name**.
+4. Teams are matched by full path, then by unambiguous bare name.
 
 Unmatched volunteers are created; matched ones are updated.
 
 ```{important}
-Rule 1 is not a fallback chain. If a row carries an email that matches nobody,
-the name is **not** consulted — even an exact full-name match — and a second
-volunteer is created. This is how you add a contact address for someone already
-on file *by mistake*: the import reports a warning naming the existing person,
-but it still creates the duplicate.
+Rule 2 is not a fallback chain. If a blank-ID row carries an email that
+matches nobody, the name is **not** consulted — even an exact full-name
+match — and a second volunteer is created. This is how you add a contact
+address for someone already on file *by mistake*: the import reports a
+warning naming the existing person, but it still creates the duplicate.
 
-To attach an address to an existing contactless volunteer, set it in the app
-(or via `PATCH /api/volunteers/{id}`) **before** importing a sheet that carries
-it.
+To change someone's address safely, edit the Email cell of a row that
+carries their ID (any export has it), or set it in the app (or via
+`PATCH /api/volunteers/{id}`) **before** importing a sheet that carries it.
 ```
 
 ## What an import will not do
@@ -64,14 +71,14 @@ it.
 - **A blank cell never clears a field.** Only non-empty values are written
   back, so deleting a phone number in an export and re-importing is a no-op.
   Clear a field in the app instead. This protects against a truncated paste
-  silently wiping contact details parish-wide. (This now includes `Active`:
-  a blank cell leaves an archived volunteer archived.)
+  silently wiping contact details parish-wide.
 - **Custom field values are not imported.** They are exported for reference;
   extra columns are ignored with a warning.
-- **`Joined on` values it cannot read are dropped**, with a warning, and the
-  membership is imported without a date. Warnings do not block an import — a
-  file whose dates are all `03/05/2026` applies successfully with every join
-  date missing. Use ISO dates (`2026-05-03`).
+- **Archive anyone.** There is no Active column: archiving happens in the
+  app, or when the Drive sync removes someone's last membership. The one
+  automatic transition in the other direction: a row that puts an archived
+  volunteer **on a team** reactivates them (joining implies active), and the
+  report says so. A bare contact-update row leaves the archive flag alone.
 
 ## Encoding and safety
 
@@ -111,9 +118,9 @@ any error blocks the whole file:
 - Out-of-scope volunteer rows are rejected even when they would change
   nothing — a dry-run must not confirm guessed contact details.
 
-One quirk to know: volunteers are matched by email first, so a "new" row
-that reuses an existing volunteer's email counts as an update of that
-volunteer, and is rejected unless they are within scope.
+One quirk to know: a row carrying an ID, or one that reuses an existing
+volunteer's email, counts as an update of that volunteer, and is rejected
+unless they are within scope.
 
 ## Export variants
 

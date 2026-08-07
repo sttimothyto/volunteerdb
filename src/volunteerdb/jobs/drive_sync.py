@@ -187,8 +187,18 @@ async def apply(workdir: Path) -> int:
                         f"{path}: +{report.volunteers_created} volunteers, "
                         f"+{report.memberships_created}/~{report.memberships_updated}"
                         f"/-{report.memberships_removed} memberships, "
-                        f"{report.volunteers_archived} archived"
+                        f"{report.volunteers_archived} archived, "
+                        f"{report.volunteers_reactivated} reactivated"
                     )
+                    if report.churn_suspected:
+                        # applied, but worth a human look: the alert email
+                        # fires on any non-empty alerts.txt, error or not
+                        alerts.append(
+                            f"{path}: WARNING — sync created "
+                            f"{report.volunteers_created} volunteer(s) while "
+                            f"removing {report.memberships_removed} member(s); "
+                            "check the roster for a duplicated person"
+                        )
                 else:
                     status = "error"
                     error = "; ".join(
