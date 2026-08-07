@@ -1,5 +1,3 @@
-from datetime import date
-
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -14,8 +12,6 @@ router = APIRouter(prefix="/memberships", tags=["memberships"])
 
 class MembershipPatch(BaseModel):
     role: TeamRole | None = None
-    joined_on: date | None = None
-    notes: str | None = None
 
 
 @router.post("", status_code=201)

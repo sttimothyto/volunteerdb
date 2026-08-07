@@ -1,5 +1,3 @@
-from datetime import date
-
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,8 +27,6 @@ async def assign(
     volunteer_id: int,
     team_id: int,
     role: TeamRole,
-    joined_on: date | None = None,
-    notes: str | None = None,
     *,
     existing: Membership | None | object = _UNSET,
 ) -> Membership:
@@ -46,16 +42,10 @@ async def assign(
             volunteer_id=volunteer_id,
             team_id=team_id,
             role=role,
-            joined_on=joined_on,
-            notes=notes,
         )
         session.add(membership)
     else:
         membership.role = role
-        if joined_on is not None:
-            membership.joined_on = joined_on
-        if notes is not None:
-            membership.notes = notes
     await session.flush()
     return membership
 

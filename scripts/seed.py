@@ -8,9 +8,9 @@ Deliberate demo shapes:
 - Maria Alvarez is sole leader of two teams (dramatic impact report)
 - Only some teams carry workload weights, and Maria lands deep in the red
   workload band (colour-coding demo); two custom fields come pre-defined
-- Backdated joins plus a few ended/rejoined memberships feed the service
-  timeline chart (Maria's ended Youth Group spell, Grace's split Music
-  Ministry spells, Peter's mid-spell promotion)
+- A few ended/rejoined memberships (their history backdated) feed the
+  service timeline chart (Maria's ended Youth Group spell, Grace's split
+  Music Ministry spells, Peter's mid-spell promotion)
 - 'Clergy' is filled, and the roll builder finds it by that name, so every
   proposal's voting roll is prefilled with it; Fr. Dominic also sits on
   Finance Council, which exercises the roll's dedupe path and gives him
@@ -220,29 +220,6 @@ VOLUNTEERS: list[tuple[str, str, str | None, list[tuple[str, TeamRole]]]] = [
     ("Joseph", "Tran", "joseph.tran@example.org", [("Clergy", M), ("RCIA", C)]),
 ]
 
-# real-world join dates for some current memberships (varied bar lengths)
-JOINED: dict[tuple[str, str], date] = {
-    ("Maria Alvarez", "Liturgy"): date(2015, 9, 1),
-    ("Maria Alvarez", "Altar Society"): date(2018, 3, 12),
-    ("Maria Alvarez", "Hospitality"): date(2021, 6, 1),
-    ("James Okafor", "Music Ministry"): date(2016, 1, 15),
-    ("James Okafor", "Liturgy"): date(2019, 11, 3),
-    ("Rose Nguyen", "Lectors"): date(2017, 5, 20),
-    ("Peter Kowalski", "Altar Servers"): date(2020, 9, 1),
-    ("Peter Kowalski", "Youth Group"): date(2022, 2, 14),
-    ("Agnes Mbeki", "Faith Formation"): date(2014, 8, 24),
-    ("Agnes Mbeki", "Catechists"): date(2016, 10, 2),
-    ("Thomas Lindqvist", "Maintenance"): date(2019, 4, 6),
-    ("Lucia Fernandez", "St. Vincent de Paul"): date(2013, 2, 11),
-    ("Grace Kim", "Music Ministry"): date(2022, 8, 1),  # rejoined; earlier spell below
-    ("Emmanuel Diallo", "Youth Group"): date(2023, 9, 10),
-    ("Felix Garcia", "Altar Servers"): date(2024, 1, 8),
-    ("Beatrice Laurent", "Lectors"): date(2025, 3, 30),
-    ("Dominic Ferraro", "Clergy"): date(2018, 7, 1),
-    ("Stephen Bianchi", "Clergy"): date(2024, 8, 15),
-    ("Joseph Tran", "Clergy"): date(2021, 5, 22),
-}
-
 # ended memberships: (person, team, role, joined, left) — created and removed
 # through the service layer so the versioning trigger archives them
 PAST_SPELLS: list[tuple[str, str, TeamRole, date, date]] = [
@@ -291,7 +268,6 @@ async def seed() -> None:
                 volunteer_ids[name],
                 team_ids[team_name],
                 role,
-                joined_on=joined,
             )
             mid = m.id
             await memberships.remove(session, mid)
@@ -321,17 +297,12 @@ async def seed() -> None:
                     volunteer_ids[name],
                     team_ids[team_name],
                     role,
-                    joined_on=JOINED.get((name, team_name)),
                 )
 
         # a mid-spell promotion (op='U' history row): Peter served as a plain
         # Altar Server before taking over as leader — two-color timeline bar
         await memberships.assign(
-            session,
-            volunteer_ids[PROMOTED[0]],
-            team_ids[PROMOTED[1]],
-            M,
-            joined_on=JOINED[PROMOTED],
+            session, volunteer_ids[PROMOTED[0]], team_ids[PROMOTED[1]], M
         )
         await memberships.assign(
             session, volunteer_ids[PROMOTED[0]], team_ids[PROMOTED[1]], L
@@ -393,10 +364,7 @@ async def seed() -> None:
         f"  {sum(len(s) + 1 for s in TEAMS.values())} teams, {len(VOLUNTEERS)} volunteers"
     )
     print(f"  {len(WEIGHTS)} weighted teams + 2 custom fields (workload/fields demo)")
-    print(
-        f"  {len(PAST_SPELLS)} ended spells, {len(JOINED)} backdated joins,"
-        " 1 promotion (timeline demo)"
-    )
+    print(f"  {len(PAST_SPELLS)} ended spells, 1 promotion (timeline demo)")
     print("  Clergy team filled — its members join every proposal's voting roll")
     print(f"  admin login:  admin@sttimothy.example / {admin_password}")
     print("  leader login: maria.alvarez@example.org / volunteer")

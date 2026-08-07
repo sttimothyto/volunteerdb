@@ -18,8 +18,8 @@ sub-team
 
 membership
   The link between one {term}`volunteer` and one {term}`team`, carrying
-  exactly one {term}`role`, an optional joined-on date, and notes. A
-  volunteer has at most one membership per team.
+  exactly one {term}`role`. A volunteer has at most one membership per
+  team.
 
 role
   One of the fourfold per-team roles: {term}`leader`, {term}`second`,

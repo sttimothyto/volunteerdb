@@ -498,10 +498,6 @@ async def team_detail(team_id: int, as_of: str = ""):
                         )
                         ui.label(volunteer.phone or "").classes("text-sm text-gray-600")
                     ui.space()
-                    if membership.joined_on:
-                        ui.label(f"since {membership.joined_on.isoformat()}").classes(
-                            "text-xs text-gray-400"
-                        )
                     if can_manage:
                         ui.button(
                             icon="person_remove",

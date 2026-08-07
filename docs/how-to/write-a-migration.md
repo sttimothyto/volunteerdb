@@ -41,7 +41,14 @@ Recipe (from migration `0002`, which is the worked example to copy):
 4. `DROP TABLE <t>_history; ALTER TABLE <t>_history_new RENAME TO
    <t>_history`.
 5. Recreate the indexes: `ix_<t>_history_id` (btree) and
-   `ix_<t>_history_sys_period` (GiST).
+   `ix_<t>_history_sys_period` (GiST) — plus any later per-twin extras
+   (`membership_history` also carries `ix_membership_history_volunteer_id`,
+   rev 0005).
+
+**Dropping** a live column follows the same recipe with the drops first
+(PostgreSQL skips dropped columns when expanding a row, so the twin must be
+rebuilt to the post-drop order; the old column's history values are
+discarded) — migration `0011` is the worked example.
 
 No trigger changes are needed — `versioning()` resolves `<table>_history` by
 name at runtime. Tables that are *not* versioned (`app_user`,

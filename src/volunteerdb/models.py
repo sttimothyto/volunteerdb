@@ -132,8 +132,6 @@ class Membership(Base):
         sa.ForeignKey("team.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[TeamRole] = mapped_column(team_role_enum)
-    joined_on: Mapped[date | None]
-    notes: Mapped[str | None] = mapped_column(sa.Text)
     sys_period: Mapped[Range[datetime]] = mapped_column(
         TSTZRANGE, server_default=SYS_PERIOD_DEFAULT
     )

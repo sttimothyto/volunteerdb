@@ -56,8 +56,6 @@ Relationships: `memberships` (cascade delete-orphan), optional one-to-one
 | `volunteer_id` | integer | FK → volunteer, `ON DELETE CASCADE`, indexed |
 | `team_id` | integer | FK → team, `ON DELETE CASCADE`, indexed |
 | `role` | team_role | |
-| `joined_on` | date | optional |
-| `notes` | text | |
 | `sys_period` | tstzrange | |
 
 Unique on `(volunteer_id, team_id)`: a volunteer holds exactly one role per
@@ -267,3 +265,4 @@ why adding a live column requires rebuilding the twin; see
 | `0008` | Replaces `proposal` with the nomination + STAR-voting pipeline: `proposal`, `proposal_candidate`, `proposal_voter`, `proposal_ballot` (all not versioned; 0007 rows dropped) |
 | `0009` | Deletes the stored `planning` app_setting row; the clergy team is resolved by name |
 | `0010` | `team.home_doc_url` (rebuilds `team_history`); `team_page` and `team_sheet` (not versioned) |
+| `0011` | Drops `membership.joined_on` and `membership.notes` (rebuilds `membership_history`; stored values discarded, downgrade restores the columns as NULL) |

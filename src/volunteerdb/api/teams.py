@@ -108,7 +108,6 @@ async def team_roster(ctx: CtxDep, team_id: int, as_of: AsOf) -> list[RosterEntr
                 volunteer=out,
                 role=membership.role,
                 role_label=role_label(membership.role),
-                joined_on=membership.joined_on,
             )
         )
     return entries

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -242,7 +242,7 @@ class MembershipSpell:
     team_name: str  # current name; latest historical name if the team is gone
     team_deleted: bool
     role: TeamRole  # final role held in this spell
-    start: date  # joined_on if recorded, else when the record was created
+    start: date  # when the membership record was created
     end: date | None  # when the membership record was deleted; None = ongoing
     segments: list[RoleSegment]  # consecutive role stretches within the spell
 
@@ -253,14 +253,14 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
     A spell is one continuous stretch on a team. Row versions of a single
     membership abut exactly (the trigger closes and reopens sys_period at the
     same instant), so a gap between versions of the same (volunteer, team)
-    means leave-then-rejoin under a fresh membership id — a new spell. The
-    start prefers the operator-entered joined_on; the end is the system time
-    the record was deleted, which trails the real-world leave by however long
-    the operator waited. A delete recreated in the same instant (e.g. by an
-    importer) shows as two abutting spells.
+    means leave-then-rejoin under a fresh membership id — a new spell. Both
+    ends are system times: they trail the real-world join/leave by however
+    long the operator waited (rev 0011 dropped the operator-entered
+    joined_on). A delete recreated in the same instant (e.g. by an importer)
+    shows as two abutting spells.
     """
     mh = membership_history
-    cols = ("id", "team_id", "role", "joined_on", "sys_period")
+    cols = ("id", "team_id", "role", "sys_period")
     hist = sa.select(*[mh.c[n] for n in cols], mh.c.op).where(
         mh.c.volunteer_id == volunteer_id
     )
@@ -302,21 +302,17 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
     for run in runs:
         first, last = run[0], run[-1]
         ended = last.op == "D"
-        start = last.joined_on or first.sys_period.lower.astimezone().date()
+        start = first.sys_period.lower.astimezone().date()
         segments: list[RoleSegment] = []
         for row in run:
             if segments and segments[-1].role == row.role:
-                segments[-1].end = row.sys_period.upper  # notes/joined_on-only edit
+                # same-role consecutive versions: pre-0011 history rows where
+                # only joined_on/notes changed
+                segments[-1].end = row.sys_period.upper
             else:
                 segments.append(
                     RoleSegment(row.role, row.sys_period.lower, row.sys_period.upper)
                 )
-        # joined_on may only widen the first segment backwards. A start date that
-        # has not arrived yet (signed up in July to begin in September) would
-        # otherwise push the segment past its own end and render as a
-        # negative-width bar; the spell still reports the operator's date.
-        joined_at = datetime.combine(start, time.min).astimezone()
-        segments[0].start = min(joined_at, segments[0].start)
         spells.append(
             MembershipSpell(
                 team_id=first.team_id,

@@ -291,10 +291,6 @@ async def volunteer_detail(volunteer_id: int):
                 )
                 ui.badge(ROLE_LABELS[membership.role])
                 ui.space()
-                if membership.joined_on:
-                    ui.label(f"since {membership.joined_on.isoformat()}").classes(
-                        "text-xs text-gray-400"
-                    )
                 if actor.can_manage_team(team.id):
                     ui.button(
                         icon="person_remove",

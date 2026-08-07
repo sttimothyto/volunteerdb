@@ -133,16 +133,12 @@ class MembershipOut(ORMModel):
     volunteer_id: int
     team_id: int
     role: TeamRole
-    joined_on: date | None
-    notes: str | None
 
 
 class MembershipIn(BaseModel):
     volunteer_id: int
     team_id: int
     role: TeamRole
-    joined_on: date | None = None
-    notes: str | None = None
 
 
 class RosterEntry(BaseModel):
@@ -150,7 +146,6 @@ class RosterEntry(BaseModel):
     volunteer: VolunteerOut
     role: TeamRole
     role_label: str
-    joined_on: date | None
 
 
 # --- workload ---

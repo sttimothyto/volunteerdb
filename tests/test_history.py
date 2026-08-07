@@ -7,8 +7,14 @@ from decimal import Decimal
 import sqlalchemy as sa
 
 from volunteerdb.db import db_session
-from volunteerdb.models import Volunteer, team_history, volunteer_history
-from volunteerdb.services import teams, volunteers
+from volunteerdb.models import (
+    TeamRole,
+    Volunteer,
+    membership_history,
+    team_history,
+    volunteer_history,
+)
+from volunteerdb.services import memberships, teams, volunteers
 
 
 async def _now() -> datetime:
@@ -84,9 +90,27 @@ async def test_rolled_back_changes_leave_no_history(database):
         assert count == 0
 
 
-# The next two tests guard the 0002 twin rebuilds: if volunteer_history/team_history
-# column order ever drifts from live-order + (changed_by, op), the trigger's
-# positional INSERT breaks and these fail on the first UPDATE.
+# The next three tests guard the twin rebuilds (0002: volunteer_history and
+# team_history; 0011: membership_history): if a twin's column order ever drifts
+# from live-order + (changed_by, op), the trigger's positional INSERT breaks
+# and these fail on the first UPDATE.
+
+
+async def test_membership_role_changes_are_versioned(database):
+    async with db_session(user_id=11) as session:
+        v = await volunteers.create(session, "Ada", "Archivist")
+        t = await teams.create(session, "Choir")
+        vid, tid = v.id, t.id
+        await memberships.assign(session, vid, tid, TeamRole.member)
+
+    async with db_session(user_id=11) as session:
+        await memberships.assign(session, vid, tid, TeamRole.leader)
+
+    async with db_session() as session:
+        row = (await session.execute(sa.select(membership_history))).mappings().one()
+        assert row["volunteer_id"] == vid and row["team_id"] == tid
+        assert row["role"] == "member"
+        assert row["changed_by"] == 11 and row["op"] == "U"
 
 
 async def test_custom_values_are_versioned(database):

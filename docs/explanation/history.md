@@ -44,9 +44,10 @@ promotions) are reconstructed from the archived versions.
 
 - **Granularity is the transaction**, not the calendar. `sys_period` records
   when the row was *written*, which for freshly imported historical data is
-  the import moment, not the real-world join date (that lives in
-  `joined_on`). The seed script backdates its demo history rows precisely
-  because real deployments cannot.
+  the import moment, not the real-world join date. (Rev 0011 dropped the
+  operator-entered `joined_on`, so timeline spells start at record creation.)
+  The seed script backdates its demo history rows precisely because real
+  deployments cannot.
 - **Not everything is versioned.** Accounts, custom-field *definitions*, and
   settings (`app_user`, `custom_field_def`, `app_setting`) have no twins;
   as-of pages show today's field definitions applied to yesterday's data.
