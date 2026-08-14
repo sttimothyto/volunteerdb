@@ -25,13 +25,12 @@ def _rows(content: bytes) -> list[list[str]]:
     return list(csv.reader(StringIO(content.decode("utf-8-sig"))))
 
 
-async def test_template_download(client, seeded, token_member):
+async def test_template_route_removed(client, seeded, token_member):
+    """The CSV template endpoint gave way to the decorated Google Sheet on
+    Drive (VDB_TEMPLATE_SHEET_URL); exporter.template_csv() lives on for the
+    dev fallback on /import and for authoring the Drive template."""
     r = await client.get("/api/export/template.csv", headers=token_member)
-    assert r.status_code == 200, "any signed-in user may fetch the template"
-    assert r.headers["content-type"].startswith("text/csv")
-    assert 'filename="volunteerdb-template.csv"' in r.headers["content-disposition"]
-    assert r.content.startswith(b"\xef\xbb\xbf"), "UTF-8 BOM for Excel"
-    assert _rows(r.content) == [ROSTER_HEADERS]
+    assert r.status_code == 404
 
 
 async def test_parish_export_admin_only(client, seeded, token_admin, token_member):

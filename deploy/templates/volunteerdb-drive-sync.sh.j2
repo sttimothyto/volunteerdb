@@ -8,9 +8,13 @@
 #   3. rclone: apply renames, upload regenerated CSVs (convert-on-upload
 #      keeps each file a native Google Sheet, updated IN PLACE so shared
 #      links keep working — verified per docs/how-to/drive-roster-sync.md)
-#   4. rclone: relist; container: drive_sync record  (store file ids +
+#   4. decorate: re-apply dropdowns/notes/protection that the convert wipes
+#      (non-fatal; MUST precede the relist so `record` stores post-decorate
+#      ModTimes — else every sheet looks leader-edited tomorrow)
+#   5. rclone: relist; container: drive_sync record  (store file ids +
 #      sync marks)
-# Alerts: any script failure, or a non-empty alerts.txt from the apply leg.
+# Alerts: any script failure, a non-empty alerts.txt from the apply leg, or
+# a decorate failure (which never fails the data sync itself).
 set -Eeuo pipefail
 shopt -s nullglob
 
@@ -83,13 +87,22 @@ for f in "$WORKDIR"/out/*.csv; do
     echo "uploaded $(basename "$f")"
 done
 
-# --- 4. record --------------------------------------------------------------
+# --- 4. decorate (dropdowns/notes/protection; non-fatal by design) ----------
+if ! '{{ decorate_script }}' --rclone-conf "$RCLONE_CONF" \
+        --remote '{{ rclone_remote }}' --folder '{{ sheets_folder }}'; then
+    # `if !` keeps set -e and the ERR trap out of it: a cosmetic failure
+    # alerts (via the tail block below) but never fails the data sync.
+    echo "sheet decoration FAILED - data sync itself unaffected" >&2
+    echo "sheet decoration failed (data sync OK) - details: journalctl -t volunteerdb-drive-sync" >> "$WORKDIR/alerts.txt"
+fi
+
+# --- 5. record --------------------------------------------------------------
 $RCLONE lsjson "$REMOTE" > "$WORKDIR/post/listing.json"
 chown 10001:10001 "$WORKDIR/post/listing.json"
 $PODMAN_RUN "$IMAGE" python -m volunteerdb.jobs.drive_sync record /sync
 
 if [ -s "$WORKDIR/alerts.txt" ]; then
-    echo "sync completed with per-team problems:" >&2
+    echo "sync completed with problems:" >&2
     cat "$WORKDIR/alerts.txt" >&2
     {% if alert_email %}send_alert{% endif %}
 else

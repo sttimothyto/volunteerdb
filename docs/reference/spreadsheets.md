@@ -122,11 +122,22 @@ One quirk to know: a row carrying an ID, or one that reuses an existing
 volunteer's email, counts as an update of that volunteer, and is rejected
 unless they are within scope.
 
+## Drive sheet decoration
+
+The Google Sheets the nightly sync maintains (and the template sheet the
+`/import` page links to) carry cosmetic guardrails, re-applied every night
+by the sync's decorate leg
+([how-to](../how-to/drive-roster-sync.md#sheet-decoration-self-healing)):
+a strict **Role dropdown** of the four display labels, a **hidden ID
+column** (still exported — the pin survives), a **frozen,
+warning-protected header row**, and a structure-warning note on the
+header. Decoration never touches cell values and never affects what the
+sync reads or writes.
+
 ## Export variants
 
 | File | Contents | Access |
 |---|---|---|
-| `template.csv` | Header row only | signed in |
 | `parish.csv` | Every membership row, then membership-less volunteers, plus custom-field columns | admin |
 | `team/{id}.csv` | One team's roster (sub-teams included) | full-roster rights on the team |
 | `my-teams.csv` | Union of the caller's managed teams | leads/seconds any team |

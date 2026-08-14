@@ -18,11 +18,6 @@ def _csv(content: bytes, filename: str) -> Response:
     )
 
 
-@router.get("/export/template.csv")
-async def template_csv(ctx: CtxDep) -> Response:
-    return _csv(exporter.template_csv(), "volunteerdb-template.csv")
-
-
 @router.get("/export/parish.csv")
 async def export_parish(ctx: CtxDep, as_of: AsOf) -> Response:
     require(ctx.actor.is_admin, "export the whole parish")

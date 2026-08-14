@@ -47,6 +47,53 @@ left blank in a team's own sheet.
 - Mistakes are recoverable: the 02:00 backup immediately precedes the
   sync ([backups](backup-restore.md)); the history views show exactly what
   the sync changed (`changed_by` = `drive-sync@sttimothyto.org`).
+- **Only the first tab syncs.** The nightly rewrite replaces the whole
+  spreadsheet and can **delete any extra tabs** — scratch work belongs in
+  a copy (*File → Make a copy*; copies are never synced), not in extra
+  tabs. The sheets carry a note saying the same.
+
+## Sheet decoration (self-healing)
+
+Every sheet gets leader-facing polish: a **Role dropdown** of the four
+role labels (strict — free-typed roles are rejected at entry instead of
+failing the night's sync), a **structure warning** note on the first two
+header cells, a **frozen, warning-protected header row**, and a **hidden
+ID column** (hidden columns still export, so the pin survives).
+
+The nightly rewrite wipes all of this — decoration is therefore a leg of
+the sync itself (`/usr/local/bin/volunteerdb-decorate-sheets`, installed
+from `deploy/files/volunteerdb-decorate-sheets.py`): after the upload
+loop it re-decorates every roster sheet and the template, skipping sheets
+already compliant. It runs **before** the relist that `record` reads —
+decoration bumps Drive ModTime, and the stored sync marks must postdate
+it or every sheet would look leader-edited the next night. A decoration
+failure emails an alert but never fails the data sync. Never run it by
+hand between a sync's `record` and the next cron for the same reason; if
+you must, immediately re-run the full sync afterwards.
+
+It authenticates by minting an access token from the rclone remote's
+OAuth client (`rclone.conf` is read, never written) and needs the
+**Google Sheets API enabled** in that client's Cloud project — a
+`SERVICE_DISABLED` error aborts with the one-time activation URL.
+
+## The template sheet
+
+The Drive folder also holds **`ROSTER TEMPLATE (copy me, do not edit)`**
+— a decorated, header-only sheet the `/import` page links to
+(`VDB_TEMPLATE_SHEET_URL` in `/etc/volunteerdb/env`; it replaced the old
+`GET /api/export/template.csv`). Its name matches no team slug, so the
+sync leaves it alone (a nightly journal `NOTE` line is expected). To
+(re)create it:
+
+```sh
+CONF=/root/.config/rclone/rclone.conf
+printf '\xef\xbb\xbfID,First name,Last name,Email,Phone,Volunteer notes,Team,Role\r\n' > /tmp/template.csv
+rclone --config $CONF --drive-import-formats csv copyto /tmp/template.csv \
+  "volunteerdb-gdrive-backup:volunteerdb-spreadsheets/ROSTER TEMPLATE (copy me, do not edit).csv"
+```
+
+The next sync (or a standalone decorate run right after, if no sync has
+run since) decorates it, adding 25 dropdown-ready blank rows.
 
 ## Architecture
 
@@ -59,8 +106,9 @@ human-editable). The Python side never talks to Drive: the host script
 `deploy/templates/volunteerdb-drive-sync.sh.j2`) exports every sheet to CSV
 in a work dir (`/var/lib/volunteerdb-drive-sync`), runs
 `python -m volunteerdb.jobs.drive_sync apply /sync` in a one-shot app
-container, uploads the regenerated CSVs back with convert-on-upload, then
-`… record /sync` stores each sheet's Drive **file id** and sync mark.
+container, uploads the regenerated CSVs back with convert-on-upload,
+re-decorates the sheets (see above), then `… record /sync` stores each
+sheet's Drive **file id** and sync mark.
 
 Details that make it safe:
 

@@ -17,8 +17,11 @@ they lead (sub-teams included).
   union of their managed teams.
 - **One team's roster** — the *Export roster (.csv)* button on a team page;
   available to anyone with full-roster rights on that team.
-- **Empty template** — `/import` → *Empty template*: the header row, for
-  building an import from scratch.
+- **Roster template** — `/import` → *Roster template (Google Sheets)*: the
+  decorated template sheet on Drive (role dropdown, structure warning,
+  hidden ID column) — make a copy, fill it in, download as `.csv`, import
+  below. Without `VDB_TEMPLATE_SHEET_URL` configured (dev), the button
+  falls back to a bare header-row CSV download.
 
 Via the API, the data exports accept `as_of=` for historical snapshots —
 see the {ref}`endpoints <api-import-export>`.

@@ -114,6 +114,7 @@ BACKUP_ALERT_EMAIL = ADMIN_EMAIL  # "" disables the failure email
 SHEETS_FOLDER = "volunteerdb-spreadsheets"
 SYNC_WORKDIR = "/var/lib/volunteerdb-drive-sync"
 DRIVE_SYNC_SCRIPT = "/usr/local/bin/volunteerdb-drive-sync"
+DECORATE_SCRIPT = "/usr/local/bin/volunteerdb-decorate-sheets"
 FETCH_PAGES_SCRIPT = "/usr/local/bin/volunteerdb-fetch-pages"
 APP_UID = 10001  # the image's `app` user; owns the bind-mounted sync workdir
 
@@ -137,6 +138,13 @@ smtp2go_api_key = (
 )
 if not smtp2go_api_key:
     print("NOTE: VDB_SMTP2GO_API_KEY not set - emails will be logged, not sent.")
+# Set once (env var at deploy time or by hand in ENV_FILE) after the template
+# sheet exists on Drive; reused on every later deploy like the secrets above.
+template_sheet_url = (
+    os.environ.get("VDB_TEMPLATE_SHEET_URL")
+    or _existing.get("VDB_TEMPLATE_SHEET_URL")
+    or ""
+)
 database_url = (
     f"postgresql+asyncpg://{DB_USER}:{db_password}@volunteerdb-db:5432/{DB_NAME}"
 )
@@ -209,6 +217,7 @@ files.template(
     smtp2go_api_key=smtp2go_api_key,
     db_password=db_password,
     port=APP_PORT,
+    template_sheet_url=template_sheet_url,
 )
 files.template(
     name="Write /etc/volunteerdb/db.env",
@@ -401,6 +410,17 @@ files.directory(
     user=str(APP_UID),
     group=str(APP_UID),
 )
+# Installed before the sync wrapper so the wrapper never references a
+# missing binary. Sheet decoration (dropdowns, notes, hidden ID column)
+# lives on the host because it reuses the rclone remote's OAuth client.
+files.put(
+    name="Install decorate-sheets script",
+    src=str(HERE / "files" / "volunteerdb-decorate-sheets.py"),
+    dest=DECORATE_SCRIPT,
+    mode="700",
+    user="root",
+    group="root",
+)
 files.template(
     name="Install drive-sync script",
     src=str(HERE / "templates" / "volunteerdb-drive-sync.sh.j2"),
@@ -415,6 +435,7 @@ files.template(
     image=IMAGE,
     net=NET,
     env_file=ENV_FILE,
+    decorate_script=DECORATE_SCRIPT,
     alert_email=BACKUP_ALERT_EMAIL,
     mail_from="no-reply@sttimothyto.org",
     mail_from_name="VolunteerDB",

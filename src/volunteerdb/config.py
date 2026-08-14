@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     smtp2go_api_key: str = ""  # empty: emails are printed to the log, not sent
     mail_from: str = "no-reply@sttimothyto.org"
     mail_from_name: str = "VolunteerDB"
+    # URL of the decorated roster-template Google Sheet in the Drive folder.
+    # Set: the /import page links there instead of offering the bare CSV.
+    # Empty (dev): the page falls back to a plain CSV download.
+    template_sheet_url: str = ""
     # Built HTML manual served at /manual (signed-in users). Relative paths
     # resolve against the cwd (repo root in dev); the container bakes the
     # docs in and sets VDB_DOCS_DIR=/app/docs-html.

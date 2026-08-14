@@ -1,5 +1,6 @@
 from nicegui import events, ui
 
+from ..config import settings
 from ..permissions import require
 from ..sheets import exporter, importer
 from .context import action_session, notify_errors, page_session
@@ -42,9 +43,21 @@ async def import_page():
             ui.button(data_label, icon="download", on_click=download_data).props(
                 "dense"
             )
-            ui.button(
-                "Empty template", icon="description", on_click=download_template
-            ).props("outline dense")
+            if settings().template_sheet_url:
+                # The decorated Google Sheet (role dropdown, hidden ID column,
+                # structure warning) replaces the bare CSV: copy it, fill it in,
+                # export as .csv, import below.
+                ui.button(
+                    "Roster template (Google Sheets)",
+                    icon="open_in_new",
+                    on_click=lambda: ui.navigate.to(
+                        settings().template_sheet_url, new_tab=True
+                    ),
+                ).props("outline dense")
+            else:  # dev fallback: no Drive template configured
+                ui.button(
+                    "Empty template", icon="description", on_click=download_template
+                ).props("outline dense")
         ui.label(
             "The export round-trips: edit it in a spreadsheet program and import it below."
             + (

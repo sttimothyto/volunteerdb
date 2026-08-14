@@ -126,7 +126,6 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 
 | Method & path | Permission | Notes |
 |---|---|---|
-| `GET /api/export/template.csv` | signed in | Header row only |
 | `GET /api/export/parish.csv` | admin | Full roster export, `as_of=` |
 | `GET /api/export/team/{team_id}.csv` | full roster on the team | Roster export (sub-teams included), `as_of=` |
 | `GET /api/export/my-teams.csv` | leads/seconds any team | Union of managed teams, `as_of=` |
