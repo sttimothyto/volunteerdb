@@ -32,7 +32,6 @@ from ..models import AppUser, Membership, Volunteer
 from ..permissions import load_actor
 from ..services import memberships as membership_service
 from ..services import teams as team_service
-from ..services import volunteers as volunteer_service
 from .common import ROSTER_HEADERS, ROSTER_SHEET, clean_cell, parse_role
 
 
@@ -559,20 +558,29 @@ async def apply_rows(
             )
         )
         return
+    removed_ids: list[int] = []
     for m in to_remove:
-        volunteer_id = m.volunteer_id
+        removed_ids.append(m.volunteer_id)
         await membership_service.remove(session, m.id)
         report.memberships_removed += 1
-        remaining = (
-            await session.execute(
-                sa.select(sa.func.count())
-                .select_from(Membership)
-                .where(Membership.volunteer_id == volunteer_id)
-            )
-        ).scalar_one()
-        if remaining == 0:
-            await volunteer_service.update(session, volunteer_id, is_active=False)
+    # archive volunteers left with no membership at all: one grouped query
+    # over everyone just removed (remove() flushed the deletes, so this sees
+    # the post-removal state) instead of a COUNT per removal
+    still_serving = set(
+        await session.scalars(
+            sa.select(Membership.volunteer_id)
+            .where(Membership.volunteer_id.in_(removed_ids))
+            .distinct()
+        )
+    )
+    to_archive = [vid for vid in removed_ids if vid not in still_serving]
+    if to_archive:
+        for volunteer in await session.scalars(
+            sa.select(Volunteer).where(Volunteer.id.in_(to_archive))
+        ):
+            volunteer.is_active = False
             report.volunteers_archived += 1
+        await session.flush()
     if report.churn_suspected:
         report.warnings.append(
             Issue(

@@ -21,6 +21,7 @@ HSM the key would sit in /etc/volunteerdb/env on the same host as the database
 
 import secrets
 
+import anyio.to_thread
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
@@ -56,6 +57,25 @@ def needs_rehash(password_hash: str) -> bool:
 def burn_password_check(password: str) -> None:
     """Timing equalizer for unknown/passwordless accounts (enumeration resistance)."""
     verify_password(_DUMMY_HASH, password)
+
+
+# Async handlers call the wrappers below: one argon2 pass is 100-400 ms of
+# GIL-held CPU, and the app runs a single uvicorn worker, so a sync call
+# stalls every other request and websocket for that window. Should concurrent
+# 64 MiB hashes ever need bounding, an anyio.CapacityLimiter passed as
+# `limiter=` here is the knob.
+
+
+async def async_hash_password(password: str) -> str:
+    return await anyio.to_thread.run_sync(hash_password, password)
+
+
+async def async_verify_password(password_hash: str, password: str) -> bool:
+    return await anyio.to_thread.run_sync(verify_password, password_hash, password)
+
+
+async def async_burn_password_check(password: str) -> None:
+    await anyio.to_thread.run_sync(burn_password_check, password)
 
 
 def new_token() -> str:

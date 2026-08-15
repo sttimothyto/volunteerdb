@@ -2,9 +2,13 @@ export default {
   template: '<div style="width: 100%; height: 70vh; min-height: 420px;"></div>',
   props: {
     elements: Object,
+    libUrl: String,
   },
   async mounted() {
-    const cytoscape = (await import("/static/cytoscape.esm.min.js")).default;
+    // libUrl carries a cache-busting ?v= and matches the page's modulepreload
+    const cytoscape = (
+      await import(this.libUrl || "/static/cytoscape.esm.min.js")
+    ).default;
     this.cy = cytoscape({
       container: this.$el,
       elements: this.elements,
@@ -140,14 +144,34 @@ export default {
         },
       ];
     },
-    layoutOptions() {
-      return { name: "cose", animate: false, nodeOverlap: 8, idealEdgeLength: 60 };
+    layoutOptions(numIter = 300) {
+      // cose defaults to numIter 1000; the layout runs synchronously on the
+      // main thread, so iterations are paid for in time-to-first-render
+      return {
+        name: "cose",
+        animate: false,
+        nodeOverlap: 8,
+        idealEdgeLength: 60,
+        numIter,
+      };
     },
     refresh(elements) {
       if (!this.cy) return;
+      // carry surviving nodes' positions across the swap: cose keeps
+      // randomize:false, so it refines from where nodes already are instead
+      // of re-annealing the whole map (and re-scrambling it) on every filter
+      const pos = {};
+      this.cy.nodes().forEach((n) => {
+        pos[n.id()] = { ...n.position() };
+      });
       this.cy.elements().remove();
       this.cy.add(elements);
-      this.cy.layout(this.layoutOptions()).run();
+      let fresh = 0;
+      this.cy.nodes().forEach((n) => {
+        if (pos[n.id()]) n.position(pos[n.id()]);
+        else fresh += 1;
+      });
+      this.cy.layout(this.layoutOptions(fresh ? 300 : 100)).run();
       this.cy.fit(undefined, 30);
     },
     fit() {

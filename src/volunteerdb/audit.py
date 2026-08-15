@@ -141,6 +141,13 @@ def _log_execute(execute_state: ORMExecuteState) -> None:
     # logging with the after_flush listener above.
     stmt = execute_state.statement
     if execute_state.is_select:
+        if settings().log_level.upper() not in ("DEBUG", "INFO"):
+            # db.read is emitted at INFO and dropped by log._ModeFilter at
+            # AUDIT and above — skip the get_final_froms() compile-inspection
+            # and the whole structlog chain for a line that can never land.
+            # (The level is env-driven and lru_cached; it cannot change at
+            # runtime.)
+            return
         try:
             with warnings.catch_warnings():
                 # get_final_froms() compile-inspects with the default dialect,

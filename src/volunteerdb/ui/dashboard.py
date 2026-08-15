@@ -7,6 +7,7 @@ from ..services import graph as graph_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
+from .assets import static_url
 from .context import action_session, page_session, parse_as_of
 from .cytoscape_element import CytoscapeGraph
 from .layout import frame
@@ -16,6 +17,11 @@ from .volunteer_panel import VolunteerPanel
 
 @ui.page("/")
 async def dashboard(as_of: str = ""):
+    # the graph library is loaded via dynamic import() at Vue mount, far too
+    # late for the browser's preload scanner — announce it in the head instead
+    ui.add_head_html(
+        f'<link rel="modulepreload" href="{static_url("cytoscape.esm.min.js")}">'
+    )
     at = parse_as_of(as_of)
     async with page_session() as (session, actor):
         elements = await graph_service.elements(session, actor, at=at)

@@ -168,12 +168,22 @@ async def test_api_write_carries_actor_identity(
     assert record["ip"] == "127.0.0.1"
 
 
-async def test_reads_logged_at_info(database, log_records):
+async def test_reads_logged_at_info(database, log_records, debug_logging):
+    """debug_logging because reads are no longer even *computed* at the
+    default AUDIT level — _log_execute returns before get_final_froms() for
+    a line _ModeFilter would drop anyway."""
     async with db_session() as session:
         await volunteers.search(session)
     reads = _by_event(log_records, "db.read")
     assert any("volunteer" in r["table"] for r in reads)
     assert all(r["level"] == "info" for r in reads)
+
+
+async def test_reads_skipped_below_info(database, log_records):
+    """The default level is AUDIT: no db.read event is built at all."""
+    async with db_session() as session:
+        await volunteers.search(session)
+    assert _by_event(log_records, "db.read") == []
 
 
 async def test_core_upsert_logged(database, log_records):

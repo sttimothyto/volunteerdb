@@ -54,6 +54,23 @@ async def test_one_bad_doc_does_not_poison_the_batch(database, monkeypatch):
         assert bad.status == "error" and "500" in bad.error
 
 
+async def test_second_run_with_unchanged_docs_succeeds_and_keeps_pages(
+    database, monkeypatch
+):
+    team_id = await _team("Choir", "gooddoc")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=GOOD.format(doc_id="gooddoc"))
+
+    _mock_transport(monkeypatch, handler)
+    assert await fetch_pages.main() == 0
+    assert await fetch_pages.main() == 0, "an all-unchanged night is a success"
+
+    async with db_session() as session:
+        page = await session.get(TeamPage, team_id)
+        assert page.status == "ok" and "Doc for gooddoc" in page.html
+
+
 async def test_job_skips_inactive_and_doc_less_teams(database, monkeypatch):
     no_doc = await _team("No Doc", None)
     inactive = await _team("Gone", "gonedoc", active=False)

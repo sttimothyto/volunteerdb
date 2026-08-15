@@ -390,7 +390,9 @@ async def _fetch_home_page(team_id: int) -> None:
         if team is None or not team.home_doc_url:
             raise LookupError("this team has no home page doc")
         async with httpx.AsyncClient() as client:
-            page = await page_service.fetch_and_store(session, team, client)
+            # force: a human clicking "Fetch now" means really refetch — also
+            # the repair path when image rows were damaged out-of-band
+            page = await page_service.fetch_and_store(session, team, client, force=True)
     if page.status == "ok":
         ui.notify("Home page updated", color="positive")
     else:
@@ -418,9 +420,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         roster = await team_service.roster(session, team_id, at=at) if can_names else []
         children = [t for t in all_teams if t.parent_team_id == team_id]
         volunteer_options = (
-            {v.id: v.full_name for v in await volunteer_service.search(session)}
-            if can_manage
-            else {}
+            await volunteer_service.name_map(session) if can_manage else {}
         )
         team_page = (
             await session.get(TeamPage, team_id) if can_full and at is None else None

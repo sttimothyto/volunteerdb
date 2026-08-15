@@ -21,7 +21,7 @@ from fastapi import Request
 from nicegui import ui
 
 from .. import passwords, throttle
-from ..auth import verify_password
+from ..auth import async_verify_password
 from ..log import audit_log
 from ..services import mail
 from ..services import users as user_service
@@ -64,7 +64,7 @@ async def account_page(request: Request):
                     color="negative",
                 )
                 return
-            if not verify_password(stored_hash, current.value or ""):
+            if not await async_verify_password(stored_hash, current.value or ""):
                 throttle.hit(key)
                 logger.warning("auth.password_change_denied", email=email)
                 ui.notify("That is not your current password", color="negative")

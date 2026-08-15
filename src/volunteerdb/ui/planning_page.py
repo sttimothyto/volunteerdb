@@ -90,9 +90,7 @@ async def planning_page():
         )
         summaries = await planning_service.list_proposals(session, actor)
         volunteer_options = (
-            {v.id: v.full_name for v in await volunteer_service.search(session)}
-            if can_create
-            else {}
+            await volunteer_service.name_map(session) if can_create else {}
         )
 
     open_rows = [s for s in summaries if s.proposal.status == ProposalStatus.open.value]
@@ -244,9 +242,7 @@ async def proposal_detail(proposal_id: int):
         )
         wl = await workload_service.visible_scores(session, actor, team_sets)
         volunteer_options = (
-            {v.id: v.full_name for v in await volunteer_service.search(session)}
-            if can_manage or is_voter
-            else {}
+            await volunteer_service.name_map(session) if can_manage or is_voter else {}
         )
 
     p = view.proposal

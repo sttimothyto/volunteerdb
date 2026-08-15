@@ -3,6 +3,8 @@
 import re
 
 from volunteerdb.auth import (
+    async_hash_password,
+    async_verify_password,
     burn_password_check,
     hash_password,
     new_otp_code,
@@ -17,6 +19,15 @@ def test_password_hash_roundtrip():
     assert hashed != "correct horse"
     assert verify_password(hashed, "correct horse") is True
     assert verify_password(hashed, "wrong horse") is False
+
+
+async def test_async_wrappers_roundtrip():
+    """The thread-offloaded wrappers the async handlers call — same semantics
+    as the sync primitives they wrap."""
+    hashed = await async_hash_password("correct horse")
+    assert await async_verify_password(hashed, "correct horse") is True
+    assert await async_verify_password(hashed, "wrong horse") is False
+    assert await async_verify_password("not-an-argon2-hash", "anything") is False
 
 
 def test_verify_password_garbage_hash_is_false():

@@ -19,8 +19,9 @@ async def users_page(request: Request):
                 ui.label("Admins only.").classes("text-gray-500")
             return
         accounts = await user_service.list_all(session)
-        volunteers = await volunteer_service.search(session, include_inactive=True)
-        volunteer_names = {v.id: v.full_name for v in volunteers}
+        volunteer_names = await volunteer_service.name_map(
+            session, include_inactive=True
+        )
 
     def invite_url(token: str) -> str:
         return f"{base_url}/invite/{token}"

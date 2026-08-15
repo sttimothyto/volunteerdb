@@ -6,12 +6,12 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import (
-    burn_password_check,
-    hash_password,
+    async_burn_password_check,
+    async_hash_password,
+    async_verify_password,
     needs_rehash,
     new_otp_code,
     new_token,
-    verify_password,
 )
 from ..config import settings
 from ..models import AppUser, Volunteer
@@ -72,14 +72,15 @@ async def authenticate(
 ) -> AppUser | None:
     user = await get_by_email(session, email)
     if user is None or not user.is_active or user.password_hash is None:
-        burn_password_check(password)  # uniform timing: no account-existence oracle
+        # uniform timing: no account-existence oracle
+        await async_burn_password_check(password)
         return None
-    if not verify_password(user.password_hash, password):
+    if not await async_verify_password(user.password_hash, password):
         return None
     if needs_rehash(user.password_hash):
         # The cost factors went up since this password was set; sign-in is the
         # one moment the plaintext is in hand, so re-stretch it now.
-        user.password_hash = hash_password(password)
+        user.password_hash = await async_hash_password(password)
     user.last_login_at = sa.func.now()
     await session.flush()
     return user
@@ -140,11 +141,12 @@ async def create(
         check_password(password, email=addr)
     if volunteer_id is None and link_by_email:
         volunteer_id = await _volunteer_for_email(session, addr)
+    password_hash = await async_hash_password(password) if password else None
     user = AppUser(
         email=addr,
         volunteer_id=volunteer_id,
         is_admin=is_admin,
-        password_hash=hash_password(password) if password else None,
+        password_hash=password_hash,
     )
     if not password:
         _issue_invite(user)
@@ -163,7 +165,7 @@ async def set_password(session: AsyncSession, user_id: int, password: str) -> No
     if user is None:
         raise LookupError(f"user {user_id} not found")
     check_password(password, email=user.email)
-    user.password_hash = hash_password(password)
+    user.password_hash = await async_hash_password(password)
     _clear_invite(user)
     await session.flush()
 
@@ -210,7 +212,7 @@ async def redeem_invite(
         return None
     if password:
         check_password(password, email=user.email)
-        user.password_hash = hash_password(password)
+        user.password_hash = await async_hash_password(password)
     _clear_invite(user)
     await session.flush()
     return user
@@ -237,7 +239,7 @@ async def start_otp_login(
     ):
         return user, None
     code = new_otp_code()
-    user.otp_hash = hash_password(code)
+    user.otp_hash = await async_hash_password(code)
     user.otp_sent_at = now
     user.otp_expires_at = now + OTP_TTL
     user.otp_attempts = 0
@@ -253,7 +255,7 @@ async def verify_otp(session: AsyncSession, email: str, code: str) -> AppUser | 
         return None
     if user.otp_attempts >= OTP_MAX_ATTEMPTS:
         return None
-    if not verify_password(user.otp_hash, (code or "").strip()):
+    if not await async_verify_password(user.otp_hash, (code or "").strip()):
         user.otp_attempts += 1
         await session.flush()
         return None

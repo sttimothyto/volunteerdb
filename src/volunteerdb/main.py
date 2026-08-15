@@ -15,6 +15,7 @@ from .api.deps import install_exception_handlers
 from .config import settings
 from .log import init_logging
 from .ui import register_pages
+from .ui.assets import static_url
 from .ui.context import session_user_id
 
 logger = structlog.get_logger(__name__)
@@ -108,7 +109,13 @@ def create_app() -> None:
     init_logging()
     install_exception_handlers(app)
     app.include_router(api_router)
-    app.add_static_files("/static", str(Path(__file__).parent / "ui" / "static"))
+    # 30 days, safe because mutable assets are referenced via assets.static_url
+    # (?v=<content hash>); the default is only an hour
+    app.add_static_files(
+        "/static",
+        str(Path(__file__).parent / "ui" / "static"),
+        max_cache_age=30 * 24 * 3600,
+    )
     # Built Sphinx manual. Deliberately NOT in UNRESTRICTED_PREFIXES: the
     # ops pages (secrets, backups) are for signed-in eyes only.
     docs_dir = Path(settings().docs_dir)
@@ -140,7 +147,9 @@ def create_app() -> None:
         'as="font" type="font/woff2" crossorigin>',
         shared=True,
     )
-    ui.add_head_html('<link rel="stylesheet" href="/static/theme.css">', shared=True)
+    ui.add_head_html(
+        f'<link rel="stylesheet" href="{static_url("theme.css")}">', shared=True
+    )
     app.add_middleware(AuthMiddleware)
     app.add_middleware(RequestLogMiddleware)
     register_pages()

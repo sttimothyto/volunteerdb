@@ -84,7 +84,11 @@ Optional environment on the command line:
 TLS and the public hostname are **outside this repository**: Caddy on the
 host terminates HTTPS for `vdb.sttimothyto.org` and reverse-proxies to
 `127.0.0.1:8090` (`/etc/caddy/Caddyfile`), and DNS has an A record to the
-server. See [Production deployment architecture](../explanation/deployment.md).
+server. The site block must carry `encode zstd gzip` — the app serves no
+compressed responses itself, so without it every page (including the full
+volunteers table and the public ministry docs) crosses the wire
+uncompressed. See
+[Production deployment architecture](../explanation/deployment.md).
 
 ## Verify
 

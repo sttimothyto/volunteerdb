@@ -18,6 +18,7 @@ from ..db import db_session
 from ..models import Team, TeamPageImage
 from ..services import pages as page_service
 from ..services import teams as team_service
+from .assets import static_url
 
 CACHE_HEADERS = {"Cache-Control": "public, max-age=300"}
 
@@ -52,7 +53,7 @@ def _shell(title: str, body: str) -> str:
         f"<title>{escape(title)}</title>\n"
         '<link rel="preload" href="/static/fonts/cinzel-v11-latin-regular.woff2"'
         ' as="font" type="font/woff2" crossorigin>\n'
-        '<link rel="stylesheet" href="/static/theme.css">\n'
+        f'<link rel="stylesheet" href="{static_url("theme.css")}">\n'
         f"<style>{_SHELL_CSS}</style></head>\n"
         '<body><header class="vdb-header">'
         '<a class="vdb-brand" href="/ministries/">⛪ Ministries</a></header>\n'
@@ -90,19 +91,19 @@ async def ministries_redirect() -> RedirectResponse:
 
 async def ministries_index() -> HTMLResponse:
     async with db_session() as session:
-        pairs = await page_service.published(session)
+        published = await page_service.published_teams(session)
         all_teams = await team_service.list_all(session)
     paths = team_service.team_paths(all_teams)
     slugs = page_service.slug_map(paths)
     items = sorted(
-        (paths.get(team.id, team.name), slugs.get(team.id), page)
-        for team, page in pairs
+        (paths.get(team.id, team.name), slugs[team.id])
+        for team in published
         if team.id in slugs
     )
     if items:
         listing = "".join(
             f'<li><a href="/ministries/{escape(slug)}.html">{escape(path)}</a></li>'
-            for path, slug, _page in items
+            for path, slug in items
         )
         body = f"{_title('Ministry home pages')}<ul class='index'>{listing}</ul>"
     else:
@@ -115,16 +116,19 @@ async def ministries_index() -> HTMLResponse:
 
 async def ministry_page(slug: str) -> HTMLResponse:
     async with db_session() as session:
-        pairs = await page_service.published(session)
         all_teams = await team_service.list_all(session)
-    paths = team_service.team_paths(all_teams)
-    slugs = page_service.slug_map(paths)
-    for team, page in pairs:
-        if slugs.get(team.id) == slug:
-            break
-    else:
+        paths = team_service.team_paths(all_teams)
+        slugs = page_service.slug_map(paths)
+        team_id = next((tid for tid, s in slugs.items() if s == slug), None)
+        # one row for the one team — never every published page's html
+        page = (
+            await page_service.published_page(session, team_id)
+            if team_id is not None
+            else None
+        )
+    if page is None:
         return _not_found()
-    title = paths.get(team.id, team.name)
+    title = paths[team_id]
     updated = (
         f'<p class="meta">Last updated {page.fetched_at:%B %-d, %Y}</p>'
         if page.fetched_at
@@ -134,10 +138,15 @@ async def ministry_page(slug: str) -> HTMLResponse:
     return HTMLResponse(_shell(f"{title} — Ministries", body), headers=CACHE_HEADERS)
 
 
-async def ministry_image(team_id: int, seq: int) -> Response:
+async def ministry_image(team_id: int, seq: int, v: str | None = None) -> Response:
     """An image cached from the team's doc (services.pages._localize_images).
     Joined to the team's published state so that unpublishing or deactivating
-    a team takes its images offline with it."""
+    a team takes its images offline with it.
+
+    `v` is the content hash _localize_images bakes into the page html: a
+    hashed URL names exact bytes, so it is served immutable (the photos-route
+    pattern). Bare URLs — html cached before hashing shipped — keep the short
+    lifetime."""
     async with db_session() as session:
         row = (
             await session.execute(
@@ -153,6 +162,7 @@ async def ministry_image(team_id: int, seq: int) -> Response:
         ).scalar_one_or_none()
     if row is None:
         raise HTTPException(404, "no such image")
-    return Response(
-        content=row.image, media_type=row.content_type, headers=CACHE_HEADERS
+    headers = (
+        {"Cache-Control": "public, max-age=31536000, immutable"} if v else CACHE_HEADERS
     )
+    return Response(content=row.image, media_type=row.content_type, headers=headers)

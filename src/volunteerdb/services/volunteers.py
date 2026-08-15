@@ -37,12 +37,16 @@ async def search(
 ) -> list[Volunteer]:
     """Substring search over every volunteer column.
 
-    Name and email match for everyone (and keep the rev-0005 trigram indexes).
-    Phone, notes, and custom-field values additionally match — but, unless the
-    actor is an admin (or None: trusted internal caller), only among volunteers
-    the actor can already view unredacted, mirroring can_view_volunteer: self,
-    plus anyone on a team in full_view_team_ids. Matching a private field a
-    viewer can't see would leak its content by the row's mere presence.
+    Name and email match for everyone. (The rev-0005 trigram indexes cover
+    only those two predicates; since the private branches below joined the
+    same OR, every non-blank search seq-scans — sub-millisecond at parish
+    scale, so the indexes are retained as harmless until search is
+    restructured.) Phone, notes, and custom-field values additionally match —
+    but, unless the actor is an admin (or None: trusted internal caller), only
+    among volunteers the actor can already view unredacted, mirroring
+    can_view_volunteer: self, plus anyone on a team in full_view_team_ids.
+    Matching a private field a viewer can't see would leak its content by the
+    row's mere presence.
 
     `limit` caps the rows the database returns (for the search-box typeahead);
     since the order is by name, that is the alphabetically first N matches.
@@ -84,6 +88,21 @@ async def search(
     if limit is not None:
         stmt = stmt.limit(limit)
     return [row[0] for row in await fetch(session, stmt, at)]
+
+
+async def name_map(
+    session: AsyncSession, include_inactive: bool = False
+) -> dict[int, str]:
+    """id → 'First Last' for selection widgets, in list order — three columns
+    instead of full entities (notes and the custom JSONB stay in the
+    database, and out of the serialized page)."""
+    stmt = sa.select(Volunteer.id, Volunteer.first_name, Volunteer.last_name).order_by(
+        Volunteer.last_name, Volunteer.first_name
+    )
+    if not include_inactive:
+        stmt = stmt.where(Volunteer.is_active)
+    rows = await session.execute(stmt)
+    return {vid: f"{first} {last}" for vid, first, last in rows}
 
 
 async def find_by_email(session: AsyncSession, email: str) -> list[Volunteer]:

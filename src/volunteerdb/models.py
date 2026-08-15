@@ -409,9 +409,10 @@ class TeamPageImage(Base):
     so fetch_and_store downloads each image and rewrites the page html to
     /ministries/img/<team_id>/<seq>.
 
-    Not system-versioned: a cache of external content, replaced wholesale on
-    every successful fetch (a failed fetch keeps the previous set, matching
-    the kept html).
+    Not system-versioned: a cache of external content, replaced wholesale
+    whenever a successful fetch changed the page html (a failed fetch keeps
+    the previous set, matching the kept html; an unchanged doc keeps the rows
+    untouched — see services.pages.fetch_and_store).
     """
 
     __tablename__ = "team_page_image"

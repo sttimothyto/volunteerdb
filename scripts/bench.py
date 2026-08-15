@@ -26,17 +26,28 @@ import sys
 import time
 from datetime import UTC, datetime
 from decimal import Decimal
+from io import BytesIO
 from random import Random
 
 import sqlalchemy as sa
+from PIL import Image
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from volunteerdb import db
 from volunteerdb.db import db_session
-from volunteerdb.models import FieldType, Membership, TeamRole, Volunteer
+from volunteerdb.models import (
+    FieldType,
+    Membership,
+    Team,
+    TeamPage,
+    TeamPageImage,
+    TeamRole,
+    Volunteer,
+)
 from volunteerdb.permissions import load_actor, team_ids_map
 from volunteerdb.services import custom_fields as custom_field_service
+from volunteerdb.services import pages as page_service
 from volunteerdb.services import teams as team_service
 from volunteerdb.services import users as user_service
 from volunteerdb.services import volunteers as volunteer_service
@@ -187,6 +198,40 @@ async def seed(scale: int) -> None:
                     workload_weight=weight,
                 )
                 team_ids.append(child.id)
+
+        # 15 published ministry pages (~100 KB html + 3 small images each) —
+        # what the /ministries patterns below serve anonymously
+        para = (
+            "<p class='c1'>Ministry news: formation evenings, serving "
+            "schedules, and how newcomers can join this team.</p>"
+        )
+        doc_html = f"<style>.doc p{{margin:0.4em 0}}</style>{para * 900}"
+        png_buffer = BytesIO()
+        Image.new("RGB", (40, 30), "gray").save(png_buffer, format="PNG")
+        png = png_buffer.getvalue()
+        for team_id in team_ids[:15]:
+            imgs = "".join(
+                f'<img src="/ministries/img/{team_id}/{seq}">' for seq in (1, 2, 3)
+            )
+            session.add(
+                TeamPage(
+                    team_id=team_id,
+                    html=doc_html + imgs,
+                    status="ok",
+                    fetched_at=datetime.now(UTC),
+                )
+            )
+            for seq in (1, 2, 3):
+                session.add(
+                    TeamPageImage(
+                        team_id=team_id, seq=seq, image=png, content_type="image/png"
+                    )
+                )
+        await session.execute(
+            sa.update(Team)
+            .where(Team.id.in_(team_ids[:15]))
+            .values(home_doc_url="https://docs.google.com/document/d/benchdoc")
+        )
 
         rows = []
         for i in range(scale):
@@ -359,6 +404,12 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
     asof_ts = datetime.now(UTC)
     async with db_session() as session:
         parish_roster = await export_csv(session)  # for the re-import pattern
+        # landmark slug for the ministries_page pattern: lowest-id published team
+        published_now = await page_service.published_teams(session)
+        slug_teams = await team_service.list_all(session)
+    page_slug = page_service.slug_map(team_service.team_paths(slug_teams))[
+        min(team.id for team in published_now)
+    ]
 
     async def page_volunteers_list():
         # mirrors the data block of ui/volunteers_page.py — keep in sync
@@ -412,6 +463,35 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
         )
         assert not report.has_errors, report.errors[:3]
 
+    async def ministries_index():
+        # mirrors the data block of ui/ministries_routes.ministries_index
+        async with db_session() as session:
+            published = await page_service.published_teams(session)
+            all_teams = await team_service.list_all(session)
+        paths = team_service.team_paths(all_teams)
+        slugs = page_service.slug_map(paths)
+        sorted(
+            (paths.get(team.id, team.name), slugs[team.id])
+            for team in published
+            if team.id in slugs
+        )
+
+    async def ministries_page():
+        # mirrors the data block of ui/ministries_routes.ministry_page
+        async with db_session() as session:
+            all_teams = await team_service.list_all(session)
+            paths = team_service.team_paths(all_teams)
+            slugs = page_service.slug_map(paths)
+            team_id = next((tid for tid, s in slugs.items() if s == page_slug), None)
+            page = await page_service.published_page(session, team_id)
+        assert page is not None and page.html
+
+    async def dropdown_name_map():
+        # mirrors the volunteer_options block of ui/teams_page.team_detail
+        # (same shape in planning_page and admin_page)
+        async with db_session() as session:
+            await volunteer_service.name_map(session)
+
     return {
         "page_volunteers_list": page_volunteers_list,
         "search_blank": search_blank,
@@ -422,6 +502,9 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
         "impact_busy": impact_busy,
         "timeline_churned": timeline_churned,
         "import_reimport": import_reimport,
+        "ministries_index": ministries_index,
+        "ministries_page": ministries_page,
+        "dropdown_name_map": dropdown_name_map,
     }
 
 

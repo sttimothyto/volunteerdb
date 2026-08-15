@@ -6,7 +6,7 @@ in a transient parish: **"when this parishioner leaves, what holes do I have
 to fill?"**
 
 - **Web GUI** (NiceGUI) + **JSON API** (FastAPI) in one process, many
-  concurrent users on one live PostgreSQL database
+  concurrent users on one live PostgreSQL djtabase
 - Fourfold roles per team — *Ministry leader, Second-in-command, Core team
   member, Member* — drive both the data model and access control
 - Full **history tracking**: view any team, volunteer, or the whole graph

@@ -38,6 +38,22 @@ async def test_update_unset_vs_none_semantics(database):
         assert recased.email == "new@example.org"
 
 
+async def test_name_map_orders_and_filters(database):
+    """The dropdown helper: matches search()'s ordering and active-only
+    default without hydrating full entities."""
+    async with db_session() as session:
+        z = await volunteers.create(session, "Ann", "Zed")
+        a = await volunteers.create(session, "Bea", "Able")
+        gone = await volunteers.create(session, "Faded", "Ghost")
+        await volunteers.update(session, gone.id, is_active=False)
+
+        active = await volunteers.name_map(session)
+        assert list(active.items()) == [(a.id, "Bea Able"), (z.id, "Ann Zed")], (
+            "ordered by last, first; inactive volunteers absent by default"
+        )
+        assert gone.id in await volunteers.name_map(session, include_inactive=True)
+
+
 async def test_search_by_name_email_and_inactive_flag(database):
     async with db_session() as session:
         a = await volunteers.create(session, "Maria", "Alvarez", "maria@one.org")
