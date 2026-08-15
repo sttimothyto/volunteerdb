@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import httpx
+from fastapi import Request
 from nicegui import ui
 
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
@@ -252,7 +253,9 @@ def _team_dialog(all_teams, team=None) -> None:
     dialog.open()
 
 
-def _home_page_section(team, team_page, team_id: int, slug: str | None) -> None:
+def _home_page_section(
+    team, team_page, team_id: int, slug: str | None, base_url: str
+) -> None:
     """Home-page controls for leaders/seconds/core members (and admins): link a
     public Google Doc, preview-fetch it, and reach the published page."""
     ui.label("Volunteer home page").classes("text-lg font-medium")
@@ -274,6 +277,14 @@ def _home_page_section(team, team_page, team_id: int, slug: str | None) -> None:
         ui.link("Google Doc", team.home_doc_url, new_tab=True)
         if published and slug:
             ui.link("Public page", f"/ministries/{slug}.html", new_tab=True)
+            ui.button(
+                "Download QR Code to Public page",
+                icon="qr_code_2",
+                on_click=lambda: ui.download(
+                    page_service.qr_png(f"{base_url}/ministries/{slug}.html"),
+                    f"{slug}-qr.png",
+                ),
+            ).props("dense outline")
         ui.button(
             "Fetch now",
             icon="refresh",
@@ -388,8 +399,9 @@ async def _fetch_home_page(team_id: int) -> None:
 
 
 @ui.page("/teams/{team_id}")
-async def team_detail(team_id: int, as_of: str = ""):
+async def team_detail(request: Request, team_id: int, as_of: str = ""):
     at = parse_as_of(as_of)
+    base_url = str(request.base_url).rstrip("/")
     async with page_session() as (session, actor):
         team = await team_service.get(session, team_id, at=at)
         if team is None:
@@ -438,21 +450,21 @@ async def team_detail(team_id: int, as_of: str = ""):
                     "Delete", icon="delete", on_click=lambda: _delete_team(team_id)
                 ).props("dense outline color=negative")
             if can_full:
-                slug = team.name.lower().replace(" ", "-")
+                csv_stem = team.name.lower().replace(" ", "-")
 
                 async def export_roster() -> None:
                     async with action_session() as (session, _):
                         content = await exporter.export_csv(
                             session, team_id=team_id, at=at
                         )
-                    ui.download(content, f"{slug}.csv")
+                    ui.download(content, f"{csv_stem}.csv")
 
                 ui.button(
                     "Export roster (.csv)", icon="download", on_click=export_roster
                 ).props("dense outline")
 
         if can_full and at is None:
-            _home_page_section(team, team_page, team_id, slug)
+            _home_page_section(team, team_page, team_id, slug, base_url)
         if can_manage:
             _sheet_section(team_sheet)
 

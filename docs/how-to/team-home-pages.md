@@ -23,12 +23,26 @@ doc — it is exactly as public as the doc itself.
 Edits to the doc show up after the next nightly fetch, or on demand with
 **Fetch now**. Clearing the link (Change → Clear) unpublishes the page.
 
+Once the page is published, **Download QR Code to Public page** saves a PNG
+QR code of its URL — print-ready for bulletins, posters, or handouts. The
+code encodes the page's current address, which is derived from the team's
+name and parent: renaming or moving the team changes the URL, so reprint
+after a rename.
+
 ## What gets published
 
 The doc's exported HTML, passed through an allowlist sanitizer: text,
 headings, lists, tables, images and links survive; scripts, frames and
-event handlers never do. The page is served in a minimal shell with the
-team's full path as its title and a "last updated" stamp.
+event handlers never do. The page is served in a shell styled like the rest
+of VolunteerDB, with the team's full path as its title and a "last updated"
+stamp.
+
+Images in the doc are downloaded at fetch time and served from VolunteerDB
+itself — Google's export links expire after a while, so hotlinking them
+would break. Limits per page: 30 images, 5 MB each, 20 MB total; stills
+larger than 1600 px are downscaled. An image that fails to download keeps
+its Google link (and so may eventually stop rendering) without affecting
+the rest of the page.
 
 If a fetch fails — the doc was deleted, made private, or exceeds 2 MB — the
 team page in the app shows the error and the **last successful version stays

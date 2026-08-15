@@ -84,3 +84,7 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
     assert response.status_code == 404, (
         "an unknown ministry page is a 404, not a login redirect"
     )
+    response = await real_app_client.get("/ministries/img/1/1", follow_redirects=False)
+    assert response.status_code == 404, (
+        "an unknown ministry image is a 404, not a login redirect"
+    )

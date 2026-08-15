@@ -9,29 +9,38 @@ the session or expose anything beyond team_page content and team names.
 
 from html import escape
 
+import sqlalchemy as sa
+from fastapi import HTTPException
 from nicegui import app
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from ..db import db_session
+from ..models import Team, TeamPageImage
 from ..services import pages as page_service
 from ..services import teams as team_service
 
 CACHE_HEADERS = {"Cache-Control": "public, max-age=300"}
 
+# The shell links /static/theme.css (the app's neo-greco theme: body font +
+# background, link colors, .vdb-header, .vdb-brand, .vdb-page-title with its
+# meander). Only public-shell-specific layout lives here, every color a theme
+# token — the pages stay light-mode (the theme's dark tokens hang off Quasar's
+# body--dark class, which never exists on this plain-HTML surface).
 _SHELL_CSS = """
-  body { margin: 0; font-family: Georgia, 'Times New Roman', serif;
-         background: #FAF6EF; color: #2A2622; }
-  .bar { background: #2A2622; padding: 0.6rem 1.2rem; }
-  .bar a { color: #E8DCC8; text-decoration: none; font-size: 1.05rem;
-           letter-spacing: 0.04em; }
+  body { margin: 0; }
+  header.vdb-header { padding: 0.7rem 1.2rem; }
+  header.vdb-header a { color: white; font-size: 1.1rem; }
+  header.vdb-header a:hover { border-bottom: none; }
   main { max-width: 52rem; margin: 0 auto; padding: 1.5rem 1.2rem 3rem; }
-  .meta { color: #8A7550; font-size: 0.85rem; margin: 0.3rem 0 1.5rem; }
-  .doc { background: #FFFFFF; border: 1px solid #E0D5C0; border-radius: 4px;
-         padding: 2rem; overflow-x: auto; }
+  h1.vdb-page-title { font-size: 1.7rem; margin: 0.5rem 0 0.8rem; }
+  .meta { color: var(--vdb-heading); opacity: 0.75; font-size: 0.85rem;
+          margin: 0.3rem 0 1.5rem; }
+  .doc { background: var(--vdb-surface); border: 1px solid var(--vdb-rule);
+         border-radius: 4px; padding: 2rem; overflow-x: auto; }
   .doc img { max-width: 100%; height: auto; }
   ul.index { list-style: none; padding: 0; }
   ul.index li { margin: 0.6rem 0; }
-  ul.index a { color: #A5573E; font-size: 1.1rem; }
+  ul.index a { font-size: 1.1rem; }
 """
 
 
@@ -41,15 +50,23 @@ def _shell(title: str, body: str) -> str:
         '<html lang="en"><head><meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{escape(title)}</title>\n"
+        '<link rel="preload" href="/static/fonts/cinzel-v11-latin-regular.woff2"'
+        ' as="font" type="font/woff2" crossorigin>\n'
+        '<link rel="stylesheet" href="/static/theme.css">\n'
         f"<style>{_SHELL_CSS}</style></head>\n"
-        '<body><div class="bar"><a href="/ministries/">⛪ Ministries</a></div>\n'
+        '<body><header class="vdb-header">'
+        '<a class="vdb-brand" href="/ministries/">⛪ Ministries</a></header>\n'
         f"<main>{body}</main></body></html>\n"
     )
 
 
+def _title(text: str) -> str:
+    return f'<h1 class="vdb-page-title">{escape(text)}</h1>'
+
+
 def _not_found() -> HTMLResponse:
     body = (
-        "<h1>Page not found</h1>"
+        f"{_title('Page not found')}"
         '<p>This ministry has no published home page. The <a href="/ministries/">'
         "ministries index</a> lists every published page.</p>"
     )
@@ -64,6 +81,7 @@ def register() -> None:
     app.get("/ministries", include_in_schema=False)(ministries_redirect)
     app.get("/ministries/", include_in_schema=False)(ministries_index)
     app.get("/ministries/{slug}.html", include_in_schema=False)(ministry_page)
+    app.get("/ministries/img/{team_id}/{seq}", include_in_schema=False)(ministry_image)
 
 
 async def ministries_redirect() -> RedirectResponse:
@@ -86,10 +104,10 @@ async def ministries_index() -> HTMLResponse:
             f'<li><a href="/ministries/{escape(slug)}.html">{escape(path)}</a></li>'
             for path, slug, _page in items
         )
-        body = f"<h1>Ministry home pages</h1><ul class='index'>{listing}</ul>"
+        body = f"{_title('Ministry home pages')}<ul class='index'>{listing}</ul>"
     else:
         body = (
-            "<h1>Ministry home pages</h1>"
+            f"{_title('Ministry home pages')}"
             "<p>No ministry has published a home page yet.</p>"
         )
     return HTMLResponse(_shell("Ministries", body), headers=CACHE_HEADERS)
@@ -112,5 +130,29 @@ async def ministry_page(slug: str) -> HTMLResponse:
         if page.fetched_at
         else ""
     )
-    body = f'<h1>{escape(title)}</h1>{updated}<div class="doc">{page.html}</div>'
+    body = f'{_title(title)}{updated}<div class="doc">{page.html}</div>'
     return HTMLResponse(_shell(f"{title} — Ministries", body), headers=CACHE_HEADERS)
+
+
+async def ministry_image(team_id: int, seq: int) -> Response:
+    """An image cached from the team's doc (services.pages._localize_images).
+    Joined to the team's published state so that unpublishing or deactivating
+    a team takes its images offline with it."""
+    async with db_session() as session:
+        row = (
+            await session.execute(
+                sa.select(TeamPageImage)
+                .join(Team, Team.id == TeamPageImage.team_id)
+                .where(
+                    TeamPageImage.team_id == team_id,
+                    TeamPageImage.seq == seq,
+                    Team.is_active,
+                    Team.home_doc_url.is_not(None),
+                )
+            )
+        ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, "no such image")
+    return Response(
+        content=row.image, media_type=row.content_type, headers=CACHE_HEADERS
+    )

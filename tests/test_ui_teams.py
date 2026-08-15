@@ -127,12 +127,40 @@ async def test_home_page_controls_gated_by_full_roster_rights(database):
         await user.open(f"/teams/{ids['liturgy']}")
         await user.should_see("Volunteer home page")
         await user.should_see("Set home page doc")
+        await user.should_not_see("Download QR Code to Public page")
 
         # Mia is a plain member of Music: roster names, no home-page controls
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open(f"/teams/{ids['music']}")
         await user.should_see("Roster")
         await user.should_not_see("Volunteer home page")
+
+
+async def test_published_page_link_and_qr_use_the_path_slug(database):
+    """The public URL slug comes from the team's display path ("Liturgy /
+    Music" → liturgy-music), not the bare team name — regression for the
+    export-CSV local that used to shadow it."""
+    from volunteerdb.models import TeamPage
+    from volunteerdb.services import pages as page_service
+
+    async with db_session() as session:
+        ids = await _parish(session)
+        await page_service.set_home_doc_url(
+            session, ids["music"], "https://docs.google.com/document/d/abc123"
+        )
+        session.add(
+            TeamPage(team_id=ids["music"], html="<p>rehearsals</p>", status="ok")
+        )
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        await user.should_see("Public page")
+        await user.should_see("Download QR Code to Public page")
+        link = user.find(content="Public page", kind=ui.link).elements.pop()
+        assert link.props["href"] == "/ministries/liturgy-music.html", (
+            "path slug, not the bare team name"
+        )
 
 
 async def test_asof_snapshot_announces_itself_and_offers_a_way_back(database):

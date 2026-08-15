@@ -30,10 +30,17 @@ UNRESTRICTED_PREFIXES = (
 )
 # /photos/ is cookie-authed but asset-like: skipping the session re-issue keeps
 # its long-lived Cache-Control effective (a Set-Cookie per image defeats caching)
-ASSET_PREFIXES = ("/_nicegui", "/static/", "/favicon", "/api/", "/photos/")
+ASSET_PREFIXES = (
+    "/_nicegui",
+    "/static/",
+    "/favicon",
+    "/api/",
+    "/photos/",
+    "/ministries/img/",
+)
 # Request-log lines for these drop to DEBUG (unlike ASSET_PREFIXES, /api/ stays
 # at INFO — API calls are exactly the traffic worth seeing).
-QUIET_PREFIXES = ("/_nicegui", "/static/", "/favicon", "/photos/")
+QUIET_PREFIXES = ("/_nicegui", "/static/", "/favicon", "/photos/", "/ministries/img/")
 
 # Cookie inactivity bound. Real session lifetime is enforced app-side via
 # session_expires_at (see ui/context.py); 92 days covers every case where the

@@ -403,6 +403,27 @@ class TeamPage(Base):
     error: Mapped[str | None] = mapped_column(sa.Text)
 
 
+class TeamPageImage(Base):
+    """Locally cached copy of an image embedded in the team's public Google
+    Doc. The doc export hotlinks signed googleusercontent URLs that expire,
+    so fetch_and_store downloads each image and rewrites the page html to
+    /ministries/img/<team_id>/<seq>.
+
+    Not system-versioned: a cache of external content, replaced wholesale on
+    every successful fetch (a failed fetch keeps the previous set, matching
+    the kept html).
+    """
+
+    __tablename__ = "team_page_image"
+
+    team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE"), primary_key=True
+    )
+    seq: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    image: Mapped[bytes] = mapped_column(sa.LargeBinary)
+    content_type: Mapped[str] = mapped_column(sa.String(50))
+
+
 class TeamSheet(Base):
     """Identity of the team's roster spreadsheet in Google Drive, maintained by
     jobs.drive_sync. The stable file_id (not the name) is what keeps the

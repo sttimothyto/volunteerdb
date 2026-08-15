@@ -220,6 +220,21 @@ Cache of the team's public Google Doc (`team.home_doc_url`), refreshed
 nightly by `jobs.fetch_pages` and served at `/ministries/`. A cache of an
 external document is current-state by nature — nothing to version.
 
+## `team_page_image` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `team_id` | integer | PK part, FK → `team.id` ON DELETE CASCADE |
+| `seq` | integer | PK part; document order, referenced by the rewritten `src` |
+| `image` | bytea | as fetched, except stills over 1600 px are downscaled |
+| `content_type` | varchar(50) | |
+
+Locally cached copies of the doc's embedded images, served at
+`/ministries/img/<team_id>/<seq>` (the export's signed googleusercontent
+URLs expire, so `team_page.html` is rewritten to these). Replaced wholesale
+on every successful fetch; a failed fetch keeps the previous set alongside
+the kept html.
+
 ## `team_sheet` (not versioned)
 
 | Column | Type | Notes |
