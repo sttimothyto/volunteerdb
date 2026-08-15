@@ -2,7 +2,7 @@ import structlog
 from fastapi import Request
 from nicegui import ui
 
-from .. import throttle
+from .. import passwords, throttle
 from ..db import db_session
 from ..log import audit_log
 from ..services import mail
@@ -20,8 +20,8 @@ def login_page(request: Request, redirect_to: str = "/"):
     pending_email = ""
     ip = request.client.host if request.client else "unknown"
 
-    def finish(user_id: int) -> None:
-        establish_session(user_id, remember=remember.value)
+    def finish(user_id: int, method: str) -> None:
+        establish_session(user_id, remember=remember.value, method=method)
         # "//host" and "/\host" are scheme-relative URLs, not same-origin paths
         safe = redirect_to.startswith("/") and not redirect_to.startswith(("//", "/\\"))
         ui.navigate.to(redirect_to if safe else "/")
@@ -53,7 +53,7 @@ def login_page(request: Request, redirect_to: str = "/"):
             audit_log(
                 "auth.login", method="password", user=f"{user.id}:{user.email}", ip=ip
             )
-            finish(user.id)
+            finish(user.id, "password")
         else:
             await send_code()
 
@@ -98,7 +98,7 @@ def login_page(request: Request, redirect_to: str = "/"):
             )
             return
         audit_log("auth.login", method="otp", user=f"{user.id}:{user.email}", ip=ip)
-        finish(user.id)
+        finish(user.id, "otp")
 
     def show_step(step: ui.column) -> None:
         credentials_step.set_visibility(step is credentials_step)
@@ -108,9 +108,14 @@ def login_page(request: Request, redirect_to: str = "/"):
         ui.label("Volunteer Database (VDB)").classes("text-2xl vdb-brand")
         with ui.card().classes("w-80 gap-3"):
             with ui.column().classes("w-full gap-3") as credentials_step:
+                # autocomplete=: NIST SP 800-63B §3.1.1.2 — "Verifiers SHALL
+                # allow the use of password managers and autofill
+                # functionality". The names are the WHATWG tokens managers
+                # look for; password_toggle_button is the same section's
+                # "SHOULD offer an option to display the password".
                 email = (
                     ui.input("Email")
-                    .props("outlined dense")
+                    .props("outlined dense autocomplete=username")
                     .classes("w-full")
                     .on("keydown.enter", submit)
                 )
@@ -120,7 +125,7 @@ def login_page(request: Request, redirect_to: str = "/"):
                         password=True,
                         password_toggle_button=True,
                     )
-                    .props("outlined dense")
+                    .props("outlined dense autocomplete=current-password")
                     .classes("w-full")
                     .on("keydown.enter", submit)
                 )
@@ -132,7 +137,10 @@ def login_page(request: Request, redirect_to: str = "/"):
                 code_hint = ui.label().classes("text-sm")
                 code_input = (
                     ui.input("6-digit code")
-                    .props("outlined dense inputmode=numeric autofocus")
+                    .props(
+                        "outlined dense inputmode=numeric autofocus "
+                        "autocomplete=one-time-code"
+                    )
                     .classes("w-full")
                     .on("keydown.enter", verify)
                 )
@@ -160,23 +168,34 @@ def invite_page(token: str, request: Request):
     async def redeem() -> None:
         pw = password.value or ""
         if pw or confirm.value:
-            if len(pw) < 8:
-                ui.notify("Password must be at least 8 characters", color="negative")
+            # The service checks the policy too (it is the choke point); doing
+            # it here as well is what turns a 500-shaped surprise into the
+            # specific sentence the person needs while the form is still open.
+            weak = passwords.problem(pw)
+            if weak:
+                ui.notify(weak, color="negative", multi_line=True, timeout=8000)
                 return
             if pw != confirm.value:
-                ui.notify("Passwords do not match", color="negative")
+                ui.notify("The two passwords don't match", color="negative")
                 return
         async with db_session() as session:
             user = await user_service.redeem_invite(session, token, pw or None)
         if user is None:
             logger.warning("auth.invite_invalid")
-            ui.notify("This invite link is invalid or already used", color="negative")
+            ui.notify(
+                "This link has expired or has already been used. You can still "
+                "sign in: enter your email on the sign-in page and leave the "
+                "password blank, and we'll email you a code.",
+                color="negative",
+                multi_line=True,
+                timeout=10000,
+            )
             return
         audit_log("auth.invite_redeemed", user=f"{user.id}:{user.email}")
         await mail.send_email(
             user.email, *mail.welcome_email(login_url, has_password=bool(pw))
         )
-        establish_session(user.id, remember=remember.value)
+        establish_session(user.id, remember=remember.value, method="invite")
         ui.notify(
             "Welcome! Your password is set."
             if pw
@@ -196,12 +215,16 @@ def invite_page(token: str, request: Request):
                 ui.input(
                     "Password (optional)", password=True, password_toggle_button=True
                 )
-                .props("outlined dense")
+                .props("outlined dense autocomplete=new-password")
                 .classes("w-full")
             )
+            # "Verifiers SHALL offer guidance to the subscriber to help the
+            # subscriber choose a strong password" (§3.1.1.2) — up front, not
+            # only as a complaint after the fact.
+            ui.label(passwords.GUIDANCE).classes("text-xs text-gray-500")
             confirm = (
-                ui.input("Repeat password", password=True)
-                .props("outlined dense")
+                ui.input("Repeat password", password=True, password_toggle_button=True)
+                .props("outlined dense autocomplete=new-password")
                 .classes("w-full")
                 .on("keydown.enter", redeem)
             )

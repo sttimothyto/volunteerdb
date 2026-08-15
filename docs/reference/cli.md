@@ -42,16 +42,17 @@ chart. A team named **Clergy** is filled, which is all it takes to be the
 {term}`clergy team`, so proposals opened on the demo data get a realistic
 voting roll. Refuses to run if any volunteers exist.
 
-Environment: `VDB_SEED_ADMIN_PASSWORD` (default `changeme`).
+Environment: `VDB_SEED_ADMIN_PASSWORD` (default `demo-parish-admin`); it
+is held to the same password policy as any other account.
 
 Created logins:
 
 | Email | Password | Role |
 |---|---|---|
 | `admin@sttimothy.example` | `$VDB_SEED_ADMIN_PASSWORD` | admin |
-| `maria.alvarez@example.org` | `volunteer` | ministry leader (two teams) |
-| `felix.garcia@example.org` | `volunteer` | plain member |
-| `dominic.ferraro@example.org` | `volunteer` | clergy — sits on every voting roll |
+| `maria.alvarez@example.org` | `parish-demo-login` | ministry leader (two teams) |
+| `felix.garcia@example.org` | `parish-demo-login` | plain member |
+| `dominic.ferraro@example.org` | `parish-demo-login` | clergy — sits on every voting roll |
 
 ## `deploy/files/create_admin.py` — admin bootstrap
 
@@ -63,6 +64,11 @@ Idempotent: creates the admin account if missing, otherwise leaves it
 untouched. Baked into the container image at `/app/create_admin.py`; the
 deploy runs it as a one-shot container when `VDB_ADMIN_PASSWORD` is passed.
 Requires `VDB_ADMIN_EMAIL` and `VDB_ADMIN_PASSWORD`.
+
+`VDB_ADMIN_PASSWORD` is checked against the
+[password policy](../explanation/auth.md#what-a-password-has-to-be) before the
+database is touched: too short or too well-known and it exits 2 with the reason
+on stderr, having created nothing.
 
 ## `volunteerdb.jobs` — scheduled one-shot jobs
 

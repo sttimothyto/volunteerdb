@@ -74,7 +74,9 @@ async def test_debug_level_reads_do_not_log_bound_parameters(
     authenticate_token binds the stored SHA-256 token digest, so an unredacted
     dump there turns a debug log into a full API-token compromise."""
     async with db_session() as session:
-        user = await users.create(session, "dbg@example.org", password="pw")
+        user = await users.create(
+            session, "dbg@example.org", password="test-pass-phrase"
+        )
     async with db_session() as session:
         token = await users.issue_api_token(session, user.id)
 
@@ -95,7 +97,9 @@ async def test_debug_level_reads_do_not_log_bound_parameters(
 
 async def test_secrets_never_logged(database, log_records):
     async with db_session() as session:
-        user = await users.create(session, "sec@example.org", password="hunter2secret")
+        user = await users.create(
+            session, "sec@example.org", password="hunter2-secret-phrase"
+        )
     async with db_session() as session:
         token = await users.issue_api_token(session, user.id)
     async with db_session() as session:
@@ -104,7 +108,7 @@ async def test_secrets_never_logged(database, log_records):
     code = result[1]
 
     blob = repr(log_records)
-    assert "hunter2secret" not in blob
+    assert "hunter2-secret-phrase" not in blob
     assert token not in blob
     assert f"'{code}'" not in blob  # the OTP itself (its argon2 hash is redacted)
 

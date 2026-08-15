@@ -117,9 +117,9 @@ custom field
   JSONB `custom` column.
 
 as-of
-  A historical point in time. GUI pages offer a "View as of" date picker and
-  most API GETs accept `?as_of=<timestamp>`, reconstructing state from the
-  {term}`history twin`s.
+  A historical point in time. The dashboard and team pages hide a "View as
+  of" date picker in the header's settings menu, and most API GETs accept
+  `?as_of=<timestamp>`, reconstructing state from the {term}`history twin`s.
 
 history twin
   The `<table>_history` companion of a versioned table (`volunteer`, `team`,
@@ -132,8 +132,10 @@ app user
   OTP-only accounts), and the API token digest.
 
 invite token
-  A single-use token embedded in an `/invite/{token}` link. Redeeming it
-  activates the account and optionally sets a password.
+  A single-use, time-limited token embedded in an `/invite/{token}` link
+  (24 hours by default, `VDB_INVITE_TTL_HOURS`). Redeeming it activates the
+  account and optionally sets a password. Re-issuing one is also the
+  admin-side password reset.
 
 OTP
   One-time password: the 6-digit code emailed for passwordless sign-in.
@@ -142,6 +144,12 @@ OTP
 API token
   The personal Bearer token for the JSON API, issued by
   `POST /api/auth/login` and stored server-side only as a SHA-256 digest.
+
+password policy
+  What a password must be to be accepted: at least 15 characters, no
+  composition rules, and not on the blocklist of well-known or
+  context-specific values (`volunteerdb/passwords.py`, after NIST SP 800-63B
+  §3.1.1.2). Enforced wherever a password is set; never expires.
 
 seeded data
   The demo dataset created by `scripts/seed.py` — teams (including a filled

@@ -38,5 +38,5 @@ async def login(data: LoginIn, request: Request) -> TokenOut:
 async def me(ctx: CtxDep) -> UserOut:
     out = UserOut.model_validate(ctx.actor.user)
     out.has_password = ctx.actor.user.password_hash is not None
-    out.invite_token = None
+    out.invite_token = out.invite_expires_at = None
     return out

@@ -38,7 +38,7 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
         )
         await memberships.assign(session, maria.id, liturgy.id, TeamRole.leader)
         admin = await users.create(
-            session, "admin@example.org", is_admin=True, password="pw"
+            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         await users.create(
             session, "felix@example.org"
@@ -120,7 +120,7 @@ async def test_photo_dialog_disclaimer_gates_upload(database):
         )
         await memberships.assign(session, maria.id, liturgy.id, TeamRole.member)
         admin = await users.create(
-            session, "admin@example.org", is_admin=True, password="pw"
+            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         team_id, admin_id = liturgy.id, admin.id
 

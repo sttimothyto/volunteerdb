@@ -171,10 +171,13 @@ async def seeded(database):
         v = await volunteers.create(session, "Maria", "Alvarez", "maria@example.org")
         await memberships.assign(session, v.id, team.id, TeamRole.member)
         await users.create(
-            session, "admin@example.org", is_admin=True, password="secret-pw"
+            session, "admin@example.org", is_admin=True, password="secret-pass-phrase"
         )
         await users.create(
-            session, "member@example.org", volunteer_id=v.id, password="member-pw"
+            session,
+            "member@example.org",
+            volunteer_id=v.id,
+            password="member-pass-phrase",
         )
         return {"team_id": team.id, "volunteer_id": v.id}
 
@@ -190,12 +193,12 @@ async def _token(client, email, password) -> dict:
 
 @pytest.fixture
 async def token_admin(client, seeded) -> dict:
-    return await _token(client, "admin@example.org", "secret-pw")
+    return await _token(client, "admin@example.org", "secret-pass-phrase")
 
 
 @pytest.fixture
 async def token_member(client, seeded) -> dict:
-    return await _token(client, "member@example.org", "member-pw")
+    return await _token(client, "member@example.org", "member-pass-phrase")
 
 
 @pytest.fixture
@@ -205,6 +208,9 @@ async def token_leader(client, seeded) -> dict:
         lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
         await memberships.assign(session, lena.id, seeded["team_id"], TeamRole.leader)
         await users.create(
-            session, "lena@example.org", volunteer_id=lena.id, password="leader-pw"
+            session,
+            "lena@example.org",
+            volunteer_id=lena.id,
+            password="leader-pass-phrase",
         )
-    return await _token(client, "lena@example.org", "leader-pw")
+    return await _token(client, "lena@example.org", "leader-pass-phrase")

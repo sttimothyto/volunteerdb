@@ -15,8 +15,8 @@ async def test_missing_and_malformed_bearer_401(client, seeded):
 
 
 async def test_relogin_revokes_previous_token(client, seeded):
-    first = await _token(client, "admin@example.org", "secret-pw")
-    second = await _token(client, "admin@example.org", "secret-pw")
+    first = await _token(client, "admin@example.org", "secret-pass-phrase")
+    second = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     r = await client.get("/api/auth/me", headers=first)
     assert r.status_code == 401, "each login revokes the previous token"
@@ -32,7 +32,8 @@ async def test_login_throttle_429(client, seeded):
         assert r.status_code == 401
 
     r = await client.post(
-        "/api/auth/login", json={"email": "admin@example.org", "password": "secret-pw"}
+        "/api/auth/login",
+        json={"email": "admin@example.org", "password": "secret-pass-phrase"},
     )
     assert r.status_code == 429, "throttled even with the correct password"
 
@@ -43,7 +44,7 @@ async def test_login_throttle_429(client, seeded):
 
 
 async def test_error_mapping_404_409_422(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     r = await client.get("/api/teams/999999", headers=admin)
     assert r.status_code == 404
@@ -67,7 +68,7 @@ async def test_error_mapping_404_409_422(client, seeded):
 
 
 async def test_team_cycle_maps_to_422(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     r = await client.post("/api/teams", json={"name": "Parent"}, headers=admin)
     parent_id = r.json()["id"]
@@ -84,7 +85,7 @@ async def test_team_cycle_maps_to_422(client, seeded):
 
 
 async def test_team_patch_clear_parent_and_clear_weight(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     r = await client.post("/api/teams", json={"name": "Top"}, headers=admin)
     top_id = r.json()["id"]
@@ -113,8 +114,8 @@ async def test_team_patch_clear_parent_and_clear_weight(client, seeded):
 
 
 async def test_delete_endpoints_admin_only_then_404(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
-    member = await _token(client, "member@example.org", "member-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
+    member = await _token(client, "member@example.org", "member-pass-phrase")
 
     # a disposable volunteer with a membership on the seeded team
     r = await client.post(

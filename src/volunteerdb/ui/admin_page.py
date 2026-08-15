@@ -1,6 +1,7 @@
 from fastapi import Request
 from nicegui import ui
 
+from ..config import settings
 from ..permissions import require
 from ..services import mail
 from ..services import users as user_service
@@ -32,6 +33,12 @@ async def users_page(request: Request):
             ui.label(f"Invite link for {email}").classes("font-medium")
             url = invite_url(token)
             ui.input(value=url).props("readonly outlined dense").classes("w-full")
+            hours = settings().invite_ttl_hours
+            ui.label(
+                f"Usable once, and only for the next {hours} hours. After that "
+                "they sign in with an emailed code and can set a password "
+                "themselves — or you re-invite them."
+            ).classes("text-sm text-gray-500")
             if sent is None:
                 note, color = (
                     "Hand this link to the volunteer (email, print, or in person).",
@@ -181,7 +188,7 @@ async def users_page(request: Request):
                 ui.space()
                 if not account.is_active:
                     ui.badge("disabled", color="grey")
-                elif account.invite_token:
+                elif user_service.invite_live(account):
                     ui.badge("invite pending", color="warning").classes(
                         "cursor-pointer"
                     ).on(
@@ -189,7 +196,14 @@ async def users_page(request: Request):
                         lambda _, t=account.invite_token, m=account.email: show_invite(
                             t, m
                         ),
-                    ).tooltip("Show invite link")
+                    ).tooltip(
+                        f"Invite link, usable until {account.invite_expires_at:%Y-%m-%d %H:%M}"
+                    )
+                elif account.invite_token:
+                    ui.badge("invite expired", color="grey").tooltip(
+                        "The link has run out. They can still sign in with an "
+                        "emailed code; re-invite to hand out a fresh link."
+                    )
                 elif account.password_hash is None:
                     ui.badge("email-code sign-in", color="info").tooltip(
                         "No password set — signs in with a one-time code emailed each time"

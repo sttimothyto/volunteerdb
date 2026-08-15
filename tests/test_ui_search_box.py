@@ -32,9 +32,11 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
         await volunteers.update(session, retired.id, is_active=False)
         await volunteers.create(session, "Bruno", "Costa")
         admin = await users.create(
-            session, "admin@example.org", is_admin=True, password="pw"
+            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
-        member = await users.create(session, "member@example.org", password="pw")
+        member = await users.create(
+            session, "member@example.org", password="test-pass-phrase"
+        )
         maria_id, choir_id = maria.id, choir.id
         admin_id, member_id = admin.id, member.id
 
@@ -110,7 +112,7 @@ async def test_volunteers_page_search_box_also_suggests(database):
             session, "Maria", "Alvarez", "maria@example.org"
         )
         admin = await users.create(
-            session, "admin@example.org", is_admin=True, password="pw"
+            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         maria_id, admin_id = maria.id, admin.id
 

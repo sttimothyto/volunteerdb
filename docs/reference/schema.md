@@ -71,7 +71,8 @@ team. This is the central relationship — who serves where, in what role.
 | `password_hash` | varchar(255) | argon2; NULL = OTP-only account |
 | `is_admin` | boolean | global admin flag |
 | `api_token` | varchar(64) | unique; SHA-256 digest of the Bearer token |
-| `invite_token` | varchar(64) | unique; pending invite link |
+| `invite_token` | varchar(64) | unique; pending invite/reset link |
+| `invite_expires_at` | timestamptz | set and cleared with `invite_token`; past (or NULL) = the link is dead |
 | `otp_hash`, `otp_sent_at`, `otp_expires_at`, `otp_attempts` | | active email OTP (argon2 hash) |
 | `is_active` | boolean | inactive accounts cannot sign in |
 | `last_login_at`, `created_at` | timestamptz | |
@@ -266,3 +267,4 @@ why adding a live column requires rebuilding the twin; see
 | `0009` | Deletes the stored `planning` app_setting row; the clergy team is resolved by name |
 | `0010` | `team.home_doc_url` (rebuilds `team_history`); `team_page` and `team_sheet` (not versioned) |
 | `0011` | Drops `membership.joined_on` and `membership.notes` (rebuilds `membership_history`; stored values discarded, downgrade restores the columns as NULL) |
+| `0012` | `app_user.invite_expires_at` — invite/reset links stop working after `VDB_INVITE_TTL_HOURS`; outstanding invites are backfilled to 24 h after the upgrade |

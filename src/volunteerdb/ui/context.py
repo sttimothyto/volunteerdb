@@ -19,8 +19,16 @@ SESSION_REMEMBER = timedelta(days=90)
 SESSION_SHORT = timedelta(days=1)
 
 
-def establish_session(user_id: int, *, remember: bool) -> None:
+def establish_session(
+    user_id: int, *, remember: bool, method: str = "password"
+) -> None:
+    """Sign the browser in. `method` records which authenticator did it —
+    "password", "otp" or "invite" — because /account needs to know: someone who
+    got here with an emailed code has proved possession of the mailbox and may
+    set a password without knowing the old one, which is what makes "I forgot
+    it" self-serviceable (NIST SP 800-63B §4.1.2.1)."""
     app.storage.user["user_id"] = user_id
+    app.storage.user["auth_method"] = method
     app.storage.user["session_expires_at"] = (
         datetime.now(UTC) + (SESSION_REMEMBER if remember else SESSION_SHORT)
     ).isoformat()
@@ -29,7 +37,14 @@ def establish_session(user_id: int, *, remember: bool) -> None:
 def clear_session() -> None:
     """Sign out; keeps e.g. the dark-mode pref."""
     app.storage.user.pop("user_id", None)
+    app.storage.user.pop("auth_method", None)
     app.storage.user.pop("session_expires_at", None)
+
+
+def session_auth_method() -> str:
+    """How this session signed in. Unknown (a session predating the field)
+    counts as "password" — the assumption that asks for more, not less."""
+    return app.storage.user.get("auth_method") or "password"
 
 
 def session_expired(raw: str | None) -> bool:
@@ -124,29 +139,35 @@ def parse_as_of(raw: str) -> datetime | None:
         return None
 
 
-def asof_banner(as_of: datetime | None, base_path: str) -> None:
-    """Date picker + banner for read-only historical views."""
-    with ui.row().classes("items-center gap-2"):
-        date_input = (
-            ui.input("View as of (YYYY-MM-DD)")
-            .props("dense outlined clearable")
-            .classes("w-48")
+def asof_banner(as_of: datetime, base_path: str) -> None:
+    """The 'you are reading history' strip, carrying its own way back.
+
+    Rendered by frame() in the page body: the picker hides in the header's
+    settings menu, but a snapshot must never be silent."""
+    with ui.row().classes("w-full bg-amber-100 rounded p-2 items-center gap-2"):
+        ui.icon("history")
+        ui.label(
+            f"Read-only snapshot as of {as_of.astimezone().strftime('%Y-%m-%d %H:%M %Z')}"
+        ).classes("text-amber-900 font-medium")
+        ui.space()
+        ui.button("Back to now", on_click=lambda: ui.navigate.to(base_path)).props(
+            "dense color=warning"
         )
-        if as_of is not None:
-            date_input.value = as_of.date().isoformat()
 
-        def go() -> None:
-            value = (date_input.value or "").strip()
-            ui.navigate.to(f"{base_path}?as_of={value}" if value else base_path)
 
-        ui.button("View", on_click=go).props("dense outline")
-        if as_of is not None:
-            ui.button("Back to now", on_click=lambda: ui.navigate.to(base_path)).props(
-                "dense color=warning"
-            )
+def asof_picker(as_of: datetime | None, base_path: str) -> None:
+    """Date picker for the header settings menu; clearing it returns to now."""
+    date_input = (
+        ui.input("View as of (YYYY-MM-DD)")
+        .props("dense outlined clearable")
+        .classes("w-full")
+    )
     if as_of is not None:
-        with ui.row().classes("w-full bg-amber-100 rounded p-2 items-center gap-2"):
-            ui.icon("history")
-            ui.label(
-                f"Read-only snapshot as of {as_of.astimezone().strftime('%Y-%m-%d %H:%M %Z')}"
-            ).classes("text-amber-900 font-medium")
+        date_input.value = as_of.date().isoformat()
+
+    def go() -> None:
+        value = (date_input.value or "").strip()
+        ui.navigate.to(f"{base_path}?as_of={value}" if value else base_path)
+
+    date_input.on("keydown.enter", go)
+    ui.button("View", on_click=go).props("dense outline")

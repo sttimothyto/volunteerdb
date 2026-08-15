@@ -36,6 +36,10 @@ from volunteerdb.services import (
 )
 
 # optional workload weights; unlisted teams stay unweighted (count 0)
+# Demo password for the non-admin logins; 15+ characters, as the policy in
+# volunteerdb/passwords.py requires of everyone.
+DEMO_PASSWORD = "parish-demo-login"
+
 WEIGHTS: dict[str, Decimal] = {
     "Liturgy": Decimal("3"),
     "Faith Formation": Decimal("2"),
@@ -332,7 +336,10 @@ async def seed() -> None:
             {"safeguarding_training": "2026-01-20"},
         )
 
-        admin_password = os.environ.get("VDB_SEED_ADMIN_PASSWORD", "changeme")
+        # Demo logins. Long enough to satisfy the password policy (15
+        # characters, passwords.py) — which is also why they read as
+        # passphrases rather than as "changeme".
+        admin_password = os.environ.get("VDB_SEED_ADMIN_PASSWORD", "demo-parish-admin")
         await users.create(
             session, "admin@sttimothy.example", is_admin=True, password=admin_password
         )
@@ -341,14 +348,14 @@ async def seed() -> None:
             session,
             "maria.alvarez@example.org",
             volunteer_id=volunteer_ids["Maria Alvarez"],
-            password="volunteer",
+            password=DEMO_PASSWORD,
         )
         # a plain member account
         await users.create(
             session,
             "felix.garcia@example.org",
             volunteer_id=volunteer_ids["Felix Garcia"],
-            password="volunteer",
+            password=DEMO_PASSWORD,
         )
         # a clergy account: sits on every proposal's roll, so this is the login
         # that can actually cast a STAR ballot on any seat in the parish
@@ -356,7 +363,7 @@ async def seed() -> None:
             session,
             "dominic.ferraro@example.org",
             volunteer_id=volunteer_ids["Dominic Ferraro"],
-            password="volunteer",
+            password=DEMO_PASSWORD,
         )
 
     print("Seeded:")
@@ -367,9 +374,9 @@ async def seed() -> None:
     print(f"  {len(PAST_SPELLS)} ended spells, 1 promotion (timeline demo)")
     print("  Clergy team filled — its members join every proposal's voting roll")
     print(f"  admin login:  admin@sttimothy.example / {admin_password}")
-    print("  leader login: maria.alvarez@example.org / volunteer")
-    print("  member login: felix.garcia@example.org / volunteer")
-    print("  clergy login: dominic.ferraro@example.org / volunteer")
+    print(f"  leader login: maria.alvarez@example.org / {DEMO_PASSWORD}")
+    print(f"  member login: felix.garcia@example.org / {DEMO_PASSWORD}")
+    print(f"  clergy login: dominic.ferraro@example.org / {DEMO_PASSWORD}")
 
 
 if __name__ == "__main__":

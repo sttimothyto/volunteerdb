@@ -12,7 +12,6 @@ from ..services import volunteers as volunteer_service
 from ..sheets import exporter
 from .context import (
     action_session,
-    asof_banner,
     notify_errors,
     page_session,
     parse_as_of,
@@ -93,8 +92,7 @@ async def teams_page(as_of: str = ""):
     rows = _hierarchy_rows(all_teams, coverage, actor)
 
     suffix = f"?as_of={as_of}" if as_of else ""
-    with frame("Teams", actor):
-        asof_banner(at, "/teams")
+    with frame("Teams", actor, as_of=at, asof_path="/teams"):
         if actor.is_admin and at is None:
             with ui.row().classes("gap-2"):
                 ui.button(
@@ -395,7 +393,9 @@ async def team_detail(team_id: int, as_of: str = ""):
     async with page_session() as (session, actor):
         team = await team_service.get(session, team_id, at=at)
         if team is None:
-            with frame("Team not found", actor):
+            with frame(
+                "Team not found", actor, as_of=at, asof_path=f"/teams/{team_id}"
+            ):
                 ui.label(f"No team with id {team_id} at this time.")
             return
         all_teams = await team_service.list_all(session, at=at)
@@ -417,8 +417,9 @@ async def team_detail(team_id: int, as_of: str = ""):
     slug = page_service.slug_map(paths).get(team_id)
 
     panel = VolunteerPanel(as_of)
-    with frame(paths.get(team_id, team.name), actor):
-        asof_banner(at, f"/teams/{team_id}")
+    with frame(
+        paths.get(team_id, team.name), actor, as_of=at, asof_path=f"/teams/{team_id}"
+    ):
         if team.description:
             ui.label(team.description).classes("text-gray-600")
         if not team.is_active:

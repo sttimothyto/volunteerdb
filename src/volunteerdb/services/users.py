@@ -8,16 +8,45 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import (
     burn_password_check,
     hash_password,
+    needs_rehash,
     new_otp_code,
     new_token,
     verify_password,
 )
+from ..config import settings
 from ..models import AppUser, Volunteer
+from ..passwords import check as check_password
 from . import volunteers as volunteer_service
 
 OTP_TTL = timedelta(minutes=10)
 OTP_RESEND_INTERVAL = timedelta(seconds=60)
 OTP_MAX_ATTEMPTS = 5
+
+
+def invite_ttl() -> timedelta:
+    return timedelta(hours=settings().invite_ttl_hours)
+
+
+def _issue_invite(user: AppUser) -> str:
+    """Arm the account's invite/reset link. Token and expiry are set and
+    cleared as a pair, so a token with no live expiry is simply dead."""
+    user.invite_token = new_token()
+    user.invite_expires_at = datetime.now(UTC) + invite_ttl()
+    return user.invite_token
+
+
+def _clear_invite(user: AppUser) -> None:
+    user.invite_token = None
+    user.invite_expires_at = None
+
+
+def invite_live(user: AppUser, now: datetime | None = None) -> bool:
+    """Whether the account's invite link can still be redeemed."""
+    return bool(
+        user.invite_token
+        and user.invite_expires_at
+        and user.invite_expires_at > (now or datetime.now(UTC))
+    )
 
 
 async def get(session: AsyncSession, user_id: int) -> AppUser | None:
@@ -47,6 +76,10 @@ async def authenticate(
         return None
     if not verify_password(user.password_hash, password):
         return None
+    if needs_rehash(user.password_hash):
+        # The cost factors went up since this password was set; sign-in is the
+        # one moment the plaintext is in hand, so re-stretch it now.
+        user.password_hash = hash_password(password)
     user.last_login_at = sa.func.now()
     await session.flush()
     return user
@@ -90,8 +123,12 @@ async def create(
     password: str | None = None,
     link_by_email: bool = True,
 ) -> AppUser:
-    """Create an account. Without a password it gets an invite token instead,
-    to be redeemed via the invite link (emailed to the user, or handed out).
+    """Create an account. Without a password it gets a time-limited invite
+    token instead, redeemed via the invite link (emailed, or handed out).
+
+    A password given here is held to the same policy as one the volunteer
+    chooses for themselves (passwords.check), so no path into the database can
+    leave a weak password behind — WeakPassword (a ValueError) if it fails.
 
     With no volunteer_id given, the account adopts the volunteer holding the
     same email address when exactly one does — an account exists to be some
@@ -99,6 +136,8 @@ async def create(
     link_by_email=False for accounts that are not a person (the sync bot).
     """
     addr = email.strip().lower()
+    if password:
+        check_password(password, email=addr)
     if volunteer_id is None and link_by_email:
         volunteer_id = await _volunteer_for_email(session, addr)
     user = AppUser(
@@ -106,48 +145,73 @@ async def create(
         volunteer_id=volunteer_id,
         is_admin=is_admin,
         password_hash=hash_password(password) if password else None,
-        invite_token=None if password else new_token(),
     )
+    if not password:
+        _issue_invite(user)
     session.add(user)
     await session.flush()
     return user
 
 
 async def set_password(session: AsyncSession, user_id: int, password: str) -> None:
+    """Bind a password to an account (WeakPassword if it fails the policy).
+
+    Also spends any outstanding invite link: whoever set this password is in
+    possession of the account, and a reset link left armed behind them would
+    be a second key to it."""
     user = await get(session, user_id)
     if user is None:
         raise LookupError(f"user {user_id} not found")
+    check_password(password, email=user.email)
     user.password_hash = hash_password(password)
-    user.invite_token = None
+    _clear_invite(user)
+    await session.flush()
+
+
+async def clear_password(session: AsyncSession, user_id: int) -> None:
+    """Drop back to email-code-only sign-in. The API token goes with it —
+    tokens are issued against a password, so keeping one alive would leave a
+    credential the account can no longer re-issue or reason about."""
+    user = await get(session, user_id)
+    if user is None:
+        raise LookupError(f"user {user_id} not found")
+    user.password_hash = None
+    user.api_token = None
     await session.flush()
 
 
 async def reissue_invite(session: AsyncSession, user_id: int) -> str:
-    """New invite link for a user who lost their password. Invalidates the old password."""
+    """New invite link for a user who lost their password. Invalidates the old
+    password — this is also how an admin forces a change on an account believed
+    to be compromised (NIST SP 800-63B §3.1.1.2)."""
     user = await get(session, user_id)
     if user is None:
         raise LookupError(f"user {user_id} not found")
-    user.invite_token = new_token()
+    token = _issue_invite(user)
     user.password_hash = None
     await session.flush()
-    return user.invite_token
+    return token
 
 
 async def redeem_invite(
     session: AsyncSession, token: str, password: str | None
 ) -> AppUser | None:
     """Complete account setup. The password is optional: without one the
-    account stays passwordless and signs in with emailed one-time codes."""
+    account stays passwordless and signs in with emailed one-time codes.
+
+    An expired link is refused exactly like an unknown one — same None, same
+    message to the claimant, no hint about which it was."""
     if not token:
         return None
     user = (
         await session.execute(sa.select(AppUser).where(AppUser.invite_token == token))
     ).scalar_one_or_none()
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not invite_live(user):
         return None
     if password:
+        check_password(password, email=user.email)
         user.password_hash = hash_password(password)
-    user.invite_token = None
+    _clear_invite(user)
     await session.flush()
     return user
 
@@ -197,7 +261,7 @@ async def verify_otp(session: AsyncSession, email: str, code: str) -> AppUser | 
     user.otp_sent_at = None
     user.otp_expires_at = None
     user.otp_attempts = 0
-    user.invite_token = None  # possession of the email proves the invite
+    _clear_invite(user)  # possession of the email proves the invite
     user.last_login_at = sa.func.now()
     await session.flush()
     return user

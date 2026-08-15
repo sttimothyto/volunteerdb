@@ -70,6 +70,15 @@ ignored. Copy `.env.example` as a starting point.
 `VDB_MAIL_FROM_NAME`
 : Sender display name. Default: `VolunteerDB`.
 
+`VDB_INVITE_TTL_HOURS`
+: How long an invite link stays redeemable — and since re-inviting is how a
+  password is reset, how long a reset link lives. Default: `24`, the ceiling
+  NIST SP 800-63B §4.2.1.2 puts on a recovery code sent to an email address.
+  Raise it for a hand-out run (printed links for people who will not read
+  email for a week) and put it back afterwards. Expiry is never a lockout:
+  the account still signs in with an emailed code and can set a password from
+  **/account**. See [Authentication design](../explanation/auth.md).
+
 `VDB_TIMEZONE`
 : IANA zone the parish lives in. Default: `America/Toronto`. Date-typed
   values like planning deadlines mean "through the end of that day *here*":
@@ -91,7 +100,15 @@ ignored. Copy `.env.example` as a starting point.
 
 `VDB_SEED_ADMIN_PASSWORD`
 : Password for the demo admin account created by `scripts/seed.py`.
-  Default: `changeme`.
+  Default: `demo-parish-admin`. Whatever you set has to clear the password
+  policy (15 characters, not a well-known one) like any other password.
+
+`VDB_CONTACT_EMAIL`
+: Address in this manual's page footer ("See something inappropriate? Report
+  it to …"), read by `docs/conf.py` **when the docs are built**. Default:
+  `admin@sttimothyto.org`. Setting it on the running app does nothing — the
+  container image bakes the built HTML in, so change it and rebuild. Point it
+  at a monitored human mailbox; unlike `VDB_MAIL_FROM`, replies are the point.
 
 ## Database container variables (`POSTGRES_*`)
 

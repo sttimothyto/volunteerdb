@@ -7,7 +7,7 @@ from ..services import graph as graph_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
-from .context import action_session, asof_banner, page_session, parse_as_of
+from .context import action_session, page_session, parse_as_of
 from .cytoscape_element import CytoscapeGraph
 from .layout import frame
 from .search_box import search_box
@@ -39,9 +39,7 @@ async def dashboard(as_of: str = ""):
         )
 
     panel = VolunteerPanel(as_of)
-    with frame("Dashboard", actor):
-        asof_banner(at, "/")
-
+    with frame("Dashboard", actor, as_of=at, asof_path="/"):
         with ui.row().classes("items-center gap-2 w-full"):
             search_box(
                 "Find volunteers or teams…",

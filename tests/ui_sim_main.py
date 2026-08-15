@@ -13,8 +13,11 @@ create_app()
 
 
 @ui.page("/login-dev/{user_id}")
-def dev_login(user_id: int) -> None:
-    establish_session(user_id, remember=True)
+def dev_login(user_id: int, method: str = "password") -> None:
+    # `method` mirrors the real sign-in paths ("password", "otp", "invite"):
+    # /account asks a password session to re-type its password and lets an
+    # emailed-code session set a new one without it.
+    establish_session(user_id, remember=True, method=method)
     ui.label("dev-login ok")
 
 

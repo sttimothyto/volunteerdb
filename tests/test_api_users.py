@@ -7,7 +7,7 @@ from tests.conftest import _token
 
 
 async def test_users_endpoints_admin_only(client, seeded):
-    member = await _token(client, "member@example.org", "member-pw")
+    member = await _token(client, "member@example.org", "member-pass-phrase")
 
     assert (await client.get("/api/users", headers=member)).status_code == 403
     r = await client.post("/api/users", json={"email": "x@example.org"}, headers=member)
@@ -23,7 +23,7 @@ async def test_users_endpoints_admin_only(client, seeded):
 
 
 async def test_create_and_list_users(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     r = await client.post(
         "/api/users", json={"email": "zed@example.org"}, headers=admin
@@ -32,10 +32,11 @@ async def test_create_and_list_users(client, seeded):
     passwordless = r.json()
     assert passwordless["has_password"] is False
     assert passwordless["invite_token"], "no password -> invite link instead"
+    assert passwordless["invite_expires_at"], "and the link says when it dies"
 
     r = await client.post(
         "/api/users",
-        json={"email": "with-pw@example.org", "password": "hunter2-long"},
+        json={"email": "with-pw@example.org", "password": "hunter2-long-phrase"},
         headers=admin,
     )
     assert r.status_code == 201
@@ -49,8 +50,27 @@ async def test_create_and_list_users(client, seeded):
     assert {"admin@example.org", "member@example.org", "zed@example.org"} <= set(emails)
 
 
+async def test_weak_password_is_refused_with_the_reason(client, seeded):
+    """The policy is enforced in the service layer, so the API inherits it:
+    WeakPassword is a ValueError and the installed handler makes that a 422
+    carrying the sentence the caller needs (SP 800-63B §3.1.1.2 wants the
+    reason for the rejection stated)."""
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
+
+    r = await client.post(
+        "/api/users",
+        json={"email": "weak@example.org", "password": "hunter2"},
+        headers=admin,
+    )
+    assert r.status_code == 422
+    assert "15 characters" in r.json()["detail"]
+
+    r = await client.get("/api/users", headers=admin)
+    assert "weak@example.org" not in [u["email"] for u in r.json()]
+
+
 async def test_create_links_by_email_and_patch_relinks(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     async with db_session() as session:
         bruno = await volunteers.create(session, "Bruno", "Cordeiro", "bc@example.org")
@@ -83,7 +103,7 @@ async def test_create_links_by_email_and_patch_relinks(client, seeded):
 
 
 async def test_provision_endpoint_adopts_an_unlinked_account(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     r = await client.post(
         "/api/users", json={"email": "late@example.org"}, headers=admin
@@ -100,15 +120,15 @@ async def test_provision_endpoint_adopts_an_unlinked_account(client, seeded):
 
 
 async def test_patch_flags_deactivation_kills_token(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     r = await client.post(
         "/api/users",
-        json={"email": "victim@example.org", "password": "victim-pw1"},
+        json={"email": "victim@example.org", "password": "victim-pass-phrase"},
         headers=admin,
     )
     victim_id = r.json()["id"]
-    victim = await _token(client, "victim@example.org", "victim-pw1")
+    victim = await _token(client, "victim@example.org", "victim-pass-phrase")
     assert (await client.get("/api/auth/me", headers=victim)).status_code == 200
 
     r = await client.patch(
@@ -134,15 +154,17 @@ async def test_patch_flags_deactivation_kills_token(client, seeded):
 
 
 async def test_reinvite_resets_credentials(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     r = await client.post(
         "/api/users",
-        json={"email": "lost@example.org", "password": "old-pass-1"},
+        json={"email": "lost@example.org", "password": "old-pass-phrase-1"},
         headers=admin,
     )
     user_id = r.json()["id"]
-    assert (await _token(client, "lost@example.org", "old-pass-1"))["Authorization"]
+    assert (await _token(client, "lost@example.org", "old-pass-phrase-1"))[
+        "Authorization"
+    ]
 
     r = await client.post(f"/api/users/{user_id}/reinvite", headers=admin)
     assert r.status_code == 200
@@ -151,13 +173,14 @@ async def test_reinvite_resets_credentials(client, seeded):
     assert body["invite_token"], "fresh invite link to hand out"
 
     r = await client.post(
-        "/api/auth/login", json={"email": "lost@example.org", "password": "old-pass-1"}
+        "/api/auth/login",
+        json={"email": "lost@example.org", "password": "old-pass-phrase-1"},
     )
     assert r.status_code == 401, "old password is dead"
 
 
 async def test_provision_endpoint_reports_created_and_skipped(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     async with db_session() as session:
         await volunteers.create(session, "Ana", "Family", "family@example.org")

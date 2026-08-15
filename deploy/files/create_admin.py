@@ -7,6 +7,8 @@ import sys
 
 from volunteerdb.db import db_session
 from volunteerdb.log import init_logging
+from volunteerdb.passwords import WeakPassword
+from volunteerdb.passwords import check as check_password
 from volunteerdb.services import users
 
 
@@ -14,6 +16,13 @@ async def main() -> int:
     init_logging()
     email = os.environ["VDB_ADMIN_EMAIL"]
     password = os.environ["VDB_ADMIN_PASSWORD"]
+    try:
+        # Checked before the database is touched so a rejected VDB_ADMIN_PASSWORD
+        # fails the deploy with one readable line instead of a traceback.
+        check_password(password, email=email)
+    except WeakPassword as exc:
+        print(f"VDB_ADMIN_PASSWORD rejected: {exc}", file=sys.stderr)
+        return 2
     async with db_session() as session:
         existing = await users.get_by_email(session, email)
         if existing is not None:

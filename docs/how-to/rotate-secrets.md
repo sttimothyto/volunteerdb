@@ -21,9 +21,14 @@ confirm the code arrives by email.
 VDB_ADMIN_PASSWORD='new-password' uvx pyinfra sttimothyto-prod deploy/deploy.py -y
 ```
 
-This re-runs the idempotent bootstrap for `admin@sttimothyto.org`.
-Alternatively, any admin can reset another admin's access from
-`/admin/users` with a re-invite (see [Manage user accounts](manage-users.md)).
+This re-runs the idempotent bootstrap for `admin@sttimothyto.org` — and only
+creates the account if it is missing, so on an existing deployment it is a
+no-op, not a rotation. To actually change the password: sign in as that admin
+and use `/account` (header gear → *Password & sign-in*), or have another admin
+re-invite the account from `/admin/users` (see
+[Manage user accounts](manage-users.md)). Either way the new password must
+clear the [policy](../explanation/auth.md#what-a-password-has-to-be), and a
+rejected `VDB_ADMIN_PASSWORD` fails the bootstrap with the reason.
 
 ## Session-cookie secret (`VDB_STORAGE_SECRET`)
 

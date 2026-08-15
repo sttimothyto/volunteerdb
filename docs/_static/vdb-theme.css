@@ -83,3 +83,14 @@ body[data-theme="dark"] .highlight {
     background: var(--color-code-block-background);
   }
 }
+
+/* ---------- report-it footer (_templates/page.html) ---------- */
+
+.vdb-report {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 3px double var(--color-background-border);
+  color: var(--color-foreground-muted);
+  font-size: 0.85rem;
+  text-align: center;
+}

@@ -53,6 +53,7 @@ BENCH_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_bench"
 # landmark accounts/volunteers the patterns look up by email at run time
 ADMIN_EMAIL = "admin@bench.test"
 LEADER_EMAIL = "leader@bench.test"
+BENCH_PASSWORD = "bench-run-passphrase"  # 15+ chars: the policy applies here too
 BUSY_EMAIL = "busy.bee@bench.test"  # exactly 5 memberships (impact pattern)
 CHURNED_EMAIL = "chris.churn@bench.test"  # guaranteed membership history (timeline)
 
@@ -262,9 +263,11 @@ async def seed(scale: int) -> None:
             options=["Email", "Phone", "Post"],
         )
 
-        await user_service.create(session, ADMIN_EMAIL, is_admin=True, password="bench")
         await user_service.create(
-            session, LEADER_EMAIL, volunteer_id=rows[1].id, password="bench"
+            session, ADMIN_EMAIL, is_admin=True, password=BENCH_PASSWORD
+        )
+        await user_service.create(
+            session, LEADER_EMAIL, volunteer_id=rows[1].id, password=BENCH_PASSWORD
         )
 
     # bulk load leaves the planner blind until autovacuum catches up

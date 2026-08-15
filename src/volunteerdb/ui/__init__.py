@@ -1,6 +1,7 @@
 def register_pages() -> None:
     """Importing the page modules registers their @ui.page routes."""
     from . import (  # noqa: F401
+        account_page,
         admin_page,
         dashboard,
         fields_admin_page,

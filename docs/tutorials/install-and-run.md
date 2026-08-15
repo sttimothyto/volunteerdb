@@ -58,10 +58,10 @@ features, two custom fields, and four logins. It ends by printing:
 
 ```
   Clergy team filled — its members join every proposal's voting roll
-  admin login:  admin@sttimothy.example / changeme
-  leader login: maria.alvarez@example.org / volunteer
-  member login: felix.garcia@example.org / volunteer
-  clergy login: dominic.ferraro@example.org / volunteer
+  admin login:  admin@sttimothy.example / demo-parish-admin
+  leader login: maria.alvarez@example.org / parish-demo-login
+  member login: felix.garcia@example.org / parish-demo-login
+  clergy login: dominic.ferraro@example.org / parish-demo-login
 ```
 
 The clergy login is the useful one for trying out planning: those three
@@ -78,8 +78,10 @@ uv run volunteerdb
 ```
 
 Open <http://localhost:8080>. You are redirected to the login page; sign in
-as `admin@sttimothy.example` with password `changeme` (leave "Keep me
-signed in" ticked if you like — that's the 90-day session).
+as `admin@sttimothy.example` with password `demo-parish-admin` (leave "Keep
+me signed in" ticked if you like — that's the 90-day session). The demo
+logins are long because every password is: at least 15 characters, per the
+[policy](../explanation/auth.md#what-a-password-has-to-be).
 
 ## 6. Look around
 
@@ -91,8 +93,8 @@ You land on the **Dashboard**. Three things confirm the seed did its job:
   she leads two ministries, her workload badge is deep in the red, and her
   timeline chart shows an ended Youth Group spell.
 - Header → **Teams** → *Liturgy*: a team with sub-teams and a roster you
-  can manage; try the "View as of" date picker with last year's date and
-  note the amber read-only banner.
+  can manage; try the "View as of" date picker (header settings gear) with
+  last year's date and note the amber read-only banner.
 
 Because `.env` has no `VDB_SMTP2GO_API_KEY`, any email the app "sends"
 (try signing out and logging in as Maria with a blank password — the OTP

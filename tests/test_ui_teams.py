@@ -6,6 +6,7 @@ managers, and a manager's rows outside their own subtree must carry no
 headcounts at all — hiding the column client-side would still ship them.
 """
 
+from datetime import date
 from pathlib import Path
 
 from nicegui import ui
@@ -132,3 +133,22 @@ async def test_home_page_controls_gated_by_full_roster_rights(database):
         await user.open(f"/teams/{ids['music']}")
         await user.should_see("Roster")
         await user.should_not_see("Volunteer home page")
+
+
+async def test_asof_snapshot_announces_itself_and_offers_a_way_back(database):
+    """The picker hides behind the settings icon, but a snapshot must never be
+    silent: the amber banner carries its own "Back to now"."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        await user.should_not_see("Read-only snapshot as of")
+        await user.should_not_see("Back to now")
+
+        # end of today is still "after now", so the live rows are in the snapshot
+        today = date.today().isoformat()
+        await user.open(f"/teams/{ids['liturgy']}?as_of={today}")
+        await user.should_see("Read-only snapshot as of")
+        await user.should_see("Back to now")

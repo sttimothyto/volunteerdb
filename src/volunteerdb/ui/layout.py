@@ -1,14 +1,23 @@
 from contextlib import contextmanager
+from datetime import datetime
 
 from nicegui import ui
 
 from ..permissions import Actor
-from .context import clear_session
+from .context import asof_banner, asof_picker, clear_session
 from .theme import apply_theme
 
 
 @contextmanager
-def frame(title: str, actor: Actor):
+def frame(
+    title: str,
+    actor: Actor,
+    *,
+    as_of: datetime | None = None,
+    asof_path: str | None = None,
+):
+    """Header + page column. Pages that can time-travel pass asof_path (the URL
+    the picker navigates back to) and the as_of they were rendered at."""
     dark = apply_theme()
     nav_items = [("Teams", "/teams"), ("Volunteers", "/volunteers")]
     if actor.can_access_planning:
@@ -45,20 +54,42 @@ def frame(title: str, actor: Actor):
                     ui.menu_item(label, on_click=lambda t=target: ui.navigate.to(t))
         ui.space()
         ui.label(actor.user.email).classes("text-sm opacity-80 gt-sm")
-        ui.button(
-            icon="menu_book", on_click=lambda: ui.navigate.to("/manual", new_tab=True)
-        ).props("flat color=white dense round").tooltip("Manual")
-        ui.button(icon="dark_mode", on_click=dark.toggle).props(
-            "flat color=white dense round"
-        ).bind_icon_from(
-            dark, "value", lambda v: "light_mode" if v else "dark_mode"
-        ).tooltip("Toggle dark mode")
+        _settings_menu(dark, as_of, asof_path)
         ui.button(icon="logout", on_click=_logout).props(
             "flat color=white dense"
         ).tooltip("Sign out")
     with ui.column().classes("w-full max-w-5xl mx-auto p-4 gap-4"):
         ui.label(title).classes("text-2xl vdb-page-title")
+        if as_of is not None and asof_path is not None:
+            asof_banner(as_of, asof_path)
         yield
+
+
+def _settings_menu(
+    dark: ui.dark_mode, as_of: datetime | None, asof_path: str | None
+) -> None:
+    """Everything that changes how you're reading the app, under one gear:
+    dark mode, the manual, and (where the page supports it) the as-of date."""
+    with ui.button(icon="settings").props(
+        f"flat dense round color={'warning' if as_of else 'white'}"
+    ):
+        # to the left: the menu drops straight down over anything below the gear
+        ui.tooltip("Settings").props('anchor="center left" self="center right"')
+        with ui.menu(), ui.column().classes("p-3 gap-3 w-64"):
+            ui.switch("Dark mode").bind_value(dark, "value").props("dense")
+            ui.button(
+                "Password & sign-in",
+                icon="key",
+                on_click=lambda: ui.navigate.to("/account"),
+            ).props("flat dense no-caps align=left").classes("w-full")
+            ui.button(
+                "Manual",
+                icon="menu_book",
+                on_click=lambda: ui.navigate.to("/manual", new_tab=True),
+            ).props("flat dense no-caps align=left").classes("w-full")
+            if asof_path is not None:
+                ui.separator()
+                asof_picker(as_of, asof_path)
 
 
 def _logout() -> None:

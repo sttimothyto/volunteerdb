@@ -14,7 +14,7 @@ from tests.conftest import _token
 
 
 async def test_login_and_me(client, seeded):
-    headers = await _token(client, "admin@example.org", "secret-pw")
+    headers = await _token(client, "admin@example.org", "secret-pass-phrase")
     r = await client.get("/api/auth/me", headers=headers)
     assert r.status_code == 200
     assert r.json()["is_admin"] is True
@@ -28,7 +28,7 @@ async def test_login_and_me(client, seeded):
 
 
 async def test_admin_crud_flow(client, seeded):
-    headers = await _token(client, "admin@example.org", "secret-pw")
+    headers = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     r = await client.post(
         "/api/volunteers",
@@ -68,7 +68,7 @@ async def test_admin_crud_flow(client, seeded):
 
 
 async def test_member_permissions_enforced(client, seeded):
-    headers = await _token(client, "member@example.org", "member-pw")
+    headers = await _token(client, "member@example.org", "member-pass-phrase")
 
     r = await client.get("/api/teams", headers=headers)
     assert r.status_code == 200, "directory is browsable"
@@ -98,7 +98,7 @@ async def test_member_permissions_enforced(client, seeded):
 
 
 async def test_as_of_time_travel(client, seeded):
-    headers = await _token(client, "admin@example.org", "secret-pw")
+    headers = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     await asyncio.sleep(0.02)
     before = datetime.now(UTC).isoformat()
@@ -126,8 +126,8 @@ async def test_as_of_time_travel(client, seeded):
 async def test_include_inactive_requires_admin(client, seeded):
     """The GUI restricts the archived-volunteers toggle to admins; the API let
     any signed-in caller enumerate them. Same rule on both surfaces."""
-    admin = await _token(client, "admin@example.org", "secret-pw")
-    member = await _token(client, "member@example.org", "member-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
+    member = await _token(client, "member@example.org", "member-pass-phrase")
 
     r = await client.post(
         "/api/volunteers",
@@ -163,7 +163,7 @@ async def test_a_bare_as_of_date_covers_that_whole_day(client, seeded):
     annotate as_of as a datetime, so FastAPI parsed '2026-07-30' to midnight
     while the GUI bumped it to 23:59:59 — the same query string returning
     snapshots a day apart."""
-    headers = await _token(client, "admin@example.org", "secret-pw")
+    headers = await _token(client, "admin@example.org", "secret-pass-phrase")
     today = date.today().isoformat()
 
     r = await client.get("/api/volunteers", params={"as_of": today}, headers=headers)
@@ -184,7 +184,7 @@ async def test_a_bare_as_of_date_covers_that_whole_day(client, seeded):
 
 
 async def test_volunteer_timeline(client, seeded):
-    headers = await _token(client, "member@example.org", "member-pw")
+    headers = await _token(client, "member@example.org", "member-pass-phrase")
     vid = seeded["volunteer_id"]
 
     # leave and rejoin so the timeline has one closed and one open spell
@@ -208,8 +208,8 @@ async def test_volunteer_timeline(client, seeded):
 
 
 async def test_custom_fields_flow(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
-    member = await _token(client, "member@example.org", "member-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
+    member = await _token(client, "member@example.org", "member-pass-phrase")
 
     # only admins define fields
     body = {
@@ -267,8 +267,8 @@ async def test_custom_fields_flow(client, seeded):
 
 
 async def test_workload_flow(client, seeded):
-    admin = await _token(client, "admin@example.org", "secret-pw")
-    member = await _token(client, "member@example.org", "member-pw")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
+    member = await _token(client, "member@example.org", "member-pass-phrase")
 
     # weight the team (team edits are admin-only across the board)
     r = await client.patch(

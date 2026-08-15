@@ -18,7 +18,8 @@ Authorization: Bearer <token>
 Tokens are personal, issued by `POST /api/auth/login` (email + password),
 and stored server-side only as SHA-256 digests. Each login issues a fresh
 token and revokes the previous one. Accounts without a password (OTP-only)
-cannot obtain API tokens. Only active accounts authenticate.
+cannot obtain API tokens — and removing a password on `/account` revokes the
+token that was issued against it. Only active accounts authenticate.
 
 Requests run in a single transaction with the acting user recorded, so
 history rows written by API calls carry `changed_by`
@@ -116,9 +117,9 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | Method & path | Notes |
 |---|---|
 | `GET /api/users` | List accounts |
-| `POST /api/users` | 201; returns invite token. Omitting `volunteer_id` links the volunteer at that address, if exactly one holds it |
+| `POST /api/users` | 201; returns `invite_token` + `invite_expires_at`. Omitting `volunteer_id` links the volunteer at that address, if exactly one holds it. An optional `password` must clear the [policy](../explanation/auth.md#what-a-password-has-to-be) — 422 with the reason if not |
 | `PATCH /api/users/{id}` | `is_admin`, `is_active`, `volunteer_id` (`null` unlinks; omit to leave alone) |
-| `POST /api/users/{id}/reinvite` | Invalidates password, fresh invite token |
+| `POST /api/users/{id}/reinvite` | Invalidates password, fresh invite token with a new expiry |
 | `POST /api/users/provision` | Bulk-create accounts for volunteers with email, and link existing unlinked accounts → `{created, linked, skipped}` |
 
 (api-import-export)=

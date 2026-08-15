@@ -85,10 +85,12 @@ async def test_redeem_invite_password_optional(database):
         assert ra.password_hash is None and ra.invite_token is None  # OTP-only account
         assert await users.authenticate(session, "nopw@example.org", "anything") is None
 
-        rb = await users.redeem_invite(session, b.invite_token, "longenough")
+        rb = await users.redeem_invite(session, b.invite_token, "long-enough-phrase")
         assert rb is not None and rb.password_hash is not None
         assert (
-            await users.authenticate(session, "withpw@example.org", "longenough")
+            await users.authenticate(
+                session, "withpw@example.org", "long-enough-phrase"
+            )
             is not None
         )
 
@@ -103,6 +105,11 @@ async def test_mail_dev_mode_and_builders(monkeypatch, capsys):
     assert "123456" in subject and "10 minutes" in body
     subject, body = mail.invite_email("https://x/invite/tok")
     assert "https://x/invite/tok" in body and "optional" in body
+    assert "24 hours" in body, "the link's lifetime is stated where it is handed out"
+    subject, body = mail.password_changed_email("https://x/login")
+    assert "was just changed" in body and "parish office" in body
+    subject, body = mail.password_changed_email("https://x/login", removed=True)
+    assert "was removed" in body
     subject, body = mail.welcome_email("https://x/login", has_password=False)
     assert "one-time code" in body
     subject, body = mail.welcome_email("https://x/login", has_password=True)

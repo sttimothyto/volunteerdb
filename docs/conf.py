@@ -4,6 +4,7 @@ Build:  uv run --group docs sphinx-build -W --keep-going -b html docs docs/_buil
 Links:  uv run --group docs sphinx-build -b linkcheck docs docs/_build/linkcheck
 """
 
+import os
 import tomllib
 from pathlib import Path
 
@@ -33,6 +34,13 @@ html_theme = "furo"
 html_title = "VolunteerDB"
 html_static_path = ["_static"]
 html_css_files = ["vdb-theme.css"]
+# _templates/page.html appends the report-it footer to Furo's own.
+templates_path = ["_templates"]
+# Read at build time, not runtime: the container bakes this HTML into the
+# image, so VDB_CONTACT_EMAIL must be set for the docs build to change it.
+html_context = {
+    "vdb_contact_email": os.environ.get("VDB_CONTACT_EMAIL", "admin@sttimothyto.org"),
+}
 
 # Neo-greco palette mirroring the web app: tokens from
 # src/volunteerdb/ui/static/theme.css, brand colors from app.colors() in

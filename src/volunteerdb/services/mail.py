@@ -46,7 +46,9 @@ async def send_email(to: str, subject: str, text_body: str) -> bool:
     return ok
 
 
-def invite_email(invite_url: str) -> tuple[str, str]:
+def invite_email(invite_url: str, ttl_hours: int | None = None) -> tuple[str, str]:
+    hours = settings().invite_ttl_hours if ttl_hours is None else ttl_hours
+    window = "24 hours" if hours == 24 else f"{hours} hours"
     return (
         "Your VolunteerDB account at St. Timothy's",
         "An account has been created for you in VolunteerDB, St. Timothy's "
@@ -54,8 +56,9 @@ def invite_email(invite_url: str) -> tuple[str, str]:
         f"Finish setting it up here: {invite_url}\n\n"
         "Setting a password is optional. If you skip it, we'll email you a "
         "one-time sign-in code each time you log in.\n\n"
-        "This link can only be used once; if it stops working, ask a parish "
-        "admin for a new one.",
+        f"The link works once, and only for the next {window}. If it has run "
+        "out, you can still sign in at any time by entering your email address "
+        "with the password field left blank — we'll email you a code.",
     )
 
 
@@ -65,6 +68,28 @@ def otp_email(code: str) -> tuple[str, str]:
         f"Your one-time sign-in code is {code}. It expires in 10 minutes.\n\n"
         "If you didn't try to sign in, you can ignore this email — your "
         "account is safe.",
+    )
+
+
+def password_changed_email(login_url: str, *, removed: bool = False) -> tuple[str, str]:
+    """Sent to the account's own address whenever its password changes.
+
+    NIST SP 800-63B §4.1.2: "When an authenticator is added, the CSP SHALL
+    notify the subscriber via a mechanism independent of the transaction
+    binding the new authenticator" — independent because a session someone
+    else is driving cannot suppress what lands in the volunteer's mailbox."""
+    what = (
+        "The password on your VolunteerDB account was removed. You now sign in "
+        "with a one-time code emailed to this address."
+        if removed
+        else "The password on your VolunteerDB account was just changed."
+    )
+    return (
+        "Your VolunteerDB password changed",
+        f"{what}\n\n"
+        f"If that was you, there is nothing to do — sign in at {login_url}.\n\n"
+        "If it was not, tell the parish office straight away: somebody else "
+        "has access to this account.",
     )
 
 

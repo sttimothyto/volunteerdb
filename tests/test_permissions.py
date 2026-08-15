@@ -37,12 +37,15 @@ async def parish(database):
 
         accounts = {
             name: await users.create(
-                session, f"user-{name}@example.org", volunteer_id=v.id, password="pw"
+                session,
+                f"user-{name}@example.org",
+                volunteer_id=v.id,
+                password="test-pass-phrase",
             )
             for name, v in people.items()
         }
         accounts["admin"] = await users.create(
-            session, "admin@example.org", is_admin=True, password="pw"
+            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         ids = {
             "liturgy": liturgy.id,

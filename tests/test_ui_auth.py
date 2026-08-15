@@ -14,7 +14,7 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 async def test_anonymous_redirect_and_login_guards(database):
     async with db_session() as session:
         await users.create(
-            session, "admin@example.org", is_admin=True, password="correct-pw-1"
+            session, "admin@example.org", is_admin=True, password="correct-pass-phrase"
         )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -31,14 +31,18 @@ async def test_anonymous_redirect_and_login_guards(database):
         # correct password: redirect_to round-trips back to the page we wanted
         # (argon2 verify + navigation outlast should_see's default 0.3s window)
         user.find(kind=ui.input, content="Password (optional)").clear()
-        user.find(kind=ui.input, content="Password (optional)").type("correct-pw-1")
+        user.find(kind=ui.input, content="Password (optional)").type(
+            "correct-pass-phrase"
+        )
         user.find(kind=ui.input, content="Password (optional)").trigger("keydown.enter")
         await user.should_see("0 volunteers", retries=30)  # the /volunteers list
 
         # open-redirect guard: a scheme-relative target is ignored -> dashboard
         await user.open("/login?redirect_to=//evil.example")
         user.find(kind=ui.input, content="Email").type("admin@example.org")
-        user.find(kind=ui.input, content="Password (optional)").type("correct-pw-1")
+        user.find(kind=ui.input, content="Password (optional)").type(
+            "correct-pass-phrase"
+        )
         user.find(kind=ui.input, content="Password (optional)").trigger("keydown.enter")
         await user.should_see("Find volunteers or teams…", retries=30)
 
@@ -60,21 +64,29 @@ async def test_invite_redemption_flow(database, monkeypatch):
         await user.open(f"/invite/{token}")
         await user.should_see("Finish your account setup")
 
-        # too-short password
+        # rejected by the policy, with the reason (SP 800-63B: 15 characters)
         user.find(kind=ui.input, content="Password (optional)").type("short")
         user.find("Finish setup and sign in", kind=ui.button).click()
-        await user.should_see("Password must be at least 8 characters", retries=30)
+        await user.should_see("That password is too short", retries=30)
+
+        # ... and again for a long one that is on the blocklist
+        user.find(kind=ui.input, content="Password (optional)").clear()
+        user.find(kind=ui.input, content="Password (optional)").type("Passw0rd12345678")
+        user.find("Finish setup and sign in", kind=ui.button).click()
+        await user.should_see("That password is a well-known one", retries=30)
 
         # mismatched confirmation
         user.find(kind=ui.input, content="Password (optional)").clear()
-        user.find(kind=ui.input, content="Password (optional)").type("long-enough-1")
-        user.find(kind=ui.input, content="Repeat password").type("different-1")
+        user.find(kind=ui.input, content="Password (optional)").type(
+            "long-enough-phrase-1"
+        )
+        user.find(kind=ui.input, content="Repeat password").type("different-phrase-11")
         user.find("Finish setup and sign in", kind=ui.button).click()
-        await user.should_see("Passwords do not match", retries=30)
+        await user.should_see("The two passwords don't match", retries=30)
 
         # matching passwords: redeemed, welcomed by email, signed in
         user.find(kind=ui.input, content="Repeat password").clear()
-        user.find(kind=ui.input, content="Repeat password").type("long-enough-1")
+        user.find(kind=ui.input, content="Repeat password").type("long-enough-phrase-1")
         user.find("Finish setup and sign in", kind=ui.button).click()
         await user.should_see("Find volunteers or teams…", retries=30)
         assert sent and sent[-1][0] == "new@example.org"
@@ -84,4 +96,6 @@ async def test_invite_redemption_flow(database, monkeypatch):
         # the invite link is single-use
         await user.open(f"/invite/{token}")
         user.find("Finish setup and sign in", kind=ui.button).click()
-        await user.should_see("This invite link is invalid or already used", retries=30)
+        await user.should_see(
+            "This link has expired or has already been used", retries=30
+        )

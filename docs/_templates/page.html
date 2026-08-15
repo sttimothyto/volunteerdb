@@ -1,0 +1,11 @@
+{# Append the report-it line to Furo's own footer (related pages, copyright).
+   The address comes from html_context in conf.py, baked in at build time. #}
+{% extends "!page.html" %}
+
+{% block footer %}
+{{ super() }}
+<div class="vdb-report">
+  See something inappropriate? Report it to
+  <a href="mailto:{{ vdb_contact_email }}">{{ vdb_contact_email }}</a>.
+</div>
+{% endblock footer %}

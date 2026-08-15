@@ -344,6 +344,7 @@ class UserOut(ORMModel):
     is_active: bool
     has_password: bool = False
     invite_token: str | None = None
+    invite_expires_at: datetime | None = None  # when that link stops working
     last_login_at: datetime | None
 
 
@@ -351,6 +352,8 @@ class UserIn(BaseModel):
     email: EmailStr
     volunteer_id: int | None = None
     is_admin: bool = False
+    # Held to passwords.check like every other way in — a weak one comes back
+    # as a 422 naming the rule it broke. Omit it for the usual invite flow.
     password: str | None = None
 
 

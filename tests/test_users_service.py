@@ -1,8 +1,11 @@
 """User/account service: provisioning, API tokens, invites, credential resets."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from volunteerdb.db import db_session
+from volunteerdb.passwords import WeakPassword
 from volunteerdb.services import users, volunteers
 from volunteerdb.services.users import _token_digest
 
@@ -130,7 +133,9 @@ async def test_set_volunteer_relinks_unlinks_and_refuses_a_taken_volunteer(datab
 
 async def test_issue_api_token_revokes_previous(database):
     async with db_session() as session:
-        user = await users.create(session, "api@example.org", password="pw-123456")
+        user = await users.create(
+            session, "api@example.org", password="api-pass-phrase-1"
+        )
         first = await users.issue_api_token(session, user.id)
         second = await users.issue_api_token(session, user.id)
 
@@ -145,7 +150,9 @@ async def test_issue_api_token_revokes_previous(database):
 
 async def test_authenticate_token_rejects_inactive_and_empty(database):
     async with db_session() as session:
-        user = await users.create(session, "victim@example.org", password="pw-123456")
+        user = await users.create(
+            session, "victim@example.org", password="api-pass-phrase-1"
+        )
         token = await users.issue_api_token(session, user.id)
         assert await users.authenticate_token(session, token) is not None
 
@@ -156,22 +163,25 @@ async def test_authenticate_token_rejects_inactive_and_empty(database):
 
 async def test_reissue_invite_invalidates_password(database):
     async with db_session() as session:
-        user = await users.create(session, "reset@example.org", password="old-pass-1")
+        user = await users.create(
+            session, "reset@example.org", password="old-pass-phrase-1"
+        )
         assert (
-            await users.authenticate(session, "reset@example.org", "old-pass-1")
+            await users.authenticate(session, "reset@example.org", "old-pass-phrase-1")
             is not None
         )
 
         invite = await users.reissue_invite(session, user.id)
         assert (
-            await users.authenticate(session, "reset@example.org", "old-pass-1") is None
+            await users.authenticate(session, "reset@example.org", "old-pass-phrase-1")
+            is None
         )
 
-        redeemed = await users.redeem_invite(session, invite, "new-pass-1")
+        redeemed = await users.redeem_invite(session, invite, "new-pass-phrase-1")
         assert redeemed is not None and redeemed.invite_token is None
         assert await users.redeem_invite(session, invite, "again") is None, "single use"
         assert (
-            await users.authenticate(session, "reset@example.org", "new-pass-1")
+            await users.authenticate(session, "reset@example.org", "new-pass-phrase-1")
             is not None
         )
 
@@ -181,10 +191,12 @@ async def test_set_password_clears_invite_and_missing_raises(database):
         user = await users.create(session, "invitee@example.org")
         assert user.invite_token is not None and user.password_hash is None
 
-        await users.set_password(session, user.id, "fresh-pass-1")
+        await users.set_password(session, user.id, "fresh-pass-phrase-1")
         assert user.invite_token is None
         assert (
-            await users.authenticate(session, "invitee@example.org", "fresh-pass-1")
+            await users.authenticate(
+                session, "invitee@example.org", "fresh-pass-phrase-1"
+            )
             is not None
         )
 
@@ -194,3 +206,80 @@ async def test_set_password_clears_invite_and_missing_raises(database):
             await users.reissue_invite(session, 424242)
         with pytest.raises(LookupError):
             await users.issue_api_token(session, 424242)
+
+
+async def test_invite_links_expire(database):
+    """The invite link is also the reset link, so it is a recovery credential
+    sitting in a mailbox: NIST SP 800-63B §4.2.1.2 caps one emailed to an
+    address at 24 hours."""
+    async with db_session() as session:
+        user = await users.create(session, "slow@example.org")
+        token = user.invite_token
+        assert user.invite_expires_at is not None
+        assert users.invite_live(user)
+
+        user.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await session.flush()
+        assert not users.invite_live(user)
+        assert await users.redeem_invite(session, token, None) is None, (
+            "an expired link is refused exactly like an unknown one"
+        )
+        assert user.invite_token == token, "and is not silently consumed"
+
+        # the account is not stranded: an emailed code still signs it in
+        _, code = await users.start_otp_login(session, "slow@example.org")
+        assert await users.verify_otp(session, "slow@example.org", code) is not None
+        assert user.invite_token is None and user.invite_expires_at is None
+
+
+async def test_reissue_invite_arms_a_fresh_window(database):
+    async with db_session() as session:
+        user = await users.create(
+            session, "lost@example.org", password="old-pass-phrase-1"
+        )
+        assert user.invite_token is None and user.invite_expires_at is None
+
+        await users.reissue_invite(session, user.id)
+        assert users.invite_live(user)
+        expected = datetime.now(UTC) + users.invite_ttl()
+        assert abs((user.invite_expires_at - expected).total_seconds()) < 60
+
+
+async def test_weak_passwords_are_refused_on_every_path(database):
+    """passwords.check is enforced at the service layer, so no caller — GUI,
+    API, seed script or deploy bootstrap — can leave a weak one behind."""
+    async with db_session() as session:
+        with pytest.raises(WeakPassword, match="too short"):
+            await users.create(session, "weak@example.org", password="short")
+        assert await users.get_by_email(session, "weak@example.org") is None
+
+        user = await users.create(
+            session, "coordinator@example.org", password="cedar lamp figs"
+        )
+        with pytest.raises(WeakPassword, match="well-known"):
+            await users.set_password(session, user.id, "passwordpassword")
+        with pytest.raises(WeakPassword, match="email address or the name"):
+            await users.set_password(session, user.id, "coordinator-2026")
+
+        invited = await users.create(session, "invited@example.org")
+        with pytest.raises(WeakPassword, match="too short"):
+            await users.redeem_invite(session, invited.invite_token, "short")
+        assert invited.invite_token is not None, "a refused password spends nothing"
+
+
+async def test_clear_password_drops_api_access_too(database):
+    async with db_session() as session:
+        user = await users.create(
+            session, "quits@example.org", password="cedar lamp figs"
+        )
+        token = await users.issue_api_token(session, user.id)
+
+        await users.clear_password(session, user.id)
+        assert user.password_hash is None
+        assert await users.authenticate_token(session, token) is None, (
+            "tokens are issued against a password; removing it revokes them"
+        )
+        assert (
+            await users.authenticate(session, "quits@example.org", "cedar lamp figs")
+            is None
+        )

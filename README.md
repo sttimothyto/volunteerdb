@@ -21,7 +21,7 @@ to fill?"**
 Full documentation lives in [`docs/`](docs/index.md), organized as
 tutorials, how-to guides, explanation, and reference
 ([Diátaxis](https://documentation.divio.com/)). A running instance serves
-it at **`/manual`** (signed-in users; book icon in the header) — the
+it at **`/manual`** (signed-in users; header → settings gear → *Manual*) — the
 container image builds it in. Build locally with:
 
 ```sh
@@ -97,8 +97,8 @@ trigger: every UPDATE/DELETE archives the old row into `<table>_history` with
 its validity period (`sys_period tstzrange`) and the acting user
 (`changed_by`, from the transaction-local `app.user_id` setting).
 
-- GUI: the dashboard (with its graph) and every team/volunteer page has a
-  "View as of" date picker (read-only snapshot, amber banner)
+- GUI: the dashboard (with its graph) and the team pages hide a "View as of"
+  date picker in the header's settings menu (read-only snapshot, amber banner)
 - API: add `?as_of=2026-01-01T00:00:00+02:00` to any GET
 
 **Migration note:** any future column change on a versioned table must be
@@ -118,8 +118,13 @@ mirrored on its `_history` twin (the trigger inserts positionally).
 
 Accounts are admin-provisioned via **invite links** (Accounts page → bulk or
 per person), emailed automatically when `VDB_SMTP2GO_API_KEY` is set and
-always available to hand out by other means. The volunteer opens the link
-and sets a password — or skips it and signs in with emailed one-time codes.
+always available to hand out by other means. The link is good for 24 hours
+(`VDB_INVITE_TTL_HOURS`). The volunteer opens it and sets a password — or
+skips it and signs in with emailed one-time codes, which is also how anyone
+who forgets their password gets back in and sets a new one on `/account`.
+Passwords must be at least 15 characters and are otherwise unconstrained; the
+policy and its NIST SP 800-63B provenance are in
+[docs/explanation/auth.md](docs/explanation/auth.md).
 
 ## JSON API
 

@@ -57,10 +57,11 @@ Header → **Teams** → *Liturgy*. Because Maria leads it:
 
 ## 4. Look at the past
 
-On the team page, open the **"View as of"** date picker and choose a date
-last year. An amber banner appears: you are reading a snapshot — the roster
-as it actually was, including your pre-experiment state from step 3, and
-people who have since left. Clear the picker to return to the present. Every
+On the team page, click the **settings gear** in the header for the **"View
+as of"** date picker and choose a date last year. An amber banner appears:
+you are reading a snapshot — the roster as it actually was, including your
+pre-experiment state from step 3, and people who have since left. **Back to
+now** in the banner returns you to the present. Every
 change you make is preserved this way, with who-changed-what recorded.
 
 ## 5. Export a roster

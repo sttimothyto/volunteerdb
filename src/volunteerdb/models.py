@@ -299,6 +299,11 @@ class AppUser(Base):
     is_admin: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     api_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
     invite_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
+    # Set and cleared together with invite_token; a token whose expiry has
+    # passed (or was never recorded) is dead. See services/users.py.
+    invite_expires_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
     otp_hash: Mapped[str | None] = mapped_column(sa.String(255))
     otp_sent_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
     otp_expires_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))

@@ -21,10 +21,13 @@ from volunteerdb.ui.context import establish_session
 
 
 @ui.page("/login-dev/{user_id}")  # path MUST start with /login —
-def dev_login(user_id: int):  # it rides the AuthMiddleware
-    establish_session(user_id, remember=True)  # UNRESTRICTED_PREFIXES exemption
+def dev_login(user_id: int, method: str = "password"):  # it rides the AuthMiddleware
+    establish_session(user_id, remember=True, method=method)  # UNRESTRICTED_PREFIXES
     ui.label(f"dev-login ok: user {user_id}")
 ```
+
+(`method` mirrors how the session was authenticated — pass `?method=otp` to
+see `/account` as someone who signed in with an emailed code.)
 
 (A raw `app.storage.user["user_id"] = ...` write is NOT enough — sessions
 without a `session_expires_at` read as expired.)
@@ -43,7 +46,9 @@ background; ready when `curl http://127.0.0.1:8123/login` returns 200.
 - Page evidence: the initial element tree is JSON embedded in the GET HTML —
   grep for row dicts (e.g. `"workload":"red"`), labels, or "Admins only.".
 - JSON API: `POST /api/auth/login {"email","password"}` → Bearer token
-  (seed passwords: changeme / volunteer / volunteer).
+  (seed passwords: demo-parish-admin / parish-demo-login / parish-demo-login;
+  any password you set has to clear the 15-character policy in
+  `volunteerdb/passwords.py`).
 - History spot-checks go straight to Postgres via
   `podman exec volunteerdb_db_1 psql -U volunteerdb -t -c "..." volunteerdb`.
 - As-of views: `?as_of=<ISO ts>` — remember URL-encode `+00:00` as `%2B00:00`.
