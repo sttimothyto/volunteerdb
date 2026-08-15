@@ -5,6 +5,8 @@ they must serve without a session, show only published active teams, and
 never serve unsanitized doc HTML.
 """
 
+import base64
+import hashlib
 from io import BytesIO
 
 import httpx
@@ -37,6 +39,11 @@ def _png(size=(40, 30), mode="RGB", color="red") -> bytes:
     buffer = BytesIO()
     Image.new(mode, size, color).save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def _v(image: bytes) -> str:
+    """The ?v= content hash _localize_images bakes into localized srcs."""
+    return hashlib.sha256(image).hexdigest()[:12]
 
 
 # --- units -----------------------------------------------------------------
@@ -218,6 +225,21 @@ async def test_fetch_rejects_oversized_doc(database):
     ):
         team = await teams.get(session, team_id)
         page = await pages.fetch_and_store(session, team, client)
+        assert page.status == "error" and "over 30 MB" in page.error
+
+
+async def test_fetch_rejects_oversized_text_after_extraction(database):
+    """DOC_MAX_BYTES admits image-heavy exports; the stored html — images
+    extracted out — keeps the old 2 MB cap."""
+    team_id = await _team_with_doc()
+    doc = "<body><p>" + "x" * (pages.HTML_MAX_BYTES + 1) + "</p></body>"
+
+    async with (
+        db_session() as session,
+        _doc_client(lambda request: httpx.Response(200, text=doc)) as client,
+    ):
+        team = await teams.get(session, team_id)
+        page = await pages.fetch_and_store(session, team, client)
         assert page.status == "error" and "over 2 MB" in page.error
 
 
@@ -263,7 +285,7 @@ async def test_fetch_localizes_google_images(database):
         team = await teams.get(session, team_id)
         page = await pages.fetch_and_store(session, team, client)
         assert page.status == "ok", page.error
-        assert f'src="/ministries/img/{team_id}/1"' in page.html
+        assert f'src="/ministries/img/{team_id}/1?v={_v(png)}"' in page.html
         assert 'alt="choir"' in page.html and 'width="624"' in page.html
         assert "googleusercontent" not in page.html
         assert 'src="https://evil.test/x.png"' in page.html, "non-Google src kept"
@@ -274,6 +296,63 @@ async def test_fetch_localizes_google_images(database):
         assert row.seq == 1 and row.image == png and row.content_type == "image/png"
 
 
+async def test_fetch_localizes_inline_data_uri_images(database):
+    """Today's exports inline every image as a base64 data: URI. The bytes are
+    extracted into team_page_image and the src rewritten — the sanitizer
+    (which allows no data: scheme) would otherwise strip the src entirely,
+    which is exactly how the young-adults logo went missing."""
+    team_id = await _team_with_doc()
+    png = _png()
+    encoded = base64.b64encode(png).decode()
+    doc = (
+        "<html><head></head><body>"
+        f'<img alt="logo" src="data:image/png;base64,{encoded}">'
+        "<p>hello</p></body></html>"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "docs.google.com", "data URIs need no fetch"
+        return httpx.Response(200, text=doc)
+
+    async with db_session() as session, _doc_client(handler) as client:
+        team = await teams.get(session, team_id)
+        page = await pages.fetch_and_store(session, team, client)
+        assert page.status == "ok", page.error
+        assert f'src="/ministries/img/{team_id}/1?v={_v(png)}"' in page.html
+        assert 'alt="logo"' in page.html
+        assert "data:" not in page.html
+
+        (row,) = await _images(session, team_id)
+        assert row.seq == 1 and row.image == png and row.content_type == "image/png"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ["AAAA", "!!not-base64!!", base64.b64encode(b"x" * 100).decode()],
+    ids=["not-an-image", "invalid-base64", "garbage-bytes"],
+)
+async def test_unreadable_data_uri_loses_its_src_but_page_publishes(database, payload):
+    """A data: src that fails extraction can't be kept like a remote src — the
+    sanitizer strips the scheme — so the img just loses its src; the page
+    itself still publishes."""
+    team_id = await _team_with_doc()
+    doc = (
+        f'<body><img src="data:image/png;base64,{payload}" alt="broken">'
+        "<p>hello</p></body>"
+    )
+
+    async with (
+        db_session() as session,
+        _doc_client(lambda request: httpx.Response(200, text=doc)) as client,
+    ):
+        team = await teams.get(session, team_id)
+        page = await pages.fetch_and_store(session, team, client)
+        assert page.status == "ok"
+        assert "data:" not in page.html
+        assert 'alt="broken"' in page.html and "<p>hello</p>" in page.html
+        assert await _images(session, team_id) == []
+
+
 async def test_duplicate_image_src_downloads_once(database):
     team_id = await _team_with_doc()
     doc = f"<body><img src='{IMG_URL}'><p>x</p><img src='{IMG_URL}'></body>"
@@ -282,7 +361,7 @@ async def test_duplicate_image_src_downloads_once(database):
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
         page = await pages.fetch_and_store(session, team, client)
-        assert page.html.count(f'src="/ministries/img/{team_id}/1"') == 2
+        assert page.html.count(f'src="/ministries/img/{team_id}/1?v=') == 2
         assert len(await _images(session, team_id)) == 1
         assert hosts.count("lh7-rt.googleusercontent.com") == 1
 
@@ -355,6 +434,75 @@ async def test_refetch_replaces_images_but_failure_keeps_them(database):
         assert row.image == second
 
 
+async def test_refetch_with_unchanged_doc_keeps_image_rows(database, log_records):
+    """An unchanged doc must not delete+reinsert the image rows — the nightly
+    job would otherwise rewrite every page's BYTEA every night for nothing."""
+    team_id = await _team_with_doc()
+    png = _png()
+    handler, _ = _doc_and_image_handler(IMG_DOC_HTML, httpx.Response(200, content=png))
+
+    async with db_session() as session, _doc_client(handler) as client:
+        team = await teams.get(session, team_id)
+        first = await pages.fetch_and_store(session, team, client)
+        first_html, first_fetched = first.html, first.fetched_at
+
+    async with db_session() as session, _doc_client(handler) as client:
+        team = await teams.get(session, team_id)
+        page = await pages.fetch_and_store(session, team, client)
+        assert page.status == "ok" and page.html == first_html
+        assert page.fetched_at > first_fetched, "the freshness label still advances"
+        (row,) = await _images(session, team_id)
+        assert row.image == png
+    assert any(e["event"] == "page unchanged; image rows kept" for e in log_records)
+
+
+async def test_force_refetch_takes_the_rewrite_path(database, log_records):
+    """force=True (the manual "Fetch now" button) rewrites even an unchanged
+    page — the repair path for image rows damaged out-of-band."""
+    team_id = await _team_with_doc()
+    handler, _ = _doc_and_image_handler(
+        IMG_DOC_HTML, httpx.Response(200, content=_png())
+    )
+
+    async with db_session() as session, _doc_client(handler) as client:
+        team = await teams.get(session, team_id)
+        await pages.fetch_and_store(session, team, client)
+
+    async with db_session() as session, _doc_client(handler) as client:
+        team = await teams.get(session, team_id)
+        page = await pages.fetch_and_store(session, team, client, force=True)
+        assert page.status == "ok"
+        assert len(await _images(session, team_id)) == 1
+    assert not any(e["event"] == "page unchanged; image rows kept" for e in log_records)
+
+
+async def test_error_then_identical_doc_rewrites_and_clears_error(database):
+    """status='error' forces the full path even when the refetched html equals
+    the kept copy: error→ok always repairs the image set and clears error."""
+    team_id = await _team_with_doc()
+    png = _png()
+    handler, _ = _doc_and_image_handler(IMG_DOC_HTML, httpx.Response(200, content=png))
+
+    async with db_session() as session, _doc_client(handler) as client:
+        team = await teams.get(session, team_id)
+        await pages.fetch_and_store(session, team, client)
+
+    async with (
+        db_session() as session,
+        _doc_client(lambda request: httpx.Response(404, text="gone")) as client,
+    ):
+        team = await teams.get(session, team_id)
+        page = await pages.fetch_and_store(session, team, client)
+        assert page.status == "error"
+
+    async with db_session() as session, _doc_client(handler) as client:
+        team = await teams.get(session, team_id)
+        page = await pages.fetch_and_store(session, team, client)
+        assert page.status == "ok" and page.error is None
+        (row,) = await _images(session, team_id)
+        assert row.image == png
+
+
 # --- the public routes -----------------------------------------------------
 
 
@@ -412,6 +560,29 @@ async def test_unpublished_team_page_404s(real_app_client):
     assert r.status_code == 404
 
 
+async def test_published_page_and_teams_share_the_predicate(database):
+    """published_page(team_id) must read as absent for exactly the teams
+    published_teams excludes — inactive, doc-less, or without cached html."""
+    published_id = await _publish("Choir")
+    inactive_id = await _publish("Closed Ministry", active=False)
+    async with db_session() as session:
+        no_html = await teams.create(session, "Pending Fetch")
+        await pages.set_home_doc_url(
+            session, no_html.id, "https://docs.google.com/document/d/p1"
+        )
+        session.add(TeamPage(team_id=no_html.id, html=None, status="error"))
+        no_doc = await teams.create(session, "Unlinked")
+        session.add(TeamPage(team_id=no_doc.id, html="<p>orphan</p>", status="ok"))
+        no_html_id, no_doc_id = no_html.id, no_doc.id
+
+    async with db_session() as session:
+        assert [t.id for t in await pages.published_teams(session)] == [published_id]
+        page = await pages.published_page(session, published_id)
+        assert page is not None and page.html == "<p>hello</p>"
+        for absent_id in (inactive_id, no_html_id, no_doc_id, 99999):
+            assert await pages.published_page(session, absent_id) is None
+
+
 async def test_ministry_image_route_serves_published_teams_only(real_app_client):
     team_id = await _publish("Choir")
     png = _png()
@@ -424,7 +595,15 @@ async def test_ministry_image_route_serves_published_teams_only(real_app_client)
     assert r.status_code == 200, "anonymous — no login redirect"
     assert r.content == png
     assert r.headers["content-type"] == "image/png"
-    assert r.headers["cache-control"] == "public, max-age=300"
+    assert r.headers["cache-control"] == "public, max-age=300", (
+        "a bare URL (pre-hashing html) keeps the short lifetime"
+    )
+
+    r = await real_app_client.get(f"/ministries/img/{team_id}/1?v={_v(png)}")
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == "public, max-age=31536000, immutable", (
+        "a hashed URL names exact bytes and is cached like a volunteer photo"
+    )
 
     r = await real_app_client.get(f"/ministries/img/{team_id}/2")
     assert r.status_code == 404, "unknown seq"

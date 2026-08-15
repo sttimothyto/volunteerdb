@@ -6,8 +6,15 @@ The doc is fetched anonymously via the export endpoint —
 https://docs.google.com/document/d/<id>/export?format=html — so no Google
 credentials are involved; a doc that is not link-public redirects to the
 Google sign-in host, which is detected and reported instead of cached.
+
+The export inlines every image as a base64 data: URI (older exports linked
+googleusercontent URLs instead); _localize_images extracts both kinds into
+team_page_image rows BEFORE sanitization — nh3 allows no data: scheme, so
+an unextracted inline image would silently lose its src.
 """
 
+import base64
+import hashlib
 import re
 from datetime import UTC, datetime
 from html import unescape
@@ -27,7 +34,8 @@ from ..models import Team, TeamPage, TeamPageImage
 
 logger = structlog.get_logger(__name__)
 
-DOC_MAX_BYTES = 2_000_000
+DOC_MAX_BYTES = 30_000_000  # raw export — mostly inline base64 image payload
+HTML_MAX_BYTES = 2_000_000  # stored html, after the images are extracted out
 FETCH_TIMEOUT = 30.0
 EXPORT_URL = "https://docs.google.com/document/d/{doc_id}/export?format=html"
 
@@ -41,7 +49,8 @@ _IMAGE_FORMATS = {"JPEG", "PNG", "GIF", "WEBP"}
 _DOC_URL_RE = re.compile(
     r"^https://docs\.google\.com/document(?:/u/\d+)?/d/([A-Za-z0-9_-]+)"
 )
-_IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]*)(")', re.I | re.S)
+_IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=)(["\'])([^"\']*)\2', re.I | re.S)
+_DATA_URI_RE = re.compile(r"data:image/[a-z0-9.+-]+;base64,(.+)", re.I | re.S)
 _IMPORT_RE = re.compile(r"@import[^;]*;")
 _CSS_RULE_RE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 
@@ -181,40 +190,56 @@ def _is_google_image(url: str) -> bool:
 async def _localize_images(
     html: str, team_id: int, client: httpx.AsyncClient
 ) -> tuple[str, list[TeamPageImage]]:
-    """Download the doc's googleusercontent-hosted images (the export's signed
-    URLs expire, so hotlinks rot) and rewrite their srcs to IMAGE_ROUTE. A
-    failed image keeps its remote src — one broken image never unpublishes a
-    page. Non-Google srcs are left alone and never fetched."""
-    seq_by_url: dict[str, int] = {}
+    """Extract the doc's images — inline base64 data: URIs (what the export
+    emits today) and googleusercontent-hosted URLs (older exports; their
+    signed URLs expire, so hotlinks rot) — into team_page_image rows and
+    rewrite their srcs to IMAGE_ROUTE plus a ?v=<content hash> — the route
+    serves a hashed URL immutable-cacheable, and equal output html thereby
+    guarantees equal stored image bytes (which fetch_and_store relies on to
+    skip rewriting unchanged image rows). A failed image keeps its original
+    src, so one broken image never unpublishes a page (a failed data: src is
+    then dropped by the sanitizer, which allows no data: scheme, leaving an
+    img with no src). Other srcs are left alone and never fetched."""
+    seq_by_url: dict[str, tuple[int, str]] = {}
     failed: set[str] = set()
     images: list[TeamPageImage] = []
     total = 0
     for match in _IMG_SRC_RE.finditer(html):
-        url = unescape(match.group(2))
-        if url in seq_by_url or url in failed or not _is_google_image(url):
+        url = unescape(match.group(3))
+        if url in seq_by_url or url in failed:
+            continue
+        data_uri = _DATA_URI_RE.match(url)
+        if data_uri is None and not _is_google_image(url):
             continue
         if len(images) >= IMAGES_MAX_COUNT or total >= IMAGES_MAX_TOTAL:
             logger.info("page image budget exhausted", team_id=team_id)
             break
         try:
-            response = await client.get(
-                url, follow_redirects=True, timeout=FETCH_TIMEOUT
-            )
-            response.raise_for_status()
-            if not _is_google_image(str(response.url)):
-                raise ValueError("image redirected outside googleusercontent.com")
-            if len(response.content) > IMAGE_MAX_BYTES:
+            if data_uri is not None:  # b64decode raises a ValueError subclass
+                raw = base64.b64decode(
+                    re.sub(r"\s+", "", data_uri.group(1)), validate=True
+                )
+            else:
+                response = await client.get(
+                    url, follow_redirects=True, timeout=FETCH_TIMEOUT
+                )
+                response.raise_for_status()
+                if not _is_google_image(str(response.url)):
+                    raise ValueError("image redirected outside googleusercontent.com")
+                raw = response.content
+            if len(raw) > IMAGE_MAX_BYTES:
                 raise ValueError(f"image over {IMAGE_MAX_BYTES // 1_000_000} MB")
-            data, content_type = await anyio.to_thread.run_sync(
-                _prepare_image, response.content
-            )
+            data, content_type = await anyio.to_thread.run_sync(_prepare_image, raw)
         except (httpx.HTTPError, ValueError) as exc:
             failed.add(url)
             logger.info(
-                "page image kept remote", team_id=team_id, url=url, error=str(exc)
+                "page image not extracted",
+                team_id=team_id,
+                src=url[:100],
+                error=str(exc),
             )
             continue
-        seq_by_url[url] = len(images) + 1
+        seq_by_url[url] = (len(images) + 1, hashlib.sha256(data).hexdigest()[:12])
         images.append(
             TeamPageImage(
                 team_id=team_id,
@@ -226,22 +251,30 @@ async def _localize_images(
         total += len(data)
 
     def replace(match: re.Match[str]) -> str:
-        seq = seq_by_url.get(unescape(match.group(2)))
-        if seq is None:
+        entry = seq_by_url.get(unescape(match.group(3)))
+        if entry is None:
             return match.group(0)
+        seq, digest = entry
         local = IMAGE_ROUTE.format(team_id=team_id, seq=seq)
-        return match.group(1) + local + match.group(3)
+        return f'{match.group(1)}"{local}?v={digest}"'
 
     return _IMG_SRC_RE.sub(replace, html), images
 
 
 async def fetch_and_store(
-    session: AsyncSession, team: Team, client: httpx.AsyncClient
+    session: AsyncSession, team: Team, client: httpx.AsyncClient, force: bool = False
 ) -> TeamPage:
     """Fetch the team's doc and upsert its team_page row, downloading embedded
     images into team_page_image (replaced wholesale). Failures set
     status='error' but keep the previous good html, images and fetched_at, so
-    a Google hiccup never blanks a published page."""
+    a Google hiccup never blanks a published page.
+
+    An unchanged doc skips the image delete+reinsert: the ?v= content hashes
+    _localize_images bakes into the html mean equal html entails identical
+    image bytes, so rewriting up to 20 MB of BYTEA nightly per page would be
+    pure WAL/vacuum churn. force=True rewrites regardless — the manual
+    "Fetch now" button, and the repair path for image rows damaged
+    out-of-band."""
     page = await session.get(TeamPage, team.id)
     if page is None:
         page = TeamPage(team_id=team.id)
@@ -261,13 +294,22 @@ async def fetch_and_store(
             )
         if len(response.content) > DOC_MAX_BYTES:
             raise ValueError(f"doc HTML is over {DOC_MAX_BYTES // 1_000_000} MB")
-        html = sanitize_doc_html(response.text)
-        html, images = await _localize_images(html, team.id, client)
-        await session.execute(
-            sa.delete(TeamPageImage).where(TeamPageImage.team_id == team.id)
-        )
-        session.add_all(images)
-        page.html = html
+        # images first: the sanitizer would strip their data: srcs
+        html, images = await _localize_images(response.text, team.id, client)
+        html = sanitize_doc_html(html)
+        if len(html.encode()) > HTML_MAX_BYTES:
+            raise ValueError(
+                f"doc text is over {HTML_MAX_BYTES // 1_000_000} MB"
+                " with its images extracted"
+            )
+        if force or page.status != "ok" or page.html != html:
+            await session.execute(
+                sa.delete(TeamPageImage).where(TeamPageImage.team_id == team.id)
+            )
+            session.add_all(images)
+            page.html = html
+        else:
+            logger.info("page unchanged; image rows kept", team_id=team.id)
         page.fetched_at = datetime.now(UTC)
         page.status = "ok"
         page.error = None
@@ -287,14 +329,32 @@ def qr_png(url: str) -> bytes:
     return buffer.getvalue()
 
 
-async def published(session: AsyncSession) -> list[tuple[Team, TeamPage]]:
+async def published_teams(session: AsyncSession) -> list[Team]:
     """Active teams with a home doc and cached html — the public page set.
-    An errored refetch still publishes its last good html."""
-    rows = await session.execute(
-        sa.select(Team, TeamPage)
+    An errored refetch still publishes its last good html. Team rows only:
+    the html (up to 2 MB per page) stays in the database."""
+    rows = await session.scalars(
+        sa.select(Team)
         .join(TeamPage, TeamPage.team_id == Team.id)
         .where(
             Team.is_active, Team.home_doc_url.is_not(None), TeamPage.html.is_not(None)
         )
     )
-    return [(team, page) for team, page in rows]
+    return list(rows)
+
+
+async def published_page(session: AsyncSession, team_id: int) -> TeamPage | None:
+    """The one published page for team_id, or None — same predicate as
+    published_teams, so an unpublished/inactive team reads as absent."""
+    return (
+        await session.execute(
+            sa.select(TeamPage)
+            .join(Team, Team.id == TeamPage.team_id)
+            .where(
+                TeamPage.team_id == team_id,
+                Team.is_active,
+                Team.home_doc_url.is_not(None),
+                TeamPage.html.is_not(None),
+            )
+        )
+    ).scalar_one_or_none()
