@@ -15,7 +15,7 @@ endpoints are under [`/api/users`](../reference/http-api.md).
 2. The account is created with an **invite link** (`/invite/<token>`).
    If outbound email is configured, the invite is emailed; the dialog also
    shows the link so you can hand it out in person or by other means. The
-   link is single-use and **expires after 24 hours**
+   link is single-use and **expires after 7 days**
    (`VDB_INVITE_TTL_HOURS`) — an expired one shows as *invite expired* on the
    account row, and is not a lockout: see [Reset access](#reset-access-forgot-password-lost-invite).
 3. The volunteer opens the link and chooses:
@@ -62,10 +62,11 @@ fresh invite link, and emails it if possible. The volunteer redeems it as at
 creation. Use it when an account is believed compromised — it is what forces
 the password to change — or when someone cannot get at the emailed codes.
 
-That link expires after 24 hours by default. An expired link is *not* a
+That link expires after 7 days by default. An expired link is *not* a
 lockout: the account can still sign in with an emailed code and set a password
-from `/account`. Re-invite again if a fresh link is genuinely needed, or raise
-`VDB_INVITE_TTL_HOURS` for a run of printed hand-outs (and lower it after).
+from `/account`. Re-invite again if a fresh link is genuinely needed, or
+adjust `VDB_INVITE_TTL_HOURS` for a run of printed hand-outs (and put it back
+after).
 
 If the person cannot receive email at all, an OTP-only account will not work
 for them: re-invite and hand the link over in person, inside the window, so

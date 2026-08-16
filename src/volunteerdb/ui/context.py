@@ -150,9 +150,7 @@ def asof_banner(as_of: datetime, base_path: str) -> None:
             f"Read-only snapshot as of {as_of.astimezone().strftime('%Y-%m-%d %H:%M %Z')}"
         ).classes("text-amber-900 font-medium")
         ui.space()
-        ui.button("Back to now", on_click=lambda: ui.navigate.to(base_path)).props(
-            "dense color=warning"
-        )
+        ui.button("Back to now").props(f'dense color=warning href="{base_path}"')
 
 
 def asof_picker(as_of: datetime | None, base_path: str) -> None:

@@ -31,9 +31,7 @@ def frame(
             ("Workload", "/admin/workload"),
         ]
     with ui.header().classes("items-center text-white px-4 vdb-header"):
-        ui.label("VDB").classes("text-lg cursor-pointer vdb-brand").on(
-            "click", lambda: ui.navigate.to("/")
-        )
+        ui.link("VDB", "/").classes("text-lg vdb-brand vdb-quiet")
         ui.space()
         # Full button row on wide screens, a single menu button below 1024px.
         # Use Quasar's gt-sm/lt-md helpers, never Tailwind's `hidden md:flex`:
@@ -41,9 +39,9 @@ def frame(
         # plain `display:flex` and hides the row at every width.
         with ui.row().classes("items-center gap-0 gt-sm"):
             for label, target in nav_items:
-                ui.button(label, on_click=lambda t=target: ui.navigate.to(t)).props(
-                    "flat color=white dense"
-                )
+                # href renders the QBtn as a real <a>: right-click / middle-click
+                # open-in-new-tab work, left click still navigates in place
+                ui.button(label).props(f'flat color=white dense href="{target}"')
         with (
             ui.button(icon="menu")
             .props("flat color=white dense round")
@@ -51,7 +49,7 @@ def frame(
         ):
             with ui.menu():
                 for label, target in nav_items:
-                    ui.menu_item(label, on_click=lambda t=target: ui.navigate.to(t))
+                    ui.menu_item(label).props(f'href="{target}"')
         ui.space()
         ui.label(actor.user.email).classes("text-sm opacity-80 gt-sm")
         _settings_menu(dark, as_of, asof_path)
@@ -77,16 +75,12 @@ def _settings_menu(
         ui.tooltip("Settings").props('anchor="center left" self="center right"')
         with ui.menu(), ui.column().classes("p-3 gap-3 w-64"):
             ui.switch("Dark mode").bind_value(dark, "value").props("dense")
-            ui.button(
-                "Password & sign-in",
-                icon="key",
-                on_click=lambda: ui.navigate.to("/account"),
-            ).props("flat dense no-caps align=left").classes("w-full")
-            ui.button(
-                "Manual",
-                icon="menu_book",
-                on_click=lambda: ui.navigate.to("/manual", new_tab=True),
-            ).props("flat dense no-caps align=left").classes("w-full")
+            ui.button("Password & sign-in", icon="key").props(
+                'flat dense no-caps align=left href="/account"'
+            ).classes("w-full")
+            ui.button("Manual", icon="menu_book").props(
+                'flat dense no-caps align=left href="/manual" target="_blank"'
+            ).classes("w-full")
             if asof_path is not None:
                 ui.separator()
                 asof_picker(as_of, asof_path)

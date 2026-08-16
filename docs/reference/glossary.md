@@ -133,7 +133,7 @@ app user
 
 invite token
   A single-use, time-limited token embedded in an `/invite/{token}` link
-  (24 hours by default, `VDB_INVITE_TTL_HOURS`). Redeeming it activates the
+  (7 days by default, `VDB_INVITE_TTL_HOURS`). Redeeming it activates the
   account and optionally sets a password. Re-issuing one is also the
   admin-side password reset.
 

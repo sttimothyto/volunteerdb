@@ -168,6 +168,32 @@ async def _check_no_cycle(
         raise CycleError("a team cannot be its own ancestor")
 
 
+# the form URL is mailed verbatim to whatever address a public-form submitter
+# typed, so only Google Forms links are accepted — never an arbitrary URL
+GOOGLE_FORM_PREFIXES = ("https://docs.google.com/forms/", "https://forms.gle/")
+
+
+async def set_application_form_url(
+    session: AsyncSession, team_id: int, url: str | None
+) -> Team:
+    """Set or clear the team's Google application form; validates the link shape."""
+    team = await get(session, team_id)
+    if team is None:
+        raise LookupError(f"team {team_id} not found")
+    if url and url.strip():
+        cleaned = url.strip()
+        if not cleaned.startswith(GOOGLE_FORM_PREFIXES):
+            raise ValueError(
+                "not a Google Form link — expected https://docs.google.com/forms/… "
+                "or https://forms.gle/…"
+            )
+        team.application_form_url = cleaned
+    else:
+        team.application_form_url = None
+    await session.flush()
+    return team
+
+
 async def delete(session: AsyncSession, team_id: int) -> None:
     team = await get(session, team_id)
     if team is None:

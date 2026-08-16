@@ -31,11 +31,13 @@ class Settings(BaseSettings):
     mail_from: str = "no-reply@sttimothyto.org"
     mail_from_name: str = "VolunteerDB"
     # How long an invite link — which is also the password-reset link — stays
-    # usable. NIST SP 800-63B §4.2.1.2 caps an emailed recovery code at 24
-    # hours; stretch it only for a reason (a paper hand-out run), and put it
-    # back afterwards. Expiry is never a lockout: the account can still sign
-    # in with an emailed code and set a password from /account.
-    invite_ttl_hours: int = 24
+    # usable. NIST SP 800-63B §4.2.1.2 would cap an emailed recovery code at
+    # 24 hours; a week is a deliberate deviation for a parish where invitees
+    # read email weekly. The risk expiry bounds is small — the link grants a
+    # fresh account or a password reset on an account whose fallback sign-in
+    # is an emailed code anyway — and expiry is never a lockout: the account
+    # can still sign in with an emailed code and set a password from /account.
+    invite_ttl_hours: int = 168
     # URL of the decorated roster-template Google Sheet in the Drive folder.
     # Set: the /import page links there instead of offering the bare CSV.
     # Empty (dev): the page falls back to a plain CSV download.

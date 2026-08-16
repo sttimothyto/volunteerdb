@@ -112,7 +112,7 @@ async def test_mail_dev_mode_and_builders(monkeypatch, capsys):
     assert "123456" in subject and "10 minutes" in body
     subject, body = mail.invite_email("https://x/invite/tok")
     assert "https://x/invite/tok" in body and "optional" in body
-    assert "24 hours" in body, "the link's lifetime is stated where it is handed out"
+    assert "7 days" in body, "the link's lifetime is stated where it is handed out"
     subject, body = mail.password_changed_email("https://x/login")
     assert "was just changed" in body and "parish office" in body
     subject, body = mail.password_changed_email("https://x/login", removed=True)

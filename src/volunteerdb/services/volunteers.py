@@ -1,9 +1,11 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..history import entity, fetch
 from ..models import (
     Membership,
@@ -345,3 +347,90 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
         )
     spells.sort(key=lambda s: (s.start, s.team_name.lower()))
     return spells
+
+
+@dataclass
+class Anniversary:
+    volunteer: Volunteer
+    years: int
+    anniversary: date  # the occurrence inside the window
+    since: date  # start of the current continuous spell on this team
+
+
+async def team_anniversaries(
+    session: AsyncSession,
+    team_id: int,
+    today: date,
+    *,
+    ahead_days: int = 30,
+    behind_days: int = 7,
+) -> list[Anniversary]:
+    """Current roster members whose whole-year anniversary (≥ 1 year) of
+    continuous service on THIS team falls inside the window around `today`.
+
+    The team-scoped sibling of timeline()'s spell stitching — one pass over
+    the team's audit trail instead of one query per roster member. Spell
+    starts are system times (see timeline()): members imported at first
+    deployment read as joining at import, not their real-world join date —
+    the banner says so.
+    """
+    mh = membership_history
+    cols = ("id", "volunteer_id", "sys_period")
+    hist = sa.select(*[mh.c[n] for n in cols], mh.c.op).where(mh.c.team_id == team_id)
+    live = sa.select(
+        *[Membership.__table__.c[n] for n in cols],
+        sa.literal(None, sa.CHAR(1)).label("op"),
+    ).where(Membership.team_id == team_id)
+    versions = (await session.execute(hist.union_all(live))).all()
+
+    runs: list[list[sa.Row]] = []
+    prev_key: tuple[int, datetime | None] | None = None
+    for row in sorted(versions, key=lambda r: (r.volunteer_id, r.sys_period.lower)):
+        prev_vol, prev_upper = prev_key or (None, None)
+        if (
+            row.volunteer_id != prev_vol
+            or prev_upper is None
+            or row.sys_period.lower > prev_upper
+        ):
+            runs.append([])
+        runs[-1].append(row)
+        prev_key = (row.volunteer_id, row.sys_period.upper)
+
+    tz = ZoneInfo(settings().timezone)
+    window_lo = today - timedelta(days=behind_days)
+    window_hi = today + timedelta(days=ahead_days)
+    hits: dict[int, tuple[int, date, date]] = {}
+    for run in runs:
+        last = run[-1]
+        if last.op is not None:  # ended spell — not on the roster today
+            continue
+        since = run[0].sys_period.lower.astimezone(tz).date()
+        # y-1 covers early-January windows reaching back into December
+        for y in (today.year - 1, today.year, today.year + 1):
+            years = y - since.year
+            if years < 1:
+                continue
+            try:
+                anniv = since.replace(year=y)
+            except ValueError:  # Feb 29 start in a non-leap year
+                anniv = date(y, 3, 1)
+            if window_lo <= anniv <= window_hi:
+                hits[last.volunteer_id] = (years, anniv, since)
+
+    if not hits:
+        return []
+    volunteers = {
+        v.id: v
+        for v in await session.scalars(
+            sa.select(Volunteer).where(Volunteer.id.in_(hits))
+        )
+    }
+    result = [
+        Anniversary(
+            volunteer=volunteers[vid], years=years, anniversary=anniv, since=since
+        )
+        for vid, (years, anniv, since) in hits.items()
+        if vid in volunteers
+    ]
+    result.sort(key=lambda a: (a.anniversary, a.volunteer.last_name.lower()))
+    return result

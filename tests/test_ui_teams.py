@@ -29,8 +29,8 @@ async def _parish(session) -> dict[str, int]:
     retired = await teams.create(session, "Retired Guild")
     await teams.update(session, retired.id, is_active=False)
 
-    lena = await volunteers.create(session, "Lena", "Leader")
-    mia = await volunteers.create(session, "Mia", "Member")
+    lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
+    mia = await volunteers.create(session, "Mia", "Member", "mia@example.org")
     hank = await volunteers.create(session, "Hank", "Host")
     await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
     await memberships.assign(session, mia.id, music.id, TeamRole.member)
@@ -134,6 +134,70 @@ async def test_home_page_controls_gated_by_full_roster_rights(database):
         await user.open(f"/teams/{ids['music']}")
         await user.should_see("Roster")
         await user.should_not_see("Volunteer home page")
+
+
+async def test_email_list_buttons_gated_like_contact_details(database):
+    """The copy/BCC buttons only appear where emails already render — for
+    full-roster viewers, on the live view."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        await user.should_see("Copy email list")
+        await user.should_see("Email all (BCC)")
+
+        # Mia sees Music's roster names, never its email addresses
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        await user.should_see("Roster")
+        await user.should_not_see("Copy email list")
+
+
+async def test_application_form_controls_gated_like_home_page(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        await user.should_see("Application form")
+        await user.should_see("Set application form")
+
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        await user.should_see("Roster")
+        await user.should_not_see("Application form")
+
+
+async def test_interests_listed_for_managers_only(database):
+    from volunteerdb.services import interest
+
+    async with db_session() as session:
+        ids = await _parish(session)
+        await interest.submit(
+            session,
+            team_id=ids["music"],
+            name="Ann Applicant",
+            email="ann@example.org",
+            note="I sing alto",
+        )
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        # Lena manages Music via the Liturgy subtree
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        await user.should_see("Interested people")
+        await user.should_see("Ann Applicant")
+        await user.should_see("I sing alto")
+
+        # Mia is a plain member of Music: an outsider's PII stays out of reach
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        await user.should_see("Roster")
+        await user.should_not_see("Interested people")
+        await user.should_not_see("Ann Applicant")
 
 
 async def test_published_page_link_and_qr_use_the_path_slug(database):

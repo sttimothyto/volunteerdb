@@ -6,6 +6,9 @@ Callers should invoke send_email as a module attribute (``mail.send_email``)
 so tests can monkeypatch it.
 """
 
+from dataclasses import dataclass
+from datetime import date
+
 import httpx
 import structlog
 
@@ -46,9 +49,16 @@ async def send_email(to: str, subject: str, text_body: str) -> bool:
     return ok
 
 
+def ttl_window(hours: int) -> str:
+    """'24 hours' / '7 days' — whole multiples of a day read as days."""
+    if hours > 24 and hours % 24 == 0:
+        return f"{hours // 24} days"
+    return f"{hours} hours"
+
+
 def invite_email(invite_url: str, ttl_hours: int | None = None) -> tuple[str, str]:
     hours = settings().invite_ttl_hours if ttl_hours is None else ttl_hours
-    window = "24 hours" if hours == 24 else f"{hours} hours"
+    window = ttl_window(hours)
     return (
         "Your VolunteerDB account at St. Timothy's",
         "An account has been created for you in VolunteerDB, St. Timothy's "
@@ -91,6 +101,104 @@ def password_changed_email(login_url: str, *, removed: bool = False) -> tuple[st
         "If it was not, tell the parish office straight away: somebody else "
         "has access to this account.",
     )
+
+
+def interest_leader_email(
+    team_path: str,
+    name: str,
+    email: str,
+    phone: str | None,
+    note: str | None,
+    team_url: str,
+) -> tuple[str, str]:
+    """Sent to the team's leader(s) and second(s) when someone submits the
+    public "I'm interested" form. The submitter's free text belongs here and
+    only here — never in the applicant-facing mail."""
+    lines = [f"Someone is interested in joining {team_path}:", ""]
+    lines.append(f"  Name:  {name}")
+    lines.append(f"  Email: {email}")
+    if phone:
+        lines.append(f"  Phone: {phone}")
+    if note:
+        lines.append(f"  Note:  {note}")
+    lines += [
+        "",
+        "If the team has an application form linked, they were sent it "
+        "directly; otherwise, please follow up with them.",
+        f"Open interests are listed on your team page: {team_url}",
+    ]
+    return (f"New interest in {team_path}", "\n".join(lines))
+
+
+def interest_applicant_email(
+    team_name: str, application_form_url: str | None
+) -> tuple[str, str]:
+    """Confirmation to the address typed into the public form.
+
+    A fixed template on purpose: the form is public and the recipient address
+    is submitter-chosen, so echoing ANY submitted text (even the name) would
+    let a stranger deliver their words to an arbitrary mailbox through the
+    parish's sender. team_name comes from the database; the form URL is
+    prefix-validated to Google Forms (services/teams.py)."""
+    if application_form_url:
+        next_step = (
+            "The next step is the ministry's application form — "
+            f"you can fill it in here: {application_form_url}"
+        )
+    else:
+        next_step = (
+            "The ministry leader will follow up with you about the next "
+            "steps, including an application form."
+        )
+    return (
+        f"Thank you for your interest in {team_name}",
+        f"Thank you for your interest in the {team_name} ministry at "
+        f"St. Timothy's — the ministry leaders have been told.\n\n"
+        f"{next_step}\n\n"
+        "If you didn't fill in a form on our ministries site, you can safely "
+        "ignore this email.",
+    )
+
+
+@dataclass(frozen=True)
+class DigestItem:
+    """One proposal in a voter's nightly digest (jobs/proposal_digest.py)."""
+
+    kind: str  # "added" | "voting" | "both"
+    seat: str  # e.g. "Ministry leader — Liturgy / Music Ministry"
+    nomination_deadline: date
+    voting_deadline: date
+
+
+_DIGEST_HEADERS = {
+    "added": "You have been added to the voting roll for:",
+    "voting": "Voting is now open for:",
+    "both": "You have been added to the voting roll, and voting is already open, for:",
+}
+
+
+def proposal_digest_email(items: list[DigestItem]) -> tuple[str, str]:
+    """One nightly email covering everything that changed for this voter —
+    never one email per proposal. No hyperlink: the job runs in a cron
+    container with no request and no configured public URL."""
+    sections = []
+    for kind, header in _DIGEST_HEADERS.items():
+        lines = [
+            f"  • {item.seat}\n"
+            f"    (nomination deadline {item.nomination_deadline:%B %-d, %Y}, "
+            f"voting deadline {item.voting_deadline:%B %-d, %Y})"
+            for item in items
+            if item.kind == kind
+        ]
+        if lines:
+            sections.append(header + "\n" + "\n".join(lines))
+    body = (
+        "\n\n".join(sections)
+        + "\n\nSign in to VolunteerDB and open the Planning page to nominate "
+        "candidates or cast your ballot. Deadlines are inclusive — you can "
+        "act through the end of the deadline day."
+    )
+    return ("VolunteerDB planning: your input is needed", body)
 
 
 def welcome_email(login_url: str, has_password: bool) -> tuple[str, str]:

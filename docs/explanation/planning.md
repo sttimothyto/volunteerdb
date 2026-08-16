@@ -117,10 +117,16 @@ can move deadlines while a proposal is open (concluding voting early, or
 extending it), with one guard: nominations cannot reopen once ballots
 exist, because the candidate set under a cast ballot must not change.
 
-The costs of this choice are deliberate: nobody is emailed when voting
-opens or a deadline nears (voters must check the page), and phase changes
-happen "lazily" at read time. If reminders prove necessary, the
-host-crontab pattern used for backups is the intended home for them.
+The costs of this choice are deliberate: phase changes happen "lazily" at
+read time, and the application never emails anyone of its own accord. The
+one concession is the **nightly digest** (`jobs.proposal_digest`, 03:30
+host crontab — the pattern used for backups, exactly as anticipated): each
+voter gets at most one email per night covering everything that changed
+for them — added to a roll, or a proposal entering its voting phase — with
+both deadlines restated. Per-voter stamps on `proposal_voter`
+(`added_notified_at`, `voting_notified_at`) make each notice one-shot; a
+failed send retries the next night. There are no deadline-nearing
+reminders beyond that, and nothing is emailed at appointment.
 
 ## What it replaced
 

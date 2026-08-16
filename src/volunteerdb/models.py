@@ -115,9 +115,12 @@ class Team(Base):
     )
     # optional workload weight ("how work-heavy is this ministry"); NULL counts as 0
     workload_weight: Mapped[Decimal | None] = mapped_column(sa.Numeric(8, 2))
-    # public Google Doc used as the team's volunteer home page (services/pages.py).
-    # keep this the LAST column so the history twin's order matches the DB
+    # public Google Doc used as the team's volunteer home page (services/pages.py)
     home_doc_url: Mapped[str | None] = mapped_column(sa.String(500))
+    # the team's own Google application form, mailed to people who express
+    # interest on the public ministry page (services/interest.py).
+    # keep this the LAST column so the history twin's order matches the DB
+    application_form_url: Mapped[str | None] = mapped_column(sa.String(500))
 
 
 class Membership(Base):
@@ -252,6 +255,15 @@ class ProposalVoter(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
+    # when the nightly digest (jobs/proposal_digest.py) told this voter they
+    # were added to the roll / that voting began; NULL = not told yet. Per
+    # voter, not per proposal, so a failed send retries just that person.
+    added_notified_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
+    voting_notified_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
 
 
 class ProposalBallot(Base):
@@ -283,6 +295,45 @@ class ProposalBallot(Base):
         sa.TIMESTAMP(timezone=True),
         server_default=sa.func.now(),
         onupdate=sa.func.now(),
+    )
+
+
+class Interest(Base):
+    """One outsider's "I'm interested" submission from the team's public
+    ministry page. The leader resolves it once handled (application form
+    returned, person contacted, or dismissed).
+
+    Not system-versioned (like proposal): workflow data whose lifecycle is
+    self-recorded in created_at/resolved_at.
+    """
+
+    __tablename__ = "interest"
+    __table_args__ = (
+        # at most one OPEN interest per (team, lowercased email) — repeat
+        # submissions must not re-mail leaders and applicants
+        sa.Index(
+            "uq_interest_open",
+            "team_id",
+            "email",
+            unique=True,
+            postgresql_where=sa.text("resolved_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(sa.String(200))
+    email: Mapped[str] = mapped_column(sa.String(255))  # stored lowercased
+    phone: Mapped[str | None] = mapped_column(sa.String(50))
+    note: Mapped[str | None] = mapped_column(sa.Text)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    resolved_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
 
 

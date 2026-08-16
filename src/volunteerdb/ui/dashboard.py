@@ -62,14 +62,10 @@ async def dashboard(as_of: str = ""):
             with ui.column().classes("w-full gap-1"):
                 for membership, team in my_assignments:
                     with (
-                        ui.row()
-                        .classes(
+                        ui.link(target=f"/teams/{team.id}").classes("w-full vdb-quiet"),
+                        ui.row().classes(
                             "items-center gap-2 p-2 rounded bg-blue-50 cursor-pointer w-full"
-                        )
-                        .on(
-                            "click",
-                            lambda _, tid=team.id: ui.navigate.to(f"/teams/{tid}"),
-                        )
+                        ),
                     ):
                         ui.label(team.name).classes("font-medium")
                         ui.badge(ROLE_LABELS[membership.role])

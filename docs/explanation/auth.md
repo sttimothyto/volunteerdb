@@ -91,9 +91,12 @@ identity doubt.
 
 The invite link doubles as the password-reset link (re-invite = fresh link, old
 password invalidated), which keeps the admin's side to a single button. Because
-it *is* a reset credential sitting in a mailbox, it expires: 24 hours by
-default (`VDB_INVITE_TTL_HOURS`), the ceiling SP 800-63B §4.2.1.2 puts on a
-recovery code sent to an email address. Token and expiry are set and cleared as
+it *is* a reset credential sitting in a mailbox, it expires: 7 days by
+default (`VDB_INVITE_TTL_HOURS`). That is a deliberate deviation from the
+24-hour ceiling SP 800-63B §4.2.1.2 puts on an emailed recovery code — many
+parishioners read email weekly, and what the link grants (a fresh account, or
+a reset on an account whose fallback sign-in is an emailed code anyway) is
+modest. Token and expiry are set and cleared as
 a pair, so a link that has run out is refused exactly like one that never
 existed — same message, no hint which.
 

@@ -124,10 +124,8 @@ class VolunteerPanel:
                     ).classes("text-sm")
                     ui.badge(ROLE_LABELS[membership.role])
 
-            ui.button(
-                "Full profile",
-                icon="open_in_new",
+            ui.button("Full profile", icon="open_in_new").props(
                 # the detail page is live-only now: no as-of query to carry over
-                on_click=lambda: ui.navigate.to(f"/volunteers/{volunteer_id}"),
-            ).props("dense outline").classes("mt-3")
+                f'dense outline href="/volunteers/{volunteer_id}"'
+            ).classes("mt-3")
         self.drawer.show()

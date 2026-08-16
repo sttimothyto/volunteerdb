@@ -1,12 +1,15 @@
 from decimal import Decimal
+from urllib.parse import quote
 
 import httpx
 from fastapi import Request
 from nicegui import ui
 
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
+from ..services import interest as interest_service
 from ..services import memberships as membership_service
 from ..services import pages as page_service
+from ..services import planning as planning_service
 from ..services import reports as report_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
@@ -93,6 +96,10 @@ async def teams_page(as_of: str = ""):
     rows = _hierarchy_rows(all_teams, coverage, actor)
 
     suffix = f"?as_of={as_of}" if as_of else ""
+    for row in rows:
+        # bound as row data, not interpolated into the slot template: as_of is
+        # a raw query param and must never reach Vue's template compiler
+        row["href"] = f"/teams/{row['id']}{suffix}"
     with frame("Teams", actor, as_of=at, asof_path="/teams"):
         if actor.is_admin and at is None:
             with ui.row().classes("gap-2"):
@@ -144,7 +151,9 @@ async def teams_page(as_of: str = ""):
             <q-td key="team" :props="props"
                   :style="{paddingLeft: (16 + props.row.depth * 22) + 'px'}">
                 <span v-if="props.row.depth" class="text-grey-5 q-mr-xs">└</span>
-                {{ props.row.name }}
+                <a :href="props.row.href" class="vdb-quiet" @click.stop>
+                    {{ props.row.name }}
+                </a>
                 <q-badge v-if="props.row.inactive" color="grey" class="q-ml-sm">
                     inactive
                 </q-badge>
@@ -341,6 +350,115 @@ def _sheet_section(team_sheet: TeamSheet | None) -> None:
         )
 
 
+def _application_form_section(team, team_id: int) -> None:
+    """The team's own Google application form: anyone who expresses interest
+    on the public ministry page is emailed it directly. Same audience as the
+    home-page controls (leaders/seconds/core members and admins)."""
+    ui.label("Application form").classes("text-lg font-medium")
+    if not team.application_form_url:
+        with ui.row().classes("items-center gap-2"):
+            ui.button(
+                "Set application form",
+                icon="add_link",
+                on_click=lambda: _application_form_dialog(team_id, None),
+            ).props("dense outline")
+            ui.label(
+                "Link the team's Google Form — people who express interest on "
+                "the public ministry page get it emailed automatically."
+            ).classes("text-sm text-gray-500")
+        return
+    with ui.row().classes("items-center gap-2"):
+        ui.link("Google Form", team.application_form_url, new_tab=True)
+        ui.button(
+            "Change",
+            icon="edit",
+            on_click=lambda: _application_form_dialog(
+                team_id, team.application_form_url
+            ),
+        ).props("dense flat")
+        ui.label(
+            "Emailed automatically to anyone who expresses interest on the "
+            "public ministry page."
+        ).classes("text-sm text-gray-500")
+
+
+def _application_form_dialog(team_id: int, current: str | None) -> None:
+    """Set or clear the application form. Leader/second/core/admin — enforced
+    server-side on save."""
+    with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
+        ui.label("Team application form").classes("text-lg font-medium")
+        ui.label(
+            "Paste the team's Google Form link (docs.google.com/forms/… or "
+            "forms.gle/…). People who express interest on the public ministry "
+            "page receive it by email."
+        ).classes("text-sm text-gray-500")
+        url = (
+            ui.input("Google Form link", value=current or "")
+            .props("outlined dense")
+            .classes("w-full")
+        )
+
+        @notify_errors
+        async def save(new_value: str | None) -> None:
+            async with action_session() as (session, actor):
+                from ..permissions import require
+
+                require(
+                    actor.can_view_full_roster(team_id),
+                    "manage this team's application form",
+                )
+                await team_service.set_application_form_url(session, team_id, new_value)
+            dialog.close()
+            ui.navigate.to(f"/teams/{team_id}")
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            if current:
+                ui.button("Clear", on_click=lambda: save(None)).props(
+                    "flat color=negative"
+                )
+            ui.button("Save", on_click=lambda: save(url.value))
+    dialog.open()
+
+
+def _interests_section(interests) -> None:
+    """Unresolved public-form submissions, for the team's managers. Resolve
+    once handled (form returned, person contacted, or not a fit)."""
+    ui.label("Interested people").classes("text-lg font-medium")
+    ui.label(
+        "From the public ministry page. Resolve an entry once you've followed up."
+    ).classes("text-sm text-gray-500")
+    for interest in interests:
+        with ui.row().classes(
+            "w-full items-center gap-3 p-2 rounded hover:bg-gray-100"
+        ):
+            ui.label(interest.name).classes("font-medium w-48")
+            ui.label(interest.email).classes("text-sm text-gray-600 w-56")
+            ui.label(interest.phone or "").classes("text-sm text-gray-600 w-36")
+            ui.label(f"{interest.created_at:%Y-%m-%d}").classes("text-sm text-gray-500")
+            ui.space()
+            ui.button(
+                icon="task_alt",
+                on_click=notify_errors(
+                    lambda _, iid=interest.id: _resolve_interest(iid)
+                ),
+            ).props("dense flat").tooltip("Resolve (handled)")
+        if interest.note:
+            ui.label(interest.note).classes("text-sm text-gray-600 pl-4 italic")
+
+
+async def _resolve_interest(interest_id: int) -> None:
+    async with action_session() as (session, actor):
+        from ..permissions import require
+
+        interest = await interest_service.get(session, interest_id)
+        if interest is None:
+            raise LookupError("interest vanished")
+        require(actor.can_manage_team(interest.team_id), "manage this team's roster")
+        await interest_service.resolve(session, interest_id, resolved_by=actor.user.id)
+    ui.navigate.reload()
+
+
 def _home_doc_dialog(team_id: int, current: str | None) -> None:
     """Set or clear the home-page doc. Leader/second/core/admin — enforced
     server-side on save."""
@@ -426,6 +544,16 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             await session.get(TeamPage, team_id) if can_full and at is None else None
         )
         team_sheet = await session.get(TeamSheet, team_id) if can_manage else None
+        interests = (
+            await interest_service.unresolved(session, team_id) if can_manage else []
+        )
+        anniversaries = (
+            await volunteer_service.team_anniversaries(
+                session, team_id, planning_service.local_today()
+            )
+            if can_manage
+            else []
+        )
     slug = page_service.slug_map(paths).get(team_id)
 
     panel = VolunteerPanel(as_of)
@@ -463,21 +591,59 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                     "Export roster (.csv)", icon="download", on_click=export_roster
                 ).props("dense outline")
 
+                # roster emails are already shown to can_full viewers, so the
+                # buttons add convenience, not exposure; live view only — no
+                # copying a historical snapshot's stale addresses
+                emails = sorted({v.email for _, v in roster if v.email})
+                if emails and at is None:
+                    joined = ", ".join(emails)
+
+                    def copy_emails(text: str = joined, n: int = len(emails)) -> None:
+                        ui.clipboard.write(text)
+                        ui.notify(f"{n} addresses copied", color="positive")
+
+                    ui.button(
+                        "Copy email list", icon="content_copy", on_click=copy_emails
+                    ).props("dense outline")
+                    ui.button("Email all (BCC)", icon="mail").props(
+                        f'dense outline href="mailto:?bcc={quote(",".join(emails))}"'
+                    ).tooltip(
+                        "Opens your mail app with everyone in BCC; for very "
+                        "large teams use Copy email list instead"
+                    )
+
         if can_full and at is None:
             _home_page_section(team, team_page, team_id, slug, base_url)
+            _application_form_section(team, team_id)
         if can_manage:
             _sheet_section(team_sheet)
+            if interests:
+                _interests_section(interests)
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")
             with ui.row().classes("gap-2"):
                 for child in children:
-                    ui.button(
-                        child.name,
-                        on_click=lambda _, cid=child.id: ui.navigate.to(
-                            f"/teams/{cid}"
-                        ),
-                    ).props("outline dense")
+                    ui.button(child.name).props(
+                        f'outline dense href="/teams/{child.id}"'
+                    )
+
+        if anniversaries:
+            summary = "; ".join(
+                f"{a.volunteer.full_name}: {a.years} "
+                f"{'year' if a.years == 1 else 'years'} on {a.anniversary:%B %-d}"
+                for a in anniversaries
+            )
+            with ui.row().classes("w-full bg-amber-100 rounded p-2 items-center gap-2"):
+                ui.icon("celebration")
+                ui.label(f"Service anniversaries — {summary}").classes(
+                    "text-amber-900 font-medium"
+                )
+            ui.label(
+                "Continuous service on this team, measured from the database's "
+                "records — members imported when VolunteerDB was set up count "
+                "from that import."
+            ).classes("text-xs text-gray-500")
 
         ui.label("Roster").classes("text-lg font-medium")
         if not can_names:

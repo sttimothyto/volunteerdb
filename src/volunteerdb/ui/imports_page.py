@@ -47,13 +47,10 @@ async def import_page():
                 # The decorated Google Sheet (role dropdown, hidden ID column,
                 # structure warning) replaces the bare CSV: copy it, fill it in,
                 # export as .csv, import below.
-                ui.button(
-                    "Roster template (Google Sheets)",
-                    icon="open_in_new",
-                    on_click=lambda: ui.navigate.to(
-                        settings().template_sheet_url, new_tab=True
-                    ),
-                ).props("outline dense")
+                ui.button("Roster template (Google Sheets)", icon="open_in_new").props(
+                    f'outline dense href="{settings().template_sheet_url}" '
+                    'target="_blank"'
+                )
             else:  # dev fallback: no Drive template configured
                 ui.button(
                     "Empty template", icon="description", on_click=download_template

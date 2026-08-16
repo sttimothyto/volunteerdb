@@ -116,6 +116,9 @@ SYNC_WORKDIR = "/var/lib/volunteerdb-drive-sync"
 DRIVE_SYNC_SCRIPT = "/usr/local/bin/volunteerdb-drive-sync"
 DECORATE_SCRIPT = "/usr/local/bin/volunteerdb-decorate-sheets"
 FETCH_PAGES_SCRIPT = "/usr/local/bin/volunteerdb-fetch-pages"
+# 03:30 proposal digest: after the 02:30 sync (post-sync roster) and the
+# 03:00 page fetch, and well clear of the 02:00 backup.
+PROPOSAL_DIGEST_SCRIPT = "/usr/local/bin/volunteerdb-proposal-digest"
 APP_UID = 10001  # the image's `app` user; owns the bind-mounted sync workdir
 
 
@@ -454,6 +457,20 @@ files.template(
     mail_from="no-reply@sttimothyto.org",
     mail_from_name="VolunteerDB",
 )
+files.template(
+    name="Install proposal-digest script",
+    src=str(HERE / "templates" / "volunteerdb-proposal-digest.sh.j2"),
+    dest=PROPOSAL_DIGEST_SCRIPT,
+    mode="700",
+    user="root",
+    group="root",
+    image=IMAGE,
+    net=NET,
+    env_file=ENV_FILE,
+    alert_email=BACKUP_ALERT_EMAIL,
+    mail_from="no-reply@sttimothyto.org",
+    mail_from_name="VolunteerDB",
+)
 crontab.crontab(
     name="Nightly Drive roster sync crontab entry (02:30 America/Toronto)",
     command=f"systemd-cat -t volunteerdb-drive-sync {DRIVE_SYNC_SCRIPT}",
@@ -467,6 +484,14 @@ crontab.crontab(
     command=f"systemd-cat -t volunteerdb-fetch-pages {FETCH_PAGES_SCRIPT}",
     cron_name="volunteerdb-fetch-pages",
     minute="0",
+    hour="3",
+    user="root",
+)
+crontab.crontab(
+    name="Nightly proposal digest crontab entry (03:30 America/Toronto)",
+    command=f"systemd-cat -t volunteerdb-proposal-digest {PROPOSAL_DIGEST_SCRIPT}",
+    cron_name="volunteerdb-proposal-digest",
+    minute="30",
     hour="3",
     user="root",
 )

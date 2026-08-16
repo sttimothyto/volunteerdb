@@ -72,12 +72,13 @@ ignored. Copy `.env.example` as a starting point.
 
 `VDB_INVITE_TTL_HOURS`
 : How long an invite link stays redeemable — and since re-inviting is how a
-  password is reset, how long a reset link lives. Default: `24`, the ceiling
-  NIST SP 800-63B §4.2.1.2 puts on a recovery code sent to an email address.
-  Raise it for a hand-out run (printed links for people who will not read
-  email for a week) and put it back afterwards. Expiry is never a lockout:
-  the account still signs in with an emailed code and can set a password from
-  **/account**. See [Authentication design](../explanation/auth.md).
+  password is reset, how long a reset link lives. Default: `168` (7 days) — a
+  deliberate deviation from the 24-hour ceiling NIST SP 800-63B §4.2.1.2 puts
+  on a recovery code sent to an email address, sized for a parish where
+  invitees read email weekly. Lower it if that trade-off changes. Expiry is
+  never a lockout: the account still signs in with an emailed code and can
+  set a password from **/account**. See
+  [Authentication design](../explanation/auth.md).
 
 `VDB_TIMEZONE`
 : IANA zone the parish lives in. Default: `America/Toronto`. Date-typed

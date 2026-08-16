@@ -105,6 +105,21 @@ a:hover,
   border-bottom: 1px dotted currentColor;
 }
 
+/* Widgets rendered as real <a> tags (Quasar href prop, so right-click →
+   open in new tab works) keep their widget face, not the prose-link one.
+   .vdb-quiet is the same opt-out for plain ui.link wrappers. */
+a.q-btn,
+a.q-item,
+a.vdb-quiet {
+  color: inherit;
+}
+
+a.q-btn:hover,
+a.q-item:hover,
+a.vdb-quiet:hover {
+  border-bottom: none;
+}
+
 /* ---------- display faces ---------- */
 
 .vdb-brand {

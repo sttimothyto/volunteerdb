@@ -89,12 +89,9 @@ def search_box(
             if team_hits:
                 ui.item_label("Teams").props("header")
             for team, path in team_hits:
-                ui.menu_item(
-                    path,
-                    on_click=lambda tid=team.id: ui.navigate.to(
-                        f"/teams/{tid}{asof_query}"
-                    ),
-                ).mark(f"suggest-team-{team.id}")
+                ui.menu_item(path).props(f'href="/teams/{team.id}{asof_query}"').mark(
+                    f"suggest-team-{team.id}"
+                )
             if found:
                 ui.item_label("Volunteers").props("header")
             for volunteer in found:

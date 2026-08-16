@@ -47,6 +47,7 @@ Relationships: `memberships` (cascade delete-orphan), optional one-to-one
 | `sys_period` | tstzrange | |
 | `workload_weight` | numeric(8,2) | nullable; NULL counts as 0 in workload scores |
 | `home_doc_url` | varchar(500) | nullable; public Google Doc behind the team's `/ministries/` page |
+| `application_form_url` | varchar(500) | nullable; the team's Google Form, emailed to public-page interest submitters (prefix-validated to Google Forms) |
 
 ## `membership` (versioned)
 
@@ -168,6 +169,8 @@ voting begins (the nomination deadline passes).
 | `volunteer_id` | integer | FK → `volunteer.id` ON DELETE CASCADE, indexed |
 | `added_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
 | `created_at` | timestamptz | |
+| `added_notified_at` | timestamptz | nullable; when the nightly digest told this voter they were added |
+| `voting_notified_at` | timestamptz | nullable; when the nightly digest told this voter voting began |
 
 Unique on `(proposal_id, volunteer_id)`. The roll is prefilled at creation
 (target team's leader/second/core + whichever team is named **Clergy** at
@@ -251,6 +254,27 @@ Identity of the team's roster spreadsheet in Google Drive, maintained by
 `jobs.drive_sync` (see the Drive roster sync how-to). A pointer to an
 external artifact — current-state only.
 
+## `interest` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `team_id` | integer | FK → `team.id` ON DELETE CASCADE, indexed |
+| `name` | varchar(200) | as typed into the public form |
+| `email` | varchar(255) | stored lowercased |
+| `phone` | varchar(50) | nullable |
+| `note` | text | nullable; shown to managers and mailed to leaders — never echoed to the submitter |
+| `created_at` | timestamptz | |
+| `resolved_at` | timestamptz | nullable; set when a manager marks it handled |
+| `resolved_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+
+One "I'm interested" submission from the team's public `/ministries/` page.
+Partial unique index `uq_interest_open` on `(team_id, email) WHERE
+resolved_at IS NULL`: at most one open interest per person per team, so
+repeat submissions cannot re-mail leaders or the typed address. Not
+versioned (like `proposal`): workflow data whose lifecycle is self-recorded
+in `created_at`/`resolved_at`.
+
 ## History twins and triggers
 
 `volunteer_history`, `team_history`, `membership_history` each hold the live
@@ -283,3 +307,6 @@ why adding a live column requires rebuilding the twin; see
 | `0010` | `team.home_doc_url` (rebuilds `team_history`); `team_page` and `team_sheet` (not versioned) |
 | `0011` | Drops `membership.joined_on` and `membership.notes` (rebuilds `membership_history`; stored values discarded, downgrade restores the columns as NULL) |
 | `0012` | `app_user.invite_expires_at` — invite/reset links stop working after `VDB_INVITE_TTL_HOURS`; outstanding invites are backfilled to 24 h after the upgrade |
+| `0013` | `team_page_image` (not versioned) — doc images cached locally, page html rewritten to `/ministries/img/…` |
+| `0014` | `app_user.confidentiality_agreed_at` — recorded when the invite's confidentiality notice is accepted |
+| `0015` | `team.application_form_url` (rebuilds `team_history`); `interest` (not versioned); `proposal_voter.added_notified_at`/`voting_notified_at` for the nightly digest |

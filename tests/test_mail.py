@@ -72,3 +72,15 @@ async def test_send_email_network_error_returns_false(monkeypatch):
 
     _mock_transport(monkeypatch, handler)
     assert await mail.send_email("to@example.org", "s", "b") is False
+
+
+def test_ttl_window_renders_whole_days_as_days():
+    assert mail.ttl_window(24) == "24 hours"
+    assert mail.ttl_window(36) == "36 hours"
+    assert mail.ttl_window(48) == "2 days"
+    assert mail.ttl_window(168) == "7 days"
+
+
+def test_invite_email_states_the_default_week():
+    _, body = mail.invite_email("https://vdb.example.org/invite/tok")
+    assert "7 days" in body, "the 168-hour default must read as days"

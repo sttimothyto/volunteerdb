@@ -78,11 +78,14 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
         user.find(marker=f"suggest-volunteer-{maria_id}").click()
         await user.should_see("Email: maria@example.org", retries=30)
 
-        # clicking a team suggestion opens its page
+        # a team suggestion is a real link to its page (so right-click / new
+        # tab work); the simulated user follows the href like a browser would
         await user.open("/")
         user.find(kind=ui.input, content=DASHBOARD_BOX).type("Choir")
         await user.should_see(f"suggest-team-{choir_id}", retries=30)
-        user.find(marker=f"suggest-team-{choir_id}").click()
+        item = user.find(marker=f"suggest-team-{choir_id}").elements.pop()
+        assert item.props["href"] == f"/teams/{choir_id}"
+        await user.open(item.props["href"])
         await user.should_see("Roster", retries=30)
 
         # Escape closes the dropdown; returning to a box that still holds the

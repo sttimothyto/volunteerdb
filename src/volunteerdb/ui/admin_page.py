@@ -34,9 +34,9 @@ async def users_page(request: Request):
             ui.label(f"Invite link for {email}").classes("font-medium")
             url = invite_url(token)
             ui.input(value=url).props("readonly outlined dense").classes("w-full")
-            hours = settings().invite_ttl_hours
+            window = mail.ttl_window(settings().invite_ttl_hours)
             ui.label(
-                f"Usable once, and only for the next {hours} hours. After that "
+                f"Usable once, and only for the next {window}. After that "
                 "they sign in with an emailed code and can set a password "
                 "themselves — or you re-invite them."
             ).classes("text-sm text-gray-500")

@@ -1,0 +1,129 @@
+"""Nightly proposal digest (03:30 cron): tell voters what needs their input.
+
+Exactly two notices exist, batched into ONE email per person per night no
+matter how many proposals it covers: (a) you were added to a proposal's
+voting roll, (b) a proposal you sit on moved from nominating to voting. Both
+carry the nomination and voting deadlines. The per-voter stamps
+(proposal_voter.added_notified_at / voting_notified_at) make each notice
+one-shot and per-person idempotent: a failed send leaves its stamps NULL and
+retries the next night; a crash mid-run re-sends at most the unstamped
+people. Phases derive from dates in the parish's day (planning.phase_of),
+never the container's UTC clock.
+
+Usage: python -m volunteerdb.jobs.proposal_digest [--today YYYY-MM-DD]
+(--today exists for manual runs and tests; defaults to the parish's today)
+"""
+
+import argparse
+import asyncio
+import sys
+from datetime import date
+
+import sqlalchemy as sa
+
+from ..db import db_session
+from ..log import init_logging
+from ..models import ROLE_LABELS, Proposal, ProposalStatus, ProposalVoter, Volunteer
+from ..services import mail, planning
+from ..services import teams as team_service
+
+
+async def main(today: date | None = None) -> int:
+    init_logging()
+    if today is None:
+        today = planning.local_today()
+
+    async with db_session() as session:
+        rows = (
+            await session.execute(
+                sa.select(ProposalVoter, Proposal, Volunteer)
+                .join(Proposal, Proposal.id == ProposalVoter.proposal_id)
+                .join(Volunteer, Volunteer.id == ProposalVoter.volunteer_id)
+                .where(
+                    Proposal.status == ProposalStatus.open.value,
+                    Volunteer.email.is_not(None),
+                    sa.or_(
+                        ProposalVoter.added_notified_at.is_(None),
+                        ProposalVoter.voting_notified_at.is_(None),
+                    ),
+                )
+                .order_by(Proposal.id)
+            )
+        ).all()
+        paths = team_service.team_paths(await team_service.list_all(session))
+
+    # volunteer id -> (email, digest items, voter ids to stamp per notice)
+    per_person: dict[int, tuple[str, list[mail.DigestItem], list[int], list[int]]] = {}
+    for voter, proposal, volunteer in rows:
+        phase = planning.phase_of(proposal, today)
+        pending_added = voter.added_notified_at is None and phase in (
+            planning.ProposalPhase.nominating,
+            planning.ProposalPhase.voting,
+        )
+        pending_voting = (
+            voter.voting_notified_at is None and phase is planning.ProposalPhase.voting
+        )
+        if not pending_added and not pending_voting:
+            continue  # concluded (awaiting decision), or already notified
+        kind = (
+            "both"
+            if pending_added and pending_voting
+            else ("added" if pending_added else "voting")
+        )
+        seat = (
+            f"{ROLE_LABELS[proposal.role]} — "
+            f"{paths.get(proposal.team_id, f'team {proposal.team_id}')}"
+        )
+        entry = per_person.setdefault(volunteer.id, (volunteer.email, [], [], []))
+        entry[1].append(
+            mail.DigestItem(
+                kind=kind,
+                seat=seat,
+                nomination_deadline=proposal.nomination_deadline,
+                voting_deadline=proposal.voting_deadline,
+            )
+        )
+        if pending_added:
+            entry[2].append(voter.id)
+        if pending_voting:
+            entry[3].append(voter.id)
+
+    sent = failed = 0
+    for email, items, added_ids, voting_ids in per_person.values():
+        if not await mail.send_email(email, *mail.proposal_digest_email(items)):
+            failed += 1
+            print(f"FAILED digest to {email}", file=sys.stderr)
+            continue  # stamps stay NULL — retried the next night
+        async with db_session() as session:
+            if added_ids:
+                await session.execute(
+                    sa.update(ProposalVoter)
+                    .where(ProposalVoter.id.in_(added_ids))
+                    .values(added_notified_at=sa.func.now())
+                )
+            if voting_ids:
+                await session.execute(
+                    sa.update(ProposalVoter)
+                    .where(ProposalVoter.id.in_(voting_ids))
+                    .values(voting_notified_at=sa.func.now())
+                )
+        sent += 1
+
+    print(f"digest: {sent} person(s) emailed, {failed} failure(s)")
+    return 0
+
+
+def cli(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--today",
+        type=date.fromisoformat,
+        default=None,
+        help="pretend today is this date (parish day); for manual runs and tests",
+    )
+    args = parser.parse_args(argv)
+    return asyncio.run(main(today=args.today))
+
+
+if __name__ == "__main__":
+    sys.exit(cli())

@@ -11,7 +11,7 @@ to fill?"**
   member, Member* — drive both the data model and access control
 - Full **history tracking**: view any team, volunteer, or the whole graph
   *as of any past date*
-- Spreadsheet **import/export** (.xlsx) that round-trips
+- Spreadsheet **import/export** (.csv) that round-trips
 - **Cytoscape.js graph** of volunteers ↔ teams, front and center on the dashboard
 - Collaborative **planning**: leadership vacancies with volunteer proposals
   (propose → accept/decline), and leadership-only **workload** scoring
@@ -83,7 +83,7 @@ src/volunteerdb/
   services/        the one business layer (used by both API and GUI)
   api/             FastAPI routers under /api (Bearer-token auth)
   ui/              NiceGUI pages (session-cookie auth) + Cytoscape element
-  sheets/          xlsx template/export/import (all-or-nothing, dry-run)
+  sheets/          csv template/export/import (all-or-nothing, dry-run)
 migrations/        alembic; 0001 creates tables, history twins, triggers
 ```
 
@@ -118,7 +118,7 @@ mirrored on its `_history` twin (the trigger inserts positionally).
 
 Accounts are admin-provisioned via **invite links** (Accounts page → bulk or
 per person), emailed automatically when `VDB_SMTP2GO_API_KEY` is set and
-always available to hand out by other means. The link is good for 24 hours
+always available to hand out by other means. The link is good for 7 days
 (`VDB_INVITE_TTL_HOURS`). The volunteer opens it and sets a password — or
 skips it and signs in with emailed one-time codes, which is also how anyone
 who forgets their password gets back in and sets a new one on `/account`.

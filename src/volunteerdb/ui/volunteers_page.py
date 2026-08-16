@@ -81,10 +81,7 @@ async def volunteers_page(q: str = "", band: str = ""):
             ui.label("Matching teams").classes("text-lg font-medium")
             with ui.row().classes("gap-2 w-full flex-wrap"):
                 for team, path in team_hits:
-                    ui.button(
-                        path,
-                        on_click=lambda _, tid=team.id: ui.navigate.to(f"/teams/{tid}"),
-                    ).props("outline dense")
+                    ui.button(path).props(f'outline dense href="/teams/{team.id}"')
 
         columns = [
             {
