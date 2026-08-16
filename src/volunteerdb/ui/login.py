@@ -166,6 +166,13 @@ def invite_page(token: str, request: Request):
     login_url = f"{str(request.base_url).rstrip('/')}/login"
 
     async def redeem() -> None:
+        if not agree.value:
+            ui.notify(
+                "To finish setup, please agree to keep personal information "
+                "confidential.",
+                color="warning",
+            )
+            return
         pw = password.value or ""
         if pw or confirm.value:
             # The service checks the policy too (it is the choke point); doing
@@ -179,7 +186,9 @@ def invite_page(token: str, request: Request):
                 ui.notify("The two passwords don't match", color="negative")
                 return
         async with db_session() as session:
-            user = await user_service.redeem_invite(session, token, pw or None)
+            user = await user_service.redeem_invite(
+                session, token, pw or None, agreed_to_confidentiality=agree.value
+            )
         if user is None:
             logger.warning("auth.invite_invalid")
             ui.notify(
@@ -191,7 +200,11 @@ def invite_page(token: str, request: Request):
                 timeout=10000,
             )
             return
-        audit_log("auth.invite_redeemed", user=f"{user.id}:{user.email}")
+        audit_log(
+            "auth.invite_redeemed",
+            user=f"{user.id}:{user.email}",
+            confidentiality_agreed=True,
+        )
         await mail.send_email(
             user.email, *mail.welcome_email(login_url, has_password=bool(pw))
         )
@@ -231,4 +244,12 @@ def invite_page(token: str, request: Request):
             remember = ui.checkbox("Keep me signed in").tooltip(
                 "Checked: stay signed in for 90 days on this device. Unchecked: 1 day."
             )
+            ui.separator()
+            ui.label(
+                "This database holds volunteers' personal information. By "
+                "creating an account you agree to use it only for parish "
+                "ministry and not to disclose anyone's personal information "
+                "without their consent."
+            ).classes("text-xs text-gray-500")
+            agree = ui.checkbox("I agree to keep personal information confidential")
             ui.button("Finish setup and sign in", on_click=redeem).classes("w-full")

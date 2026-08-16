@@ -177,9 +177,16 @@ async def test_reissue_invite_invalidates_password(database):
             is None
         )
 
-        redeemed = await users.redeem_invite(session, invite, "new-pass-phrase-1")
+        redeemed = await users.redeem_invite(
+            session, invite, "new-pass-phrase-1", agreed_to_confidentiality=True
+        )
         assert redeemed is not None and redeemed.invite_token is None
-        assert await users.redeem_invite(session, invite, "again") is None, "single use"
+        assert (
+            await users.redeem_invite(
+                session, invite, "again", agreed_to_confidentiality=True
+            )
+            is None
+        ), "single use"
         assert (
             await users.authenticate(session, "reset@example.org", "new-pass-phrase-1")
             is not None
@@ -221,9 +228,12 @@ async def test_invite_links_expire(database):
         user.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.flush()
         assert not users.invite_live(user)
-        assert await users.redeem_invite(session, token, None) is None, (
-            "an expired link is refused exactly like an unknown one"
-        )
+        assert (
+            await users.redeem_invite(
+                session, token, None, agreed_to_confidentiality=True
+            )
+            is None
+        ), "an expired link is refused exactly like an unknown one"
         assert user.invite_token == token, "and is not silently consumed"
 
         # the account is not stranded: an emailed code still signs it in
@@ -263,8 +273,30 @@ async def test_weak_passwords_are_refused_on_every_path(database):
 
         invited = await users.create(session, "invited@example.org")
         with pytest.raises(WeakPassword, match="too short"):
-            await users.redeem_invite(session, invited.invite_token, "short")
+            await users.redeem_invite(
+                session, invited.invite_token, "short", agreed_to_confidentiality=True
+            )
         assert invited.invite_token is not None, "a refused password spends nothing"
+
+
+async def test_redeem_invite_requires_confidentiality_agreement(database):
+    """The service is the choke point: no caller can complete signup without
+    accepting the confidentiality notice, and the acceptance moment lands on
+    the account."""
+    async with db_session() as session:
+        user = await users.create(session, "agrees@example.org")
+        with pytest.raises(ValueError, match="confidentiality"):
+            await users.redeem_invite(
+                session, user.invite_token, None, agreed_to_confidentiality=False
+            )
+        assert user.invite_token is not None, "a refused redemption spends nothing"
+        assert user.confidentiality_agreed_at is None
+
+        redeemed = await users.redeem_invite(
+            session, user.invite_token, None, agreed_to_confidentiality=True
+        )
+        assert redeemed is not None
+        assert redeemed.confidentiality_agreed_at is not None
 
 
 async def test_clear_password_drops_api_access_too(database):

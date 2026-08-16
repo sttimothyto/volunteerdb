@@ -15,7 +15,7 @@ to fill?"**
 - **Cytoscape.js graph** of volunteers ↔ teams, front and center on the dashboard
 - Collaborative **planning**: leadership vacancies with volunteer proposals
   (propose → accept/decline), and leadership-only **workload** scoring
-
+  
 ## Documentation
 
 Full documentation lives in [`docs/`](docs/index.md), organized as

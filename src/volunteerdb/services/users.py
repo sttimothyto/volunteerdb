@@ -196,13 +196,25 @@ async def reissue_invite(session: AsyncSession, user_id: int) -> str:
 
 
 async def redeem_invite(
-    session: AsyncSession, token: str, password: str | None
+    session: AsyncSession,
+    token: str,
+    password: str | None,
+    *,
+    agreed_to_confidentiality: bool,
 ) -> AppUser | None:
     """Complete account setup. The password is optional: without one the
     account stays passwordless and signs in with emailed one-time codes.
 
+    Redemption requires accepting the confidentiality notice — agreeing not
+    to disclose volunteers' personal information without their consent. The
+    UI gates on the checkbox; enforcing it here too means no caller can mint
+    an account that skipped the notice, and confidentiality_agreed_at only
+    ever records real acceptance.
+
     An expired link is refused exactly like an unknown one — same None, same
     message to the claimant, no hint about which it was."""
+    if not agreed_to_confidentiality:
+        raise ValueError("the confidentiality agreement must be accepted")
     if not token:
         return None
     user = (
@@ -213,6 +225,7 @@ async def redeem_invite(
     if password:
         check_password(password, email=user.email)
         user.password_hash = await async_hash_password(password)
+    user.confidentiality_agreed_at = datetime.now(UTC)
     _clear_invite(user)
     await session.flush()
     return user

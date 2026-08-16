@@ -64,6 +64,14 @@ async def test_invite_redemption_flow(database, monkeypatch):
         await user.open(f"/invite/{token}")
         await user.should_see("Finish your account setup")
 
+        # the confidentiality notice must be agreed to before anything else
+        user.find("Finish setup and sign in", kind=ui.button).click()
+        await user.should_see("please agree to keep personal information", retries=30)
+        agree = next(
+            cb for cb in user.find(kind=ui.checkbox).elements if "I agree" in cb.text
+        )
+        agree.value = True
+
         # rejected by the policy, with the reason (SP 800-63B: 15 characters)
         user.find(kind=ui.input, content="Password (optional)").type("short")
         user.find("Finish setup and sign in", kind=ui.button).click()
@@ -95,6 +103,10 @@ async def test_invite_redemption_flow(database, monkeypatch):
 
         # the invite link is single-use
         await user.open(f"/invite/{token}")
+        agree = next(
+            cb for cb in user.find(kind=ui.checkbox).elements if "I agree" in cb.text
+        )
+        agree.value = True
         user.find("Finish setup and sign in", kind=ui.button).click()
         await user.should_see(
             "This link has expired or has already been used", retries=30

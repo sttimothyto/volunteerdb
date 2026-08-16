@@ -304,6 +304,12 @@ class AppUser(Base):
     invite_expires_at: Mapped[datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True)
     )
+    # When the person accepted the confidentiality notice while redeeming
+    # their invite (agreeing not to disclose volunteers' personal information
+    # without consent). NULL: the account predates the notice.
+    confidentiality_agreed_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
     otp_hash: Mapped[str | None] = mapped_column(sa.String(255))
     otp_sent_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
     otp_expires_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))

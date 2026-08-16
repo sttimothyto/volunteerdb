@@ -80,12 +80,19 @@ async def test_redeem_invite_password_optional(database):
         a = await users.create(session, "nopw@example.org")
         b = await users.create(session, "withpw@example.org")
 
-        ra = await users.redeem_invite(session, a.invite_token, None)
+        ra = await users.redeem_invite(
+            session, a.invite_token, None, agreed_to_confidentiality=True
+        )
         assert ra is not None
         assert ra.password_hash is None and ra.invite_token is None  # OTP-only account
         assert await users.authenticate(session, "nopw@example.org", "anything") is None
 
-        rb = await users.redeem_invite(session, b.invite_token, "long-enough-phrase")
+        rb = await users.redeem_invite(
+            session,
+            b.invite_token,
+            "long-enough-phrase",
+            agreed_to_confidentiality=True,
+        )
         assert rb is not None and rb.password_hash is not None
         assert (
             await users.authenticate(
