@@ -1,0 +1,12 @@
+[Unit]
+Description=Nightly VolunteerDB backup at {{ backup_at }} parish time
+
+[Timer]
+# tz-suffixed OnCalendar needs systemd >= 235; deploy.py asserts support.
+OnCalendar=*-*-* {{ backup_at }}:00 {{ timezone }}
+# Fire on the next boot if the host slept through {{ backup_at }}: a late dump is
+# strictly better than no dump.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

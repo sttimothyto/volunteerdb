@@ -1,15 +1,15 @@
 [Unit]
 Description=VolunteerDB (NiceGUI)
 # Quadlet does not translate names here - reference the GENERATED units:
-Requires=volunteerdb-db.service
-After=volunteerdb-db.service
+Requires={{ db_container }}.service
+After={{ db_container }}.service
 
 [Container]
-Image=localhost/volunteerdb:latest
+Image={{ image }}
 ContainerName=volunteerdb-app
-Network=volunteerdb.network
-EnvironmentFile=/etc/volunteerdb/env
-PublishPort=127.0.0.1:8090:8080
+Network={{ net }}.network
+EnvironmentFile={{ env_file }}
+PublishPort=127.0.0.1:{{ listen_port }}:{{ app_port }}
 # NiceGUI session storage - the app's only persistent disk state.
 Volume=volunteerdb-nicegui:/app/.nicegui
 NoNewPrivileges=true

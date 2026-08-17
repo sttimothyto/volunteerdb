@@ -3,8 +3,8 @@
 [Unit]
 Description=VolunteerDB nightly database backup (pg_dump -> rclone crypt -> Drive)
 Wants=network-online.target
-After=network-online.target volunteerdb-db.service
+After=network-online.target {{ db_container }}.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/volunteerdb-backup
+ExecStart={{ backup_script }}

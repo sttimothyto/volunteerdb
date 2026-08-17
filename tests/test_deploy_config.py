@@ -145,3 +145,109 @@ def test_postgres_image_matches_compose():
     """Development and production run the same major version, or the schema
     that passes tests is not the schema production gets."""
     assert siteconf.PG_IMAGE in (REPO / "compose.yaml").read_text()
+
+
+TEMPLATES = sorted((DEPLOY / "templates").glob("*.j2"))
+# Rendered by the two loops in deploy.py, which pass **UNIT_VARS rather than
+# naming each template literally.
+LOOPED = {f"{n}.j2" for n in siteconf.QUADLETS + siteconf.TIMER_UNITS}
+
+
+def _deploy_tree():
+    import ast
+
+    return ast.parse((DEPLOY / "deploy.py").read_text())
+
+
+def _dict_keys(tree, node) -> set[str]:
+    """Keys of a **kwargs expansion: a literal dict, a dict(...) call, or a
+    module-level name bound to either."""
+    import ast
+
+    if isinstance(node, ast.Dict):
+        return {k.value for k in node.keys if isinstance(k, ast.Constant)}
+    if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "dict":
+        return {kw.arg for kw in node.keywords if kw.arg}
+    if isinstance(node, ast.Name):
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == node.id for t in stmt.targets
+            ):
+                return _dict_keys(tree, stmt.value)
+    return set()
+
+
+def _template_calls(tree):
+    """Every files.template(...) call, as (unparsed source, supplied keys)."""
+    import ast
+
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "template"
+        ):
+            supplied: set[str] = set()
+            for keyword in node.keywords:
+                if keyword.arg is None:  # **UNIT_VARS
+                    supplied |= _dict_keys(tree, keyword.value)
+                else:
+                    supplied.add(keyword.arg)
+            yield ast.unparse(node), supplied
+
+
+def test_every_template_is_rendered_by_deploy_py():
+    """A template nobody renders is dead weight that still looks maintained.
+
+    The quadlets and timer units are named by siteconf, not by deploy.py, so
+    the check is against those lists plus the four templates deploy.py names
+    outright.
+    """
+    named = {src for src, _ in _template_calls(_deploy_tree())}
+    for path in TEMPLATES:
+        if path.name in LOOPED:
+            continue
+        assert any(path.name in src for src in named), f"{path.name} is never rendered"
+
+
+def test_the_looped_templates_all_exist():
+    """The other direction: siteconf lists a unit, but its template is gone."""
+    present = {p.name for p in TEMPLATES}
+    assert LOOPED <= present, f"missing templates: {sorted(LOOPED - present)}"
+
+
+@pytest.mark.parametrize("path", TEMPLATES, ids=lambda p: p.name)
+def test_template_variables_are_all_supplied(path):
+    """The failure this exists for is silent.
+
+    Jinja renders an undefined variable as the empty string, so a variable
+    added to a template without a matching keyword at the call site becomes
+    `PublishPort=127.0.0.1::8080`, or an `OnCalendar=` with no time in it —
+    written, installed and daemon-reloaded without a word of complaint.
+
+    Reading deploy.py with ast is cruder than importing it, but importing it
+    needs pyinfra and a live host to gather facts from.
+    """
+    import jinja2
+    import jinja2.meta
+
+    needed = jinja2.meta.find_undeclared_variables(
+        jinja2.Environment().parse(path.read_text())
+    )
+
+    tree = _deploy_tree()
+    calls = list(_template_calls(tree))
+    if path.name in LOOPED:
+        # Both loops pass the same dict; either call site answers for it.
+        supplied = set().union(
+            *(keys for src, keys in calls if "UNIT_VARS" in src), set()
+        )
+    else:
+        supplied = set().union(
+            *(keys for src, keys in calls if path.name in src), set()
+        )
+
+    assert not (needed - supplied), (
+        f"{path.name} uses {sorted(needed - supplied)}, which deploy.py does "
+        "not pass — they would render as empty strings"
+    )

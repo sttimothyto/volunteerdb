@@ -25,6 +25,7 @@ WORKDIR='{{ workdir }}'
 IMAGE='{{ image }}'
 NET='{{ net }}'
 ENV_FILE='{{ env_file }}'
+APP_UID='{{ app_uid }}'  # the image's `app` user; owns this work dir
 
 RCLONE="rclone --config $RCLONE_CONF --drive-export-formats csv --drive-import-formats csv"
 PODMAN_RUN="podman run --rm --network $NET --env-file $ENV_FILE -v $WORKDIR:/sync"
@@ -63,14 +64,14 @@ trap cleanup EXIT
 # fresh run state; the workdir itself persists (owned by the container user)
 rm -rf "$WORKDIR/in" "$WORKDIR/out" "$WORKDIR/post"
 rm -f "$WORKDIR/renames.txt" "$WORKDIR/alerts.txt" "$WORKDIR/manifest.json"
-install -d -o 10001 -g 10001 "$WORKDIR/in" "$WORKDIR/out" "$WORKDIR/post"
+install -d -o "$APP_UID" -g "$APP_UID" "$WORKDIR/in" "$WORKDIR/out" "$WORKDIR/post"
 
 # --- 1. download ------------------------------------------------------------
 $RCLONE mkdir "$REMOTE"
 $RCLONE lsjson "$REMOTE" > "$WORKDIR/in/listing.json"
-chown 10001:10001 "$WORKDIR/in/listing.json"
+chown "$APP_UID:$APP_UID" "$WORKDIR/in/listing.json"
 $RCLONE copy "$REMOTE" "$WORKDIR/in/"
-chown -R 10001:10001 "$WORKDIR/in"
+chown -R "$APP_UID:$APP_UID" "$WORKDIR/in"
 
 # --- 2. apply (sheets -> DB) + regenerate -----------------------------------
 $PODMAN_RUN "$IMAGE" python -m volunteerdb.jobs.drive_sync apply /sync
@@ -102,7 +103,7 @@ fi
 
 # --- 5. record --------------------------------------------------------------
 $RCLONE lsjson "$REMOTE" > "$WORKDIR/post/listing.json"
-chown 10001:10001 "$WORKDIR/post/listing.json"
+chown "$APP_UID:$APP_UID" "$WORKDIR/post/listing.json"
 $PODMAN_RUN "$IMAGE" python -m volunteerdb.jobs.drive_sync record /sync
 
 if [ -s "$WORKDIR/alerts.txt" ]; then

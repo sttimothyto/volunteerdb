@@ -94,6 +94,29 @@ REVOKE_PUBLIC_LINKS = site.drive_sync_revoke_public_links
 SYSTEMD_DIR = siteconf.SYSTEMD_DIR
 TIMER_UNITS = siteconf.TIMER_UNITS
 
+# Every quadlet and timer/service unit is rendered from these. One dict for
+# all of them so a value cannot reach one unit and miss another — the ports
+# in the app quadlet and the smoke test, or the timezone in the two timers
+# and the calendar assertion, have to agree or the stack half-works.
+UNIT_VARS = dict(
+    net=NET,
+    image=IMAGE,
+    pg_image=PG_IMAGE,
+    pg_tuning=siteconf.PG_TUNING,
+    db_container=DB_CONTAINER,
+    db_user=DB_USER,
+    db_name=DB_NAME,
+    env_file=ENV_FILE,
+    db_env_file=DB_ENV_FILE,
+    listen_port=PORT,
+    app_port=APP_PORT,
+    backup_script=BACKUP_SCRIPT,
+    drive_sync_script=DRIVE_SYNC_SCRIPT,
+    timezone=site.site_timezone,
+    backup_at=site.schedule_backup_at,
+    drive_sync_at=site.schedule_drive_sync_at,
+)
+
 
 # Reuse secrets already on the server; generate once if absent.
 def _remote_env() -> dict[str, str]:
@@ -212,11 +235,12 @@ server.shell(
 )
 
 for _quadlet in QUADLETS:
-    files.put(
+    files.template(
         name=f"Install quadlet {_quadlet}",
-        src=str(HERE / "files" / _quadlet),
+        src=str(HERE / "templates" / f"{_quadlet}.j2"),
         dest=f"{QUADLET_DIR}/{_quadlet}",
         mode="644",
+        **UNIT_VARS,
     )
 systemd.daemon_reload(name="daemon-reload (generate quadlet units)")
 
@@ -346,27 +370,31 @@ files.template(
     image=IMAGE,
     net=NET,
     env_file=ENV_FILE,
+    app_uid=APP_UID,
     decorate_script=DECORATE_SCRIPT,
     revoke_public_links=REVOKE_PUBLIC_LINKS,
     alert_email=BACKUP_ALERT_EMAIL,
     mail_from=site.mail_from_address,
     mail_from_name=site.mail_from_name,
 )
-# --- systemd timers for the two host-coupled jobs (crontab retired) ----------
-# The backup (02:00) and Drive sync (02:30) stay host-side — rclone config,
-# podman exec, and the /sync work dir live here — but fire from timer units
-# instead of root's crontab. Units get their own journal names, so the
-# wrappers no longer need systemd-cat.
+# --- systemd timers for the two host-coupled jobs ----------------------------
+# The backup and Drive sync stay host-side — rclone config, podman exec, and
+# the /sync work dir live here — but fire from timer units rather than cron.
+# Units get their own journal names, so the wrappers need no systemd-cat.
 server.shell(
     name="Assert host systemd supports tz-suffixed OnCalendar",
-    commands=["systemd-analyze calendar '*-*-* 02:00:00 America/Toronto' >/dev/null"],
+    commands=[
+        f"systemd-analyze calendar "
+        f"'*-*-* {site.schedule_backup_at}:00 {site.site_timezone}' >/dev/null"
+    ],
 )
 for _unit in TIMER_UNITS:
-    files.put(
+    files.template(
         name=f"Install unit {_unit}",
-        src=str(HERE / "files" / _unit),
+        src=str(HERE / "templates" / f"{_unit}.j2"),
         dest=f"{SYSTEMD_DIR}/{_unit}",
         mode="644",
+        **UNIT_VARS,
     )
 systemd.daemon_reload(name="daemon-reload (timer units)")
 systemd.service(

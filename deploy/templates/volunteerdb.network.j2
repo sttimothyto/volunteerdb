@@ -1,0 +1,7 @@
+[Network]
+# Explicit name so one-shot `podman run --network {{ net }} ...` (migrations,
+# admin bootstrap) resolves it; the default would be "systemd-{{ net }}".
+NetworkName={{ net }}
+
+[Install]
+WantedBy=multi-user.target
