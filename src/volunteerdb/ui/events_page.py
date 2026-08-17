@@ -27,6 +27,7 @@ from ..permissions import require
 from ..services import events as event_service
 from ..services import gcal, mail
 from ..services import interest as interest_service
+from ..services import task_force as task_force_service
 from ..services import teams as team_service
 from . import column_order
 from .context import action_session, notify_errors, page_session
@@ -880,6 +881,22 @@ async def event_detail_page(request: Request, event_id: int):
             and event.status == EventStatus.scheduled.value
             else None
         )
+        tf_view = await task_force_service.get_for_event(session, event_id)
+        collaborator_options: dict[int, str] = {}
+        if can_manage:
+            all_teams = await team_service.list_all(session)
+            paths = team_service.team_paths(all_teams)
+            staffing = {t.id for t in tf_view.sources} if tf_view else {event.team_id}
+            if tf_view:
+                staffing.add(tf_view.task_force.team_id)
+            collaborator_options = {
+                t.id: paths[t.id]
+                for t in all_teams
+                if t.is_active and t.id not in staffing
+            }
+            source_paths = (
+                [paths.get(t.id, t.name) for t in tf_view.sources] if tf_view else []
+            )
 
     upcoming = (
         event.status == EventStatus.scheduled.value and not event_service.is_past(event)
@@ -977,6 +994,61 @@ async def event_detail_page(request: Request, event_id: int):
                     "signup-confirm"
                 )
         dialog.open()
+
+    async def _confirm_add_collaborator(team_label: str) -> bool:
+        with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+            ui.label(f"Add {team_label} to this event?").classes("font-medium")
+            ui.label(
+                "A temporary task-force team is created holding both rosters: "
+                "members of the added team can sign up for slots, its leaders "
+                "co-manage the event, and the team is removed automatically "
+                "after the event ends (it stays visible in history)."
+            ).classes("text-sm text-gray-500")
+            with ui.row().classes("justify-end w-full gap-2"):
+                ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat")
+                ui.button(
+                    "Add team", icon="group_add", on_click=lambda: dialog.submit(True)
+                ).mark("confirm-collaborator")
+        return bool(await dialog)
+
+    @notify_errors
+    async def _add_collaborator(team_id_value) -> None:
+        if not team_id_value:
+            ui.notify("Pick a team first", color="warning")
+            return
+        label = collaborator_options.get(team_id_value, "that team")
+        if not await _confirm_add_collaborator(label):
+            return
+        async with action_session() as (session, actor):
+            current = await event_service.get(session, event_id)
+            if current is None:
+                raise LookupError("event vanished")
+            require(actor.can_manage_team(current.team_id), "manage this team's events")
+            meta = await task_force_service.add_collaborating_team(
+                session,
+                event_id=event_id,
+                source_team_id=team_id_value,
+                created_by=actor.user.id,
+            )
+            audit_log(
+                "event.collaboration_added",
+                event_id=event_id,
+                source_team_id=team_id_value,
+                task_force_team_id=meta.id,
+            )
+        ui.notify("Team added — their roster can sign up now", color="positive")
+        ui.navigate.reload()
+
+    @notify_errors
+    async def _sync_rosters() -> None:
+        async with action_session() as (session, actor):
+            current = await event_service.get(session, event_id)
+            if current is None:
+                raise LookupError("event vanished")
+            require(actor.can_manage_team(current.team_id), "manage this team's events")
+            added = await task_force_service.refresh_rosters(session, event_id)
+        ui.notify(f"Rosters synced — {added} member(s) added", color="positive")
+        ui.navigate.reload()
 
     @notify_errors
     async def _withdraw(assignment_id: int) -> None:
@@ -1119,6 +1191,50 @@ async def event_detail_page(request: Request, event_id: int):
                 )
         if event.description:
             ui.label(event.description).classes("text-sm text-gray-600")
+
+        if can_manage and upcoming:
+            with ui.card().classes("w-full gap-2 p-3"):
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.label("Collaboration").classes("font-medium")
+                    if tf_view is not None:
+                        ui.badge("task force", color="secondary")
+                    ui.space()
+                    if tf_view is not None:
+                        ui.button(
+                            "Sync rosters", icon="sync", on_click=_sync_rosters
+                        ).props("dense flat").tooltip(
+                            "Re-copy the source rosters — people who joined a "
+                            "staffing team since then join the task force"
+                        )
+                if tf_view is not None:
+                    ui.label("Staffed by: " + " · ".join(source_paths)).classes(
+                        "text-sm text-gray-600"
+                    )
+                else:
+                    ui.label(
+                        "Need another ministry for this event? Adding a "
+                        "collaborating team creates a temporary task-force "
+                        "team holding both rosters, so everyone can sign up; "
+                        "it is removed automatically after the event."
+                    ).classes("text-sm text-gray-500")
+                if collaborator_options:
+                    with ui.row().classes("w-full items-center gap-2"):
+                        collab_pick = (
+                            ui.select(
+                                collaborator_options,
+                                label="Add collaborating team",
+                                with_input=True,
+                            )
+                            .props("outlined dense")
+                            .classes("w-72")
+                        )
+                        # default-arg capture: the slots section below rebinds
+                        # its own `pick`, and a bare closure would read that
+                        ui.button(
+                            "Add",
+                            icon="group_add",
+                            on_click=lambda p=collab_pick: _add_collaborator(p.value),
+                        ).props("dense outline").mark("add-collaborator")
 
         if am_member and upcoming:
             with ui.card().classes("w-full gap-2 p-3"):

@@ -22,6 +22,20 @@ team** first, built with the ordinary team tools; the event then inherits
 its audience, its leaders, even its public ministry page, for free. One
 extra team is a small price for never re-implementing permissions.
 
+The app now *automates* that pattern (`services/task_force.py`): an event's
+manager adds a **collaborating team** from the event page, which creates
+the task-force team as a child of the owning team, copies in the union of
+both rosters (highest role per person — collaborating leaders co-manage,
+by design), and repoints the event at it. More teams can be added, and
+*Sync rosters* re-copies after source teams drift; nothing syncs in the
+background. Once the event ends (or is cancelled), an hourly job restores
+the owning team and deletes the task-force team — its memberships stay
+visible in as-of history, because they were ordinary versioned rows all
+along. The grain never changed: one event, one team; the team just got
+cheaper to make. (Adding a collaborator to one occurrence of a weekly
+series affects that occurrence only; there is no consent step — any event
+manager can pull in another team's roster, the parish trust model.)
+
 ## Concrete rows, not recurrence rules
 
 "Every Sunday at 10:30" is stored as N ordinary event rows, materialized at

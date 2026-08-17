@@ -103,6 +103,7 @@ python -m volunteerdb.jobs.drive_sync record /sync
 python -m volunteerdb.jobs.proposal_digest [--today YYYY-MM-DD]
 python -m volunteerdb.jobs.event_reminders [--today YYYY-MM-DD]
 python -m volunteerdb.jobs.calendar_sync
+python -m volunteerdb.jobs.task_force_cleanup
 ```
 
 `fetch_pages` refreshes every team home page from its public Google Doc
@@ -122,12 +123,15 @@ need `VDB_DATABASE_URL`.
 `calendar_sync` reconciles events onto the public parish Google Calendar
 (see [Publish events to a Google Calendar](../how-to/google-calendar-sync.md));
 unconfigured it exits 0 with "not configured", so it is always safe to run.
+`task_force_cleanup` dismantles the auto-created task-force team of every
+finished or cancelled event (see
+[Events and scheduling](../explanation/events.md)).
 
-`fetch_pages`, `proposal_digest`, `event_reminders` and `calendar_sync` run
-**inside the app process**: `volunteerdb.scheduler` fires the first three
-at their parish-local times (`VDB_FETCH_PAGES_AT` 03:00,
-`VDB_PROPOSAL_DIGEST_AT` 03:30, `VDB_EVENT_REMINDERS_AT` 04:00) and
-`calendar_sync` every 30 minutes, records completion in the `job_run` table
+All of these except `drive_sync` run **inside the app process**:
+`volunteerdb.scheduler` fires the nightly three at their parish-local times
+(`VDB_FETCH_PAGES_AT` 03:00, `VDB_PROPOSAL_DIGEST_AT` 03:30,
+`VDB_EVENT_REMINDERS_AT` 04:00), `calendar_sync` every 30 minutes and
+`task_force_cleanup` hourly, records completion in the `job_run` table
 so a restart or redeploy cannot skip a night, retries a nightly failure
 every 30 minutes (3 attempts/day) and emails `VDB_ALERT_EMAIL` on each
 failed attempt — an interval job instead retries on its own cadence and

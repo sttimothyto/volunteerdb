@@ -343,7 +343,9 @@ def test_registry_mixes_nightly_and_interval_jobs():
         assert by_name[name].every is None and by_name[name].at_setting
     sync = by_name["calendar_sync"]
     assert (sync.at_setting, sync.every) == (None, timedelta(minutes=30))
-    assert list(by_name)[-1] == "calendar_sync", (
+    cleanup = by_name["task_force_cleanup"]
+    assert (cleanup.at_setting, cleanup.every) == (None, timedelta(hours=1))
+    assert all(j.every is not None for j in scheduler.JOBS[3:]), (
         "interval jobs come last so they never delay the nightly chain"
     )
 

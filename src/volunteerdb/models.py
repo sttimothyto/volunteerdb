@@ -540,6 +540,53 @@ class EventAssignment(Base):
     hours_override: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2))
 
 
+class EventTaskForce(Base):
+    """Marks an event whose owning team was swapped for an auto-created
+    "task force" team so several teams can staff it (services/task_force.py
+    automates the documented one-event-one-team pattern). owner_team_id is
+    the real owner, restored at teardown BEFORE the meta team is deleted —
+    event.team_id cascades on team delete, so that order is load-bearing.
+
+    Not system-versioned: provenance whose lifecycle is create/teardown.
+    The meta team and its memberships are ordinary versioned rows — that is
+    what keeps a torn-down task force visible in as-of history."""
+
+    __tablename__ = "event_task_force"
+
+    event_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("event.id", ondelete="CASCADE"), primary_key=True
+    )
+    # the auto-created meta team the event was repointed to
+    team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE"), unique=True
+    )
+    owner_team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE")
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+
+
+class EventTaskForceSource(Base):
+    """One team whose roster was copied into a task force (the owner team is
+    always a source too)."""
+
+    __tablename__ = "event_task_force_source"
+    __table_args__ = (
+        sa.UniqueConstraint("event_id", "team_id", name="uq_task_force_source"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("event_task_force.event_id", ondelete="CASCADE")
+    )
+    team_id: Mapped[int] = mapped_column(sa.ForeignKey("team.id", ondelete="CASCADE"))
+
+
 class EventRsvp(Base):
     """One volunteer's availability answer for one event; no row = not
     answered. Managers assign from this pool. Not a commitment — the

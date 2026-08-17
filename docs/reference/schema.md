@@ -307,11 +307,16 @@ is never stored.
 | `cancelled_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
 | `created_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
 | `created_at` | timestamptz | |
+| `google_event_id` | varchar(1024) | nullable; calendar-sync bookkeeping (`jobs/calendar_sync.py`) — NULL = not on the parish calendar |
+| `google_fingerprint` | varchar(64) | nullable; hash of the last-pushed calendar payload (change detection) |
+| `series_id` | uuid | nullable; shared by the rows of one weekly materialization, so a sign-up can copy itself forward |
 
 Indexes: `ix_event_team_starts (team_id, starts_at)` for team-scoped lists,
-`ix_event_starts_at` for the reminder job's date-window scans. Not
-versioned (as are the four tables below): workflow data whose lifecycle is
-self-recorded in `status`/`created_at`/`cancelled_at`.
+`ix_event_starts_at` for the reminder job's date-window scans,
+partial `ix_event_series (series_id) WHERE series_id IS NOT NULL` for the
+series sign-up sweep. Not versioned (as are the tables below): workflow
+data whose lifecycle is self-recorded in
+`status`/`created_at`/`cancelled_at`.
 
 ## `event_slot` (not versioned)
 
@@ -395,6 +400,32 @@ status = 'open'`: at most one open request per assignment, so repeat clicks
 cannot re-mail the team. Claims race through a guarded
 `UPDATE … WHERE status = 'open'`; the loser sees a friendly error.
 
+## `event_task_force` (not versioned)
+
+Marks an event whose owning team was swapped for an auto-created task-force
+team so several teams can staff it (`services/task_force.py`). The meta
+team and its memberships are ordinary versioned `team`/`membership` rows —
+that is what keeps a torn-down task force visible in as-of history.
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_id` | integer | PK; FK → `event.id` ON DELETE CASCADE |
+| `team_id` | integer | unique; FK → `team.id` ON DELETE CASCADE — the meta team |
+| `owner_team_id` | integer | FK → `team.id` ON DELETE CASCADE — restored at teardown *before* the meta team dies (`event.team_id` cascades) |
+| `created_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `created_at` | timestamptz | |
+
+## `event_task_force_source` (not versioned)
+
+One team whose roster was copied into a task force (the owner is always a
+source too). Unique `uq_task_force_source (event_id, team_id)`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `event_id` | integer | FK → `event_task_force.event_id` ON DELETE CASCADE |
+| `team_id` | integer | FK → `team.id` ON DELETE CASCADE |
+
 ## History twins and triggers
 
 `volunteer_history`, `team_history`, `membership_history` each hold the live
@@ -431,3 +462,9 @@ why adding a live column requires rebuilding the twin; see
 | `0014` | `app_user.confidentiality_agreed_at` — recorded when the invite's confidentiality notice is accepted |
 | `0015` | `team.application_form_url` (rebuilds `team_history`); `interest` (not versioned); `proposal_voter.added_notified_at`/`voting_notified_at` for the nightly digest |
 | `0016` | Scheduling subsystem: `event`, `event_slot`, `event_assignment`, `event_rsvp`, `event_sub_request` (all not versioned — no twin rebuilds) |
+| `0017` | `job_run` (not versioned) — the in-app scheduler's persisted completion record |
+| `0018` | Widens the `custom_field_def.field_type` CHECK to the core PostgreSQL scalar types |
+| `0019` | `event.google_event_id` / `event.google_fingerprint` — Google Calendar sync bookkeeping |
+| `0020` | `event.series_id` + partial index — weekly repeats share an identity so sign-ups can copy forward |
+| `0021` | `event_assignment` reminder stages: `notify_7d`/`notify_24h` prefs + `reminded_7d_at`/`reminded_24h_at` stamps replace `reminder_sent_at` (old stamps migrate into the 7-day column) |
+| `0022` | `event_task_force` + `event_task_force_source` (not versioned) — provenance behind automated multi-team events |

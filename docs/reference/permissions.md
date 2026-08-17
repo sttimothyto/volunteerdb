@@ -62,7 +62,11 @@ Additional rules:
   or remove anyone's slot. Hand-offs land in the audit log with who acted
   and when. Creating an event also runs the advisory cross-team
   double-booking check described in
-  [Events and scheduling](../explanation/events.md).
+  [Events and scheduling](../explanation/events.md). When an event gains a
+  **collaborating team**, the auto-created task-force team carries copied
+  roles: the collaborating team's leaders/seconds become leaders of the
+  task force and so co-manage the event, while the owning team's leaders
+  keep control through the team hierarchy.
 - Volunteers may always view and edit their **own** contact info, whatever
   their roles.
 - Workload is deliberately hidden from core members *and from the volunteer

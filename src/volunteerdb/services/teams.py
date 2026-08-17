@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
-from ..models import Membership, Team, TeamRole, Volunteer
+from ..models import EventTaskForce, Membership, Team, TeamRole, Volunteer
 
 
 class CycleError(ValueError):
@@ -198,6 +198,17 @@ async def delete(session: AsyncSession, team_id: int) -> None:
     team = await get(session, team_id)
     if team is None:
         raise LookupError(f"team {team_id} not found")
+    # a live task force is deleted by its event's teardown, never directly:
+    # the event still points at this team, and event.team_id CASCADEs — a
+    # direct delete would take the event and its attendance record with it
+    live = await session.scalar(
+        sa.select(EventTaskForce.event_id).where(EventTaskForce.team_id == team_id)
+    )
+    if live is not None:
+        raise ValueError(
+            f"this team is the task force of event {live} — it is removed "
+            "automatically after the event ends (manage it from the event page)"
+        )
     await session.delete(team)
     await session.flush()
 

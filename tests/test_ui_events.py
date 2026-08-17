@@ -299,6 +299,39 @@ async def test_share_button_and_date_pickers(database):
         assert len(user.find(kind=ui.date).elements) == 2
 
 
+async def test_collaboration_card_lets_another_team_staff_the_event(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+    event_id = await _seed_event(ids["liturgy"])
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        # Oda (Choir) cannot even view the Liturgy event yet
+        await user.open(f"/login-dev/{ids['oda_u']}")
+        await user.open(f"/events/{event_id}")
+        await user.should_see("visible to the members of its team")
+
+        # Lena adds the Choir as a collaborating team
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/events/{event_id}")
+        await user.should_see("Collaboration")
+        pick = user.find(
+            kind=ui.select, content="Add collaborating team"
+        ).elements.pop()
+        pick.value = ids["choir"]
+        user.find(marker="add-collaborator").click()
+        await user.should_see(marker="confirm-collaborator", retries=30)
+        await user.should_see("co-manage the event")
+        user.find(marker="confirm-collaborator").click()
+        await user.should_see("their roster can sign up now", retries=30)
+
+        # Oda now sees the event and can take a slot
+        await user.open(f"/login-dev/{ids['oda_u']}")
+        await user.open(f"/events/{event_id}")
+        user.find("Sign up", kind=ui.button).click()
+        user.find(marker="signup-confirm").click()
+        await user.should_see("Oda Chorister", retries=30)
+
+
 async def test_signup_notification_prefs_persist(database):
     async with db_session() as session:
         ids = await _parish(session)
