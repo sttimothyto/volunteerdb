@@ -147,6 +147,18 @@ a.vdb-quiet:hover {
   border-bottom: 5px double var(--vdb-accent);
 }
 
+/* brand | nav divider: the same double rule the header wears along its bottom.
+   --vdb-rule (what .q-separator uses) is a parchment tone and all but vanishes
+   on the header, so this takes the accent instead. */
+.vdb-nav-rule {
+  flex: none;
+  width: 0;
+  height: 1.6rem;
+  margin: 0 0.85rem;
+  border-left: 5px double var(--vdb-accent);
+  opacity: 0.75;
+}
+
 /* restrained Greek-key meander under page titles; mask keeps it recolorable */
 .vdb-page-title::after {
   content: "";

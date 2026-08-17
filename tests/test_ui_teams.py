@@ -19,6 +19,7 @@ from volunteerdb.services import memberships, teams, users, volunteers
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 COUNT_FIELDS = ("leader", "second", "core", "member", "total")
+SEARCH_BOX = "Search teams…"
 
 
 async def _parish(session) -> dict[str, int]:
@@ -114,6 +115,67 @@ async def test_teams_table_nests_and_blanks_counts_by_permission(database):
         for row in table.rows:
             for field in (*COUNT_FIELDS, "gaps"):
                 assert row[field] == "", f"{field} leaked to a plain member"
+
+
+async def test_search_narrows_the_table_without_orphaning_children(database):
+    """The box filters the rows already in the browser. It matches the display
+    path, so a parent's name brings its subtree along, and it keeps every
+    match's ancestors, so a child never renders indented under nothing."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open("/teams")
+        await user.should_see(SEARCH_BOX)
+        await user.should_see("4 teams")
+
+        # a child's own name keeps the parent it hangs off
+        user.find(kind=ui.input, content=SEARCH_BOX).type("Music")
+        assert [r["name"] for r in _table(user).rows] == ["Liturgy", "Music"]
+        await user.should_see("2 of 4 teams")
+
+        # the parent's name matches every path beneath it
+        user.find(kind=ui.input, content=SEARCH_BOX).clear()
+        user.find(kind=ui.input, content=SEARCH_BOX).type("litur")
+        assert [r["name"] for r in _table(user).rows] == ["Liturgy", "Music"]
+
+        user.find(kind=ui.input, content=SEARCH_BOX).clear()
+        user.find(kind=ui.input, content=SEARCH_BOX).type("zzz")
+        assert _table(user).rows == []
+        await user.should_see("0 of 4 teams")
+
+        # clearing restores the whole parish, in hierarchy order
+        user.find(kind=ui.input, content=SEARCH_BOX).clear()
+        assert [r["name"] for r in _table(user).rows] == [
+            "Hospitality",
+            "Liturgy",
+            "Music",
+            "Retired Guild",
+        ]
+        await user.should_see("4 teams")
+
+
+async def test_every_column_sorts(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open("/teams")
+        columns = _table(user).columns
+        assert [c["name"] for c in columns] == [
+            "team",
+            "leader",
+            "second",
+            "core",
+            "member",
+            "total",
+            "gaps",
+        ]
+        assert all(c.get("sortable") for c in columns), (
+            f"not sortable: {[c['name'] for c in columns if not c.get('sortable')]}"
+        )
 
 
 async def test_home_page_controls_gated_by_full_roster_rights(database):

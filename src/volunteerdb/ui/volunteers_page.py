@@ -92,16 +92,32 @@ async def volunteers_page(q: str = "", band: str = ""):
                 "align": "left",
                 "sortable": True,
             },
-            {"name": "email", "label": "Email", "field": "email", "align": "left"},
-            {"name": "phone", "label": "Phone", "field": "phone", "align": "left"},
+            {
+                "name": "email",
+                "label": "Email",
+                "field": "email",
+                "align": "left",
+                "sortable": True,
+            },
+            {
+                "name": "phone",
+                "label": "Phone",
+                "field": "phone",
+                "align": "left",
+                "sortable": True,
+            },
         ]
         if shows_workload:
             columns.append(
                 {
                     "name": "workload",
                     "label": "Workload",
-                    "field": "workload",
+                    # sorts on the score, not the band label: alphabetical bands
+                    # would read Heavy < Light < Medium. The cell is drawn by the
+                    # body-cell-workload slot below, so the field only sorts.
+                    "field": "workload_sort",
                     "align": "left",
+                    "sortable": True,
                 }
             )
         for d in list_defs:
@@ -111,9 +127,12 @@ async def volunteers_page(q: str = "", band: str = ""):
                     "label": d.label,
                     "field": f"cf_{d.key}",
                     "align": "left",
+                    "sortable": True,
                 }
             )
-        columns.append({"name": "status", "label": "", "field": "status"})
+        columns.append(
+            {"name": "status", "label": "Status", "field": "status", "sortable": True}
+        )
 
         rows = []
         for v in found:
@@ -132,6 +151,9 @@ async def volunteers_page(q: str = "", band: str = ""):
                 row["workload_score"] = (
                     f"{float(score_band[0]):g}" if score_band else ""
                 )
+                # scores are sums of non-negative weights, so -1 parks the
+                # unscored rows below every real score when the column sorts
+                row["workload_sort"] = float(score_band[0]) if score_band else -1.0
             for d in list_defs:
                 value = (v.custom or {}).get(d.key)
                 row[f"cf_{d.key}"] = (

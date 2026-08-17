@@ -35,8 +35,11 @@ def frame(
             ("Workload", "/admin/workload"),
         ]
     with ui.header().classes("items-center text-white px-4 vdb-header"):
-        ui.link("VDB", "/").classes("text-lg vdb-brand vdb-quiet")
-        ui.space()
+        ui.link("Dash", "/").classes("text-lg vdb-brand vdb-quiet")
+        # the nav cluster sits against the brand, split from it by a double rule
+        # echoing the header's own bottom border; only the spacer below the nav
+        # is left, so the account controls still hold the right edge
+        ui.element("div").classes("vdb-nav-rule")
         # Full button row on wide screens, a single menu button below 1024px.
         # Use Quasar's gt-sm/lt-md helpers, never Tailwind's `hidden md:flex`:
         # Quasar ships `.hidden{display:none!important}`, which beats Tailwind's

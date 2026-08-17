@@ -84,6 +84,54 @@ def _hierarchy_rows(all_teams, coverage, actor) -> list[dict]:
     return rows
 
 
+def _matching_rows(rows: list[dict], text: str) -> list[dict]:
+    """The rows whose display path contains `text`, plus each match's ancestors.
+
+    Matching the path rather than the bare name lets a parent's name pull in its
+    whole subtree; putting the ancestors back keeps the rows that the `depth`
+    indent and the └ prefix hang off, so a hit on a child never renders as an
+    orphan sitting at an indent under nothing.
+    """
+    keep: set[int] = set()
+    for i, row in enumerate(rows):
+        if text not in row["path"].lower():
+            continue
+        keep.add(i)
+        # rows are depth-first, so a row's ancestors are the nearest preceding
+        # rows whose depth keeps stepping down
+        depth = row["depth"]
+        for j in range(i - 1, -1, -1):
+            if depth == 0:
+                break
+            if rows[j]["depth"] < depth:
+                keep.add(j)
+                depth = rows[j]["depth"]
+    return [row for i, row in enumerate(rows) if i in keep]
+
+
+def _team_count(shown: int, total: int | None = None) -> str:
+    if total is None or shown == total:
+        return f"{shown} team{'s' if shown != 1 else ''}"
+    return f"{shown} of {total} teams"
+
+
+def _wire_search(
+    search: ui.input, count: ui.label, table: ui.table, rows: list[dict]
+) -> None:
+    """Narrow the table as you type. The listing has no pagination, so the whole
+    parish is already in `rows` and the filter costs neither a query nor a
+    reload — it only swaps what the table is showing."""
+
+    def apply() -> None:
+        text = (search.value or "").strip().lower()
+        shown = rows if not text else _matching_rows(rows, text)
+        table.rows = shown
+        table.update()
+        count.set_text(_team_count(len(shown), len(rows)))
+
+    search.on_value_change(apply)
+
+
 @ui.page("/teams")
 async def teams_page(as_of: str = ""):
     at = parse_as_of(as_of)
@@ -104,8 +152,16 @@ async def teams_page(as_of: str = ""):
         # a raw query param and must never reach Vue's template compiler
         row["href"] = f"/teams/{row['id']}{suffix}"
     with frame("Teams", actor, as_of=at, asof_path="/teams"):
-        if actor.is_admin and at is None:
-            with ui.row().classes("gap-2"):
+        with ui.row().classes("items-center gap-2 w-full"):
+            search = (
+                ui.input("Search teams…")
+                .props("outlined dense clearable debounce=200")
+                .classes("w-72")
+                if rows
+                else None
+            )
+            ui.space()
+            if actor.is_admin and at is None:
                 ui.button(
                     "New team", icon="add", on_click=lambda: _team_dialog(all_teams)
                 ).props("dense")
@@ -121,22 +177,32 @@ async def teams_page(as_of: str = ""):
             }
         ]
         if show_coverage:
+            # every count sorts; a blanked cell is "", which Quasar string-compares
+            # and so files ahead of every number, keeping the order well-defined
             columns += [
                 {
                     "name": "leader",
                     "label": ROLE_LABELS[TeamRole.leader],
                     "field": "leader",
+                    "sortable": True,
                 },
                 {
                     "name": "second",
                     "label": ROLE_LABELS[TeamRole.second],
                     "field": "second",
+                    "sortable": True,
                 },
-                {"name": "core", "label": ROLE_LABELS[TeamRole.core], "field": "core"},
+                {
+                    "name": "core",
+                    "label": ROLE_LABELS[TeamRole.core],
+                    "field": "core",
+                    "sortable": True,
+                },
                 {
                     "name": "member",
                     "label": ROLE_LABELS[TeamRole.member],
                     "field": "member",
+                    "sortable": True,
                 },
                 {"name": "total", "label": "Total", "field": "total", "sortable": True},
                 # A hierarchy cannot also honour coverage()'s holes-first row
@@ -184,6 +250,9 @@ async def teams_page(as_of: str = ""):
         )
         if not all_teams:
             ui.label("No teams yet.").classes("text-gray-500")
+        count = ui.label(_team_count(len(rows))).classes("text-sm text-gray-500")
+        if search is not None:
+            _wire_search(search, count, table, rows)
 
 
 def _team_dialog(all_teams, team=None) -> None:

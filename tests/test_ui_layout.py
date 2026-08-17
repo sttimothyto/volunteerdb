@@ -23,6 +23,7 @@ async def test_settings_menu_carries_reading_preferences(database):
 
         # the two standalone header buttons are gone; their contents moved here
         await user.open("/volunteers")
+        await user.should_see("Dash")  # the brand, next to the nav links
         await user.should_see("Dark mode")
         await user.should_see("Manual")
         await user.should_not_see(PICKER)  # the volunteer list cannot time-travel

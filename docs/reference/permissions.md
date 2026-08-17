@@ -78,7 +78,7 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/login` | Password or email-OTP sign-in | public |
 | `/invite/{token}` | Redeem invite, optionally set password | public (valid, unexpired token) |
 | `/account` | Own sign-in settings: set, change or remove the password (header gear → *Password & sign-in*) | signed in |
-| `/teams` | Team coverage table + tree browser, as-of picker | signed in (coverage table: admin/leaders; "New team": admin) |
+| `/teams` | Team hierarchy + coverage counts in one sortable table, search box, as-of picker | signed in (coverage columns: admin/leaders; "New team": admin) |
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export | signed in; roster per matrix |
 | `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
