@@ -57,6 +57,35 @@ SYNC_WORKDIR = "/var/lib/volunteerdb-drive-sync"
 DRIVE_SYNC_SCRIPT = "/usr/local/bin/volunteerdb-drive-sync"
 DECORATE_SCRIPT = "/usr/local/bin/volunteerdb-decorate-sheets"
 
+# What files.sync ships to APP_DIR, which is also the podman build context.
+# Kept separate from .containerignore on purpose: the glob semantics differ
+# (exclude is fnmatch over FULL REMOTE paths, hence the */ prefixes, and
+# exclude_dir affects traversal but not deletion), and the two lists are not
+# mirror images — Containerfile and .containerignore are excluded from the
+# image but must still be synced, since they are what the build reads.
+SYNC_EXCLUDE = (
+    "*.pyc",
+    "*/.env",
+    "*/.env.example",
+    "*/.gitignore",
+    "*/compose.yaml",
+)
+SYNC_EXCLUDE_DIR = (
+    ".git",
+    ".github",  # CI workflows: not part of the app or the build context
+    ".venv",
+    ".nicegui",
+    ".claude",
+    ".pytest_cache",
+    ".ruff_cache",
+    "tests",
+    "scripts",
+    "deploy",
+    "docs/_build",  # the image's docs stage builds fresh HTML itself
+    "__pycache__",
+    "*/__pycache__",
+)
+
 QUADLETS = (
     "volunteerdb.network",
     "volunteerdb-db.container",

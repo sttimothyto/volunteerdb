@@ -148,20 +148,28 @@ def test_postgres_image_matches_compose():
 
 
 TEMPLATES = sorted((DEPLOY / "templates").glob("*.j2"))
-# Rendered by the two loops in deploy.py, which pass **UNIT_VARS rather than
-# naming each template literally.
+# Rendered by loops that pass **unit_vars rather than naming each template.
 LOOPED = {f"{n}.j2" for n in siteconf.QUADLETS + siteconf.TIMER_UNITS}
+# deploy.py holds the running order; the operations live in steps/.
+DEPLOY_SOURCES = [DEPLOY / "deploy.py", *sorted((DEPLOY / "steps").glob("*.py"))]
 
 
-def _deploy_tree():
+def _deploy_trees():
     import ast
 
-    return ast.parse((DEPLOY / "deploy.py").read_text())
+    return [ast.parse(p.read_text()) for p in DEPLOY_SOURCES]
 
 
-def _dict_keys(tree, node) -> set[str]:
+def _dict_keys(trees, node) -> set[str]:
     """Keys of a **kwargs expansion: a literal dict, a dict(...) call, or a
-    module-level name bound to either."""
+    name bound to either.
+
+    The name is resolved across every deploy module, and case-insensitively,
+    because UNIT_VARS is built in deploy.py and arrives in the steps as a
+    parameter called unit_vars. Matching loosely is safe here: the risk this
+    test exists to catch is a variable that is *not* supplied, and a name that
+    resolves to the wrong dict would make the test stricter, not weaker.
+    """
     import ast
 
     if isinstance(node, ast.Dict):
@@ -169,41 +177,45 @@ def _dict_keys(tree, node) -> set[str]:
     if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "dict":
         return {kw.arg for kw in node.keywords if kw.arg}
     if isinstance(node, ast.Name):
-        for stmt in tree.body:
-            if isinstance(stmt, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id == node.id for t in stmt.targets
-            ):
-                return _dict_keys(tree, stmt.value)
+        for tree in trees:
+            for stmt in tree.body:
+                if isinstance(stmt, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id.lower() == node.id.lower()
+                    for t in stmt.targets
+                ):
+                    return _dict_keys(trees, stmt.value)
     return set()
 
 
-def _template_calls(tree):
-    """Every files.template(...) call, as (unparsed source, supplied keys)."""
+def _template_calls():
+    """Every files.template(...) call across the deploy, as
+    (unparsed source, supplied keys)."""
     import ast
 
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "template"
-        ):
-            supplied: set[str] = set()
-            for keyword in node.keywords:
-                if keyword.arg is None:  # **UNIT_VARS
-                    supplied |= _dict_keys(tree, keyword.value)
-                else:
-                    supplied.add(keyword.arg)
-            yield ast.unparse(node), supplied
+    trees = _deploy_trees()
+    for tree in trees:
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "template"
+            ):
+                supplied: set[str] = set()
+                for keyword in node.keywords:
+                    if keyword.arg is None:  # **unit_vars
+                        supplied |= _dict_keys(trees, keyword.value)
+                    else:
+                        supplied.add(keyword.arg)
+                yield ast.unparse(node), supplied
 
 
-def test_every_template_is_rendered_by_deploy_py():
+def test_every_template_is_rendered_somewhere():
     """A template nobody renders is dead weight that still looks maintained.
 
-    The quadlets and timer units are named by siteconf, not by deploy.py, so
-    the check is against those lists plus the four templates deploy.py names
-    outright.
+    The quadlets and timer units are named by siteconf rather than written
+    out, so the check for those is that the lists and the files agree (below).
     """
-    named = {src for src, _ in _template_calls(_deploy_tree())}
+    named = {src for src, _ in _template_calls()}
     for path in TEMPLATES:
         if path.name in LOOPED:
             continue
@@ -235,12 +247,11 @@ def test_template_variables_are_all_supplied(path):
         jinja2.Environment().parse(path.read_text())
     )
 
-    tree = _deploy_tree()
-    calls = list(_template_calls(tree))
+    calls = list(_template_calls())
     if path.name in LOOPED:
-        # Both loops pass the same dict; either call site answers for it.
+        # Every loop passes the same dict; any of those call sites answers.
         supplied = set().union(
-            *(keys for src, keys in calls if "UNIT_VARS" in src), set()
+            *(keys for src, keys in calls if "unit_vars" in src), set()
         )
     else:
         supplied = set().union(
@@ -248,6 +259,6 @@ def test_template_variables_are_all_supplied(path):
         )
 
     assert not (needed - supplied), (
-        f"{path.name} uses {sorted(needed - supplied)}, which deploy.py does "
+        f"{path.name} uses {sorted(needed - supplied)}, which the deploy does "
         "not pass — they would render as empty strings"
     )
