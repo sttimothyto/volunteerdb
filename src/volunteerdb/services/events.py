@@ -5,7 +5,7 @@ domain gate for RSVPs, sign-ups, assignments and substitution claims (a
 parish-wide occasion gets its own task-force team first). Like every
 service, *permission* checks (who may manage, who may view) live in the
 callers via require() — but team membership is enforced here as a domain
-invariant, the way planning checks a candidate belongs to its proposal.
+invariant, the way elections checks a candidate belongs to its proposal.
 
 Attendance is derived, not entered: an assignment on a past, non-cancelled
 event counts as attended for the scheduled duration unless a manager

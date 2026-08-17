@@ -45,11 +45,11 @@ member
 hole
   A leadership gap: a team missing a leader or a second. A volunteer's
   {term}`impact report` is expressed in holes; the open holes parish-wide
-  are listed as {term}`vacancy`s on the Planning page.
+  are listed as {term}`vacancy`s on the Elections page.
 
 vacancy
   A currently unfilled {term}`leader` or {term}`second` slot, listed on the
-  Planning page (`/planning`), where managers open {term}`proposal`s.
+  Elections page (`/elections`), where managers open {term}`proposal`s.
 
 proposal
   One run at filling a (team, role) seat: one or more {term}`candidate`s, a

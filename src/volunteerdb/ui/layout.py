@@ -29,8 +29,8 @@ def frame(
         ("Volunteers", "/volunteers"),
         ("Events", "/events"),
     ]
-    if actor.can_access_planning:
-        nav_items.append(("Planning", "/planning"))
+    if actor.can_access_elections:
+        nav_items.append(("Elections", "/elections"))
     if actor.can_import_export:
         nav_items.append(("Import/Export", "/import"))
     if actor.is_admin:

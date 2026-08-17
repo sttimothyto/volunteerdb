@@ -8,7 +8,7 @@ carry the nomination and voting deadlines. The per-voter stamps
 (proposal_voter.added_notified_at / voting_notified_at) make each notice
 one-shot and per-person idempotent: a failed send leaves its stamps NULL and
 retries the next night; a crash mid-run re-sends at most the unstamped
-people. Phases derive from dates in the parish's day (planning.phase_of),
+people. Phases derive from dates in the parish's day (elections.phase_of),
 never the container's UTC clock.
 
 Usage: python -m volunteerdb.jobs.proposal_digest [--today YYYY-MM-DD]
@@ -25,7 +25,7 @@ import sqlalchemy as sa
 from ..db import db_session
 from ..log import init_logging
 from ..models import ROLE_LABELS, Proposal, ProposalStatus, ProposalVoter, Volunteer
-from ..services import mail, planning
+from ..services import elections, mail
 from ..services import teams as team_service
 from . import job_lock
 
@@ -33,7 +33,7 @@ from . import job_lock
 async def main(today: date | None = None) -> int:
     init_logging()
     if today is None:
-        today = planning.local_today()
+        today = elections.local_today()
 
     async with db_session() as session:
         rows = (
@@ -57,13 +57,13 @@ async def main(today: date | None = None) -> int:
     # volunteer id -> (email, digest items, voter ids to stamp per notice)
     per_person: dict[int, tuple[str, list[mail.DigestItem], list[int], list[int]]] = {}
     for voter, proposal, volunteer in rows:
-        phase = planning.phase_of(proposal, today)
+        phase = elections.phase_of(proposal, today)
         pending_added = voter.added_notified_at is None and phase in (
-            planning.ProposalPhase.nominating,
-            planning.ProposalPhase.voting,
+            elections.ProposalPhase.nominating,
+            elections.ProposalPhase.voting,
         )
         pending_voting = (
-            voter.voting_notified_at is None and phase is planning.ProposalPhase.voting
+            voter.voting_notified_at is None and phase is elections.ProposalPhase.voting
         )
         if not pending_added and not pending_voting:
             continue  # concluded (awaiting decision), or already notified

@@ -1,7 +1,7 @@
-"""Planning: vacancies + the nomination and STAR-voting pipeline.
+"""Elections: vacancies + the nomination and STAR-voting pipeline.
 
-/planning lists vacancies (managers can open a proposal from one) and the
-proposals the actor may see; /planning/{id} is one proposal's workroom:
+/elections lists vacancies (managers can open a proposal from one) and the
+proposals the actor may see; /elections/{id} is one proposal's workroom:
 candidates with their current commitments (the overwork check), the voting
 roll with turnout, the ballot form during the voting phase, and the tally
 plus appoint/new-round actions once voting has concluded. Permission gates
@@ -15,7 +15,7 @@ from nicegui import ui
 
 from ..models import ROLE_LABELS, ProposalStatus, TeamRole
 from ..permissions import require, team_ids_map
-from ..services import planning as planning_service
+from ..services import elections as elections_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from ..star import StarResult
@@ -36,7 +36,7 @@ STAR_NOTE = (
     "Individual votes are secret. Final points will be visible."
 )
 
-Phase = planning_service.ProposalPhase
+Phase = elections_service.ProposalPhase
 
 
 def phase_badge(proposal, phase: Phase | None) -> None:
@@ -74,21 +74,21 @@ def _parse_deadlines(d1: ui.input, d2: ui.input) -> tuple[date, date] | None:
         return None
 
 
-@ui.page("/planning")
-async def planning_page():
+@ui.page("/elections")
+async def elections_page():
     async with page_session() as (session, actor):
-        if not actor.can_access_planning:
-            with frame("Planning", actor):
+        if not actor.can_access_elections:
+            with frame("Elections", actor):
                 ui.label(
-                    "Planning is available to admins, team leaders/seconds, "
+                    "Elections are available to admins, team leaders/seconds, "
                     "and the voting members of a proposal."
                 ).classes("text-gray-500")
             return
         can_create = actor.is_admin or bool(actor.managed_team_ids)
         vacancy_rows = (
-            await planning_service.vacancies(session, actor) if can_create else []
+            await elections_service.vacancies(session, actor) if can_create else []
         )
-        summaries = await planning_service.list_proposals(session, actor)
+        summaries = await elections_service.list_proposals(session, actor)
         volunteer_options = (
             await volunteer_service.name_map(session) if can_create else {}
         )
@@ -99,11 +99,11 @@ async def planning_page():
     ]
     proposal_team_ids = {s.proposal.team_id for s in open_rows}
 
-    def summary_row(s: planning_service.ProposalSummary) -> None:
+    def summary_row(s: elections_service.ProposalSummary) -> None:
         p = s.proposal
         with ui.row().classes("w-full items-center gap-2 p-2 rounded bg-gray-50"):
             ui.link(
-                f"{s.path}: {ROLE_LABELS[TeamRole(p.role)]}", f"/planning/{p.id}"
+                f"{s.path}: {ROLE_LABELS[TeamRole(p.role)]}", f"/elections/{p.id}"
             ).classes("font-medium")
             phase_badge(p, s.phase)
             ui.space()
@@ -126,7 +126,7 @@ async def planning_page():
                 .classes("w-full")
             )
             why = ui.input("Why them?").props("outlined dense").classes("w-full")
-            today = planning_service.local_today()
+            today = elections_service.local_today()
             d1, d2 = _deadline_inputs(
                 today + timedelta(days=14), today + timedelta(days=28)
             )
@@ -147,7 +147,7 @@ async def planning_page():
                     require(
                         actor.can_manage_team(team_id), "open proposals for this team"
                     )
-                    proposal = await planning_service.create_proposal(
+                    proposal = await elections_service.create_proposal(
                         session,
                         team_id=team_id,
                         role=TeamRole(role.value),
@@ -155,11 +155,11 @@ async def planning_page():
                         voting_deadline=deadlines[1],
                         created_by=actor.user.id,
                         candidates=[
-                            planning_service.CandidateInput(who.value, why.value)
+                            elections_service.CandidateInput(who.value, why.value)
                         ],
                     )
                 dialog.close()
-                ui.navigate.to(f"/planning/{proposal.id}")
+                ui.navigate.to(f"/elections/{proposal.id}")
 
             with ui.row().classes("justify-end w-full gap-2"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -168,7 +168,7 @@ async def planning_page():
                 ui.button("Create proposal", icon="how_to_vote", on_click=save)
         dialog.open()
 
-    with frame("Planning", actor):
+    with frame("Elections", actor):
         if can_create:
             ui.label("Vacancies").classes("text-lg font-medium")
             if not vacancy_rows:
@@ -212,17 +212,17 @@ async def planning_page():
                     summary_row(s)
 
 
-@ui.page("/planning/{proposal_id}")
+@ui.page("/elections/{proposal_id}")
 async def proposal_detail(proposal_id: int):
     async with page_session() as (session, actor):
         try:
-            view = await planning_service.detail(session, proposal_id)
+            view = await elections_service.detail(session, proposal_id)
         except LookupError:
             with frame("Proposal not found", actor):
                 ui.label(f"No proposal with id {proposal_id}.")
             return
         if not actor.can_view_proposal(proposal_id, view.proposal.team_id):
-            with frame("Planning", actor):
+            with frame("Elections", actor):
                 ui.label(
                     "This proposal is visible to its voting members and to the "
                     "team's managers."
@@ -233,7 +233,7 @@ async def proposal_detail(proposal_id: int):
             actor.volunteer_id is not None and proposal_id in actor.voter_proposal_ids
         )
         my = (
-            await planning_service.my_scores(session, proposal_id, actor.volunteer_id)
+            await elections_service.my_scores(session, proposal_id, actor.volunteer_id)
             if is_voter
             else {}
         )
@@ -254,7 +254,7 @@ async def proposal_detail(proposal_id: int):
     @notify_errors
     async def _managed_action(what: str, action) -> None:
         async with action_session() as (session, actor):
-            current = await planning_service.get(session, proposal_id)
+            current = await elections_service.get(session, proposal_id)
             if current is None:
                 raise LookupError("proposal vanished")
             require(actor.can_manage_team(current.team_id), what)
@@ -272,7 +272,7 @@ async def proposal_detail(proposal_id: int):
                 dialog.close()
                 await _managed_action(
                     "manage proposals for this team",
-                    lambda session, actor: planning_service.update_proposal(
+                    lambda session, actor: elections_service.update_proposal(
                         session,
                         proposal_id,
                         nomination_deadline=deadlines[0],
@@ -299,7 +299,7 @@ async def proposal_detail(proposal_id: int):
             return
         await _managed_action(
             "manage proposals for this team",
-            lambda session, actor: planning_service.cancel(
+            lambda session, actor: elections_service.cancel(
                 session, proposal_id, decided_by=actor.user.id
             ),
         )
@@ -318,7 +318,7 @@ async def proposal_detail(proposal_id: int):
             return
         await _managed_action(
             "appoint for this team",
-            lambda session, actor: planning_service.appoint(
+            lambda session, actor: elections_service.appoint(
                 session, proposal_id, candidate_id, decided_by=actor.user.id
             ),
         )
@@ -329,7 +329,7 @@ async def proposal_detail(proposal_id: int):
             ui.label(
                 "Candidates and the voting roll carry over; ballots do not."
             ).classes("text-sm text-gray-500")
-            today = planning_service.local_today()
+            today = elections_service.local_today()
             d1, d2 = _deadline_inputs(
                 today + timedelta(days=14), today + timedelta(days=28)
             )
@@ -339,14 +339,14 @@ async def proposal_detail(proposal_id: int):
                 if (deadlines := _parse_deadlines(d1, d2)) is None:
                     return
                 async with action_session() as (session, actor):
-                    current = await planning_service.get(session, proposal_id)
+                    current = await elections_service.get(session, proposal_id)
                     if current is None:
                         raise LookupError("proposal vanished")
                     require(
                         actor.can_manage_team(current.team_id),
                         "manage proposals for this team",
                     )
-                    fresh = await planning_service.new_round(
+                    fresh = await elections_service.new_round(
                         session,
                         proposal_id,
                         created_by=actor.user.id,
@@ -354,7 +354,7 @@ async def proposal_detail(proposal_id: int):
                         voting_deadline=deadlines[1],
                     )
                 dialog.close()
-                ui.navigate.to(f"/planning/{fresh.id}")
+                ui.navigate.to(f"/elections/{fresh.id}")
 
             with ui.row().classes("justify-end w-full gap-2"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -459,7 +459,7 @@ async def proposal_detail(proposal_id: int):
                         ui.notify("Pick a volunteer", color="warning")
                         return
                     async with action_session() as (session, actor):
-                        current = await planning_service.get(session, proposal_id)
+                        current = await elections_service.get(session, proposal_id)
                         if current is None:
                             raise LookupError("proposal vanished")
                         require(
@@ -467,7 +467,7 @@ async def proposal_detail(proposal_id: int):
                             or proposal_id in actor.voter_proposal_ids,
                             "nominate on this proposal",
                         )
-                        await planning_service.add_candidate(
+                        await elections_service.add_candidate(
                             session,
                             proposal_id,
                             volunteer_id=who.value,
@@ -519,14 +519,14 @@ async def proposal_detail(proposal_id: int):
                             ui.notify("Pick a volunteer", color="warning")
                             return
                         async with action_session() as (session, actor):
-                            current = await planning_service.get(session, proposal_id)
+                            current = await elections_service.get(session, proposal_id)
                             if current is None:
                                 raise LookupError("proposal vanished")
                             require(
                                 actor.can_manage_team(current.team_id),
                                 "manage proposals for this team",
                             )
-                            await planning_service.add_voter(
+                            await elections_service.add_voter(
                                 session,
                                 proposal_id,
                                 volunteer_id=extra.value,
@@ -560,7 +560,7 @@ async def proposal_detail(proposal_id: int):
                         and proposal_id in actor.voter_proposal_ids,
                         "vote on this proposal",
                     )
-                    await planning_service.cast_ballot(
+                    await elections_service.cast_ballot(
                         session,
                         proposal_id,
                         voter_volunteer_id=actor.volunteer_id,
@@ -621,19 +621,19 @@ def _result_section(tally: StarResult, names: dict[int, str]) -> None:
 
 async def _remove_candidate(proposal_id: int, candidate_id: int) -> None:
     async with action_session() as (session, actor):
-        proposal = await planning_service.get(session, proposal_id)
+        proposal = await elections_service.get(session, proposal_id)
         if proposal is None:
             raise LookupError("proposal vanished")
         require(actor.can_manage_team(proposal.team_id), "manage this proposal")
-        await planning_service.remove_candidate(session, proposal_id, candidate_id)
+        await elections_service.remove_candidate(session, proposal_id, candidate_id)
     ui.navigate.reload()
 
 
 async def _remove_voter(proposal_id: int, voter_id: int) -> None:
     async with action_session() as (session, actor):
-        proposal = await planning_service.get(session, proposal_id)
+        proposal = await elections_service.get(session, proposal_id)
         if proposal is None:
             raise LookupError("proposal vanished")
         require(actor.can_manage_team(proposal.team_id), "manage this proposal")
-        await planning_service.remove_voter(session, proposal_id, voter_id)
+        await elections_service.remove_voter(session, proposal_id, voter_id)
     ui.navigate.reload()

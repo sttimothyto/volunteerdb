@@ -308,7 +308,7 @@ class ProposalVoter(Base):
 
 class ProposalBallot(Base):
     """One voter's 0-5 score for one candidate. Ballots are secret: scores
-    leave the planning service only as aggregates, and the score column is
+    leave the elections service only as aggregates, and the score column is
     redacted from audit logs (audit.REDACTED_COLUMNS).
     """
 
@@ -383,7 +383,7 @@ class Event(Base):
     gets its own task-force team first, so rosters, permissions and mail
     audiences all reuse the team machinery.
 
-    "Past" derives from ends_at against the clock (the planning phase_of
+    "Past" derives from ends_at against the clock (the elections phase_of
     idiom), never stored; status records only the cancellation decision.
 
     Not system-versioned (like proposal): workflow data whose lifecycle is

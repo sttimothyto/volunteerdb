@@ -1,4 +1,4 @@
-"""Planning: the nomination + STAR-voting pipeline.
+"""Elections: the nomination + STAR-voting pipeline.
 
 Vacancies themselves need no endpoint: GET /api/reports/coverage already
 returns missing_leader/missing_second with the same admin-or-leader scoping.
@@ -10,7 +10,7 @@ from fastapi import APIRouter
 
 from ..models import Proposal, TeamRole
 from ..permissions import require
-from ..services import planning as service
+from ..services import elections as service
 from ..services import volunteers as volunteer_service
 from ..star import StarResult
 from .deps import CtxDep
@@ -33,7 +33,7 @@ from .schemas import (
     role_label,
 )
 
-router = APIRouter(prefix="/planning", tags=["planning"])
+router = APIRouter(prefix="/elections", tags=["elections"])
 
 
 def proposal_out(proposal: Proposal) -> ProposalOut:
@@ -116,7 +116,7 @@ async def list_proposals(
 ) -> list[ProposalOut]:
     """Proposals the caller may see: admins all, leaders/seconds their
     subtree, voters the rolls they sit on."""
-    require(ctx.actor.can_access_planning, "use the planning page")
+    require(ctx.actor.can_access_elections, "use the elections page")
     views = await service.list_proposals(
         ctx.session, ctx.actor, team_id=team_id, status=status
     )

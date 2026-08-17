@@ -78,7 +78,7 @@ authenticated account.
 | `GET /api/volunteers/{id}/assignments` | signed in | Team/role list, `as_of=` |
 | `GET /api/volunteers/{id}/timeline` | full profile view | All-time service spells |
 | `GET /api/volunteers/{id}/impact` | full profile view | "If they leave" hole report, `as_of=` |
-| `GET /api/volunteers/{id}/proposals` | admin, leader/second, or voting member | Proposals involving them, with `as_candidate`/`as_voter`/`appointed` flags; scoped like `GET /api/planning/proposals` |
+| `GET /api/volunteers/{id}/proposals` | admin, leader/second, or voting member | Proposals involving them, with `as_candidate`/`as_voter`/`appointed` flags; scoped like `GET /api/elections/proposals` |
 
 The volunteer list and detail responses carry `has_photo` (null on embedded
 volunteer objects elsewhere). Browsers load images from the cookie-
@@ -151,7 +151,7 @@ Column layout: see the [spreadsheet format](spreadsheets.md).
 | `PUT /api/workload/config` | admin | Validated (see [workload model](../explanation/workload.md)) |
 | `GET /api/workload/scores` | signed in | Only volunteers whose workload the caller may see; `as_of=` |
 
-### Planning — `api/planning.py`
+### Elections — `api/elections.py`
 
 Vacancies need no endpoint of their own: `GET /api/reports/coverage` already
 returns `missing_leader`/`missing_second` with the same scoping.
@@ -161,19 +161,19 @@ only per-voter turnout flags and, once voting concludes, aggregates.
 
 | Method & path | Permission | Notes |
 |---|---|---|
-| `GET /api/planning/proposals` | admin, leader/second, or voting member | Managed subtree ∪ own rolls; `team_id=`, `status=` filters |
-| `POST /api/planning/proposals` | manage the team | 201; ≥1 candidate; duplicate open (team, role) → 409; bad deadlines → 422 |
-| `GET /api/planning/proposals/{id}` | manage the team or on its roll | Candidates (with current commitments), roll with `has_account`/`has_voted`, tally once concluded |
-| `PATCH /api/planning/proposals/{id}` | manage the team | Deadlines/notes; reopening nominations under cast ballots → 422 |
-| `POST /api/planning/proposals/{id}/candidates` | manager or voting member | 201; nominating phase only; duplicate → 409 |
-| `DELETE /api/planning/proposals/{id}/candidates/{cid}` | manage the team | 204; nominating phase only |
-| `POST /api/planning/proposals/{id}/voters` | manage the team | 201; roll freezes when voting begins |
-| `DELETE /api/planning/proposals/{id}/voters/{vid}` | manage the team | 204; nominating phase only |
-| `PUT /api/planning/proposals/{id}/ballot` | on the roll | 204; whole ballot `{scores: {candidate_id: 0..5}}`, omitted = 0, revisable until the voting deadline |
-| `GET /api/planning/proposals/{id}/tally` | manage the team or on its roll | STAR result; 422 while voting is still possible |
-| `POST /api/planning/proposals/{id}/appoint` | manage the team | Flips status *and* creates/upgrades the membership; concluded phase only |
-| `POST /api/planning/proposals/{id}/cancel` | manage the team | Any open phase; already decided → 422 |
-| `POST /api/planning/proposals/{id}/new-round` | manage the team | 201; cancels the source, clones candidates + roll (never ballots) with fresh deadlines |
+| `GET /api/elections/proposals` | admin, leader/second, or voting member | Managed subtree ∪ own rolls; `team_id=`, `status=` filters |
+| `POST /api/elections/proposals` | manage the team | 201; ≥1 candidate; duplicate open (team, role) → 409; bad deadlines → 422 |
+| `GET /api/elections/proposals/{id}` | manage the team or on its roll | Candidates (with current commitments), roll with `has_account`/`has_voted`, tally once concluded |
+| `PATCH /api/elections/proposals/{id}` | manage the team | Deadlines/notes; reopening nominations under cast ballots → 422 |
+| `POST /api/elections/proposals/{id}/candidates` | manager or voting member | 201; nominating phase only; duplicate → 409 |
+| `DELETE /api/elections/proposals/{id}/candidates/{cid}` | manage the team | 204; nominating phase only |
+| `POST /api/elections/proposals/{id}/voters` | manage the team | 201; roll freezes when voting begins |
+| `DELETE /api/elections/proposals/{id}/voters/{vid}` | manage the team | 204; nominating phase only |
+| `PUT /api/elections/proposals/{id}/ballot` | on the roll | 204; whole ballot `{scores: {candidate_id: 0..5}}`, omitted = 0, revisable until the voting deadline |
+| `GET /api/elections/proposals/{id}/tally` | manage the team or on its roll | STAR result; 422 while voting is still possible |
+| `POST /api/elections/proposals/{id}/appoint` | manage the team | Flips status *and* creates/upgrades the membership; concluded phase only |
+| `POST /api/elections/proposals/{id}/cancel` | manage the team | Any open phase; already decided → 422 |
+| `POST /api/elections/proposals/{id}/new-round` | manage the team | 201; cancels the source, clones candidates + roll (never ballots) with fresh deadlines |
 
 ### Events — `api/events.py`
 

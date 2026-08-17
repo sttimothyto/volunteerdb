@@ -71,7 +71,7 @@ Every login below uses the password: demo
   dominic.ferraro@example.org      demo           clergy — sits on every voting roll
 ```
 
-The clergy login is the useful one for trying out planning: those three
+The clergy login is the useful one for trying out elections: those three
 volunteers sit on *every* proposal's voting roll, so Fr. Dominic can score a
 ballot on any seat in the parish.
 
@@ -97,9 +97,9 @@ clear the policy.
 
 You land on the **Dashboard**. Five things confirm the seed did its job:
 
-- Header → **Planning**: **Vacancies** lists *Hospitality* and a dozen other
+- Header → **Elections**: **Vacancies** lists *Hospitality* and a dozen other
   seats — the teams seeded without a leader or a second.
-- Header → **Planning** → **Proposals**: one proposal in every state, from
+- Header → **Elections** → **Proposals**: one proposal in every state, from
   *Nominating* through *Awaiting decision* to *Appointed*.
 - Header → **Events**: rosters on both sides of today — past Masses with
   attendance already derived, upcoming ones with RSVPs and two open calls

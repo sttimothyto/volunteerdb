@@ -1,4 +1,4 @@
-"""Seed a demo parish: teams, people, rosters, schedule, planning, public pages.
+"""Seed a demo parish: teams, people, rosters, schedule, elections, public pages.
 
 Run: uv run python scripts/seed.py
 Refuses to run if any volunteers already exist (`make fresh` wipes first).
@@ -36,7 +36,7 @@ Schedule
 - future events carry RSVPs, two open substitution calls, one claimed one and
   one cancelled event with its assignees still attached
 
-Planning
+Elections
 - one proposal in every state: nominating, voting (ballots half in),
   concluded and awaiting a decision, appointed (its membership created),
   cancelled, and a concluded round re-opened as a fresh one (new_round)
@@ -97,12 +97,12 @@ from volunteerdb.models import (
 )
 from volunteerdb.services import (
     custom_fields,
+    elections,
     events,
     interest,
     memberships,
     pages,
     photos,
-    planning,
     teams,
     users,
     volunteers,
@@ -126,7 +126,7 @@ RNG_SEED = 20260816
 COHORT_SIZE = 84  # generated volunteers, on top of the hand-written ones
 
 TZ = ZoneInfo(settings().timezone)
-TODAY = planning.local_today()
+TODAY = elections.local_today()
 
 L, S, C, M = TeamRole.leader, TeamRole.second, TeamRole.core, TeamRole.member
 
@@ -228,7 +228,7 @@ TEAMS: tuple[TeamSpec, ...] = (
     T("Prayer Chain", "0.5", "The phone-and-email chain of intercession."),
     T("Parish Picnic Task Force", "1", "Stands up each spring for the June picnic."),
     # appended last so the ids above stay put; must be named exactly "Clergy"
-    # (services/planning.CLERGY_TEAM_NAME) to be the parish's clergy team
+    # (services/elections.CLERGY_TEAM_NAME) to be the parish's clergy team
     T("Clergy", None, "The priests and deacon serving the parish."),
 )
 
@@ -1323,7 +1323,7 @@ async def _cast_ballots(
         scores = {
             cid: max(0, min(5, bias[cid] + rng.randint(-1, 1))) for cid in candidate_ids
         }
-        await planning.cast_ballot(
+        await elections.cast_ballot(
             session,
             proposal.id,
             voter_volunteer_id=volunteer_id,
@@ -1924,18 +1924,18 @@ async def seed_schedule(
     )
 
 
-async def seed_planning(
+async def seed_elections(
     session: AsyncSession, parish: Parish, rng: random.Random
 ) -> None:
-    """One proposal in every state the planning module can be in."""
+    """One proposal in every state the elections module can be in."""
     admin = parish.admin_id
-    candidate = planning.CandidateInput
+    candidate = elections.CandidateInput
 
     def person(name: str) -> int:
         return parish.volunteer_ids[name]
 
     # 1. nominating — the Hospitality vacancy the coverage report leads with
-    await planning.create_proposal(
+    await elections.create_proposal(
         session,
         team_id=parish.team_ids["Hospitality"],
         role=L,
@@ -1953,7 +1953,7 @@ async def seed_planning(
     )
 
     # 2. voting, ballots half in — the tally stays hidden until the deadline
-    voting = await planning.create_proposal(
+    voting = await elections.create_proposal(
         session,
         team_id=parish.team_ids["Prayer Chain"],
         role=L,
@@ -1977,7 +1977,7 @@ async def seed_planning(
     )
 
     # 3. concluded, awaiting a decision — tally visible, appoint button live
-    concluded = await planning.create_proposal(
+    concluded = await elections.create_proposal(
         session,
         team_id=parish.team_ids["Ushers"],
         role=S,
@@ -2000,7 +2000,7 @@ async def seed_planning(
     )
 
     # 4. appointed — and the membership the appointment created
-    decided = await planning.create_proposal(
+    decided = await elections.create_proposal(
         session,
         team_id=parish.team_ids["Bereavement Ministry"],
         role=L,
@@ -2022,8 +2022,8 @@ async def seed_planning(
         rng,
         today=TODAY - timedelta(days=45),
     )
-    result = await planning.tally(session, decided.id)
-    await planning.appoint(
+    result = await elections.tally(session, decided.id)
+    await elections.appoint(
         session,
         decided.id,
         result.winner_id or decided_candidates[0],
@@ -2031,7 +2031,7 @@ async def seed_planning(
     )
 
     # 5. cancelled — the seat was filled another way
-    cancelled = await planning.create_proposal(
+    cancelled = await elections.create_proposal(
         session,
         team_id=parish.team_ids["Website & Socials"],
         role=L,
@@ -2045,10 +2045,10 @@ async def seed_planning(
             candidate(person("Gregory Nakamura"), "Runs the socials already."),
         ],
     )
-    await planning.cancel(session, cancelled.id, decided_by=admin)
+    await elections.cancel(session, cancelled.id, decided_by=admin)
 
     # 6. concluded then re-opened: the Ignatian "debate together, then repeat"
-    first_round = await planning.create_proposal(
+    first_round = await elections.create_proposal(
         session,
         team_id=parish.team_ids["Children's Liturgy"],
         role=L,
@@ -2070,7 +2070,7 @@ async def seed_planning(
         rng,
         today=TODAY - timedelta(days=30),
     )
-    await planning.new_round(
+    await elections.new_round(
         session,
         first_round.id,
         created_by=admin,
@@ -2133,15 +2133,15 @@ async def seed() -> None:
         await seed_photos(session, parish, people)
         await seed_public_pages(session, parish)
         await seed_schedule(session, parish, rng)
-        await seed_planning(session, parish, rng)
+        await seed_elections(session, parish, rng)
         counts = await _summarize(session)
 
     print("\nSeeded a demo parish:")
     for label, count in counts:
         print(f"  {count:>5}  {label}")
     print("\nShapes worth opening first:")
-    print("  Planning → Vacancies: Hospitality, Prayer Chain, Children's Liturgy…")
-    print("  Planning → Proposals: one in every state (nominating → appointed)")
+    print("  Elections → Vacancies: Hospitality, Prayer Chain, Children's Liturgy…")
+    print("  Elections → Proposals: one in every state (nominating → appointed)")
     print("  Events: rosters either side of today, two open substitution calls")
     print("  Maria Alvarez: two leaderships, red workload, an ended spell")
     print("  /ministries/: six public pages, ten interest submissions")

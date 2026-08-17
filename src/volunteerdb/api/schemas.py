@@ -221,7 +221,7 @@ class CoverageOut(BaseModel):
     missing_second: bool
 
 
-# --- planning ---
+# --- elections ---
 
 
 class CandidateIn(BaseModel):

@@ -39,8 +39,8 @@ class Actor:
         return self.is_admin or team_id in self.managed_team_ids
 
     @property
-    def can_access_planning(self) -> bool:
-        """Planning page and nav: admins, managers, and anyone on a roll
+    def can_access_elections(self) -> bool:
+        """Elections page and nav: admins, managers, and anyone on a roll
         (voters keep access after a proposal is decided, to see the result)."""
         return (
             self.is_admin

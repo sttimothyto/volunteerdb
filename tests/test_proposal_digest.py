@@ -1,9 +1,9 @@
 """The nightly proposal digest: one email per voter per night, two notice
 kinds (added to a roll / voting began), per-voter idempotency stamps.
 
-Every planning call and the job itself take an explicit `today`, so a
+Every elections call and the job itself take an explicit `today`, so a
 proposal walks nominating -> voting -> concluded without touching the clock
-(the same convention as test_planning.py).
+(the same convention as test_elections.py).
 """
 
 from datetime import date
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from volunteerdb.db import db_session
 from volunteerdb.jobs import proposal_digest
 from volunteerdb.models import Proposal, ProposalVoter, TeamRole
-from volunteerdb.services import mail, memberships, planning, teams, users, volunteers
+from volunteerdb.services import elections, mail, memberships, teams, users, volunteers
 
 TODAY = date(2026, 8, 10)  # nominating
 D1 = date(2026, 8, 15)  # nomination deadline
@@ -47,14 +47,14 @@ async def _parish():
 
 async def _proposal(ids, role=TeamRole.second) -> int:
     async with db_session() as session:
-        proposal = await planning.create_proposal(
+        proposal = await elections.create_proposal(
             session,
             team_id=ids["liturgy"],
             role=role,
             nomination_deadline=D1,
             voting_deadline=D2,
             created_by=ids["admin_u"],
-            candidates=[planning.CandidateInput(volunteer_id=ids["vera"])],
+            candidates=[elections.CandidateInput(volunteer_id=ids["vera"])],
             today=TODAY,
         )
         return proposal.id
@@ -185,7 +185,7 @@ async def test_new_round_renotifies_its_fresh_roll(database, monkeypatch):
     sent.clear()
 
     async with db_session() as session:
-        fresh = await planning.new_round(
+        fresh = await elections.new_round(
             session,
             pid,
             created_by=ids["admin_u"],

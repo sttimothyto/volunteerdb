@@ -29,7 +29,7 @@ minutes.)
   in a dropdown as you type (from two letters on): pick a team to open its
   page, a volunteer to open their side panel, or press Enter for the full
   result list.
-- Header → **Planning**: **Vacancies** shows leadership gaps — but only in
+- Header → **Elections**: **Vacancies** shows leadership gaps — but only in
   the teams *you* lead. Maria's ministries are fully staffed, so her page
   is quiet; an administrator would see *Hospitality* flagged there (the
   demo team seeded without a leader) and could **start a proposal** for the
@@ -37,7 +37,7 @@ minutes.)
   current commitments in plain view) until a nomination deadline, a voting
   roll — the team's leadership and core plus the **Clergy** team, who vote
   on every seat in the parish — scores them
-  by [STAR voting](../explanation/planning.md) until a voting deadline, and
+  by [STAR voting](../explanation/elections.md) until a voting deadline, and
   only then does a manager appoint someone (creating the membership) or
   send the question around again.
 
@@ -99,7 +99,7 @@ you also…?" conversation should know.
 Sign out (header menu) and sign in as `felix.garcia@example.org` /
 `volunteer` — a plain member of Altar Servers and Youth Group. The same
 pages now show less: rosters list names but contact details are `•••`, no
-workload badges, no Planning page, no roster editing. Same data, same
+workload badges, no Elections page, no roster editing. Same data, same
 pages — access follows
 the fourfold role, as laid out in the
 [permission matrix](../reference/permissions.md#permission-matrix).

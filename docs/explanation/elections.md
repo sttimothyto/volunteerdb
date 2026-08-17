@@ -1,4 +1,4 @@
-# Planning by nomination and vote
+# Elections by nomination and vote
 
 ## The problem
 
@@ -12,7 +12,7 @@ familiar person is already carrying before adding more).
 Armies solved both long ago: assignments go through a manning process
 with central visibility of everyone's current taskings, and no commander
 double-tasks a soldier because the system shows the load before the order
-is cut. The planning pipeline borrows exactly that: a deliberate candidate
+is cut. The elections pipeline borrows exactly that: a deliberate candidate
 pool built by more eyes than one, and each candidate's **current
 commitments displayed at the moment of decision** (managers additionally
 see the leadership-only [workload](workload.md) signal for their own

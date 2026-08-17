@@ -1,4 +1,4 @@
-"""Planning pages: create from a vacancy, nominate as a voter, vote, appoint.
+"""Elections pages: create from a vacancy, nominate as a voter, vote, appoint.
 
 Phases derive from real dates here (the GUI cannot inject `today`), so each
 scenario seeds its proposal through the service with deadlines placed around
@@ -13,7 +13,7 @@ from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
-from volunteerdb.services import memberships, planning, teams, users, volunteers
+from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -51,22 +51,22 @@ async def _parish(session):
 async def _seed_proposal(ids, *, d1_offset: int, d2_offset: int, ballots=None):
     """A Liturgy/second proposal with Vera as candidate, deadlines placed
     relative to local_today(); optional ballots cast while backdated."""
-    today = planning.local_today()
+    today = elections.local_today()
     async with db_session() as session:
-        proposal = await planning.create_proposal(
+        proposal = await elections.create_proposal(
             session,
             team_id=ids["liturgy"],
             role=TeamRole.second,
             nomination_deadline=today + timedelta(days=d1_offset),
             voting_deadline=today + timedelta(days=d2_offset),
             created_by=ids["admin_u"],
-            candidates=[planning.CandidateInput(ids["vera"], "steady hands")],
+            candidates=[elections.CandidateInput(ids["vera"], "steady hands")],
             today=today + timedelta(days=min(d1_offset, 0)),
         )
         for voter_vol_id, score in (ballots or {}).items():
-            view = await planning.detail(session, proposal.id, today=today)
+            view = await elections.detail(session, proposal.id, today=today)
             cand_id = view.candidates[0].candidate.id
-            await planning.cast_ballot(
+            await elections.cast_ballot(
                 session,
                 proposal.id,
                 voter_volunteer_id=voter_vol_id,
@@ -84,7 +84,7 @@ async def test_leader_creates_proposal_from_vacancy(database):
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.should_see("dev-login ok")
 
-        await user.open("/planning")
+        await user.open("/elections")
         await user.should_see("Vacancies")
         await user.should_see("no second-in-command")
         user.find("Start proposal", kind=ui.button).click()
@@ -113,16 +113,16 @@ async def test_voter_access_and_nomination(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         # Mia is a plain member: no roll, no nav, polite refusal
         await user.open(f"/login-dev/{ids['mia_u']}")
-        await user.open("/planning")
-        await user.should_see("Planning is available to admins")
-        await user.open(f"/planning/{pid}")
+        await user.open("/elections")
+        await user.should_see("Elections are available to admins")
+        await user.open(f"/elections/{pid}")
         await user.should_see("visible to its voting members")
 
         # Cora sits on the roll as a core member: sees, opens, nominates
         await user.open(f"/login-dev/{ids['cora_u']}")
-        await user.open("/planning")
+        await user.open("/elections")
         await user.should_see("Liturgy: Second-in-command")
-        await user.open(f"/planning/{pid}")
+        await user.open(f"/elections/{pid}")
         await user.should_see("Ignatian election")
         who = user.find(kind=ui.select, content="New candidate").elements.pop()
         who.value = victor_id
@@ -138,7 +138,7 @@ async def test_voting_phase_ballot(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         # the admin manages but does not vote: no ballot form, no tally yet
         await user.open(f"/login-dev/{ids['admin_u']}")
-        await user.open(f"/planning/{pid}")
+        await user.open(f"/elections/{pid}")
         await user.should_see("Voting until")
         await user.should_see("Voting is in progress")
         await user.should_not_see("Your ballot")
@@ -146,7 +146,7 @@ async def test_voting_phase_ballot(database):
 
         # Cora votes; scores stay secret, turnout ticks up
         await user.open(f"/login-dev/{ids['cora_u']}")
-        await user.open(f"/planning/{pid}")
+        await user.open(f"/elections/{pid}")
         await user.should_see("Your ballot")
         await user.should_see("spoiler effect")
         toggle = user.find(kind=ui.toggle).elements.pop()
@@ -168,7 +168,7 @@ async def test_concluded_tally_and_appointment(database):
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['admin_u']}")
-        await user.open(f"/planning/{pid}")
+        await user.open(f"/elections/{pid}")
         await user.should_see("Awaiting decision")
         await user.should_see("Result")
         await user.should_see("STAR winner: Vera Volunteer")
@@ -195,8 +195,8 @@ async def test_profile_lists_proposals_involving_the_volunteer(database):
     # and as the newly appointed second she sits on the fresh round's roll
     pid_done = await _seed_proposal(ids, d1_offset=-10, d2_offset=-5)
     async with db_session() as session:
-        view = await planning.detail(session, pid_done)
-        await planning.appoint(
+        view = await elections.detail(session, pid_done)
+        await elections.appoint(
             session,
             pid_done,
             view.candidates[0].candidate.id,
@@ -221,7 +221,7 @@ async def test_profile_lists_proposals_involving_the_volunteer(database):
         await user.should_see("Voting member")
         await user.should_not_see("Candidate")
 
-        # a plain member has no planning access: no section at all
+        # a plain member has no elections access: no section at all
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.should_see("dev-login ok")
         await user.open(f"/volunteers/{ids['vera']}")

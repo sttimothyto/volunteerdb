@@ -3,10 +3,10 @@ from fastapi import APIRouter
 from . import (
     auth,
     custom_fields,
+    elections,
     events,
     io,
     memberships,
-    planning,
     reports,
     teams,
     users,
@@ -24,5 +24,5 @@ api_router.include_router(users.router)
 api_router.include_router(io.router)
 api_router.include_router(custom_fields.router)
 api_router.include_router(workload.router)
-api_router.include_router(planning.router)
+api_router.include_router(elections.router)
 api_router.include_router(events.router)

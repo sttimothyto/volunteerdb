@@ -1,4 +1,4 @@
-"""Planning service: the nomination + STAR-voting pipeline.
+"""Elections service: the nomination + STAR-voting pipeline.
 
 Every phase-dependent call takes an explicit `today`, so a proposal is
 walked through nominating -> voting -> concluded without touching the
@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from volunteerdb.db import db_session
 from volunteerdb.models import AppUser, ProposalStatus, TeamRole
 from volunteerdb.permissions import load_actor
-from volunteerdb.services import memberships, planning, teams, users, volunteers
+from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 TODAY = date(2026, 8, 10)  # nominating
 D1 = date(2026, 8, 15)  # nomination deadline
@@ -80,14 +80,14 @@ async def _parish(session) -> Parish:
 
 
 async def _open_proposal(session, p: Parish, *, team_id=None, candidates=None):
-    return await planning.create_proposal(
+    return await elections.create_proposal(
         session,
         team_id=team_id or p.liturgy_id,
         role=TeamRole.second,
         nomination_deadline=D1,
         voting_deadline=D2,
         created_by=p.admin_user_id,
-        candidates=candidates or [planning.CandidateInput(p.vera_id, "steady hands")],
+        candidates=candidates or [elections.CandidateInput(p.vera_id, "steady hands")],
         today=TODAY,
     )
 
@@ -103,12 +103,12 @@ async def test_default_roll_leadership_core_plus_clergy(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        view = await planning.detail(session, proposal.id, today=TODAY)
+        view = await elections.detail(session, proposal.id, today=TODAY)
         roll = {v.volunteer.id for v in view.voters}
         assert roll == {p.lena_id, p.cora_id, p.pete_id, p.dan_id}, (
             "leader + core of the target team plus all clergy; plain members excluded"
         )
-        assert view.phase == planning.ProposalPhase.nominating
+        assert view.phase == elections.ProposalPhase.nominating
         assert view.creator_email == "admin@example.org"
         by_vol = {v.volunteer.id: v for v in view.voters}
         assert by_vol[p.pete_id].has_account
@@ -123,7 +123,7 @@ async def test_default_roll_without_a_clergy_team(database):
         p = await _parish(session)
         await teams.delete(session, p.clergy_id)
         proposal = await _open_proposal(session, p)
-        view = await planning.detail(session, proposal.id, today=TODAY)
+        view = await elections.detail(session, proposal.id, today=TODAY)
         assert {v.volunteer.id for v in view.voters} == {p.lena_id, p.cora_id}
 
 
@@ -132,7 +132,7 @@ async def test_roll_dedupes_clergy_who_also_lead(database):
         p = await _parish(session)
         await memberships.assign(session, p.pete_id, p.liturgy_id, TeamRole.core)
         proposal = await _open_proposal(session, p)
-        view = await planning.detail(session, proposal.id, today=TODAY)
+        view = await elections.detail(session, proposal.id, today=TODAY)
         assert [v.volunteer.id for v in view.voters].count(p.pete_id) == 1
 
 
@@ -155,7 +155,7 @@ async def test_renaming_the_clergy_team_retires_the_standing(database):
             proposal.id: {
                 v.volunteer.id
                 for v in (
-                    await planning.detail(session, proposal.id, today=TODAY)
+                    await elections.detail(session, proposal.id, today=TODAY)
                 ).voters
             }
             for proposal in (before, after)
@@ -173,7 +173,7 @@ async def test_a_team_renamed_to_clergy_takes_up_the_standing(database):
         await teams.delete(session, p.clergy_id)
         await teams.update(session, p.liturgy_id, name="Clergy")
         proposal = await _open_proposal(session, p, team_id=p.garden_id)
-        view = await planning.detail(session, proposal.id, today=TODAY)
+        view = await elections.detail(session, proposal.id, today=TODAY)
         assert {v.volunteer.id for v in view.voters} == {
             p.lena_id,
             p.cora_id,
@@ -191,7 +191,7 @@ async def test_create_validations(database):
             today=TODAY,
         )
         with pytest.raises(ValueError, match="at least one candidate"):
-            await planning.create_proposal(
+            await elections.create_proposal(
                 session,
                 nomination_deadline=D1,
                 voting_deadline=D2,
@@ -199,30 +199,30 @@ async def test_create_validations(database):
                 **common,
             )
         with pytest.raises(ValueError, match="only once"):
-            await planning.create_proposal(
+            await elections.create_proposal(
                 session,
                 nomination_deadline=D1,
                 voting_deadline=D2,
                 candidates=[
-                    planning.CandidateInput(p.vera_id),
-                    planning.CandidateInput(p.vera_id),
+                    elections.CandidateInput(p.vera_id),
+                    elections.CandidateInput(p.vera_id),
                 ],
                 **common,
             )
         with pytest.raises(ValueError, match="in the past"):
-            await planning.create_proposal(
+            await elections.create_proposal(
                 session,
                 nomination_deadline=date(2026, 8, 1),
                 voting_deadline=D2,
-                candidates=[planning.CandidateInput(p.vera_id)],
+                candidates=[elections.CandidateInput(p.vera_id)],
                 **common,
             )
         with pytest.raises(ValueError, match="must fall after"):
-            await planning.create_proposal(
+            await elections.create_proposal(
                 session,
                 nomination_deadline=D1,
                 voting_deadline=D1,
-                candidates=[planning.CandidateInput(p.vera_id)],
+                candidates=[elections.CandidateInput(p.vera_id)],
                 **common,
             )
 
@@ -238,7 +238,7 @@ async def test_one_open_proposal_per_seat(database):
             await _open_proposal(session, p)  # Parish holds plain ints
 
     async with db_session() as session:
-        await planning.cancel(session, first_id, decided_by=p.admin_user_id)
+        await elections.cancel(session, first_id, decided_by=p.admin_user_id)
         again = await _open_proposal(session, p)
         assert again.id != first_id, "the partial unique index only guards OPEN seats"
 
@@ -250,7 +250,7 @@ async def test_nomination_window(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        c = await planning.add_candidate(
+        c = await elections.add_candidate(
             session,
             proposal.id,
             volunteer_id=p.victor_id,
@@ -260,7 +260,7 @@ async def test_nomination_window(database):
         )
         assert c.note == "knows the garden"
         with pytest.raises(ValueError, match="is voting, not nominating"):
-            await planning.add_candidate(
+            await elections.add_candidate(
                 session,
                 proposal.id,
                 volunteer_id=p.mia_id,
@@ -268,7 +268,7 @@ async def test_nomination_window(database):
                 today=VOTING_DAY,
             )
         with pytest.raises(IntegrityError):
-            await planning.add_candidate(
+            await elections.add_candidate(
                 session,
                 proposal.id,
                 volunteer_id=p.victor_id,
@@ -281,7 +281,7 @@ async def test_candidate_removal_only_while_nominating(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        extra = await planning.add_candidate(
+        extra = await elections.add_candidate(
             session,
             proposal.id,
             volunteer_id=p.victor_id,
@@ -289,11 +289,11 @@ async def test_candidate_removal_only_while_nominating(database):
             today=TODAY,
         )
         with pytest.raises(ValueError, match="cannot remove a candidate"):
-            await planning.remove_candidate(
+            await elections.remove_candidate(
                 session, proposal.id, extra.id, today=VOTING_DAY
             )
-        await planning.remove_candidate(session, proposal.id, extra.id, today=TODAY)
-        view = await planning.detail(session, proposal.id, today=TODAY)
+        await elections.remove_candidate(session, proposal.id, extra.id, today=TODAY)
+        view = await elections.detail(session, proposal.id, today=TODAY)
         assert [c.volunteer.id for c in view.candidates] == [p.vera_id]
 
 
@@ -301,16 +301,16 @@ async def test_roll_freezes_when_voting_begins(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        added = await planning.add_voter(
+        added = await elections.add_voter(
             session,
             proposal.id,
             volunteer_id=p.mia_id,
             added_by=p.admin_user_id,
             today=TODAY,
         )
-        await planning.remove_voter(session, proposal.id, added.id, today=TODAY)
+        await elections.remove_voter(session, proposal.id, added.id, today=TODAY)
         with pytest.raises(ValueError, match="cannot add a voter"):
-            await planning.add_voter(
+            await elections.add_voter(
                 session,
                 proposal.id,
                 volunteer_id=p.mia_id,
@@ -324,7 +324,7 @@ async def test_roll_freezes_when_voting_begins(database):
 
 async def _candidate_ids(session, proposal_id) -> dict[int, int]:
     """volunteer id -> candidate id"""
-    view = await planning.detail(session, proposal_id, today=AFTER)
+    view = await elections.detail(session, proposal_id, today=AFTER)
     return {c.volunteer.id: c.candidate.id for c in view.candidates}
 
 
@@ -336,7 +336,7 @@ async def test_cast_ballot_phase_and_validation(database):
         vera_c = cand[p.vera_id]
 
         with pytest.raises(ValueError, match="is nominating, not voting"):
-            await planning.cast_ballot(
+            await elections.cast_ballot(
                 session,
                 proposal.id,
                 voter_volunteer_id=p.lena_id,
@@ -344,7 +344,7 @@ async def test_cast_ballot_phase_and_validation(database):
                 today=TODAY,
             )
         with pytest.raises(ValueError, match="is concluded, not voting"):
-            await planning.cast_ballot(
+            await elections.cast_ballot(
                 session,
                 proposal.id,
                 voter_volunteer_id=p.lena_id,
@@ -352,7 +352,7 @@ async def test_cast_ballot_phase_and_validation(database):
                 today=AFTER,
             )
         with pytest.raises(ValueError, match="between 0 and 5"):
-            await planning.cast_ballot(
+            await elections.cast_ballot(
                 session,
                 proposal.id,
                 voter_volunteer_id=p.lena_id,
@@ -360,7 +360,7 @@ async def test_cast_ballot_phase_and_validation(database):
                 today=VOTING_DAY,
             )
         with pytest.raises(ValueError, match="not candidates"):
-            await planning.cast_ballot(
+            await elections.cast_ballot(
                 session,
                 proposal.id,
                 voter_volunteer_id=p.lena_id,
@@ -368,7 +368,7 @@ async def test_cast_ballot_phase_and_validation(database):
                 today=VOTING_DAY,
             )
         with pytest.raises(LookupError, match="voting roll"):
-            await planning.cast_ballot(
+            await elections.cast_ballot(
                 session,
                 proposal.id,
                 voter_volunteer_id=p.mia_id,
@@ -381,7 +381,7 @@ async def test_ballot_revision_and_zero_defaults(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        await planning.add_candidate(
+        await elections.add_candidate(
             session,
             proposal.id,
             volunteer_id=p.victor_id,
@@ -391,32 +391,32 @@ async def test_ballot_revision_and_zero_defaults(database):
         cand = await _candidate_ids(session, proposal.id)
 
         # missing keys are written as explicit 0s — an all-zero ballot counts
-        await planning.cast_ballot(
+        await elections.cast_ballot(
             session,
             proposal.id,
             voter_volunteer_id=p.lena_id,
             scores={},
             today=VOTING_DAY,
         )
-        assert await planning.my_scores(session, proposal.id, p.lena_id) == {
+        assert await elections.my_scores(session, proposal.id, p.lena_id) == {
             cand[p.vera_id]: 0,
             cand[p.victor_id]: 0,
         }
-        view = await planning.detail(session, proposal.id, today=VOTING_DAY)
+        view = await elections.detail(session, proposal.id, today=VOTING_DAY)
         by_vol = {v.volunteer.id: v for v in view.voters}
         assert by_vol[p.lena_id].has_voted
         assert not by_vol[p.cora_id].has_voted
         assert view.tally is None, "no aggregates while voting is open"
 
         # revision upserts over the previous scores
-        await planning.cast_ballot(
+        await elections.cast_ballot(
             session,
             proposal.id,
             voter_volunteer_id=p.lena_id,
             scores={cand[p.vera_id]: 5, cand[p.victor_id]: 2},
             today=VOTING_DAY,
         )
-        assert await planning.my_scores(session, proposal.id, p.lena_id) == {
+        assert await elections.my_scores(session, proposal.id, p.lena_id) == {
             cand[p.vera_id]: 5,
             cand[p.victor_id]: 2,
         }
@@ -426,7 +426,7 @@ async def test_tally_gated_then_correct(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        await planning.add_candidate(
+        await elections.add_candidate(
             session,
             proposal.id,
             volunteer_id=p.victor_id,
@@ -441,7 +441,7 @@ async def test_tally_gated_then_correct(database):
             p.pete_id: {vera_c: 0, victor_c: 3},
         }
         for voter_id, scores in ballots.items():
-            await planning.cast_ballot(
+            await elections.cast_ballot(
                 session,
                 proposal.id,
                 voter_volunteer_id=voter_id,
@@ -450,15 +450,15 @@ async def test_tally_gated_then_correct(database):
             )
 
         with pytest.raises(ValueError, match="has not concluded"):
-            await planning.tally(session, proposal.id, today=VOTING_DAY)
+            await elections.tally(session, proposal.id, today=VOTING_DAY)
 
-        result = await planning.tally(session, proposal.id, today=AFTER)
+        result = await elections.tally(session, proposal.id, today=AFTER)
         assert result.ballot_count == 3
         assert result.totals == {vera_c: 6, victor_c: 9}
         assert result.finalist_ids == (victor_c, vera_c)
         assert result.runoff == {victor_c: 2, vera_c: 1}
         assert result.winner_id == victor_c
-        view = await planning.detail(session, proposal.id, today=AFTER)
+        view = await elections.detail(session, proposal.id, today=AFTER)
         assert view.tally == result
 
 
@@ -474,7 +474,7 @@ async def test_appoint_concluded_only_and_creates_membership(database):
         cand = await _candidate_ids(session, proposal.id)
 
         with pytest.raises(ValueError, match="cannot appoint"):
-            await planning.appoint(
+            await elections.appoint(
                 session,
                 proposal.id,
                 cand[p.vera_id],
@@ -482,7 +482,7 @@ async def test_appoint_concluded_only_and_creates_membership(database):
                 today=VOTING_DAY,
             )
 
-        appointed = await planning.appoint(
+        appointed = await elections.appoint(
             session,
             proposal.id,
             cand[p.vera_id],
@@ -496,7 +496,7 @@ async def test_appoint_concluded_only_and_creates_membership(database):
         assert m.role == TeamRole.second, "assign() upserts: the role is upgraded"
 
         with pytest.raises(ValueError, match="is appointed"):
-            await planning.appoint(
+            await elections.appoint(
                 session,
                 proposal.id,
                 cand[p.vera_id],
@@ -512,7 +512,7 @@ async def test_appoint_foreign_candidate_refused(database):
         garden_p = await _open_proposal(session, p, team_id=p.garden_id)
         garden_cand = (await _candidate_ids(session, garden_p.id))[p.vera_id]
         with pytest.raises(LookupError, match="not found"):
-            await planning.appoint(
+            await elections.appoint(
                 session,
                 liturgy_p.id,
                 garden_cand,
@@ -525,12 +525,12 @@ async def test_cancel(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        cancelled = await planning.cancel(
+        cancelled = await elections.cancel(
             session, proposal.id, decided_by=p.admin_user_id
         )
         assert cancelled.status == ProposalStatus.cancelled.value
         with pytest.raises(ValueError, match="already cancelled"):
-            await planning.cancel(session, proposal.id, decided_by=p.admin_user_id)
+            await elections.cancel(session, proposal.id, decided_by=p.admin_user_id)
 
 
 async def test_new_round_clones_candidates_and_roll_not_ballots(database):
@@ -538,7 +538,7 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
         cand = await _candidate_ids(session, proposal.id)
-        await planning.cast_ballot(
+        await elections.cast_ballot(
             session,
             proposal.id,
             voter_volunteer_id=p.lena_id,
@@ -547,7 +547,7 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
         )
 
         with pytest.raises(ValueError, match="cannot start a new round"):
-            await planning.new_round(
+            await elections.new_round(
                 session,
                 proposal.id,
                 created_by=p.admin_user_id,
@@ -556,7 +556,7 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
                 today=VOTING_DAY,
             )
 
-        fresh = await planning.new_round(
+        fresh = await elections.new_round(
             session,
             proposal.id,
             created_by=p.admin_user_id,
@@ -566,10 +566,10 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
         )
         assert fresh.id != proposal.id
         assert fresh.status == ProposalStatus.open.value
-        source = await planning.get(session, proposal.id)
+        source = await elections.get(session, proposal.id)
         assert source.status == ProposalStatus.cancelled.value
 
-        view = await planning.detail(session, fresh.id, today=AFTER)
+        view = await elections.detail(session, fresh.id, today=AFTER)
         assert [c.volunteer.id for c in view.candidates] == [p.vera_id]
         assert view.candidates[0].candidate.note == "steady hands"
         assert {v.volunteer.id for v in view.voters} == {
@@ -585,7 +585,7 @@ async def test_update_proposal_guards(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        updated = await planning.update_proposal(
+        updated = await elections.update_proposal(
             session,
             proposal.id,
             nomination_deadline=date(2026, 8, 18),
@@ -596,12 +596,12 @@ async def test_update_proposal_guards(database):
         assert updated.notes == "take our time"
 
         with pytest.raises(ValueError, match="must fall after"):
-            await planning.update_proposal(
+            await elections.update_proposal(
                 session, proposal.id, voting_deadline=date(2026, 8, 17), today=TODAY
             )
 
         cand = await _candidate_ids(session, proposal.id)
-        await planning.cast_ballot(
+        await elections.cast_ballot(
             session,
             proposal.id,
             voter_volunteer_id=p.lena_id,
@@ -609,23 +609,23 @@ async def test_update_proposal_guards(database):
             today=date(2026, 8, 20),
         )
         with pytest.raises(ValueError, match="cannot reopen"):
-            await planning.update_proposal(
+            await elections.update_proposal(
                 session,
                 proposal.id,
                 nomination_deadline=date(2026, 8, 22),
                 today=date(2026, 8, 21),
             )
         # extending only the voting deadline is fine even with ballots cast
-        await planning.update_proposal(
+        await elections.update_proposal(
             session,
             proposal.id,
             voting_deadline=date(2026, 8, 28),
             today=date(2026, 8, 21),
         )
 
-        await planning.cancel(session, proposal.id, decided_by=p.admin_user_id)
+        await elections.cancel(session, proposal.id, decided_by=p.admin_user_id)
         with pytest.raises(ValueError, match="already cancelled"):
-            await planning.update_proposal(
+            await elections.update_proposal(
                 session, proposal.id, notes="too late", today=TODAY
             )
 
@@ -642,26 +642,26 @@ async def test_list_proposals_scoping(database):
         admin = await _actor(session, p.admin_user_id)
         assert {
             s.proposal.id
-            for s in await planning.list_proposals(session, admin, today=TODAY)
+            for s in await elections.list_proposals(session, admin, today=TODAY)
         } == {liturgy_p.id, garden_p.id}
 
         lena = await _actor(session, p.lena_user_id)
-        lena_rows = await planning.list_proposals(session, lena, today=TODAY)
+        lena_rows = await elections.list_proposals(session, lena, today=TODAY)
         assert {s.proposal.id for s in lena_rows} == {liturgy_p.id}, (
             "Lena manages Liturgy and is not on Garden's roll"
         )
-        assert lena_rows[0].phase == planning.ProposalPhase.nominating
+        assert lena_rows[0].phase == elections.ProposalPhase.nominating
         assert lena_rows[0].candidate_count == 1
         assert lena_rows[0].voter_count == 4
 
         pete = await _actor(session, p.pete_user_id)
         assert {
             s.proposal.id
-            for s in await planning.list_proposals(session, pete, today=TODAY)
+            for s in await elections.list_proposals(session, pete, today=TODAY)
         } == {liturgy_p.id, garden_p.id}, "clergy sit on every template roll"
 
-        await planning.cancel(session, garden_p.id, decided_by=p.admin_user_id)
-        open_only = await planning.list_proposals(
+        await elections.cancel(session, garden_p.id, decided_by=p.admin_user_id)
+        open_only = await elections.list_proposals(
             session, admin, status=ProposalStatus.open.value, today=TODAY
         )
         assert [s.proposal.id for s in open_only] == [liturgy_p.id]
@@ -675,40 +675,40 @@ async def test_involving_flags_and_scoping(database):
 
         admin = await _actor(session, p.admin_user_id)
         # Vera: a candidate on both seats, on neither roll
-        inv = await planning.involving(session, admin, p.vera_id, today=TODAY)
+        inv = await elections.involving(session, admin, p.vera_id, today=TODAY)
         assert {i.proposal.id for i in inv} == {liturgy_p.id, garden_p.id}
         assert all(i.as_candidate and not i.as_voter and not i.appointed for i in inv)
-        assert all(i.phase == planning.ProposalPhase.nominating for i in inv)
+        assert all(i.phase == elections.ProposalPhase.nominating for i in inv)
 
         # Lena: on Liturgy's roll (leader), not a candidate anywhere
-        inv = await planning.involving(session, admin, p.lena_id, today=TODAY)
+        inv = await elections.involving(session, admin, p.lena_id, today=TODAY)
         assert [i.proposal.id for i in inv] == [liturgy_p.id]
         assert inv[0].as_voter and not inv[0].as_candidate
 
         # Mia touches no proposal at all
-        assert await planning.involving(session, admin, p.mia_id, today=TODAY) == []
+        assert await elections.involving(session, admin, p.mia_id, today=TODAY) == []
 
         # actor scoping mirrors list_proposals: Lena manages only Liturgy,
         # so Vera's Garden candidacy stays hidden from her
         lena = await _actor(session, p.lena_user_id)
-        inv = await planning.involving(session, lena, p.vera_id, today=TODAY)
+        inv = await elections.involving(session, lena, p.vera_id, today=TODAY)
         assert [i.proposal.id for i in inv] == [liturgy_p.id]
 
-        # a plain member has no planning access: nothing, not even about herself
+        # a plain member has no elections access: nothing, not even about herself
         mia_user = await users.create(session, "mia@example.org", volunteer_id=p.mia_id)
         mia = await _actor(session, mia_user.id)
-        assert await planning.involving(session, mia, p.vera_id, today=TODAY) == []
+        assert await elections.involving(session, mia, p.vera_id, today=TODAY) == []
 
         # appointment flips the winner's flag on that proposal only
         cand = await _candidate_ids(session, liturgy_p.id)
-        await planning.appoint(
+        await elections.appoint(
             session,
             liturgy_p.id,
             cand[p.vera_id],
             decided_by=p.admin_user_id,
             today=AFTER,
         )
-        inv = await planning.involving(session, admin, p.vera_id, today=AFTER)
+        inv = await elections.involving(session, admin, p.vera_id, today=AFTER)
         appointed = {i.proposal.id: i.appointed for i in inv}
         assert appointed == {liturgy_p.id: True, garden_p.id: False}
         assert next(i for i in inv if i.proposal.id == liturgy_p.id).phase is None

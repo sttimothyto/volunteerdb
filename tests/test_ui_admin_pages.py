@@ -46,7 +46,7 @@ async def test_admin_pages_render(database):
         await user.open("/teams")
         user.find(kind=ui.table)  # the coverage table moved here
 
-        await user.open("/planning")
+        await user.open("/elections")
         await user.should_see("Vacancies")
 
         # a non-admin gets the polite refusals, not the admin controls
@@ -57,8 +57,8 @@ async def test_admin_pages_render(database):
         await user.should_see(
             "Import/Export is available to admins and to team leaders/seconds."
         )
-        await user.open("/planning")
-        await user.should_see("Planning is available to admins")
+        await user.open("/elections")
+        await user.should_see("Elections are available to admins")
 
 
 async def test_leader_import_page_scoped(database):

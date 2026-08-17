@@ -119,13 +119,13 @@ Revision 0008 also stored a `"planning"` key, `{"clergy_team_id": <id>}`,
 naming the team whose members join every new proposal's voting roll.
 Revision 0009 deleted it: the answer was always the team named **Clergy**,
 so the roll builder resolves that name directly and no id is stored (see
-[Planning by nomination and vote](../explanation/planning.md)).
+[Elections by nomination and vote](../explanation/elections.md)).
 
 (proposal)=
 ## `proposal` (not versioned)
 
 One run at filling a (team, role) seat by nomination and STAR vote (see
-[Planning by nomination and vote](../explanation/planning.md)). The phase
+[Elections by nomination and vote](../explanation/elections.md)). The phase
 of an open proposal — nominating, voting, or concluded — derives from
 today's date against the two deadlines and is never stored.
 

@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # and one line per HTTP request; DEBUG adds query params and asset requests.
     log_level: str = "AUDIT"
     log_file: str = ""  # empty: stderr only (journald in production)
-    # IANA zone the parish lives in: date-typed things like planning deadlines
+    # IANA zone the parish lives in: date-typed things like election deadlines
     # mean "end of that day HERE", not in UTC (the container's clock).
     timezone: str = "America/Toronto"
     smtp2go_api_key: str = ""  # empty: emails are printed to the log, not sent

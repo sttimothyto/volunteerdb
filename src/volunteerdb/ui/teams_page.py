@@ -7,12 +7,12 @@ from fastapi import Request
 from nicegui import ui
 
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
+from ..services import elections as elections_service
 from ..services import events as event_service
 from ..services import interest as interest_service
 from ..services import mail
 from ..services import memberships as membership_service
 from ..services import pages as page_service
-from ..services import planning as planning_service
 from ..services import reports as report_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
@@ -211,7 +211,7 @@ async def teams_page(as_of: str = ""):
                 {"name": "total", "label": "Total", "field": "total", "sortable": True},
                 # A hierarchy cannot also honour coverage()'s holes-first row
                 # order, so the holes become a column here: sort descending to
-                # float them up. Chasing them is /planning's job now anyway.
+                # float them up. Chasing them is /elections's job now anyway.
                 {"name": "gaps", "label": "Gaps", "field": "gaps", "sortable": True},
             ]
         # no pagination: the tree showed the whole parish at once and this replaces it
@@ -626,7 +626,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         )
         anniversaries = (
             await volunteer_service.team_anniversaries(
-                session, team_id, planning_service.local_today()
+                session, team_id, elections_service.local_today()
             )
             if can_manage
             else []

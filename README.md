@@ -13,7 +13,7 @@ to fill?"**
   *as of any past date*
 - Spreadsheet **import/export** (.csv) that round-trips
 - **Cytoscape.js graph** of volunteers ↔ teams, front and center on the dashboard
-- Collaborative **planning**: leadership vacancies with volunteer proposals
+- Collaborative **elections**: leadership vacancies with volunteer proposals
   (propose → accept/decline), and leadership-only **workload** scoring
   
 ## Documentation

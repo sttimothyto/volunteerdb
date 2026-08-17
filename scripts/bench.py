@@ -488,7 +488,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
     async def dropdown_name_map():
         # mirrors the volunteer_options block of ui/teams_page.team_detail
-        # (same shape in planning_page and admin_page)
+        # (same shape in elections_page and admin_page)
         async with db_session() as session:
             await volunteer_service.name_map(session)
 

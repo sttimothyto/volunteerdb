@@ -33,7 +33,7 @@ from ..config import settings
 from ..db import db_session
 from ..log import init_logging
 from ..models import Event, EventAssignment, EventSlot, EventStatus, Volunteer
-from ..services import mail, planning
+from ..services import elections, mail
 from ..services import teams as team_service
 from . import job_lock
 
@@ -41,7 +41,7 @@ from . import job_lock
 async def main(today: date | None = None) -> int:
     init_logging()
     if today is None:
-        today = planning.local_today()
+        today = elections.local_today()
     window_end = today + timedelta(days=settings().event_reminder_days)
     tz = ZoneInfo(settings().timezone)
 

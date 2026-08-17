@@ -116,7 +116,7 @@ ignored. Copy `.env.example` as a starting point.
 
 `VDB_TIMEZONE`
 : IANA zone the parish lives in. Default: `America/Toronto`. Date-typed
-  values like planning deadlines mean "through the end of that day *here*":
+  values like election deadlines mean "through the end of that day *here*":
   the phase of an open proposal is computed against today's date in this
   zone, not against the container's clock (UTC in production). Event
   reminder windows and the weekly repeat helper use the same zone.

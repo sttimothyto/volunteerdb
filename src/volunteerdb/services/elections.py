@@ -1,4 +1,4 @@
-"""Planning: fill a (team, role) seat by nomination and STAR vote.
+"""Elections: fill a (team, role) seat by nomination and STAR vote.
 
 A vacancy is a team missing a leader or a second-in-command (derived from
 the coverage report, never stored). A manager opens a proposal for the
@@ -237,7 +237,7 @@ async def list_proposals(
 ) -> list[ProposalSummary]:
     """Proposals joined for display, newest first. Admins see all; everyone
     else sees their managed subtree plus any roll they sit on. Live-only:
-    planning is about now, so there is no as-of variant."""
+    an election is about now, so there is no as-of variant."""
     today = today or local_today()
     if (
         not actor.is_admin
@@ -287,7 +287,7 @@ async def involving(
 ) -> list[ProposalInvolvement]:
     """Proposals where the volunteer is a candidate or sits on the voting
     roll, newest first, scoped exactly like list_proposals — so a nominee
-    without planning access never learns of their own nomination."""
+    without elections access never learns of their own nomination."""
     today = today or local_today()
     if (
         not actor.is_admin

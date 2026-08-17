@@ -195,11 +195,11 @@ def proposal_digest_email(items: list[DigestItem]) -> tuple[str, str]:
             sections.append(header + "\n" + "\n".join(lines))
     body = (
         "\n\n".join(sections)
-        + "\n\nSign in to VolunteerDB and open the Planning page to nominate "
+        + "\n\nSign in to VolunteerDB and open the Elections page to nominate "
         "candidates or cast your ballot. Deadlines are inclusive — you can "
         "act through the end of the deadline day."
     )
-    return ("VolunteerDB planning: your input is needed", body)
+    return ("VolunteerDB elections: your input is needed", body)
 
 
 # --- events -------------------------------------------------------------------

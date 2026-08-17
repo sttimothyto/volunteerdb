@@ -26,8 +26,8 @@ GUI and the API. For the rationale, see
 | Browse the team directory | ✓ | ✓ | ✓ | ✓ | ✓ |
 | View and edit own profile | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Coverage report | ✓ | their teams | | | |
-| Planning: see vacancies, open proposals, edit deadlines/rolls, appoint, cancel, new round | ✓ | their teams | | | |
-| Planning: nominate candidates and vote (STAR) | ✓* | ✓* | ✓* | ✓* | |
+| Elections: see vacancies, open proposals, edit deadlines/rolls, appoint, cancel, new round | ✓ | their teams | | | |
+| Elections: nominate candidates and vote (STAR) | ✓* | ✓* | ✓* | ✓* | |
 | Create/edit/delete teams | ✓ | | | | |
 | Create/delete volunteers; toggle active | ✓ | | | | |
 | Parish-wide import/export | ✓ | | | | |
@@ -82,15 +82,15 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export | signed in; roster per matrix |
 | `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
-| `/planning` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |
-| `/planning/{id}` | One proposal: candidates, roll, ballot form, tally, appoint | managers of that team or its voting members |
+| `/elections` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |
+| `/elections/{id}` | One proposal: candidates, roll, ballot form, tally, appoint | managers of that team or its voting members |
 | `/import` | Spreadsheet import/export | admin or leader/second (scoped to their teams) |
 | `/manual` | This documentation (header settings gear → *Manual*) | signed in |
 | `/admin/users` | Accounts: create, invite, bulk provision | admin |
 | `/admin/fields` | Custom field definitions | admin |
 | `/admin/workload` | Workload multipliers, bands, team weights | admin |
 
-The header nav shows Planning to admins, team leaders/seconds, and anyone
+The header nav shows Elections to admins, team leaders/seconds, and anyone
 sitting on a proposal's voting roll; Import/Export to admins and team
 leaders/seconds; and Accounts, Fields, and Workload entries to admins only.
 On narrow screens the nav collapses into a menu button with the same

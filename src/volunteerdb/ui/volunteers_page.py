@@ -5,17 +5,17 @@ from nicegui import app, ui
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
+from ..services import elections as elections_service
 from ..services import events as event_service
 from ..services import memberships as membership_service
 from ..services import photos as photo_service
-from ..services import planning as planning_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from .context import action_session, notify_errors, page_session
+from .elections_page import phase_badge
 from .layout import frame
 from .photo_dialog import photo_avatar
-from .planning_page import phase_badge
 from .search_box import search_box
 from .timeline_chart import timeline_chart
 from .volunteer_panel import VolunteerPanel, format_custom
@@ -234,7 +234,7 @@ async def volunteer_detail(volunteer_id: int):
             await volunteer_service.impact(session, volunteer_id) if can_view else []
         )
         # scoped inside the service: only proposals this actor may see
-        involvements = await planning_service.involving(session, actor, volunteer_id)
+        involvements = await elections_service.involving(session, actor, volunteer_id)
         hours = (
             await event_service.hours_for_volunteer(session, volunteer_id)
             if can_view
@@ -375,7 +375,7 @@ async def volunteer_detail(volunteer_id: int):
                 ):
                     ui.link(
                         f"{inv.path}: {ROLE_LABELS[TeamRole(proposal.role)]}",
-                        f"/planning/{proposal.id}",
+                        f"/elections/{proposal.id}",
                     ).classes("font-medium")
                     if inv.appointed:
                         # the person-badge implies the proposal state, so the
