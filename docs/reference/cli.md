@@ -148,7 +148,7 @@ app quadlet's `HealthCmd`; not normally run by hand.
 ## `pyinfra` — production deploy
 
 ```sh
-uvx pyinfra sttimothyto-prod deploy/deploy.py -y
+VDB_SITE=<site> uvx pyinfra deploy/inventory.py deploy/deploy.py -y
 ```
 
 Deploys/updates the whole containerized stack on the server. Optional

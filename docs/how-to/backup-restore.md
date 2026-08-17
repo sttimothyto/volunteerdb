@@ -10,7 +10,7 @@ history twins.
 Production (Quadlet container on the server):
 
 ```sh
-ssh sttimothyto-prod \
+ssh <your-host> \
   'podman exec volunteerdb-db pg_dump -U volunteerdb volunteerdb' \
   > vdb-backup-$(date +%F).sql
 ```
@@ -52,15 +52,16 @@ last night's backup undoes a bad sync exactly.
 
 Output goes to journald: `journalctl -u volunteerdb-backup`; manual run:
 `systemctl start volunteerdb-backup.service`. On any
-failure, an alert email is sent to `admin@sttimothyto.org` via SMTP2GO
+failure, an alert email is sent to the site's `[mail] alert_email` via SMTP2GO
 (same account the app uses; key read from `/etc/volunteerdb/env` at run
-time). The script, schedule, retention windows, and alert address are all
-managed in `deploy/deploy.py` — edit the constants there and re-deploy.
+time). The schedule, retention windows and alert address all come from your
+site file — see [`[backup]` and `[schedule]`](../reference/site-config.md) —
+so change them there and redeploy.
 
 Run a backup on demand with:
 
 ```sh
-ssh sttimothyto-prod 'systemd-cat -t volunteerdb-backup /usr/local/bin/volunteerdb-backup'
+ssh <your-host> 'systemd-cat -t volunteerdb-backup /usr/local/bin/volunteerdb-backup'
 ```
 
 ### One-time Drive setup

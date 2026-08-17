@@ -13,6 +13,9 @@ date*.
 - **New to the project?** Follow the [installation tutorial](tutorials/install-and-run.md)
   to get a seeded development instance running, or take the
   [coordinator's tour](tutorials/coordinator-tour.md) of the web interface.
+- **Standing up your own instance?** [Stand up a new
+  instance](how-to/new-instance.md) is the ordered checklist, from DNS to the
+  first backup.
 - **Need to get something done?** The how-to guides are task recipes —
   for example [deploying to production](how-to/deploy.md) or
   [importing a spreadsheet](how-to/import-export.md).
@@ -25,10 +28,9 @@ date*.
   [HTTP API endpoints](reference/http-api.md), the
   [database schema](reference/schema.md), and more.
 
-Quick links: production instance at <https://vdb.sttimothyto.org> ·
-this documentation at `/manual` on any running instance (signed in) ·
-interactive OpenAPI docs at `/docs` · terse quick start in the repository
-`README.md`.
+Quick links: this documentation at `/manual` on any running instance (signed
+in) · interactive OpenAPI docs at `/docs` · terse quick start in the
+repository `README.md`.
 
 ```{toctree}
 :hidden:
@@ -42,6 +44,7 @@ tutorials/coordinator-tour
 :hidden:
 :caption: How-to guides
 
+how-to/new-instance
 how-to/deploy
 how-to/backup-restore
 how-to/rotate-secrets
@@ -75,6 +78,7 @@ explanation/deployment
 :caption: Reference
 
 reference/configuration
+reference/site-config
 reference/http-api
 reference/cli
 reference/schema

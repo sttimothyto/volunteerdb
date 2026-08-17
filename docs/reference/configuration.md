@@ -86,7 +86,7 @@ ignored. Copy `.env.example` as a starting point.
 : Sender display name. Default: `VolunteerDB`.
 
 `VDB_PUBLIC_BASE_URL`
-: Absolute origin (e.g. `https://vdb.sttimothyto.org`) used for links in
+: Absolute origin (e.g. `https://vdb.example.org`) used for links in
   emails sent by nightly jobs, which have no live request to derive one from —
   today, the events link in the nightly reminder digest. Default: empty, in
   which case those emails simply omit the link (mail sent from the GUI
@@ -175,7 +175,7 @@ ignored. Copy `.env.example` as a starting point.
 `VDB_CONTACT_EMAIL`
 : Address in this manual's page footer ("See something inappropriate? Report
   it to …"), read by `docs/conf.py` **when the docs are built**. Default:
-  `admin@sttimothyto.org`. Setting it on the running app does nothing — the
+  `admin@example.invalid`. Setting it on the running app does nothing — the
   container image bakes the built HTML in, so change it and rebuild. Point it
   at a monitored human mailbox; unlike `VDB_MAIL_FROM`, replies are the point.
 

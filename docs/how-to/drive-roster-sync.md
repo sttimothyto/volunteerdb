@@ -1,7 +1,7 @@
 # Sync team rosters with Google Sheets
 
 Each active team has a native Google Sheet in the Drive folder
-**`volunteerdb-spreadsheets`** (account `admin@sttimothyto.org`), named
+**`volunteerdb-spreadsheets`** (owned by the parish Google account), named
 `<team-path-slug>-membership-list` — e.g. `liturgy-music-membership-list`
 for *Liturgy / Music*. Ministry leaders and seconds edit their sheet in the
 browser; every night the sheet and the database reconcile **both ways**:
@@ -38,14 +38,14 @@ left blank in a team's own sheet.
   team that has members**, or a wipe of more than half the team and ≥ 3
   members — the safety thresholds) is **skipped whole**: nothing applies,
   the sheet is left untouched for fixing, the team page shows the error,
-  and `admin@sttimothyto.org` gets an email.
+  and the site's alert address gets an email.
 - The alert email can also arrive for a sheet that **did** apply: when one
   sync both created a volunteer and removed a member (the signature of an
   edited email on a blank-ID row, or a row deleted and re-typed), a
   `WARNING` line asks a human to check for a duplicated person.
 - Mistakes are recoverable: the 02:00 backup immediately precedes the
   sync ([backups](backup-restore.md)); the history views show exactly what
-  the sync changed (`changed_by` = `drive-sync@sttimothyto.org`).
+  the sync changed (`changed_by` = `drive-sync@` your mail domain).
 - **Only the first tab syncs.** The nightly rewrite replaces the whole
   spreadsheet and can **delete any extra tabs** — scratch work belongs in
   a copy (*File → Make a copy*; copies are never synced), not in extra
@@ -61,7 +61,7 @@ new team needs no manual Drive work. The rules:
 - A leader with **no email on file** cannot be granted anything. The
   sync counts those teams and names them in the alert mail — that list is
   a roster gap to fix in the app, and until it is fixed only
-  `admin@sttimothyto.org` can edit those sheets.
+  the folder's owner can edit those sheets.
 - A **non-Google address** (hotmail, yahoo, a parish domain elsewhere) is
   still worth sharing to: Google mails an invitation, and the person can
   accept it by signing in to a Google account on that address. Whether
@@ -71,13 +71,13 @@ new team needs no manual Drive work. The rules:
 - The invitation email goes out **once**, when the grant is first created
   — a nightly re-run finds the permission already there and is silent.
 - The sync **never removes** the owner, a grant inherited from the Drive
-  folder (`pastor@sttimothyto.org` today — the API refuses to delete an
+  folder (the parish account today — the API refuses to delete an
   inherited grant from a single file, so unshare the *folder* to change
   that), or anyone a human shared a sheet with by hand.
 - The one thing it will remove is an **anyone-with-link** or domain-wide
-  grant, and only under `--revoke-links` (deploy constant
-  `REVOKE_PUBLIC_LINKS`, `deploy/deploy.py`). That flag is the second half
-  of the move off public links: leave it `False` until the no-email list
+  grant, and only under `--revoke-links`, which the deploy passes when the
+  site file sets `[drive_sync] revoke_public_links`. That flag is the second
+  half of the move off public links: leave it `false` until the no-email list
   above is short, because everyone on it is editing by link today and has
   nothing to fall back on.
 - **The template is the deliberate exception**: it is shared
@@ -192,7 +192,7 @@ Details that make it safe:
   alone and logged.
 
 Logs: `journalctl -u volunteerdb-drive-sync`. Manual run:
-`ssh sttimothyto-prod 'systemctl start volunteerdb-drive-sync.service'`.
+`ssh <your-host> 'systemctl start volunteerdb-drive-sync.service'`.
 
 ## One-time verification runbook (BEFORE trusting the nightly sync)
 
@@ -235,7 +235,7 @@ itself does not need sharing with anyone.
 ## Recovery
 
 - **A sync applied something wrong**: inspect with the as-of picker
-  (changes are attributed to `drive-sync@sttimothyto.org`); fix forward in
+  (changes are attributed to the `drive-sync@` account); fix forward in
   the app, or restore last night's 02:00 backup
   ([backup & restore](backup-restore.md)) if it was catastrophic.
 - **A sheet is broken beyond repair**: delete the file on Drive; the next

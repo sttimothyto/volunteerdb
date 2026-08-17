@@ -1,10 +1,35 @@
 # Production deployment architecture
 
-Production is one small VPS (`sttimothyto-prod`) running the app and its
-database as two podman containers under systemd, fronted by Caddy at
-<https://vdb.sttimothyto.org>. Everything the repository manages is applied
-by one idempotent pyinfra script — the [deploy how-to](../how-to/deploy.md)
-is the operating manual; this page is the *why*.
+Production is one small VPS running the app and its database as two podman
+containers under systemd, fronted by Caddy. Everything the repository manages
+is applied by one idempotent pyinfra script — the
+[deploy how-to](../how-to/deploy.md) is the operating manual and
+[Stand up a new instance](../how-to/new-instance.md) is the first-time
+checklist; this page is the *why*.
+
+## One repository, many parishes
+
+The deploy is mechanism only. Everything that distinguishes one parish's
+deployment from another's is in a single declarative file,
+`deploy/sites/<name>.toml` — the host, the domain, the port, the five mail
+addresses, the rclone remote, the retention windows, the five nightly times.
+`deploy/siteconf.py` holds what is identical everywhere: paths, image and
+network names, the container UID. `deploy/deploy.py` holds neither; it is
+the running order and nothing else.
+
+The split is what makes a second instance possible without editing Python,
+and it is enforced rather than encouraged. The site loader rejects unknown
+and missing keys, a test renders every template and fails if any variable is
+unsupplied, and another test holds the five nightly times to their required
+order. That strictness earns its keep because the failure mode is quiet:
+Jinja renders an undefined variable as the empty string, so a typo becomes an
+`OnCalendar=` with no time in it, installed and reloaded without complaint.
+
+It also drew a useful line through the application. Anything the app needs to
+know about the parish — its name, its time zone, the address it sends from —
+now arrives as configuration through `/etc/volunteerdb/env`, which the deploy
+generates from the same file. Nothing about a particular parish is compiled
+in.
 
 ## Quadlets: containers as systemd units
 
@@ -19,7 +44,7 @@ services:
   so it simply has no internet-facing surface. Its start blocks until
   `pg_isready` succeeds, which serializes app startup correctly.
 - `volunteerdb-app.container` — the app image, publishing
-  `127.0.0.1:8090 → 8080` (loopback only — Caddy is the sole public
+  `127.0.0.1:<listen_port> → 8080` (loopback only — Caddy is the sole public
   entrance), with `NoNewPrivileges`, a non-root user, a Python healthcheck,
   and `Restart=always`.
 
@@ -54,14 +79,15 @@ explicit exception, covered in [Rotate secrets](../how-to/rotate-secrets.md).
 ## Nightly backups
 
 A systemd timer (installed by the deploy; `Persistent=true`, so a night
-the host slept through is made up at boot) runs a small script at 02:00
-Eastern: `pg_dump | gzip` out of the database container, an atomic
+the host slept through is made up at boot) runs a small script at the site's
+`[schedule] backup_at`, in parish time: `pg_dump | gzip` out of the database container, an atomic
 rename so a half-written dump never gets a dated name, then `rclone copy`
 through an encrypting *crypt* remote to a Google Drive folder owned by
-the parish account — 14 days retained on disk, two years on Drive.
+the parish account, keeping the site's retention windows (14 days on disk
+and two years on Drive, here).
 Output lands in journald (`journalctl -u volunteerdb-backup`) and any
-failure emails `admin@sttimothyto.org` through the same SMTP2GO account
-the app sends with, so a silently broken backup cannot rot unnoticed.
+failure emails the site's `[mail] alert_email` through the same SMTP2GO
+account the app sends with, so a silently broken backup cannot rot unnoticed.
 
 Three deliberate choices:
 
@@ -74,7 +100,7 @@ Three deliberate choices:
   shareable folders, and up to two years of nightly snapshots of names,
   contact details and — via ministry membership — religious affiliation.
   So dumps pass through an rclone `crypt` remote and reach Drive as
-  ciphertext, contents and filenames both. The local 14-day copies stay
+  ciphertext, contents and filenames both. The local copies stay
   plaintext on purpose: they are root-only files on the same host as the
   live database, so encrypting them adds nothing, and plain files keep
   restores simple. The price is a custody duty — the crypt password must
@@ -92,7 +118,7 @@ Three deliberate choices:
 
 - **TLS and the public name.** Caddy (configured in `/etc/caddy/Caddyfile`
   on the host) terminates HTTPS with automatic Let's Encrypt certificates
-  and proxies to `127.0.0.1:8090`; DNS points `vdb.sttimothyto.org` at the
+  and proxies to the site's loopback port; DNS points its domain at the
   server. The app just trusts that TLS happened (`VDB_COOKIE_SECURE=true`).
 - **The rclone Google Drive credentials** (OAuth token + backup-encryption
   password) — see [Nightly backups](#nightly-backups).

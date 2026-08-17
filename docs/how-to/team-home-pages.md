@@ -5,8 +5,8 @@ points, sign-up links — without anyone needing an account. The content lives
 in a **Google Doc** the team already edits; VolunteerDB fetches it nightly,
 sanitizes it, and serves it at a public URL:
 
-- `https://vdb.sttimothyto.org/ministries/` — index of every published page
-- `https://vdb.sttimothyto.org/ministries/<team>.html` — one page per team
+- `https://vdb.example.org/ministries/` — index of every published page
+- `https://vdb.example.org/ministries/<team>.html` — one page per team
 
 No sign-in is required to read these pages, so put nothing private in the
 doc — it is exactly as public as the doc itself.

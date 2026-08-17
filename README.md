@@ -188,3 +188,18 @@ you apply.
   volunteerdb.main`). It must be the `python -m` form — under the
   `volunteerdb` console script, reload respawns a worker that never reaches
   the `__mp_main__` guard, and startup fails with "You must call ui.run()".
+
+## Running your own instance
+
+Everything specific to a parish lives in one file, `deploy/sites/<name>.toml` —
+the host, the domain, the mail addresses, the nightly schedule. Copy
+`deploy/sites/example.toml`, fill it in, and follow
+[docs/how-to/new-instance.md](docs/how-to/new-instance.md), which covers the
+parts the deploy deliberately does not automate: DNS, Caddy, a mail sending
+domain, and the Google Cloud project the backups and roster sheets share.
+
+## License
+
+[AGPL-3.0-or-later](LICENSE). You may run, modify and redistribute this; if
+you run a modified version as a network service, that version's source has to
+be available to its users.

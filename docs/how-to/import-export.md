@@ -64,11 +64,11 @@ the as-of picker; the `changed_by` audit column records who ran the import.
 
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" -o parish.csv \
-  https://vdb.sttimothyto.org/api/export/parish.csv
+  https://vdb.example.org/api/export/parish.csv
 curl -s -H "Authorization: Bearer $TOKEN" -o my-teams.csv \
-  https://vdb.sttimothyto.org/api/export/my-teams.csv
+  https://vdb.example.org/api/export/my-teams.csv
 curl -s -H "Authorization: Bearer $TOKEN" -F file=@parish.csv \
-  'https://vdb.sttimothyto.org/api/import?dry_run=true'
+  'https://vdb.example.org/api/import?dry_run=true'
 ```
 
 Drop `dry_run=true` to apply. See [Use the JSON API](api-recipes.md) for

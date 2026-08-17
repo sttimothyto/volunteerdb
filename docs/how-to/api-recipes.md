@@ -4,7 +4,7 @@ Recipes for scripting against a running instance. The full endpoint list is
 in the [HTTP API reference](../reference/http-api.md); exact request/response
 schemas are on the instance itself at `/docs`. Examples below assume a local
 dev instance (`localhost:8080`) and `jq`; substitute
-`https://vdb.sttimothyto.org` for production.
+`https://vdb.example.org` for production.
 
 ## Get a token
 

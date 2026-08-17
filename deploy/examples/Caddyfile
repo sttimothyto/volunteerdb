@@ -1,0 +1,29 @@
+# Example Caddy site block for a VolunteerDB instance.
+#
+# NOT installed by the deploy, on purpose. Caddy on the host may serve other
+# sites, and it owns a TLS certificate lifecycle that a redeploy has no
+# business restarting. Copy the block into /etc/caddy/Caddyfile yourself,
+# substitute the two values, and `systemctl reload caddy`.
+#
+#   vdb.example.org   -> [host] domain      in deploy/sites/<yours>.toml
+#   127.0.0.1:8090    -> [host] listen_port in the same file
+#
+# The app publishes on the loopback address only, so Caddy is the sole way in.
+
+vdb.example.org {
+	# REQUIRED, not an optimisation. The app serves nothing compressed
+	# itself, so without this every response crosses the wire uncompressed —
+	# including the full volunteers table and the public ministry pages.
+	encode zstd gzip
+
+	# Must match [host] listen_port. Caddy's default X-Forwarded-* headers
+	# are what FORWARDED_ALLOW_IPS=* in the app's env file exists to trust,
+	# and are how the app knows to write https:// into emailed links.
+	reverse_proxy 127.0.0.1:8090
+}
+
+# Caddy obtains and renews a Let's Encrypt certificate on its own, once DNS
+# resolves this name to the server. Nothing else is required for TLS.
+#
+# Check the block before reloading:
+#   caddy validate --config /etc/caddy/Caddyfile
