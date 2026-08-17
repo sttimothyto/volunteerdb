@@ -73,16 +73,21 @@ user can reach was widened — and it is why nothing but a throwaway
 development database should ever be seeded.
 ```
 
-## `deploy/files/create_admin.py` — admin bootstrap
+## `volunteerdb.admin_bootstrap` — admin bootstrap
 
 ```sh
-VDB_ADMIN_EMAIL=... VDB_ADMIN_PASSWORD=... python create_admin.py
+VDB_ADMIN_EMAIL=... VDB_ADMIN_PASSWORD=... uv run python -m volunteerdb.admin_bootstrap
 ```
 
 Idempotent: creates the admin account if missing, otherwise leaves it
-untouched. Baked into the container image at `/app/create_admin.py`; the
-deploy runs it as a one-shot container when `VDB_ADMIN_PASSWORD` is passed.
-Requires `VDB_ADMIN_EMAIL` and `VDB_ADMIN_PASSWORD`.
+untouched. It is part of the package, so any image built from this repository
+can run it; the deploy runs it as a one-shot container when
+`VDB_ADMIN_PASSWORD` is passed. Requires `VDB_ADMIN_EMAIL` and
+`VDB_ADMIN_PASSWORD`.
+
+This is the **only** way into a brand-new instance — pass
+`VDB_ADMIN_PASSWORD` on its first deploy or there is no account to sign in
+with.
 
 `VDB_ADMIN_PASSWORD` is checked against the
 [password policy](../explanation/auth.md#what-a-password-has-to-be) before the

@@ -29,7 +29,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Must share the builder's Debian base so the venv's interpreter symlink resolves.
 FROM docker.io/library/python:3.13-slim-trixie
 RUN useradd --system --uid 10001 --create-home app
-# /app carries the venv plus alembic.ini, migrations/, create_admin.py.
+# /app carries the venv (the package itself is installed into it) plus
+# alembic.ini and migrations/.
 COPY --from=builder --chown=app:app /app /app
 COPY --from=docs --chown=app:app /build/docs/_build/html /app/docs-html
 ENV VDB_DOCS_DIR=/app/docs-html
@@ -41,5 +42,6 @@ WORKDIR /app
 USER app
 EXPOSE 8080
 # No ENTRYPOINT: one image serves as app server (default CMD), migration
-# runner (`alembic upgrade head`), and admin bootstrap (`python create_admin.py`).
+# runner (`alembic upgrade head`), and admin bootstrap
+# (`python -m volunteerdb.admin_bootstrap`).
 CMD ["volunteerdb"]

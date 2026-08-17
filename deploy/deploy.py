@@ -206,7 +206,6 @@ files.sync(
         "*/.env.example",
         "*/.gitignore",
         "*/compose.yaml",
-        "*/create_admin.py",  # uploaded by files.put below; keep delete=True off it
     ],
     exclude_dir=[  # traversal only — NOT applied to deletion
         ".git",
@@ -227,12 +226,6 @@ files.sync(
 # Synced: src/, migrations/, docs/, alembic.ini, pyproject.toml, uv.lock,
 #         README.md, .python-version, Containerfile, .containerignore
 
-files.put(
-    name="Upload create_admin.py (baked into the image)",
-    src=str(HERE / "files" / "create_admin.py"),
-    dest=f"{APP_DIR}/create_admin.py",
-    mode="644",
-)
 files.template(
     name="Write /etc/volunteerdb/env",
     src=str(HERE / "templates" / "env.j2"),
@@ -331,7 +324,8 @@ if ADMIN_PASSWORD:
         name="Ensure admin user (one-shot container)",
         commands=[
             f"podman run --rm --network {NET} --env-file {ENV_FILE} "
-            f"-e VDB_ADMIN_EMAIL -e VDB_ADMIN_PASSWORD {IMAGE} python /app/create_admin.py"
+            f"-e VDB_ADMIN_EMAIL -e VDB_ADMIN_PASSWORD {IMAGE} "
+            "python -m volunteerdb.admin_bootstrap"
         ],
         _env={"VDB_ADMIN_EMAIL": ADMIN_EMAIL, "VDB_ADMIN_PASSWORD": ADMIN_PASSWORD},
     )

@@ -139,8 +139,8 @@ ignored. Copy `.env.example` as a starting point.
 ## Variables read by scripts (not the app)
 
 `VDB_ADMIN_EMAIL`, `VDB_ADMIN_PASSWORD`
-: Required by `deploy/files/create_admin.py`, the idempotent admin bootstrap
-  baked into the container image. See [Commands and scripts](cli.md).
+: Required by `python -m volunteerdb.admin_bootstrap`, the idempotent admin
+  bootstrap. See [Commands and scripts](cli.md).
 
 `VDB_DB_PASSWORD`
 : The PostgreSQL role password, written into `/etc/volunteerdb/env` by the

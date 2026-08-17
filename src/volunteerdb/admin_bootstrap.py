@@ -1,5 +1,14 @@
-"""Idempotent admin bootstrap. Needs VDB_DATABASE_URL (sourced from
-/etc/volunteerdb/env) plus VDB_ADMIN_EMAIL / VDB_ADMIN_PASSWORD. Safe to re-run."""
+"""Idempotent admin bootstrap: ``python -m volunteerdb.admin_bootstrap``.
+
+Needs VDB_DATABASE_URL (sourced from /etc/volunteerdb/env in production) plus
+VDB_ADMIN_EMAIL / VDB_ADMIN_PASSWORD. Safe to re-run — an existing account is
+left exactly as it is, so the deploy can call this on every run.
+
+It lives in the package rather than deploy/ so that the image built by a plain
+``podman build .`` can run it: .containerignore excludes deploy/ entirely, and
+a bootstrap the image cannot execute is a trap for anyone reproducing the
+production image by hand.
+"""
 
 import asyncio
 import os
