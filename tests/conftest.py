@@ -4,6 +4,7 @@ A separate volunteerdb_test database is dropped/recreated per test session and
 migrated with alembic; every test starts from truncated tables.
 """
 
+import asyncio
 import os
 import subprocess
 from pathlib import Path
@@ -34,6 +35,33 @@ TEST_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_test"
 # NiceGUI "main file" for user_simulation; see its docstring for why page module
 # imports have to happen inside the simulation's reset context.
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
+
+# should_see budgets 3 retries x 0.1 s = 300 ms, which is the same order as one
+# argon2 pass: measured at 106 ms to hash and 63 ms to verify on an idle dev box,
+# at time_cost=3 / 64 MB / parallelism=4 (volunteerdb.auth), and several times
+# that when the rest of the suite is competing for the same cores. Any assertion
+# waiting on a sign-in, an emailed code, an invite redemption or a password
+# change is therefore racing argon2 on the default budget, and loses often
+# enough to matter — test_volunteer_panel failed 2 runs in 10 that way, on a
+# different line each time, which is what made it look like a mystery instead of
+# a stopwatch. 3 s is nowhere near the real cost; the extra is only ever spent
+# on a genuine failure.
+SLOW = 30
+
+
+async def mail_to(sent: list[tuple[str, str, str]], address: str, timeout_s=3.0):
+    """The most recent (to, subject, body) sent to `address`, waiting for it.
+
+    A page reveals its next step after awaiting the send, so a visible hint
+    ought to mean the mail is already in — but the two are separated by an
+    argon2 pass, and asserting on the captured list with no wait is the same
+    race as a bare should_see.
+    """
+    for _ in range(int(timeout_s * 10)):
+        if sent and sent[-1][0] == address:
+            return sent[-1]
+        await asyncio.sleep(0.1)
+    raise AssertionError(f"no email to {address} within {timeout_s}s; sent={sent}")
 
 
 @pytest.fixture(scope="session")

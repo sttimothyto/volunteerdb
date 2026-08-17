@@ -15,6 +15,8 @@ from nicegui.testing.user_simulation import user_simulation
 from volunteerdb.db import db_session
 from volunteerdb.services import mail, users
 
+from .conftest import SLOW, mail_to
+
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
@@ -43,13 +45,13 @@ async def test_otp_session_sets_a_password_without_the_old_one(database, monkeyp
         # the policy speaks in the form, with the reason and the guidance
         user.find(marker="new-password").type("hunter2")
         user.find("Save password", kind=ui.button).click()
-        await user.should_see("That password is too short", retries=30)
+        await user.should_see("That password is too short", retries=SLOW)
 
         user.find(marker="new-password").clear()
         user.find(marker="new-password").type("thistle brook lantern")
         user.find(marker="repeat-password").type("thistle brook lantern")
         user.find("Save password", kind=ui.button).click()
-        await user.should_see("Password saved", retries=30)
+        await user.should_see("Password saved", retries=SLOW)
 
     async with db_session() as session:
         assert (
@@ -67,8 +69,8 @@ async def test_otp_session_sets_a_password_without_the_old_one(database, monkeyp
 
     # §4.1.2: the account's address hears about it, through a channel the
     # browser doing the change does not control
-    assert sent and sent[-1][0] == "forgetful@example.org"
-    assert sent[-1][1] == "Your VolunteerDB password changed"
+    _to, subject, _body = await mail_to(sent, "forgetful@example.org")
+    assert subject == "Your VolunteerDB password changed"
 
 
 async def test_password_session_must_retype_the_current_password(database, monkeypatch):
@@ -89,12 +91,12 @@ async def test_password_session_must_retype_the_current_password(database, monke
         user.find(marker="repeat-password").type("thistle brook lantern")
         user.find(marker="current-password").type("not-the-old-one-at-all")
         user.find("Save password", kind=ui.button).click()
-        await user.should_see("not your current password", retries=30)
+        await user.should_see("not your current password", retries=SLOW)
 
         user.find(marker="current-password").clear()
         user.find(marker="current-password").type("cedar lamp figs")
         user.find("Save password", kind=ui.button).click()
-        await user.should_see("Password saved", retries=30)
+        await user.should_see("Password saved", retries=SLOW)
 
     async with db_session() as session:
         assert (
