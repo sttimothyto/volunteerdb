@@ -111,7 +111,9 @@ ignored. Copy `.env.example` as a starting point.
 : Where the scheduler emails when a nightly job fails (after each failed
   attempt; a job retries every 30 minutes, at most 3 attempts per parish
   day). Default: empty — failures only log at ERROR. Production sets the
-  same address the host backup/sync wrappers alert.
+  same address the host backup/sync wrappers alert. Some jobs run on a
+  fixed interval rather than at a nightly time; those keep retrying on
+  their own cadence and alert this address at most once per parish day.
 
 `VDB_FETCH_PAGES_AT`, `VDB_PROPOSAL_DIGEST_AT`, `VDB_EVENT_REMINDERS_AT`
 : Parish-local (`VDB_TIMEZONE`) times the in-app scheduler runs each
