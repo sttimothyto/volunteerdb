@@ -138,18 +138,30 @@ def test_event_digest_email_sections_and_link():
             location="Main church",
         ),
         mail.EventDigestItem(
-            kind="reminder",
+            kind="week",
             title="Bazaar shift",
             path="Bazaar Task Force",
             slot="Volunteers",
             starts_at=datetime(2026, 8, 25, 9, 0, tzinfo=tz),
             ends_at=datetime(2026, 8, 25, 11, 0, tzinfo=tz),
         ),
+        mail.EventDigestItem(
+            kind="day",
+            title="Vigil",
+            path="Liturgy",
+            slot="Sacristan",
+            starts_at=datetime(2026, 8, 24, 19, 0, tzinfo=tz),
+            ends_at=datetime(2026, 8, 24, 21, 0, tzinfo=tz),
+        ),
     ]
     subject, body = mail.event_digest_email(items, "https://vdb.example.org/events")
     assert subject == "VolunteerDB: your upcoming service"
     assert "You have been scheduled to serve:" in body
-    assert "Coming up soon" in body
+    assert "Coming up this week" in body
+    assert "Tomorrow — you are serving:" in body
+    assert body.index("Tomorrow") < body.index("Coming up this week"), (
+        "strongest notice first"
+    )
     assert "Sunday Mass — Lector (Liturgy / Lectors)" in body
     assert "Sunday, August 23, 2026, 10:30 AM–12:00 PM, Main church" in body
     assert "https://vdb.example.org/events" in body
