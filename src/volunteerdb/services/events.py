@@ -20,6 +20,7 @@ import difflib
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
@@ -233,6 +234,9 @@ async def create_event(
     slot_inputs = slots or [SlotInput("Volunteers")]
     _check_slots(slot_inputs)
 
+    # weekly repeats share a series id (even a range that yields one row —
+    # it was created AS a series); standalone events carry NULL
+    series_id = uuid4() if repeat_weekly_until is not None else None
     events: list[Event] = []
     for s, e in _occurrences(starts_at, ends_at, repeat_weekly_until):
         event = Event(
@@ -243,6 +247,7 @@ async def create_event(
             starts_at=s,
             ends_at=e,
             created_by=created_by,
+            series_id=series_id,
         )
         session.add(event)
         events.append(event)
@@ -897,6 +902,68 @@ async def sign_up(
         kind=AssignmentKind.signup,
         assigned_by=None,
     )
+
+
+@dataclass(frozen=True)
+class SeriesSignupResult:
+    """What copying a sign-up forward achieved, for the caller's toast."""
+
+    joined: int  # later weeks joined (beyond the clicked slot)
+    skipped_full: int
+    skipped_conflict: int  # already serving that week, or its slot is gone
+
+
+async def sign_up_series(
+    session: AsyncSession, *, slot_id: int, volunteer_id: int | None
+) -> tuple[EventAssignment, SeriesSignupResult]:
+    """Sign up on the given slot, then copy the sign-up onto every later
+    week of the same series with a slot of the same NAME (names are the
+    series-wide identity — slot ids differ per materialized row). Each week
+    joins inside a SAVEPOINT, so a full week or an existing assignment
+    skips that week instead of aborting the whole sign-up."""
+    first = await sign_up(session, slot_id=slot_id, volunteer_id=volunteer_id)
+    slot = await session.get(EventSlot, first.slot_id)
+    event = await session.get(Event, first.event_id)
+    assert slot is not None and event is not None  # sign_up just used them
+    if event.series_id is None:
+        return first, SeriesSignupResult(0, 0, 0)
+    future_rows = (
+        await session.execute(
+            sa.select(Event.id, EventSlot.id)
+            .join(
+                EventSlot,
+                sa.and_(EventSlot.event_id == Event.id, EventSlot.name == slot.name),
+                isouter=True,
+            )
+            .where(
+                Event.series_id == event.series_id,
+                Event.starts_at > event.starts_at,
+                Event.status == EventStatus.scheduled.value,
+            )
+            .order_by(Event.starts_at, Event.id)
+        )
+    ).all()
+    joined = skipped_full = skipped_conflict = 0
+    for _future_event_id, future_slot_id in future_rows:
+        if future_slot_id is None:
+            skipped_conflict += 1  # that week's slot was renamed or removed
+            continue
+        try:
+            async with session.begin_nested():
+                await _join_slot(
+                    session,
+                    slot_id=future_slot_id,
+                    volunteer_id=first.volunteer_id,
+                    kind=AssignmentKind.signup,
+                    assigned_by=None,
+                )
+            joined += 1
+        except ValueError as exc:
+            if "full" in str(exc):
+                skipped_full += 1
+            else:
+                skipped_conflict += 1
+    return first, SeriesSignupResult(joined, skipped_full, skipped_conflict)
 
 
 async def assign(

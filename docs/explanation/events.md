@@ -34,6 +34,14 @@ recombines wall-clock times in the parish's timezone
 across a DST change stays 10:30 — adding `timedelta(weeks=1)` to the
 timestamptz would silently shift it an hour.
 
+The rows of one materialization do share a `series_id` — still not an
+engine, just an identity: it exists solely so a sign-up can offer "also
+sign me up for the later weeks", copying itself onto each future row that
+has a slot of the same *name* (slot ids differ per row; the name is the
+series-wide identity). Weeks already full, already served, or whose slot
+was renamed simply skip. Repeats created before the column existed have no
+series id and never see the offer.
+
 ### The double-booking warning
 
 Creating an event runs an advisory check: scheduled events sharing a

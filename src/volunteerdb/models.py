@@ -1,9 +1,10 @@
 import enum
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, TSTZRANGE, Range
+from sqlalchemy.dialects.postgresql import JSONB, TSTZRANGE, UUID, Range
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -414,6 +415,12 @@ class Event(Base):
         sa.Index("ix_event_team_starts", "team_id", "starts_at"),
         # serves the reminder job's and /events' date-window scans
         sa.Index("ix_event_starts_at", "starts_at"),
+        # serves sign_up_series's "future rows of this series" sweep
+        sa.Index(
+            "ix_event_series",
+            "series_id",
+            postgresql_where=sa.text("series_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -443,6 +450,10 @@ class Event(Base):
     # the fingerprint is a hash of the last-pushed payload (change detection).
     google_event_id: Mapped[str | None] = mapped_column(sa.String(1024))
     google_fingerprint: Mapped[str | None] = mapped_column(sa.String(64))
+    # stamped by create_event on weekly repeats; NULL = standalone. Not a
+    # recurrence engine: the id exists solely so a sign-up can copy itself
+    # onto the later weeks of the same series.
+    series_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
 class EventSlot(Base):

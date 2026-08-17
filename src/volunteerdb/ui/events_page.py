@@ -921,14 +921,51 @@ async def event_detail_page(request: Request, event_id: int):
             )
         ui.navigate.reload()
 
-    @notify_errors
-    async def _signup(slot_id: int) -> None:
-        async with action_session() as (session, actor):
-            await event_service.sign_up(
-                session, slot_id=slot_id, volunteer_id=actor.volunteer_id
-            )
-        ui.notify("You're on the list", color="positive")
-        ui.navigate.reload()
+    def _signup_dialog(slot_id: int, slot_name: str) -> None:
+        series = event.series_id is not None
+        with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+            ui.label(f"Sign up — {slot_name}").classes("text-lg font-medium")
+            repeat = None
+            if series:
+                repeat = ui.checkbox(
+                    "Also sign me up for the later weeks of this series"
+                ).props("dense")
+                ui.label(
+                    "Weeks already full, or where you already serve, are skipped."
+                ).classes("text-sm text-gray-500")
+
+            @notify_errors
+            async def save() -> None:
+                async with action_session() as (session, actor):
+                    if repeat is not None and repeat.value:
+                        _, result = await event_service.sign_up_series(
+                            session, slot_id=slot_id, volunteer_id=actor.volunteer_id
+                        )
+                    else:
+                        await event_service.sign_up(
+                            session, slot_id=slot_id, volunteer_id=actor.volunteer_id
+                        )
+                        result = None
+                dialog.close()
+                if result is None or result == event_service.SeriesSignupResult(
+                    0, 0, 0
+                ):
+                    ui.notify("You're on the list", color="positive")
+                else:
+                    skipped = result.skipped_full + result.skipped_conflict
+                    ui.notify(
+                        f"You're on the list — this week plus {result.joined} more"
+                        + (f", {skipped} week(s) skipped" if skipped else ""),
+                        color="positive",
+                    )
+                ui.navigate.reload()
+
+            with ui.row().classes("justify-end w-full gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+                ui.button("Sign up", icon="person_add", on_click=save).mark(
+                    "signup-confirm"
+                )
+        dialog.open()
 
     @notify_errors
     async def _withdraw(assignment_id: int) -> None:
@@ -1122,7 +1159,9 @@ async def event_detail_page(request: Request, event_id: int):
                         ui.button(
                             "Sign up",
                             icon="person_add",
-                            on_click=lambda _, sid=slot.id: _signup(sid),
+                            on_click=lambda _, sid=slot.id, sn=slot.name: (
+                                _signup_dialog(sid, sn)
+                            ),
                         ).props("dense outline")
                     if can_manage and upcoming and not sv.entries:
                         ui.button(

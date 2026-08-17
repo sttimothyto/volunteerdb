@@ -114,7 +114,8 @@ async def test_signup_withdraw_and_leader_assign(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open(f"/events/{event_id}")
-        user.find("Sign up", kind=ui.button).click()
+        user.find("Sign up", kind=ui.button).click()  # opens the dialog
+        user.find(marker="signup-confirm").click()
         await user.should_see("Mia Member", retries=30)
         await user.should_see("1/2")
         # withdrawing asks for a reason (mailed to the leaders) since Phase 4
@@ -296,6 +297,39 @@ async def test_share_button_and_date_pickers(database):
         user.find("New event", kind=ui.button).click()
         await user.should_see("Repeat weekly until")
         assert len(user.find(kind=ui.date).elements) == 2
+
+
+async def test_series_signup_repeats_across_weeks(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+    start = _next_week(10)
+    async with db_session() as session:
+        weeks = await event_service.create_event(
+            session,
+            team_id=ids["liturgy"],
+            title="Sunday Mass",
+            starts_at=start,
+            ends_at=_next_week(12),
+            repeat_weekly_until=start.date() + timedelta(days=14),
+            created_by=None,
+        )
+        week_ids = [e.id for e in weeks]
+    assert len(week_ids) == 3
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/events/{week_ids[0]}")
+        user.find("Sign up", kind=ui.button).click()
+        await user.should_see("later weeks of this series")
+        box = user.find(kind=ui.checkbox).elements.pop()
+        box.value = True
+        user.find(marker="signup-confirm").click()
+        await user.should_see("this week plus 2 more", retries=30)
+
+    async with db_session() as session:
+        for week_id in week_ids:
+            d = await event_service.detail(session, week_id)
+            assert any(v.id == ids["mia"] for sv in d.slots for _, v in sv.entries)
 
 
 async def test_handoff_and_self_removal_flows_with_mail(database, sent_mail):

@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -389,6 +390,7 @@ class EventOut(ORMModel):
     status: str
     cancelled_at: datetime | None
     created_at: datetime
+    series_id: UUID | None  # shared by weekly repeats; null = standalone
 
 
 class EventSummaryOut(BaseModel):
@@ -453,6 +455,8 @@ class EventDetailOut(BaseModel):
 
 class EventAssignIn(BaseModel):
     volunteer_id: int | None = None  # omitted: sign yourself up
+    # self sign-ups only: copy the sign-up onto later weeks of the series
+    repeat_series: bool = False
 
 
 class SubRequestIn(BaseModel):

@@ -254,10 +254,17 @@ async def create_assignment(
     event = await _get_or_404(ctx, event_id)
     await _slot_of(ctx, event_id, slot_id)
     if data.volunteer_id is None:
-        assignment = await event_service.sign_up(
-            ctx.session, slot_id=slot_id, volunteer_id=ctx.actor.volunteer_id
-        )
+        if data.repeat_series:
+            assignment, _ = await event_service.sign_up_series(
+                ctx.session, slot_id=slot_id, volunteer_id=ctx.actor.volunteer_id
+            )
+        else:
+            assignment = await event_service.sign_up(
+                ctx.session, slot_id=slot_id, volunteer_id=ctx.actor.volunteer_id
+            )
     else:
+        if data.repeat_series:
+            raise ValueError("repeat_series applies to self sign-ups only")
         require(ctx.actor.can_manage_team(event.team_id), "manage this team's events")
         assignment = await event_service.assign(
             ctx.session,

@@ -722,3 +722,90 @@ async def test_substitute_refuses_once_the_event_ended(database):
                 new_volunteer_id=vids[2],
                 acted_by=None,
             )
+
+
+# --- series sign-up -----------------------------------------------------------
+
+
+async def test_weekly_repeats_share_a_series_id_and_singles_do_not(database):
+    team_id, _ = await _team_with_members()
+    start = _at(date.today() + timedelta(days=7), 10)
+    async with db_session() as session:
+        series = await event_service.create_event(
+            session,
+            team_id=team_id,
+            title="Sunday Mass",
+            starts_at=start,
+            ends_at=start + timedelta(hours=2),
+            repeat_weekly_until=start.date() + timedelta(days=21),
+            created_by=None,
+        )
+        single = await event_service.create_event(
+            session,
+            team_id=team_id,
+            title="Bake sale",
+            starts_at=start,
+            ends_at=start + timedelta(hours=2),
+            created_by=None,
+        )
+        sids = {e.series_id for e in series}
+        assert len(series) == 4 and len(sids) == 1 and None not in sids
+        assert single[0].series_id is None
+
+
+async def test_sign_up_series_copies_forward_and_skips_gracefully(database):
+    team_id, vids = await _team_with_members(3)
+    start = _at(date.today() + timedelta(days=7), 10)
+    async with db_session() as session:
+        weeks = await event_service.create_event(
+            session,
+            team_id=team_id,
+            title="Sunday Mass",
+            starts_at=start,
+            ends_at=start + timedelta(hours=2),
+            slots=[event_service.SlotInput("Lector", 1)],
+            repeat_weekly_until=start.date() + timedelta(days=28),
+            created_by=None,
+        )
+        week_ids = [e.id for e in weeks]
+        assert len(week_ids) == 5
+
+    async with db_session() as session:
+        # week 3's Lector is taken; week 4's slot gets renamed
+        d3 = await event_service.detail(session, week_ids[2])
+        await event_service.sign_up(
+            session, slot_id=d3.slots[0].slot.id, volunteer_id=vids[2]
+        )
+        d4 = await event_service.detail(session, week_ids[3])
+        await event_service.update_slot(session, d4.slots[0].slot.id, name="Cantor")
+
+    async with db_session() as session:
+        d1 = await event_service.detail(session, week_ids[0])
+        first, result = await event_service.sign_up_series(
+            session, slot_id=d1.slots[0].slot.id, volunteer_id=vids[1]
+        )
+        assert first.volunteer_id == vids[1]
+        assert (result.joined, result.skipped_full, result.skipped_conflict) == (
+            2,
+            1,
+            1,
+        ), "weeks 2+5 join; week 3 is full; week 4's slot is gone"
+
+    async with db_session() as session:
+        for week_id, expect in zip(
+            week_ids, [True, True, False, False, True], strict=True
+        ):
+            d = await event_service.detail(session, week_id)
+            names = {v.id for sv in d.slots for _, v in sv.entries}
+            assert (vids[1] in names) is expect, f"week {week_id}"
+
+
+async def test_sign_up_series_on_a_standalone_event_is_just_a_sign_up(database):
+    team_id, vids = await _team_with_members()
+    event_id = await _one_event(team_id)
+    async with db_session() as session:
+        first, result = await event_service.sign_up_series(
+            session, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
+        )
+        assert first.volunteer_id == vids[1]
+        assert result == event_service.SeriesSignupResult(0, 0, 0)
