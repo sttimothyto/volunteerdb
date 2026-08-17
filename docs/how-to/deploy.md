@@ -121,17 +121,3 @@ Migrations are not automatically downgraded; if the bad release included
 one, restore the database from a [backup](backup-restore.md) or run a
 reviewed `alembic downgrade` as a one-shot container.
 
-## One-time cutover from the old native install
-
-The script contains a guarded, one-shot **cutover** path that runs only
-while the old host-level PostgreSQL (`postgresql@17-main`) is still active:
-it stops the native service, dumps the host database to
-`/var/backups/volunteerdb-cutover.sql`, restores it into the container
-database in a single transaction, and — only after the smoke test passes —
-disables the host cluster and retires the old unit file. The full cutover,
-rollback, and manual-cleanup runbook is in the `deploy/deploy.py` module
-docstring; take a manual backup first:
-
-```sh
-ssh sttimothyto-prod 'su - postgres -c "pg_dump volunteerdb" > /root/volunteerdb-manual-backup.sql'
-```

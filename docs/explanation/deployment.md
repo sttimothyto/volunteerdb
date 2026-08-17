@@ -94,9 +94,6 @@ Three deliberate choices:
   on the host) terminates HTTPS with automatic Let's Encrypt certificates
   and proxies to `127.0.0.1:8090`; DNS points `vdb.sttimothyto.org` at the
   server. The app just trusts that TLS happened (`VDB_COOKIE_SECURE=true`).
-- **The old native install.** The deploy still carries a guarded one-time
-  cutover/rollback path from the pre-container deployment; it is inert once
-  the host PostgreSQL is retired.
 - **The rclone Google Drive credentials** (OAuth token + backup-encryption
   password) — see [Nightly backups](#nightly-backups).
 
