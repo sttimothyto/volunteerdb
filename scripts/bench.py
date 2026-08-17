@@ -48,7 +48,9 @@ from volunteerdb.models import (
 )
 from volunteerdb.permissions import load_actor, team_ids_map
 from volunteerdb.services import custom_fields as custom_field_service
+from volunteerdb.services import graph as graph_service
 from volunteerdb.services import pages as page_service
+from volunteerdb.services import stats as stats_service
 from volunteerdb.services import teams as team_service
 from volunteerdb.services import users as user_service
 from volunteerdb.services import volunteers as volunteer_service
@@ -492,8 +494,29 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
         async with db_session() as session:
             await volunteer_service.name_map(session)
 
+    async def page_dashboard():
+        # mirrors the data block of ui/dashboard.py as an admin — the widest
+        # answer the page ever computes — keep in sync
+        async with db_session() as session:
+            user = await user_service.get(session, marks["admin_user"])
+            actor = await load_actor(session, user)
+            await graph_service.elements(session, actor)
+            all_teams = await team_service.list_all(session)
+            team_service.team_paths(all_teams)
+            await stats_service.dashboard(session, actor, teams=all_teams)
+            await workload_service.get_config(session)
+
+    async def dashboard_stats():
+        # the statistics alone, so their cost is separable from the graph's
+        async with db_session() as session:
+            user = await user_service.get(session, marks["admin_user"])
+            actor = await load_actor(session, user)
+            await stats_service.dashboard(session, actor)
+
     return {
         "page_volunteers_list": page_volunteers_list,
+        "page_dashboard": page_dashboard,
+        "dashboard_stats": dashboard_stats,
         "search_blank": search_blank,
         "search_name": search_name,
         "search_email": search_email,

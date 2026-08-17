@@ -22,9 +22,26 @@ minutes.)
 
 ## 2. Read the dashboard
 
-- **My teams** lists Maria's three ministries with her role in each.
+The page runs from the widest audience to the narrowest: what the parish
+looks like, then what the people running ministries must act on, then the
+graph, then what is only about Maria. A section you have no right to is not
+there at all — Maria is a leader, not an administrator, so her page opens on
+**Needs attention** and the parish-wide figures above it never appear.
+
+- **Needs attention** counts the teams Maria helps run, the people on them,
+  and the ones with no email address on file (they cannot be invited or
+  mailed about an event). Because she *leads* Liturgy she also gets the
+  leadership gaps — teams with no leader or no second, worst first and
+  clickable — the workload spread of her people, any shift short of
+  volunteers in the next 30 days, and any seat currently being filled. A
+  core team member would see the first three tiles and none of the rest:
+  they read rosters, they do not run the teams.
 - The **ministry graph** shows the whole parish as a network — more on it
   in step 7.
+- **My service**, below the graph, is Maria's own: her next duty, shifts she
+  could cover, a ballot waiting on her, her hours, and **My teams** listing
+  her three ministries with her role in each. Her own workload band is not
+  here and never will be — see step 7.
 - The **search box** finds any volunteer or team — try `felix`. Matches appear
   in a dropdown as you type (from two letters on): pick a team to open its
   page, a volunteer to open their side panel, or press Enter for the full
@@ -97,6 +114,15 @@ This is the app's core question, answerable for anyone, as of any date.
 
 Back on the **Dashboard**: volunteers and teams as a network, gold edges
 marking leadership, dots colored by workload band where you may see it.
+
+Two gestures make a parish-sized map readable. **Zoom in** and the names
+appear — they stay hidden further out, where three hundred of them would
+only overlap each other. **Hover any node** and everything outside its
+immediate connections dims away: hover a team to read its roster, hover a
+person to see every ministry they serve, at any zoom. Size means something
+too — the bigger the bubble, the more ministries that person holds; the
+bigger the plaque, the larger the team.
+
 Use the team filter to focus on *Liturgy* and click a team node to jump to
 its page. Maria's own dot stays grey — nobody sees their own workload —
 but an administrator would see it red: three weighted ministries, two of

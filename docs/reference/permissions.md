@@ -95,7 +95,7 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 
 | Route | Page | Minimum access |
 |---|---|---|
-| `/` | Dashboard: quick search, ministry graph, my teams; as-of picker | signed in |
+| `/` | Dashboard: quick search, statistics, ministry graph; as-of picker | signed in (statistics per the tiers below) |
 | `/login` | Password or email-OTP sign-in | public |
 | `/invite/{token}` | Redeem invite, optionally set password | public (valid, unexpired token) |
 | `/account` | Own sign-in settings: set, change or remove the password (header gear → *Password & sign-in*) | signed in |
@@ -117,3 +117,30 @@ leaders/seconds; and Accounts, Fields, and Workload entries to admins only.
 On narrow screens the nav collapses into a menu button with the same
 entries. Direct navigation without the required role is rejected
 server-side.
+
+### Dashboard statistics
+
+The dashboard's figures run down the page from the widest audience to the
+narrowest — parish, then leadership, then the ministry graph, then the
+reader's own service. A section a reader has no right to is *absent*, not
+empty: the queries behind it never run. Same answers over the API at
+`GET /api/reports/dashboard`.
+
+| Section | Who sees it | What is in it |
+|---|---|---|
+| Parish | admin | Active volunteers and teams, total assignments, volunteers on no team, how many can sign in |
+| Needs attention | admin, or full-roster rights on any team (core/second/leader) | Teams in scope, people on them, people with no email address |
+| ⤷ leadership gaps | admin or leader/second, per team | Teams missing a leader or a second, worst first |
+| ⤷ workload spread | admin or leader/second, per volunteer | How many people sit in each band |
+| ⤷ shifts and open seats | admin or leader/second | Understaffed events in the next 30 days; open proposals by phase |
+| My service | any account linked to a volunteer | Upcoming duties, shifts they could cover, ballots waiting, hours served, their teams |
+
+Two consequences worth stating outright. A core team member sees the reach
+of their ministries but neither the coverage gaps nor the workload bands —
+the same line the teams page and the coverage API already draw. And nobody's
+own workload band appears in *My service*: `can_view_workload` excludes the
+volunteer themself, deliberately.
+
+Under the as-of picker the versioned figures answer from the snapshot and
+the live-only ones (shifts, elections, sign-ins) are left out, with a note
+saying so.

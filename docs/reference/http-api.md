@@ -111,7 +111,28 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | Method & path | Permission | Notes |
 |---|---|---|
 | `GET /api/reports/coverage` | admin or any leader/second | Teams missing leader/second; non-admins see only their managed teams; `as_of=` |
+| `GET /api/reports/dashboard` | signed in | The dashboard's statistics. See below |
 | `GET /api/graph` | signed in | Cytoscape.js elements; `team_id=` focus filter, `as_of=` |
+
+`GET /api/reports/dashboard` answers every caller, but answers each of them
+differently: it has no single permission because it is three tiers, each
+gated by the right that already governs the page it summarises.
+
+| Field | Who gets a value | Otherwise |
+|---|---|---|
+| `parish` | admin | `null` |
+| `leadership` | admin, or anyone with full-roster rights (core/second/leader) | `null` |
+| `leadership.teams_without_leader` / `.teams_without_second` / `.gap_teams` | admin or leader/second — the `GET /api/reports/coverage` gate | `null` / `[]` |
+| `leadership.bands` | admin or leader/second, per volunteer (`can_view_workload`) | `null` |
+| `personal` | any account linked to a volunteer | `null` |
+
+A `null` section was never computed — the queries behind it did not run —
+whereas a `0` is a real count. `as_of=` answers the versioned figures from
+the snapshot and nulls the live-only ones (events, elections, ballots, hours,
+account counts), setting `live: false` to say so.
+
+Deliberately absent from `personal`: the caller's own workload band. Nobody
+sees their own — see [workload](../explanation/workload.md).
 
 ### Users — `api/users.py` (all admin-only)
 
