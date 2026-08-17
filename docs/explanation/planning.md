@@ -119,8 +119,8 @@ exist, because the candidate set under a cast ballot must not change.
 
 The costs of this choice are deliberate: phase changes happen "lazily" at
 read time, and the application never emails anyone of its own accord. The
-one concession is the **nightly digest** (`jobs.proposal_digest`, 03:30
-host crontab — the pattern used for backups, exactly as anticipated): each
+one concession is the **nightly digest** (`jobs.proposal_digest`, run at
+03:30 parish time by the in-app scheduler, `volunteerdb.scheduler`): each
 voter gets at most one email per night covering everything that changed
 for them — added to a roll, or a proposal entering its voting phase — with
 both deadlines restated. Per-voter stamps on `proposal_voter`

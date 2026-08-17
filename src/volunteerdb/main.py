@@ -10,6 +10,7 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles
 
+from . import scheduler
 from .api import api_router
 from .api.deps import install_exception_handlers
 from .config import settings
@@ -167,6 +168,16 @@ def run() -> None:
         secret = secrets.token_hex(32)  # never serve forgeable sessions
         logger.warning(
             "VDB_STORAGE_SECRET unset — using an ephemeral secret; sessions reset on restart"
+        )
+    # Registered here, not in create_app(): tests boot create_app() and must
+    # never start real job loops against the test database.
+    if s.scheduler_enabled and not s.reload:
+        app.on_startup(scheduler.start)
+        app.on_shutdown(scheduler.stop)
+    elif s.scheduler_enabled:
+        logger.info(
+            "scheduler disabled under VDB_RELOAD — reload restarts would re-fire it",
+            audit=True,  # visible at the default AUDIT verbosity
         )
     ui.run(
         host=s.host,

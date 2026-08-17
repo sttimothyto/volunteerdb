@@ -1,0 +1,12 @@
+[Unit]
+Description=Nightly VolunteerDB Drive roster sync at 02:30 parish time
+
+[Timer]
+# tz-suffixed OnCalendar needs systemd >= 235; deploy.py asserts support.
+OnCalendar=*-*-* 02:30:00 America/Toronto
+# A daytime catch-up sync after host downtime is equivalent to a normal run
+# (the sync's ModTime marks make re-runs no-ops on unchanged sheets).
+Persistent=true
+
+[Install]
+WantedBy=timers.target

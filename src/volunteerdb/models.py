@@ -747,6 +747,27 @@ class TeamSheet(Base):
     )
 
 
+class JobRun(Base):
+    """Nightly-job bookkeeping for the in-app scheduler (volunteerdb.scheduler).
+
+    One row per job, existing solely so a restart cannot skip a night: the
+    scheduler runs any job whose last_success_on predates the parish today.
+    Written via a Core ON CONFLICT upsert (the audit listeners still log the
+    write, as they do every write).
+
+    Not system-versioned: scheduler state, not parish data.
+    """
+
+    __tablename__ = "job_run"
+
+    job_name: Mapped[str] = mapped_column(sa.String(100), primary_key=True)
+    last_success_on: Mapped[date | None] = mapped_column(sa.Date)  # parish date
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
+    last_exit_code: Mapped[int | None] = mapped_column(sa.Integer)
+
+
 def _make_history_table(live: sa.Table) -> sa.Table:
     """History twin: live columns (no PK/defaults) + audit columns, no FKs so
     archived rows survive deletion of whatever they referenced."""

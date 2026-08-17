@@ -70,7 +70,7 @@ Requires `VDB_ADMIN_EMAIL` and `VDB_ADMIN_PASSWORD`.
 database is touched: too short or too well-known and it exits 2 with the reason
 on stderr, having created nothing.
 
-## `volunteerdb.jobs` — scheduled one-shot jobs
+## `volunteerdb.jobs` — nightly one-shot jobs
 
 ```sh
 python -m volunteerdb.jobs.fetch_pages
@@ -91,13 +91,26 @@ digest of what needs their input; `event_reminders` emails each volunteer
 their event notices (scheduled by a manager / serving within
 `VDB_EVENT_REMINDER_DAYS`). Both digests are per-person idempotent via
 notification stamps — a failed send retries the next night — and take
-`--today` for manual runs and tests. All need `VDB_DATABASE_URL`. In
-production the host crontab runs them in one-shot app containers at 02:30
-(`volunteerdb-drive-sync`), 03:00 (`volunteerdb-fetch-pages`), 03:30
-(`volunteerdb-proposal-digest`) and 04:00 (`volunteerdb-event-reminders`);
-journal tags match the script names. Nothing inside the app schedules jobs
-— periodic work belongs to the host crontab (see the backup pattern in
-`deploy/deploy.py`).
+`--today` for manual runs and tests. All need `VDB_DATABASE_URL`.
+
+`fetch_pages`, `proposal_digest` and `event_reminders` run **inside the app
+process**: `volunteerdb.scheduler` fires each at its parish-local time
+(`VDB_FETCH_PAGES_AT` 03:00, `VDB_PROPOSAL_DIGEST_AT` 03:30,
+`VDB_EVENT_REMINDERS_AT` 04:00), records completion in the `job_run` table
+so a restart or redeploy cannot skip a night, retries a failure every 30
+minutes (3 attempts/day) and emails `VDB_ALERT_EMAIL` on each failed
+attempt. Their output lands in the app journal (`journalctl -u
+volunteerdb-app`, grep `scheduler`). The `python -m` forms above stay for
+manual runs — in production:
+`podman run --rm --network volunteerdb --env-file /etc/volunteerdb/env
+localhost/volunteerdb:latest python -m volunteerdb.jobs.<name>`. An
+advisory lock (taken by both the scheduler and the CLI) keeps a manual run
+and the scheduler from working the same job concurrently.
+
+`drive_sync` is the exception: its legs are invoked by the host's
+systemd-timed sync script at 02:30 (`journalctl -u volunteerdb-drive-sync`),
+which sandwiches them between rclone transfers — see the deploy's timer
+units. The 02:00 backup timer is the same host-side pattern.
 
 ## `healthcheck.py` — container health probe
 

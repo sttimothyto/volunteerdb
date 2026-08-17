@@ -1,4 +1,5 @@
-"""Nightly event digest (04:00 cron): scheduling notices and reminders.
+"""Nightly event digest (in-app scheduler, VDB_EVENT_REMINDERS_AT):
+scheduling notices and reminders.
 
 Exactly two notices exist, batched into ONE email per person per night no
 matter how many events it covers: (a) a manager scheduled you for an event
@@ -34,6 +35,7 @@ from ..log import init_logging
 from ..models import Event, EventAssignment, EventSlot, EventStatus, Volunteer
 from ..services import mail, planning
 from ..services import teams as team_service
+from . import job_lock
 
 
 async def main(today: date | None = None) -> int:
@@ -135,7 +137,15 @@ def cli(argv: list[str] | None = None) -> int:
         help="pretend today is this date (parish day); for manual runs and tests",
     )
     args = parser.parse_args(argv)
-    return asyncio.run(main(today=args.today))
+
+    async def locked() -> int:
+        async with job_lock("event_reminders") as acquired:
+            if not acquired:
+                print("skipped: another event_reminders run holds the job lock")
+                return 0
+            return await main(today=args.today)
+
+    return asyncio.run(locked())
 
 
 if __name__ == "__main__":

@@ -72,7 +72,7 @@ ignored. Copy `.env.example` as a starting point.
 
 `VDB_PUBLIC_BASE_URL`
 : Absolute origin (e.g. `https://vdb.sttimothyto.org`) used for links in
-  emails sent by cron jobs, which have no live request to derive one from —
+  emails sent by nightly jobs, which have no live request to derive one from —
   today, the events link in the nightly reminder digest. Default: empty, in
   which case those emails simply omit the link (mail sent from the GUI
   keeps deriving links from the request either way). The deploy writes the
@@ -84,6 +84,25 @@ ignored. Copy `.env.example` as a starting point.
   of events they are scheduled to serve at, counted in parish days
   (`VDB_TIMEZONE`). Default: `3`. See
   [Events and scheduling](../explanation/events.md).
+
+`VDB_SCHEDULER_ENABLED`
+: The in-app scheduler that runs the nightly jobs (`fetch_pages`,
+  `proposal_digest`, `event_reminders`) inside the server process. Default:
+  `true`. Always off under `VDB_RELOAD=true` regardless — dev reload
+  restarts the process on every save, which would re-fire startup hooks.
+  See [CLI and jobs](cli.md).
+
+`VDB_ALERT_EMAIL`
+: Where the scheduler emails when a nightly job fails (after each failed
+  attempt; a job retries every 30 minutes, at most 3 attempts per parish
+  day). Default: empty — failures only log at ERROR. Production sets the
+  same address the host backup/sync wrappers alert.
+
+`VDB_FETCH_PAGES_AT`, `VDB_PROPOSAL_DIGEST_AT`, `VDB_EVENT_REMINDERS_AT`
+: Parish-local (`VDB_TIMEZONE`) times the in-app scheduler runs each
+  nightly job. Defaults: `03:00`, `03:30`, `04:00` — kept clear of
+  02:00–02:30, when the host's backup and Drive-sync timers run. Setting
+  one a couple of minutes ahead is the way to watch a job fire in dev.
 
 `VDB_INVITE_TTL_HOURS`
 : How long an invite link stays redeemable — and since re-inviting is how a

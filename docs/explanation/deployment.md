@@ -53,12 +53,13 @@ explicit exception, covered in [Rotate secrets](../how-to/rotate-secrets.md).
 
 ## Nightly backups
 
-A root crontab entry (installed by the deploy) runs a small script at
-02:00 Eastern: `pg_dump | gzip` out of the database container, an atomic
+A systemd timer (installed by the deploy; `Persistent=true`, so a night
+the host slept through is made up at boot) runs a small script at 02:00
+Eastern: `pg_dump | gzip` out of the database container, an atomic
 rename so a half-written dump never gets a dated name, then `rclone copy`
 through an encrypting *crypt* remote to a Google Drive folder owned by
 the parish account — 14 days retained on disk, two years on Drive.
-Output lands in journald (`journalctl -t volunteerdb-backup`) and any
+Output lands in journald (`journalctl -u volunteerdb-backup`) and any
 failure emails `admin@sttimothyto.org` through the same SMTP2GO account
 the app sends with, so a silently broken backup cannot rot unnoticed.
 

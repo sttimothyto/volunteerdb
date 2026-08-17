@@ -26,7 +26,7 @@ trap 'ERR_CTX="line $LINENO: $BASH_COMMAND"' ERR
 {% if alert_email %}
 send_alert() {
     local key msg
-    msg="volunteerdb backup FAILED on $(hostname) at $(date -Is) - $ERR_CTX. Details: journalctl -t volunteerdb-backup"
+    msg="volunteerdb backup FAILED on $(hostname) at $(date -Is) - $ERR_CTX. Details: journalctl -u volunteerdb-backup"
     key=$(sed -n 's/^VDB_SMTP2GO_API_KEY=//p' '{{ env_file }}')
     [ -n "$key" ] || { echo "no VDB_SMTP2GO_API_KEY in {{ env_file }} - cannot send alert" >&2; return 0; }
     curl -sSf --max-time 30 -X POST https://api.smtp2go.com/v3/email/send \

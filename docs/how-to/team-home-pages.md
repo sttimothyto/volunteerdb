@@ -86,10 +86,11 @@ people** list and its resolve action take roster-management rights
 
 ## Operations
 
-- Nightly refresh: `python -m volunteerdb.jobs.fetch_pages`, run at 03:00
-  from the host crontab (`volunteerdb-fetch-pages`, journal tag of the same
-  name). Each team fetches independently — one bad doc cannot block the
-  rest.
+- Nightly refresh: `jobs.fetch_pages`, run at `VDB_FETCH_PAGES_AT` (03:00
+  parish time) by the in-app scheduler; also runnable by hand as
+  `python -m volunteerdb.jobs.fetch_pages`. Output lands in the app journal
+  (`journalctl -u volunteerdb-app`, grep `fetch_pages`). Each team fetches
+  independently — one bad doc cannot block the rest.
 - The fetched HTML is cached in the `team_page` table; the doc link lives on
   `team.home_doc_url` (history-versioned, so `changed_by` records who set
   it).

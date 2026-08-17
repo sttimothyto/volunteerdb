@@ -1,4 +1,5 @@
-"""Nightly proposal digest (03:30 cron): tell voters what needs their input.
+"""Nightly proposal digest (in-app scheduler, VDB_PROPOSAL_DIGEST_AT): tell
+voters what needs their input.
 
 Exactly two notices exist, batched into ONE email per person per night no
 matter how many proposals it covers: (a) you were added to a proposal's
@@ -26,6 +27,7 @@ from ..log import init_logging
 from ..models import ROLE_LABELS, Proposal, ProposalStatus, ProposalVoter, Volunteer
 from ..services import mail, planning
 from ..services import teams as team_service
+from . import job_lock
 
 
 async def main(today: date | None = None) -> int:
@@ -122,7 +124,15 @@ def cli(argv: list[str] | None = None) -> int:
         help="pretend today is this date (parish day); for manual runs and tests",
     )
     args = parser.parse_args(argv)
-    return asyncio.run(main(today=args.today))
+
+    async def locked() -> int:
+        async with job_lock("proposal_digest") as acquired:
+            if not acquired:
+                print("skipped: another proposal_digest run holds the job lock")
+                return 0
+            return await main(today=args.today)
+
+    return asyncio.run(locked())
 
 
 if __name__ == "__main__":

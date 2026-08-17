@@ -35,7 +35,7 @@ trap 'ERR_CTX="line $LINENO: $BASH_COMMAND"' ERR
 send_alert() {
     local key msg detail=""
     [ -s "$WORKDIR/alerts.txt" ] && detail=$(head -c 2000 "$WORKDIR/alerts.txt")
-    msg="volunteerdb drive sync PROBLEM on $(hostname) at $(date -Is) - $ERR_CTX. ${detail} Details: journalctl -t volunteerdb-drive-sync"
+    msg="volunteerdb drive sync PROBLEM on $(hostname) at $(date -Is) - $ERR_CTX. ${detail} Details: journalctl -u volunteerdb-drive-sync"
     key=$(sed -n 's/^VDB_SMTP2GO_API_KEY=//p' '{{ env_file }}')
     [ -n "$key" ] || { echo "no VDB_SMTP2GO_API_KEY in {{ env_file }} - cannot send alert" >&2; return 0; }
     curl -sSf --max-time 30 -X POST https://api.smtp2go.com/v3/email/send \
@@ -93,7 +93,7 @@ if ! '{{ decorate_script }}' --rclone-conf "$RCLONE_CONF" \
     # `if !` keeps set -e and the ERR trap out of it: a cosmetic failure
     # alerts (via the tail block below) but never fails the data sync.
     echo "sheet decoration FAILED - data sync itself unaffected" >&2
-    echo "sheet decoration failed (data sync OK) - details: journalctl -t volunteerdb-drive-sync" >> "$WORKDIR/alerts.txt"
+    echo "sheet decoration failed (data sync OK) - details: journalctl -u volunteerdb-drive-sync" >> "$WORKDIR/alerts.txt"
 fi
 
 # --- 5. record --------------------------------------------------------------

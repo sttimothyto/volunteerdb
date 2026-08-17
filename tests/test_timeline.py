@@ -5,8 +5,10 @@ joined_on): a spell starts when its membership record was created and ends
 when it was deleted.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
+from volunteerdb.config import settings
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
@@ -118,6 +120,13 @@ async def test_deleted_team_uses_last_historical_name(database):
 # --- team_anniversaries ----------------------------------------------------
 
 
+def _today() -> date:
+    """Today in the app timezone. team_anniversaries() converts DB transaction
+    times to settings().timezone, so on a UTC runner date.today() runs a day
+    ahead of the computed spell dates for a few hours every evening."""
+    return datetime.now(ZoneInfo(settings().timezone)).date()
+
+
 def _anniv_of(since: date, years: int) -> date:
     try:
         return since.replace(year=since.year + years)
@@ -130,7 +139,7 @@ async def test_team_anniversaries_window_and_years(database):
         vid, tid = await _fixtures(session)
         await memberships.assign(session, vid, tid, TeamRole.member)
 
-    since = date.today()
+    since = _today()
     first = _anniv_of(since, 1)
     async with db_session() as session:
         (hit,) = await volunteers.team_anniversaries(
@@ -174,7 +183,7 @@ async def test_team_anniversaries_role_change_keeps_one_entry(database):
     async with db_session(user_id=1) as session:
         await memberships.assign(session, vid, tid, TeamRole.leader)
 
-    probe = _anniv_of(date.today(), 1) - timedelta(days=1)
+    probe = _anniv_of(_today(), 1) - timedelta(days=1)
     async with db_session() as session:
         (hit,) = await volunteers.team_anniversaries(session, tid, probe)
         assert hit.years == 1, "a role change is the same continuous spell"
@@ -190,7 +199,7 @@ async def test_team_anniversaries_skip_departed_members_and_other_teams(database
     async with db_session(user_id=1) as session:
         await memberships.remove(session, mid)
 
-    probe = _anniv_of(date.today(), 1)
+    probe = _anniv_of(_today(), 1)
     async with db_session() as session:
         assert await volunteers.team_anniversaries(session, tid, probe) == [], (
             "departed members never appear"

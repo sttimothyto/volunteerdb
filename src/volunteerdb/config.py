@@ -1,3 +1,4 @@
+from datetime import time
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,13 +31,25 @@ class Settings(BaseSettings):
     smtp2go_api_key: str = ""  # empty: emails are printed to the log, not sent
     mail_from: str = "no-reply@sttimothyto.org"
     mail_from_name: str = "VolunteerDB"
-    # Absolute origin for links in cron-job emails (e.g.
+    # Absolute origin for links in nightly-job emails (e.g.
     # https://vdb.sttimothyto.org). UI-sent mail derives links from the live
     # request instead; empty means job emails simply carry no link.
     public_base_url: str = ""
     # How many days ahead the nightly digest (jobs/event_reminders.py)
     # reminds people of events they are scheduled to serve at.
     event_reminder_days: int = 3
+    # In-app scheduler (volunteerdb.scheduler) driving the nightly jobs
+    # below. Forced off under VDB_RELOAD regardless: dev reload restarts the
+    # process on every save, which would re-fire startup hooks.
+    scheduler_enabled: bool = True
+    # Where scheduler job failures are emailed; empty: they only log (ERROR).
+    alert_email: str = ""
+    # Parish-local (VDB_TIMEZONE) times the nightly jobs run, kept clear of
+    # 02:00-02:30 when the host's backup and Drive-sync timers fire. Setting
+    # one a couple of minutes ahead is the way to watch a job fire in dev.
+    fetch_pages_at: time = time(3, 0)
+    proposal_digest_at: time = time(3, 30)
+    event_reminders_at: time = time(4, 0)
     # How long an invite link — which is also the password-reset link — stays
     # usable. NIST SP 800-63B §4.2.1.2 would cap an emailed recovery code at
     # 24 hours; a week is a deliberate deviation for a parish where invitees

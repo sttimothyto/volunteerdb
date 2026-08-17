@@ -23,12 +23,13 @@ src/volunteerdb/
   models.py      SQLAlchemy models + history twins
   history.py     as-of query helpers            │
   permissions.py Actor: what may this user do?  │
-  throttle.py    login rate limiting            ┘
+  throttle.py    login rate limiting            │
+  scheduler.py   in-app clock: runs jobs/ nightly ┘
   services/      THE business layer — all reads/writes go through here
   api/           FastAPI routers: thin JSON wrappers over services/
   ui/            NiceGUI pages: call services/ directly, render widgets
   sheets/        roster CSV template/export/import (used by api/, ui/, jobs/)
-  jobs/          cron-run one-shots: home-page fetch, Drive roster sync
+  jobs/          nightly one-shots: home-page fetch, digests, Drive roster sync
 ```
 
 The invariant worth defending: **`services/` is the only place business

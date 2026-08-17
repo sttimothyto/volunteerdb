@@ -66,7 +66,7 @@ from pathlib import Path
 from pyinfra import host
 from pyinfra.facts.files import File, FileContents
 from pyinfra.facts.systemd import SystemdStatus
-from pyinfra.operations import apt, crontab, files, server, systemd
+from pyinfra.operations import apt, files, server, systemd
 
 # pyinfra resolves relative src paths against the invocation cwd, not this
 # file — anchor everything here so the deploy works from any directory.
@@ -93,7 +93,7 @@ OLD_UNIT = "/etc/systemd/system/volunteerdb.service"
 ADMIN_EMAIL = "admin@sttimothyto.org"
 ADMIN_PASSWORD = os.environ.get("VDB_ADMIN_PASSWORD")
 
-# Nightly backups (script + crontab installed at the end of this deploy).
+# Nightly backups (script + systemd timer installed at the end of this deploy).
 DB_CONTAINER = "volunteerdb-db"
 BACKUP_SCRIPT = "/usr/local/bin/volunteerdb-backup"
 BACKUP_DIR = "/var/backups/volunteerdb"
@@ -105,23 +105,32 @@ RCLONE_DEST = f"{RCLONE_CRYPT_REMOTE}:"
 RCLONE_CONF = "/root/.config/rclone/rclone.conf"
 BACKUP_RETAIN_LOCAL_DAYS = 14
 BACKUP_RETAIN_REMOTE_DAYS = 730
-BACKUP_ALERT_EMAIL = ADMIN_EMAIL  # "" disables the failure email
+# Alerts for backup/drive-sync wrapper failures AND (as VDB_ALERT_EMAIL) for
+# in-app scheduler job failures; "" disables the emails.
+BACKUP_ALERT_EMAIL = ADMIN_EMAIL
 
-# Nightly Drive roster sync (02:30, AFTER the 02:00 backup: the dump is then a
-# restore point taken right before the only automated bulk write) and the
-# 03:00 team home-page fetch. The sync uses the PLAIN Drive remote, not the
-# crypt wrapper — leaders edit these sheets in the Drive UI.
+# Nightly Drive roster sync (02:30 timer, AFTER the 02:00 backup: the dump is
+# then a restore point taken right before the only automated bulk write). The
+# sync uses the PLAIN Drive remote, not the crypt wrapper — leaders edit
+# these sheets in the Drive UI. The remaining nightly jobs (page fetch,
+# proposal digest, event reminders) run inside the app itself
+# (volunteerdb.scheduler), so they need nothing from this deploy beyond the
+# env file.
 SHEETS_FOLDER = "volunteerdb-spreadsheets"
 SYNC_WORKDIR = "/var/lib/volunteerdb-drive-sync"
 DRIVE_SYNC_SCRIPT = "/usr/local/bin/volunteerdb-drive-sync"
 DECORATE_SCRIPT = "/usr/local/bin/volunteerdb-decorate-sheets"
-FETCH_PAGES_SCRIPT = "/usr/local/bin/volunteerdb-fetch-pages"
-# 03:30 proposal digest: after the 02:30 sync (post-sync roster) and the
-# 03:00 page fetch, and well clear of the 02:00 backup.
-PROPOSAL_DIGEST_SCRIPT = "/usr/local/bin/volunteerdb-proposal-digest"
-# 04:00 event reminders: last in the nightly chain, after the digest.
-EVENT_REMINDERS_SCRIPT = "/usr/local/bin/volunteerdb-event-reminders"
 APP_UID = 10001  # the image's `app` user; owns the bind-mounted sync workdir
+
+# Host-side scheduling is plain systemd timer/service units (not quadlets —
+# nothing container-scoped about them), installed into /etc/systemd/system.
+SYSTEMD_DIR = "/etc/systemd/system"
+TIMER_UNITS = (
+    "volunteerdb-backup.service",
+    "volunteerdb-backup.timer",
+    "volunteerdb-drive-sync.service",
+    "volunteerdb-drive-sync.timer",
+)
 
 
 # Reuse secrets already on the server; generate once if absent.
@@ -231,6 +240,7 @@ files.template(
     port=APP_PORT,
     template_sheet_url=template_sheet_url,
     public_base_url=public_base_url,
+    alert_email=BACKUP_ALERT_EMAIL,
 )
 files.template(
     name="Write /etc/volunteerdb/db.env",
@@ -402,16 +412,7 @@ server.shell(
         'then re-run the deploy."; exit 1; }; done'
     ],
 )
-crontab.crontab(
-    name="Nightly backup crontab entry (02:00 America/Toronto)",
-    command=f"systemd-cat -t volunteerdb-backup {BACKUP_SCRIPT}",
-    cron_name="volunteerdb-backup",
-    minute="0",
-    hour="2",
-    user="root",
-)
-
-# --- nightly Drive roster sync + team home-page fetch ------------------------
+# --- nightly Drive roster sync -----------------------------------------------
 # Same placement rationale as the backup block: a Drive problem must never
 # block the app deploy. The sync must NOT go live before the one-time rclone
 # round-trip verification in docs/how-to/drive-roster-sync.md has been run on
@@ -453,77 +454,51 @@ files.template(
     mail_from="no-reply@sttimothyto.org",
     mail_from_name="VolunteerDB",
 )
-files.template(
-    name="Install fetch-pages script",
-    src=str(HERE / "templates" / "volunteerdb-fetch-pages.sh.j2"),
-    dest=FETCH_PAGES_SCRIPT,
-    mode="700",
-    user="root",
-    group="root",
-    image=IMAGE,
-    net=NET,
-    env_file=ENV_FILE,
-    alert_email=BACKUP_ALERT_EMAIL,
-    mail_from="no-reply@sttimothyto.org",
-    mail_from_name="VolunteerDB",
+# --- systemd timers for the two host-coupled jobs (crontab retired) ----------
+# The backup (02:00) and Drive sync (02:30) stay host-side — rclone config,
+# podman exec, and the /sync work dir live here — but fire from timer units
+# instead of root's crontab. Units get their own journal names, so the
+# wrappers no longer need systemd-cat.
+server.shell(
+    name="Assert host systemd supports tz-suffixed OnCalendar",
+    commands=["systemd-analyze calendar '*-*-* 02:00:00 America/Toronto' >/dev/null"],
 )
-files.template(
-    name="Install proposal-digest script",
-    src=str(HERE / "templates" / "volunteerdb-proposal-digest.sh.j2"),
-    dest=PROPOSAL_DIGEST_SCRIPT,
-    mode="700",
-    user="root",
-    group="root",
-    image=IMAGE,
-    net=NET,
-    env_file=ENV_FILE,
-    alert_email=BACKUP_ALERT_EMAIL,
-    mail_from="no-reply@sttimothyto.org",
-    mail_from_name="VolunteerDB",
+for _unit in TIMER_UNITS:
+    files.put(
+        name=f"Install unit {_unit}",
+        src=str(HERE / "files" / _unit),
+        dest=f"{SYSTEMD_DIR}/{_unit}",
+        mode="644",
+    )
+systemd.daemon_reload(name="daemon-reload (timer units)")
+systemd.service(
+    name="volunteerdb-backup.timer enabled",
+    service="volunteerdb-backup.timer",
+    running=True,
+    enabled=True,
 )
-files.template(
-    name="Install event-reminders script",
-    src=str(HERE / "templates" / "volunteerdb-event-reminders.sh.j2"),
-    dest=EVENT_REMINDERS_SCRIPT,
-    mode="700",
-    user="root",
-    group="root",
-    image=IMAGE,
-    net=NET,
-    env_file=ENV_FILE,
-    alert_email=BACKUP_ALERT_EMAIL,
-    mail_from="no-reply@sttimothyto.org",
-    mail_from_name="VolunteerDB",
+systemd.service(
+    name="volunteerdb-drive-sync.timer enabled",
+    service="volunteerdb-drive-sync.timer",
+    running=True,
+    enabled=True,
 )
-crontab.crontab(
-    name="Nightly Drive roster sync crontab entry (02:30 America/Toronto)",
-    command=f"systemd-cat -t volunteerdb-drive-sync {DRIVE_SYNC_SCRIPT}",
-    cron_name="volunteerdb-drive-sync",
-    minute="30",
-    hour="2",
-    user="root",
+# Timers are live above, so removing cron here leaves no coverage gap. One
+# shell op, not crontab.crontab(present=False) x5: pyinfra's removal strands
+# the `# pyinfra-name=` comment lines. Name-scoped grep — unrelated root cron
+# entries survive. Converges to a no-op; delete after a release or two, along
+# with the retired-script cleanup below.
+server.shell(
+    name="Remove retired volunteerdb crontab entries",
+    commands=[
+        "if crontab -l -u root 2>/dev/null | grep -q 'volunteerdb-'; then "
+        "crontab -l -u root | grep -v -e 'pyinfra-name=volunteerdb-' "
+        "-e 'systemd-cat -t volunteerdb-' | crontab -u root -; fi"
+    ],
 )
-crontab.crontab(
-    name="Nightly page fetch crontab entry (03:00 America/Toronto)",
-    command=f"systemd-cat -t volunteerdb-fetch-pages {FETCH_PAGES_SCRIPT}",
-    cron_name="volunteerdb-fetch-pages",
-    minute="0",
-    hour="3",
-    user="root",
-)
-crontab.crontab(
-    name="Nightly proposal digest crontab entry (03:30 America/Toronto)",
-    command=f"systemd-cat -t volunteerdb-proposal-digest {PROPOSAL_DIGEST_SCRIPT}",
-    cron_name="volunteerdb-proposal-digest",
-    minute="30",
-    hour="3",
-    user="root",
-)
-crontab.crontab(
-    name="Nightly event reminders crontab entry (04:00 America/Toronto)",
-    command=f"systemd-cat -t volunteerdb-event-reminders {EVENT_REMINDERS_SCRIPT}",
-    cron_name="volunteerdb-event-reminders",
-    minute="0",
-    hour="4",
-    user="root",
-)
+for _retired in ("fetch-pages", "proposal-digest", "event-reminders"):
+    files.file(
+        name=f"Remove retired volunteerdb-{_retired} script (now in-app)",
+        path=f"/usr/local/bin/volunteerdb-{_retired}",
+        present=False,
+    )

@@ -74,12 +74,14 @@ Optional environment on the command line:
 6. Restarts `volunteerdb-app.service` onto the fresh image and **smoke
    tests** `http://127.0.0.1:8090/login` until it answers 200.
 7. Prunes dangling images.
-8. Installs the nightly-backup script and its 02:00 root-crontab entry,
-   after asserting the one-time rclone remotes (Google Drive + encrypting
-   crypt wrapper) are provisioned
+8. Installs the nightly-backup and Drive-sync scripts plus their 02:00 /
+   02:30 systemd timers (and removes any crontab entries from the retired
+   cron-based scheduling), after asserting the one-time rclone remotes
+   (Google Drive + encrypting crypt wrapper) are provisioned
    ([backup how-to](backup-restore.md)). Until that one-time setup is
    done, the deploy fails at this final step — the app itself is already
-   fully deployed by then.
+   fully deployed by then. The remaining nightly jobs run inside the app
+   (see [CLI and jobs](../reference/cli.md)).
 
 TLS and the public hostname are **outside this repository**: Caddy on the
 host terminates HTTPS for `vdb.sttimothyto.org` and reverse-proxies to

@@ -1,4 +1,5 @@
-"""Refresh every team home page from its public Google Doc (03:00 cron).
+"""Refresh every team home page from its public Google Doc (in-app
+scheduler, VDB_FETCH_PAGES_AT).
 
 Each team is fetched in its own transaction with its own error handling, so
 one bad doc (deleted, made private, oversized) cannot poison the batch — it
@@ -18,6 +19,7 @@ from ..db import db_session
 from ..log import init_logging
 from ..models import Team
 from ..services import pages as page_service
+from . import job_lock
 
 
 async def main() -> int:
@@ -49,5 +51,16 @@ async def main() -> int:
     return 0
 
 
+def cli() -> int:
+    async def locked() -> int:
+        async with job_lock("fetch_pages") as acquired:
+            if not acquired:
+                print("skipped: another fetch_pages run holds the job lock")
+                return 0
+            return await main()
+
+    return asyncio.run(locked())
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    sys.exit(cli())

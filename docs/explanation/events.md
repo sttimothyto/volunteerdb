@@ -74,7 +74,7 @@ not attendance.
 
 ## Notices ride the nightly digest
 
-Like planning, nothing in the app runs on a clock. The 04:00 cron job
+The in-app scheduler is the one clock the app owns. Its 04:00 job
 [`jobs.event_reminders`](../reference/cli.md) sends each volunteer at most
 one email per night: events a manager scheduled them for, and events they
 serve at within the next `VDB_EVENT_REMINDER_DAYS` parish days. Idempotency

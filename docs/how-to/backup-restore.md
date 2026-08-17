@@ -23,8 +23,9 @@ podman exec <db-container> pg_dump -U volunteerdb volunteerdb > backup.sql
 
 ## Scheduled backups
 
-Production backs itself up nightly. At **02:00 America/Toronto**, a root
-crontab entry (installed by the deploy) runs
+Production backs itself up nightly. At **02:00 America/Toronto**, the
+`volunteerdb-backup.timer` systemd unit (installed by the deploy;
+`Persistent=true` makes up a missed night at boot) runs
 `/usr/local/bin/volunteerdb-backup`, which:
 
 1. dumps the database (`pg_dump | gzip`, plain SQL format) atomically to
@@ -49,7 +50,8 @@ runs at **02:30**, so every night's dump is a restore point taken
 immediately *before* the only automated bulk write in the system. Restoring
 last night's backup undoes a bad sync exactly.
 
-Output goes to journald: `journalctl -t volunteerdb-backup`. On any
+Output goes to journald: `journalctl -u volunteerdb-backup`; manual run:
+`systemctl start volunteerdb-backup.service`. On any
 failure, an alert email is sent to `admin@sttimothyto.org` via SMTP2GO
 (same account the app uses; key read from `/etc/volunteerdb/env` at run
 time). The script, schedule, retention windows, and alert address are all
@@ -117,7 +119,7 @@ rclone reveal "$(sed -n '/^\[volunteerdb-gdrive-backup-crypt\]$/,/^\[/ s/^passwo
 ```
 :::
 
-Re-run the deploy afterwards; the assertion passes and the crontab entry
+Re-run the deploy afterwards; the assertion passes and the backup timer
 is installed. Notes:
 
 - The Google Cloud OAuth consent screen must be **In production** (or

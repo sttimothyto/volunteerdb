@@ -68,8 +68,8 @@ already compliant. It runs **before** the relist that `record` reads —
 decoration bumps Drive ModTime, and the stored sync marks must postdate
 it or every sheet would look leader-edited the next night. A decoration
 failure emails an alert but never fails the data sync. Never run it by
-hand between a sync's `record` and the next cron for the same reason; if
-you must, immediately re-run the full sync afterwards.
+hand between a sync's `record` and the next timer run for the same reason;
+if you must, immediately re-run the full sync afterwards.
 
 It authenticates by minting an access token from the rclone remote's
 OAuth client (`rclone.conf` is read, never written) and needs the
@@ -127,10 +127,10 @@ Details that make it safe:
 - Sheets on Drive matching no active team (team archived/deleted) are left
   alone and logged.
 
-Logs: `journalctl -t volunteerdb-drive-sync`. Manual run:
-`ssh sttimothyto-prod 'systemd-cat -t volunteerdb-drive-sync /usr/local/bin/volunteerdb-drive-sync'`.
+Logs: `journalctl -u volunteerdb-drive-sync`. Manual run:
+`ssh sttimothyto-prod 'systemctl start volunteerdb-drive-sync.service'`.
 
-## One-time verification runbook (BEFORE trusting the cron)
+## One-time verification runbook (BEFORE trusting the nightly sync)
 
 The load-bearing assumption is that rclone **updates a converted Google
 Sheet in place** — same file id — when re-uploading its CSV. If the id

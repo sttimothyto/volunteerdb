@@ -1,0 +1,10 @@
+# Payload of volunteerdb-backup.timer; `systemctl start volunteerdb-backup`
+# is the manual trigger (no [Install] — never runs on its own).
+[Unit]
+Description=VolunteerDB nightly database backup (pg_dump -> rclone crypt -> Drive)
+Wants=network-online.target
+After=network-online.target volunteerdb-db.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/volunteerdb-backup
