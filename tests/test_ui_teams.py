@@ -306,3 +306,40 @@ async def test_asof_snapshot_announces_itself_and_offers_a_way_back(database):
         await user.open(f"/teams/{ids['liturgy']}?as_of={today}")
         await user.should_see("Read-only snapshot as of")
         await user.should_see("Back to now")
+
+
+async def test_search_box_runs_where_filters_over_the_rows(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open("/teams")
+        await user.should_see(SEARCH_BOX)
+
+        box = user.find(kind=ui.input, content=SEARCH_BOX)
+        box.type("total > 0 AND name ILIKE 'm%'")
+        assert [r["name"] for r in _table(user).rows] == ["Liturgy", "Music"], (
+            "query matches keep their ancestors, like substring matches"
+        )
+        await user.should_see("2 of 4 teams")
+
+        box.clear()
+        box.type("gaps = 2")
+        assert [r["name"] for r in _table(user).rows] == [
+            "Hospitality",
+            "Liturgy",
+            "Music",
+        ], "Liturgy rides along only as Music's ancestor"
+
+        # a typo'd field reports inline instead of filtering
+        box.clear()
+        box.type("bogus = 1")
+        await user.should_see("query error")
+
+        # blanked counts never match for viewers without manage rights
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open("/teams")
+        user.find(kind=ui.input, content=SEARCH_BOX).type("total > 0")
+        assert _table(user).rows == []
+        await user.should_see("0 of 4 teams")

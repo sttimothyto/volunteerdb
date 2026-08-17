@@ -130,3 +130,97 @@ async def test_volunteers_page_search_box_also_suggests(database):
 
         user.find(marker=f"suggest-volunteer-{maria_id}").click()
         await user.should_see("Email: maria@example.org", retries=30)
+
+
+async def test_query_text_offers_run_and_filters_the_graph(database):
+    from urllib.parse import quote_plus
+
+    from volunteerdb.ui.cytoscape_element import CytoscapeGraph
+
+    async with db_session() as session:
+        music = await teams.create(session, "Music")
+        maria = await volunteers.create(
+            session, "Maria", "Alvarez", "maria@example.org", "555-1234"
+        )
+        bruno = await volunteers.create(
+            session, "Bruno", "Costa", "bruno@example.org", "777-0000"
+        )
+        await memberships.assign(session, maria.id, music.id, TeamRole.member)
+        await memberships.assign(session, bruno.id, music.id, TeamRole.member)
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        )
+        bruno_u = await users.create(
+            session, "bruno@example.org", volunteer_id=bruno.id
+        )
+        maria_id, bruno_id = maria.id, bruno.id
+        admin_id, bruno_uid = admin.id, bruno_u.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{admin_id}")
+        await user.should_see("dev-login ok")
+        await user.open("/")
+        await user.should_see(DASHBOARD_BOX, retries=30)
+
+        # query-shaped text offers to run the query instead of suggesting rows
+        user.find(kind=ui.input, content=DASHBOARD_BOX).type("first_name = 'Maria'")
+        await user.should_see("Run query: first_name = 'Maria'", retries=30)
+        await user.should_not_see("Maria Alvarez")
+
+        # running it narrows the graph in place and pins a removable chip;
+        # the chip renders before the refresh round-trip, so poll the graph
+        async def graph_nodes() -> set[str]:
+            import asyncio
+
+            graph = user.find(kind=CytoscapeGraph).elements.pop()
+            for _ in range(50):
+                ids = {n["data"]["id"] for n in graph._props["elements"]["nodes"]}
+                if ids != full_nodes:
+                    return ids
+                await asyncio.sleep(0.1)
+            return {n["data"]["id"] for n in graph._props["elements"]["nodes"]}
+
+        full_nodes = {
+            n["data"]["id"]
+            for n in user.find(kind=CytoscapeGraph)
+            .elements.pop()
+            ._props["elements"]["nodes"]
+        }
+        user.find(marker="suggest-query").click()
+        await user.should_see("graph-query-chip", retries=30)
+        node_ids = await graph_nodes()
+        assert f"v{maria_id}" in node_ids and f"v{bruno_id}" not in node_ids
+
+        # removing the chip restores the whole graph
+        full_nodes = node_ids
+        user.find(marker="graph-query-chip").trigger("remove")
+        await user.should_not_see("graph-query-chip")
+        node_ids = await graph_nodes()
+        assert f"v{bruno_id}" in node_ids
+
+        # a typo'd field warns instead of quietly falling back to substring
+        user.find(kind=ui.input, content=DASHBOARD_BOX).clear()
+        user.find(kind=ui.input, content=DASHBOARD_BOX).type("bogus = 1")
+        await user.should_see("Run query: bogus = 1", retries=30)
+        user.find(marker="suggest-query").click()
+        await user.should_see("unknown field: bogus", retries=30)
+
+        # the volunteers page runs the same queries via its q param
+        def names() -> list[str]:
+            table = user.find(kind=ui.table).elements.pop()
+            return [r["name"] for r in table.rows]
+
+        await user.open("/volunteers?q=" + quote_plus("phone LIKE '555%'"))
+        await user.should_see(LIST_BOX, retries=30)
+        assert names() == ["Maria Alvarez"]
+        await user.open("/volunteers?q=" + quote_plus("bogus = 1"))
+        await user.should_see("unknown field: bogus", retries=30)
+
+        # a member's private-field query is scoped to their own row
+        await user.open(f"/login-dev/{bruno_uid}")
+        await user.open("/volunteers?q=" + quote_plus("phone LIKE '7%'"))
+        await user.should_see(LIST_BOX, retries=30)
+        assert names() == ["Bruno Costa"]
+        await user.open("/volunteers?q=" + quote_plus("phone LIKE '555%'"))
+        await user.should_see(LIST_BOX, retries=30)
+        assert names() == [], "another volunteer's phone match stays invisible"

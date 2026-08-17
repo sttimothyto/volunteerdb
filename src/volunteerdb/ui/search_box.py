@@ -17,6 +17,7 @@ from typing import Any
 
 from nicegui import ui
 
+from .. import query_lang
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from .context import action_session, notify_errors
@@ -70,6 +71,20 @@ def search_box(
         if len(text) < SUGGEST_MIN_CHARS:
             menu.close()
             menu.clear()
+            return
+
+        if query_lang.parse(text) is not None:
+            # a WHERE filter, not a name: offer to run it instead of
+            # substring-suggesting against the raw SQL text
+            menu.clear()
+            with menu:
+                ui.menu_item(
+                    f"Run query: {text}", on_click=lambda t=text: on_submit(t)
+                ).mark("suggest-query")
+                ui.menu_item("Query syntax help").props(
+                    'href="/manual/reference/query-language.html" target="_blank"'
+                )
+            menu.open()
             return
 
         async with action_session() as (session, actor):

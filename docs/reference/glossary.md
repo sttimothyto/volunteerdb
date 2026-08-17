@@ -117,6 +117,12 @@ custom field
   timestamptz, time, interval, or uuid; values live in the volunteer's
   JSONB `custom` column as JSON scalars.
 
+query filter
+  A SQL `WHERE`-clause expression typed into a search box (e.g.
+  `phone LIKE '555%' AND team = 'Liturgy'`), compiled into the same
+  permission-checked queries the pages run. See
+  [Search query filters](query-language.md).
+
 as-of
   A historical point in time. The dashboard and team pages hide a "View as
   of" date picker in the header's settings menu, and most API GETs accept

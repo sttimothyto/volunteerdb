@@ -162,3 +162,30 @@ async def test_graph_team_filter_restricts_to_subtree(database):
             f"v{on_child.id}",
         } <= node_ids
         assert f"h{child.id}" in {e["data"]["id"] for e in data["edges"]}
+
+
+async def test_graph_narrows_to_volunteer_ids(database):
+    async with db_session() as session:
+        parent, child, other, on_parent, on_child, on_other = await _parish(session)
+        admin = await users.create(
+            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        )
+        actor = await load_actor(session, admin)
+
+        data = await graph.elements(session, actor, volunteer_ids={on_child.id})
+        node_ids = {n["data"]["id"] for n in data["nodes"]}
+        assert node_ids == {f"t{child.id}", f"v{on_child.id}"}, (
+            "only the match and the teams it touches"
+        )
+        edge_ids = {e["data"]["id"] for e in data["edges"]}
+        assert edge_ids == {f"m{child.id}-{on_child.id}"}, (
+            "the hierarchy edge to the unshown parent is dropped"
+        )
+
+        empty = await graph.elements(session, actor, volunteer_ids=set())
+        assert empty == {"nodes": [], "edges": []}
+
+        full = await graph.elements(session, actor, volunteer_ids=None)
+        assert {f"t{parent.id}", f"t{other.id}"} <= {
+            n["data"]["id"] for n in full["nodes"]
+        }, "None keeps the unnarrowed graph"

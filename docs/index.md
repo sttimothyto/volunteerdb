@@ -80,5 +80,6 @@ reference/cli
 reference/schema
 reference/permissions
 reference/spreadsheets
+reference/query-language
 reference/glossary
 ```

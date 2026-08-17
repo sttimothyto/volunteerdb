@@ -2,6 +2,7 @@ from urllib.parse import quote_plus
 
 from nicegui import ui
 
+from .. import query_lang
 from ..models import ROLE_LABELS
 from ..services import graph as graph_service
 from ..services import teams as team_service
@@ -45,13 +46,59 @@ async def dashboard(as_of: str = ""):
         )
 
     panel = VolunteerPanel(as_of)
+    # a submitted WHERE filter narrows the graph in place; plain text still
+    # navigates to the volunteers list like it always has
+    active: dict = {"ids": None, "text": ""}
+
+    async def refresh_graph() -> None:
+        async with action_session() as (session, actor):
+            new_elements = await graph_service.elements(
+                session,
+                actor,
+                team_id=team_filter.value or None,
+                at=at,
+                volunteer_ids=active["ids"],
+            )
+        graph.refresh(new_elements)
+
+    async def submit(text: str) -> None:
+        if query_lang.parse(text) is None:
+            ui.navigate.to(f"/volunteers?q={quote_plus(text)}")
+            return
+        try:
+            async with action_session() as (session, actor):
+                found = await volunteer_service.search_or_query(
+                    session, text, at=at, include_inactive=actor.is_admin, actor=actor
+                )
+        except query_lang.QueryError as exc:
+            ui.notify(str(exc), color="warning")
+            return
+        active["ids"] = {v.id for v in found}
+        active["text"] = text
+        render_chip()
+        await refresh_graph()
+
+    def render_chip() -> None:
+        chip_row.clear()
+        if active["ids"] is None:
+            return
+
+        async def remove() -> None:
+            active["ids"] = None
+            active["text"] = ""
+            chip_row.clear()
+            await refresh_graph()
+
+        with chip_row:
+            ui.chip(active["text"], removable=True, icon="filter_alt").mark(
+                "graph-query-chip"
+            ).on("remove", remove)
+
     with frame("Dashboard", actor, as_of=at, asof_path="/"):
         with ui.row().classes("items-center gap-2 w-full"):
             search_box(
                 "Find volunteers or teams…",
-                on_submit=lambda text: ui.navigate.to(
-                    f"/volunteers?q={quote_plus(text)}"
-                ),
+                on_submit=submit,
                 on_pick_volunteer=panel.open,
                 at=at,
                 as_of=as_of,
@@ -77,17 +124,11 @@ async def dashboard(as_of: str = ""):
                 .classes("w-72")
             )
 
-            async def refilter() -> None:
-                async with action_session() as (session, actor):
-                    new_elements = await graph_service.elements(
-                        session, actor, team_id=team_filter.value or None, at=at
-                    )
-                graph.refresh(new_elements)
-
-            team_filter.on_value_change(refilter)
+            team_filter.on_value_change(refresh_graph)
             ui.button(icon="fit_screen", on_click=lambda: graph.fit()).props(
                 "dense flat"
             ).tooltip("Fit the whole graph in view")
+            chip_row = ui.row().classes("items-center")
             ui.space()
             with ui.row().classes("items-center gap-3 flex-wrap"):
                 _legend_entry("team", "background: var(--vdb-graph-team)")

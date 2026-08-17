@@ -5,9 +5,11 @@ from zoneinfo import ZoneInfo
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import query_lang
 from ..config import settings
 from ..history import entity, fetch
 from ..models import (
+    CustomFieldDef,
     Membership,
     Team,
     TeamRole,
@@ -85,6 +87,50 @@ async def search(
                 )
             visible = sa.or_(*visible_preds) if visible_preds else sa.false()
             stmt = stmt.where(sa.or_(public_match, sa.and_(private_match, visible)))
+    if not include_inactive:
+        stmt = stmt.where(V.is_active)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    return [row[0] for row in await fetch(session, stmt, at)]
+
+
+async def search_or_query(
+    session: AsyncSession,
+    text: str = "",
+    at: datetime | None = None,
+    include_inactive: bool = False,
+    *,
+    actor: Actor | None = None,
+    limit: int | None = None,
+) -> list[Volunteer]:
+    """`search`, unless `text` parses as a SQL WHERE filter — then run that.
+
+    The filter grammar, its per-field access tiers, and the reasoning about
+    what may and may not leak live in query_lang; this function only ANDs
+    the compiled predicate into the same statement shape `search` builds,
+    so include_inactive stays a caller-side (admin-gated) widening and
+    as-of keeps working. Raises query_lang.QueryError for a query-shaped
+    text that cannot run — callers surface the message rather than falling
+    back, so a typo'd field name is not silently read as a name search.
+    """
+    ast = query_lang.parse(text or "")
+    if ast is None:
+        return await search(
+            session, text, at, include_inactive, actor=actor, limit=limit
+        )
+    V, M, T = entity(Volunteer, at), entity(Membership, at), entity(Team, at)
+    # definitions straight from the table: importing services.custom_fields
+    # here would close an import cycle through query_lang
+    defs = {
+        d.key: d
+        for d in (
+            await session.execute(
+                sa.select(CustomFieldDef).where(CustomFieldDef.is_active)
+            )
+        ).scalars()
+    }
+    pred = query_lang.compile_volunteers(ast, V=V, M=M, T=T, defs=defs, actor=actor)
+    stmt = sa.select(V).where(pred).order_by(V.last_name, V.first_name)
     if not include_inactive:
         stmt = stmt.where(V.is_active)
     if limit is not None:

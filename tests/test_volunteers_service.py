@@ -181,3 +181,149 @@ async def test_impact_counts_and_critical_first_ordering(database):
         assert rows[0].leaders_left == 0 and rows[0].leadership_left == 0
         assert rows[1].leaders_left == 1 and rows[1].leadership_left == 2
         assert rows[0].role == TeamRole.leader
+
+
+async def test_search_or_query_scopes_rows_per_role(database):
+    """The WHERE-filter twin of test_search_private_fields_are_scope_aware:
+    a private-field predicate is false outside the actor's visibility, in
+    both polarities, and membership predicates see only visible rosters."""
+    from volunteerdb.permissions import load_actor
+    from volunteerdb.query_lang import QueryError
+    from volunteerdb.services import custom_fields, users
+
+    async with db_session() as session:
+        liturgy = await teams.create(session, "Liturgy")
+        garden = await teams.create(session, "Garden")
+        insider = await volunteers.create(session, "Inne", "Sider", None, "555-0100")
+        gardener = await volunteers.create(
+            session, "Gard", "Ener", None, "555-0200", "keeps the secret recipe"
+        )
+        plain = await volunteers.create(session, "Plain", "Member", None, "555-0300")
+        await memberships.assign(session, insider.id, liturgy.id, TeamRole.member)
+        await memberships.assign(session, gardener.id, garden.id, TeamRole.leader)
+        await memberships.assign(session, plain.id, liturgy.id, TeamRole.member)
+        await custom_fields.create_def(session, "Years served", "integer")
+        await custom_fields.set_values(session, insider.id, {"years_served": 10})
+        await custom_fields.set_values(session, plain.id, {"years_served": 9})
+
+        leader_v = await volunteers.create(session, "Lena", "Leader")
+        await memberships.assign(session, leader_v.id, liturgy.id, TeamRole.leader)
+        leader = await load_actor(
+            session,
+            await users.create(session, "lena@example.org", volunteer_id=leader_v.id),
+        )
+        admin = await load_actor(
+            session, await users.create(session, "admin@example.org", is_admin=True)
+        )
+        member = await load_actor(
+            session,
+            await users.create(session, "plain@example.org", volunteer_id=plain.id),
+        )
+        gard = await load_actor(
+            session,
+            await users.create(session, "gard@example.org", volunteer_id=gardener.id),
+        )
+
+        async def ids(text, actor):
+            return {
+                v.id
+                for v in await volunteers.search_or_query(session, text, actor=actor)
+            }
+
+        # public fields answer identically for every role
+        for actor in (admin, leader, member, None):
+            assert await ids("first_name = 'Inne'", actor) == {insider.id}
+
+        # private leaves: false outside the actor's visibility...
+        assert await ids("phone LIKE '555%'", admin) == {
+            insider.id,
+            gardener.id,
+            plain.id,
+        }
+        assert await ids("phone LIKE '555%'", leader) == {insider.id, plain.id}
+        assert await ids("phone LIKE '555%'", member) == {plain.id}, (
+            "member role sees own row only"
+        )
+        # ...in the negated polarity too: everyone's phone differs from
+        # 555-0100 except the insider's, but a member may learn that about
+        # nobody but themself
+        assert await ids("NOT (phone LIKE '555-0100')", member) == {plain.id}
+        assert await ids("notes IS NULL", member) == {plain.id}, (
+            "IS NULL is a private predicate like any other"
+        )
+
+        # roster leaves see only rosters the actor may view
+        assert await ids("team = 'Liturgy'", admin) == {
+            insider.id,
+            plain.id,
+            leader_v.id,
+        }
+        assert await ids("team = 'Liturgy'", member) == {
+            insider.id,
+            plain.id,
+            leader_v.id,
+        }, "a direct member may match their own team's roster"
+        assert await ids("team = 'Liturgy'", gard) == set(), (
+            "an outsider's membership predicate finds nothing"
+        )
+        assert await ids("role = 'leader'", admin) == {gardener.id, leader_v.id}
+        assert await ids("role IN ('leader', 'second')", member) == {leader_v.id}
+
+        # negated roster: "holds no such visible membership"
+        assert await ids("team != 'Liturgy'", admin) == {gardener.id}
+        assert await ids("team != 'Liturgy'", gard) == {
+            insider.id,
+            gardener.id,
+            plain.id,
+            leader_v.id,
+        }, "invisible memberships cannot prove membership either way"
+        assert await ids("team IS NULL", admin) == set()
+
+        # typed custom-field comparisons (private tier): numeric, not lexical
+        assert await ids("custom.years_served > 9", admin) == {insider.id}
+        assert await ids("years_served BETWEEN 9 AND 10", admin) == {
+            insider.id,
+            plain.id,
+        }
+        assert await ids("years_served IS NULL", admin) == {gardener.id, leader_v.id}
+        assert await ids("years_served > 2", member) == {plain.id}, (
+            "custom values scope like contact details"
+        )
+
+        # non-queries fall back to plain substring search
+        assert await ids("Inne", admin) == {insider.id}
+        with pytest.raises(QueryError):
+            await ids("bogus = 1", admin)
+
+
+async def test_search_or_query_inactive_and_as_of(database):
+    from datetime import UTC, datetime
+
+    async with db_session() as session:
+        v = await volunteers.create(session, "Before", "Rename", "b@example.org")
+        gone = await volunteers.create(session, "Faded", "Ghost")
+        await volunteers.update(session, gone.id, is_active=False)
+        vid, gone_id = v.id, gone.id
+
+    when = datetime.now(UTC)
+    async with db_session() as session:
+        await volunteers.update(session, vid, first_name="After")
+
+    async with db_session() as session:
+        found = await volunteers.search_or_query(session, "first_name = 'After'")
+        assert [x.id for x in found] == [vid]
+        assert await volunteers.search_or_query(session, "first_name = 'Before'") == []
+
+        past = await volunteers.search_or_query(
+            session, "first_name = 'Before'", at=when
+        )
+        assert [x.id for x in past] == [vid], "queries respect as-of"
+
+        assert await volunteers.search_or_query(session, "last_name = 'Ghost'") == []
+        withall = await volunteers.search_or_query(
+            session, "last_name = 'Ghost'", include_inactive=True
+        )
+        assert [x.id for x in withall] == [gone_id]
+        assert await volunteers.search_or_query(session, "is_active = false") == [], (
+            "is_active cannot widen what include_inactive gates"
+        )

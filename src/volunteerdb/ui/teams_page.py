@@ -6,6 +6,7 @@ import httpx
 from fastapi import Request
 from nicegui import ui
 
+from .. import query_lang
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
 from ..services import elections as elections_service
 from ..services import events as event_service
@@ -56,6 +57,8 @@ def _hierarchy_rows(all_teams, coverage, actor) -> list[dict]:
             "path": paths[team.id],
             "depth": depth,
             "inactive": not team.is_active,
+            # not a table column; carried for the search box's query filters
+            "description": team.description or "",
         }
         # coverage() is empty for actors who manage nothing, and skips inactive teams
         r = by_team.get(team.id) if actor.can_manage_team(team.id) else None
@@ -85,29 +88,33 @@ def _hierarchy_rows(all_teams, coverage, actor) -> list[dict]:
     return rows
 
 
-def _matching_rows(rows: list[dict], text: str) -> list[dict]:
-    """The rows whose display path contains `text`, plus each match's ancestors.
-
-    Matching the path rather than the bare name lets a parent's name pull in its
-    whole subtree; putting the ancestors back keeps the rows that the `depth`
-    indent and the └ prefix hang off, so a hit on a child never renders as an
-    orphan sitting at an indent under nothing.
+def _with_ancestors(rows: list[dict], keep: set[int]) -> list[dict]:
+    """The kept rows plus their ancestors, keeping the tree indent honest: the
+    rows that the `depth` indent and the └ prefix hang off must stay, so a hit
+    on a child never renders as an orphan sitting at an indent under nothing.
     """
-    keep: set[int] = set()
-    for i, row in enumerate(rows):
-        if text not in row["path"].lower():
-            continue
-        keep.add(i)
+    kept = set(keep)
+    for i in keep:
         # rows are depth-first, so a row's ancestors are the nearest preceding
         # rows whose depth keeps stepping down
-        depth = row["depth"]
+        depth = rows[i]["depth"]
         for j in range(i - 1, -1, -1):
             if depth == 0:
                 break
             if rows[j]["depth"] < depth:
-                keep.add(j)
+                kept.add(j)
                 depth = rows[j]["depth"]
-    return [row for i, row in enumerate(rows) if i in keep]
+    return [row for i, row in enumerate(rows) if i in kept]
+
+
+def _matching_rows(rows: list[dict], text: str) -> list[dict]:
+    """The rows whose display path contains `text`, plus each match's ancestors.
+
+    Matching the path rather than the bare name lets a parent's name pull in
+    its whole subtree.
+    """
+    keep = {i for i, row in enumerate(rows) if text in row["path"].lower()}
+    return _with_ancestors(rows, keep)
 
 
 def _team_count(shown: int, total: int | None = None) -> str:
@@ -124,8 +131,18 @@ def _wire_search(
     reload — it only swaps what the table is showing."""
 
     def apply() -> None:
-        text = (search.value or "").strip().lower()
-        shown = rows if not text else _matching_rows(rows, text)
+        text = (search.value or "").strip()
+        ast = query_lang.parse(text) if text else None
+        if ast is None:
+            shown = rows if not text else _matching_rows(rows, text.lower())
+        else:
+            try:
+                pred = query_lang.compile_teams(ast)
+            except query_lang.QueryError as exc:
+                # inline, not a toast: this filter runs on every keystroke
+                count.set_text(f"query error: {exc}")
+                return
+            shown = _with_ancestors(rows, {i for i, r in enumerate(rows) if pred(r)})
         table.rows = shown
         table.update()
         count.set_text(_team_count(len(shown), len(rows)))

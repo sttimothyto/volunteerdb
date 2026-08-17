@@ -22,7 +22,13 @@ async def elements(
     actor: Actor,
     team_id: int | None = None,
     at: datetime | None = None,
+    volunteer_ids: set[int] | None = None,
 ) -> dict:
+    """The graph, optionally narrowed to `volunteer_ids` (a search-query hit
+    set). This is a membership graph, so a narrowed view keeps only those
+    volunteers' roster-visible memberships and the teams they touch — a
+    matching volunteer with no visible membership does not appear; the
+    /volunteers list is the complete answer. None means no narrowing."""
     all_teams = await team_service.list_all(session, at)
     paths = team_service.team_paths(all_teams)
 
@@ -34,23 +40,24 @@ async def elements(
     shown_teams = [t for t in all_teams if t.id in visible_ids]
 
     M, V = entity(Membership, at), entity(Volunteer, at)
+    membership_stmt = sa.select(
+        M.team_id,
+        sa.cast(M.role, sa.String),
+        V.id,
+        V.first_name,
+        V.last_name,
+    ).join(V, V.id == M.volunteer_id)
+    if volunteer_ids is not None:
+        membership_stmt = membership_stmt.where(V.id.in_(volunteer_ids))
     rows = (
-        (
-            await session.execute(
-                sa.select(
-                    M.team_id,
-                    sa.cast(M.role, sa.String),
-                    V.id,
-                    V.first_name,
-                    V.last_name,
-                )
-                .join(V, V.id == M.volunteer_id)
-                .where(M.team_id.in_(visible_ids))
-            )
-        ).all()
+        (await session.execute(membership_stmt.where(M.team_id.in_(visible_ids)))).all()
         if visible_ids
         else []
     )
+    if volunteer_ids is not None:
+        # only the teams the matching volunteers actually touch
+        matched_teams = {row[0] for row in rows}
+        shown_teams = [t for t in shown_teams if t.id in matched_teams]
 
     # workload colouring: the permission check needs each volunteer's FULL team
     # set (the visible edges above are only a subset), and the score is global
@@ -117,8 +124,9 @@ async def elements(
                 }
             }
         )
+    shown_ids = {t.id for t in shown_teams}
     for t in shown_teams:
-        if t.parent_team_id in visible_ids:
+        if t.parent_team_id in shown_ids:
             edges.append(
                 {
                     "data": {

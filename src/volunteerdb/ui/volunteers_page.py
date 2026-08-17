@@ -2,6 +2,7 @@ from urllib.parse import quote_plus
 
 from nicegui import app, ui
 
+from .. import query_lang
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
@@ -26,11 +27,16 @@ ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
 @ui.page("/volunteers")
 async def volunteers_page(q: str = "", band: str = ""):
+    is_query = query_lang.parse(q) is not None
+    query_error: str | None = None
     async with page_session() as (session, actor):
-        found = await volunteer_service.search(
-            session, q, include_inactive=actor.is_admin, actor=actor
-        )
-        team_hits = await team_service.search(session, q) if q else []
+        try:
+            found = await volunteer_service.search_or_query(
+                session, q, include_inactive=actor.is_admin, actor=actor
+            )
+        except query_lang.QueryError as exc:
+            found, query_error = [], str(exc)
+        team_hits = await team_service.search(session, q) if q and not is_query else []
         # one query for all listed volunteers' team memberships (drives redaction + workload)
         team_sets = await team_ids_map(session, [v.id for v in found])
         list_defs = [
@@ -46,6 +52,8 @@ async def volunteers_page(q: str = "", band: str = ""):
 
     panel = VolunteerPanel()
     with frame("Volunteers", actor):
+        if query_error:
+            ui.notify(query_error, color="warning")
         with ui.row().classes("items-center gap-2 w-full"):
             band_select: ui.select | None = None
 
