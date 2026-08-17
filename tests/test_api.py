@@ -265,6 +265,25 @@ async def test_custom_fields_flow(client, seeded):
     r = await client.delete(f"/api/custom-fields/{field['id']}", headers=admin)
     assert r.status_code == 204
 
+    # scalar types validate through the same PATCH path
+    r = await client.post(
+        "/api/custom-fields",
+        json={"label": "Years served", "field_type": "integer"},
+        headers=admin,
+    )
+    assert r.status_code == 201
+    r = await client.patch(
+        f"/api/volunteers/{vid}",
+        json={"custom": {"years_served": "three"}},
+        headers=admin,
+    )
+    assert r.status_code == 422
+    r = await client.patch(
+        f"/api/volunteers/{vid}", json={"custom": {"years_served": 3}}, headers=admin
+    )
+    assert r.status_code == 200
+    assert r.json()["custom"]["years_served"] == 3
+
 
 async def test_workload_flow(client, seeded):
     admin = await _token(client, "admin@example.org", "secret-pass-phrase")

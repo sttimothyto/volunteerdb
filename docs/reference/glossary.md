@@ -112,9 +112,10 @@ workload band
   configured on `/admin/workload`.
 
 custom field
-  An admin-defined volunteer attribute (text, number, select, date, or
-  checkbox) declared on `/admin/fields`; values live in the volunteer's
-  JSONB `custom` column.
+  An admin-defined volunteer attribute declared on `/admin/fields` —
+  text, number, select, date, checkbox, integer, decimal, timestamp,
+  timestamptz, time, interval, or uuid; values live in the volunteer's
+  JSONB `custom` column as JSON scalars.
 
 as-of
   A historical point in time. The dashboard and team pages hide a "View as

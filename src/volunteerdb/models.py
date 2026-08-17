@@ -47,6 +47,13 @@ class FieldType(enum.StrEnum):
     select = "select"
     date = "date"
     checkbox = "checkbox"
+    integer = "integer"
+    decimal = "decimal"
+    timestamp = "timestamp"
+    timestamptz = "timestamptz"
+    time = "time"
+    interval = "interval"
+    uuid = "uuid"
 
 
 FIELD_TYPE_LABELS: dict[FieldType, str] = {
@@ -55,6 +62,13 @@ FIELD_TYPE_LABELS: dict[FieldType, str] = {
     FieldType.select: "Choice",
     FieldType.date: "Date",
     FieldType.checkbox: "Checkbox",
+    FieldType.integer: "Integer",
+    FieldType.decimal: "Decimal",
+    FieldType.timestamp: "Timestamp",
+    FieldType.timestamptz: "Timestamp (with zone)",
+    FieldType.time: "Time",
+    FieldType.interval: "Duration",
+    FieldType.uuid: "UUID",
 }
 
 
@@ -624,7 +638,7 @@ class CustomFieldDef(Base):
     __tablename__ = "custom_field_def"
     __table_args__ = (
         sa.CheckConstraint(
-            "field_type IN ('text', 'number', 'select', 'date', 'checkbox')",
+            "field_type IN (" + ", ".join(f"'{ft.value}'" for ft in FieldType) + ")",
             name="ck_custom_field_def_field_type",
         ),
     )

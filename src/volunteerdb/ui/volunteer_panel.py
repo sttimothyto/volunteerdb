@@ -21,9 +21,13 @@ from .photo_dialog import photo_avatar
 def format_custom(defn: CustomFieldDef, value, missing: str = "—") -> str:
     if value is None:
         return missing
-    if defn.field_type == FieldType.checkbox.value:
-        return "yes" if value else "no"
-    return str(value)
+    match FieldType(defn.field_type):
+        case FieldType.checkbox:
+            return "yes" if value else "no"
+        case FieldType.timestamp | FieldType.timestamptz:
+            return str(value).replace("T", " ")
+        case _:
+            return str(value)
 
 
 class VolunteerPanel:

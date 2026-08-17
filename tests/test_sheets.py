@@ -223,15 +223,16 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
         _, _, anna, _ = await _setup(session)
         await custom_fields.create_def(session, "Shirt size", FieldType.text)
         await custom_fields.create_def(session, "Trained", FieldType.checkbox)
+        await custom_fields.create_def(session, "Term", FieldType.interval)
         await custom_fields.set_values(
-            session, anna.id, {"shirt_size": "M", "trained": True}
+            session, anna.id, {"shirt_size": "M", "trained": True, "term": "P1DT2H"}
         )
         content = await exporter.export_csv(session)
 
     rows = _rows(content)
-    assert rows[0][-2:] == ["Shirt size", "Trained"]
+    assert rows[0][-3:] == ["Shirt size", "Term", "Trained"]
     anna_row = next(r for r in rows[1:] if r[1] == "Anna")
-    assert anna_row[8] == "M" and anna_row[9] == "yes"
+    assert anna_row[8] == "M" and anna_row[9] == "P1DT2H" and anna_row[10] == "yes"
 
     # round-trip stays safe: the extra columns are ignored with a warning
     report = await importer.run_import(content, dry_run=False, user_id=None)
@@ -242,4 +243,8 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
 
     async with db_session() as session:
         (found,) = await volunteers.search(session, "Anna")
-        assert found.custom == {"shirt_size": "M", "trained": True}, "values untouched"
+        assert found.custom == {
+            "shirt_size": "M",
+            "trained": True,
+            "term": "P1DT2H",
+        }, "values untouched"

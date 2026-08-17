@@ -10,7 +10,9 @@ e.g. a *Safeguarding training* date or a *Preferred contact* choice.
 
 1. Open **`/admin/fields`** (header → *Fields*).
 2. *New field*: choose a label and a type — `text`, `number`, `select`
-   (with a list of options), `date`, or `checkbox`.
+   (with a list of options), `date`, `checkbox`, `integer`, `decimal`,
+   `timestamp`, `timestamptz`, `time`, `interval` (a duration), or
+   `uuid`.
 3. Optionally enable **Show in list** to add the field as a column on the
    `/volunteers` table; use *position* to order fields.
 4. The field now appears on every volunteer's detail page and edit dialog,
@@ -20,6 +22,10 @@ Notes:
 
 - The field's `key` (slug) is derived once at creation and is immutable;
   the label can be renamed freely.
+- Typed values are entered in standard formats: dates and timestamps in
+  ISO 8601 (`2026-08-17 10:30`, with an offset such as `+02:00` or `Z`
+  for `timestamptz`), durations as ISO 8601 like `P1DT2H30M`, and
+  decimals as digits (`12.50` — exactness is preserved).
 - Values are stored in the volunteer's JSONB `custom` column
   ({ref}`schema <custom_field_def>`) — no migration is needed to add or
   retire fields.

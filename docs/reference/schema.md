@@ -16,7 +16,12 @@ See [History and time travel](../explanation/history.md) for the design.
   leader*, *Second-in-command*, *Core team member*, *Member*).
 
 Custom-field types (CHECK constraint, not a PG enum)
-: `text` · `number` · `select` · `date` · `checkbox`.
+: `text` · `number` · `select` · `date` · `checkbox` · `integer` ·
+  `decimal` · `timestamp` · `timestamptz` · `time` · `interval` · `uuid`.
+  Values are stored as JSON scalars in `volunteer.custom`: integers as
+  numbers, checkboxes as booleans, everything else as canonical strings
+  (ISO 8601 for the temporal types and durations, decimal digits as
+  typed, lowercase UUIDs).
 
 Event statuses (CHECK constraints, not PG enums)
 : `event.status`: `scheduled` · `cancelled` — `event_assignment.kind`:
@@ -94,7 +99,7 @@ flag is on the account.
 | `id` | integer | PK |
 | `key` | varchar(50) | unique slug, immutable after creation |
 | `label` | varchar(100) | display name |
-| `field_type` | varchar(20) | CHECK: one of the five types above |
+| `field_type` | varchar(20) | CHECK: one of the twelve types above |
 | `options` | jsonb | choices for `select` fields |
 | `show_in_list` | boolean | promotes the field to a volunteers-table column |
 | `position` | integer | display order |

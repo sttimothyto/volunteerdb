@@ -454,6 +454,34 @@ def _custom_widget(defn: CustomFieldDef, value):
             )
         case FieldType.checkbox:
             return ui.switch(defn.label, value=bool(value))
+        case FieldType.integer:
+            return (
+                ui.number(defn.label, value=value, precision=0)
+                .props("outlined dense clearable")
+                .classes("w-full")
+            )
+        case (
+            FieldType.decimal
+            | FieldType.timestamp
+            | FieldType.timestamptz
+            | FieldType.time
+            | FieldType.interval
+            | FieldType.uuid
+        ) as ft:
+            # typed as text, like date: the codec validates on save
+            placeholders = {
+                FieldType.decimal: "e.g. 12.50",
+                FieldType.timestamp: "YYYY-MM-DD HH:MM",
+                FieldType.timestamptz: "YYYY-MM-DD HH:MM+02:00",
+                FieldType.time: "HH:MM",
+                FieldType.interval: "P1DT2H30M (ISO 8601 duration)",
+                FieldType.uuid: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+            }
+            return (
+                ui.input(defn.label, value=value or "", placeholder=placeholders[ft])
+                .props("outlined dense clearable")
+                .classes("w-full")
+            )
         case _:  # text
             return (
                 ui.input(defn.label, value=value or "")

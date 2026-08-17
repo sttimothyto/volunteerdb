@@ -6,12 +6,12 @@ versioned: historical snapshots render against the current definitions.
 """
 
 import re
-from datetime import date
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import fieldcodec
 from ..models import CustomFieldDef, FieldType, Volunteer
 from . import volunteers as volunteer_service
 
@@ -126,31 +126,17 @@ def validate_value(defn: CustomFieldDef, value: Any) -> Any:
     """Normalize a raw value for storage, or raise ValueError. None clears."""
     if value is None:
         return None
-    match FieldType(defn.field_type):
-        case FieldType.text:
-            if not isinstance(value, str):
-                raise ValueError(f"{defn.label} must be text")
-            return value.strip() or None
-        case FieldType.number:
-            # bool subclasses int — reject it before the numeric check
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(f"{defn.label} must be a number")
-            return value
-        case FieldType.select:
-            if value not in (defn.options or []):
-                raise ValueError(
-                    f"{defn.label} must be one of: {', '.join(defn.options or [])}"
-                )
-            return value
-        case FieldType.date:
-            try:
-                return date.fromisoformat(str(value).strip()).isoformat()
-            except ValueError:
-                raise ValueError(f"{defn.label} must be a YYYY-MM-DD date") from None
-        case FieldType.checkbox:
-            if not isinstance(value, bool):
-                raise ValueError(f"{defn.label} must be true or false")
-            return value
+    ft = FieldType(defn.field_type)
+    if ft is FieldType.select:
+        if value not in (defn.options or []):
+            raise ValueError(
+                f"{defn.label} must be one of: {', '.join(defn.options or [])}"
+            )
+        return value
+    try:
+        return fieldcodec.parse_scalar(ft, value)
+    except ValueError as exc:
+        raise ValueError(f"{defn.label} {exc}") from None
 
 
 async def set_values(
