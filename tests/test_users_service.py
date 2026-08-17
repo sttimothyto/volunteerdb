@@ -315,3 +315,19 @@ async def test_clear_password_drops_api_access_too(database):
             await users.authenticate(session, "quits@example.org", "cedar lamp figs")
             is None
         )
+
+
+async def test_accounts_by_volunteer_maps_only_the_linked_ones(database):
+    async with db_session() as session:
+        linked = await volunteers.create(session, "Lin", "Ked", "lin@example.org")
+        bare = await volunteers.create(session, "Bare", "Foot", "bare@example.org")
+        account = await users.create(session, "lin@example.org", volunteer_id=linked.id)
+        # an account belonging to nobody must not land in the map
+        await users.create(session, "bot@example.org", link_by_email=False)
+
+        by_volunteer = await users.accounts_by_volunteer(session, [linked.id, bare.id])
+        assert by_volunteer == {linked.id: account}
+        assert await users.accounts_by_volunteer(session, []) == {}
+
+        assert await users.account_for_volunteer(session, linked.id) is account
+        assert await users.account_for_volunteer(session, bare.id) is None

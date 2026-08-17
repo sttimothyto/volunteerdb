@@ -48,6 +48,10 @@ Header → **Teams** → *Liturgy*. Because Maria leads it:
 - The roster shows every member **with contact details** and their role.
   Click anyone to open their side panel: because Maria leads their team,
   it carries a [workload](../explanation/workload.md) badge.
+- Each row ends with the member's sign-in status: an **account** badge (or
+  **no account** for someone who has never been registered) and the date
+  they last logged in. That is who can be reached through the app, as
+  opposed to who is merely on the list.
 - Sub-teams (*Altar Servers*, *Lectors*, *Music Ministry*, *Sacristans*)
   are listed — Maria's leadership covers them too.
 - **Add a member:** pick any volunteer, role *Member*. **Change a role:**
@@ -75,7 +79,7 @@ your permissions: it contains contact details because Maria may see them.
 Open **Peter Kowalski** from the Altar Servers roster:
 
 - His profile shows contact info, custom fields (e.g. *Safeguarding
-  training*), and which teams he serves on.
+  training*), **Last login**, and which teams he serves on.
 - The **timeline chart** shows his service history — note the two-color bar
   on Altar Servers: he served as a plain member before taking over as
   leader.

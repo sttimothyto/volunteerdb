@@ -66,6 +66,13 @@ Additional rules:
   account** may view, upload, replace, or delete any volunteer's photo
   (panel, detail page, graph, and the `/api/volunteers/{id}/photo`
   endpoints). Photos are not treated as redacted contact detail.
+- **Sign-in status** is likewise not redacted. The profile page shows
+  *Last login* for every volunteer, to every viewer, whether or not that
+  viewer may read their contact details; the team roster adds a badge per
+  member saying whether they have a VolunteerDB account at all, visible to
+  everyone who can see the roster's names. Managing accounts is still
+  admin-only (`/admin/users`) — this only reports. Account state is not
+  system-versioned, so an as-of roster reports who can sign in *now*.
 
 ## GUI page index
 

@@ -67,6 +67,28 @@ async def list_all(session: AsyncSession) -> list[AppUser]:
     )
 
 
+async def accounts_by_volunteer(
+    session: AsyncSession, volunteer_ids: list[int]
+) -> dict[int, AppUser]:
+    """volunteer id -> their sign-in account, for the ids that have one.
+
+    One query for a whole roster; a missing key means that volunteer has no
+    account at all. app_user.volunteer_id is unique, so there is never more
+    than one to choose between."""
+    if not volunteer_ids:
+        return {}
+    rows = await session.execute(
+        sa.select(AppUser).where(AppUser.volunteer_id.in_(volunteer_ids))
+    )
+    return {u.volunteer_id: u for u in rows.scalars() if u.volunteer_id is not None}
+
+
+async def account_for_volunteer(
+    session: AsyncSession, volunteer_id: int
+) -> AppUser | None:
+    return (await accounts_by_volunteer(session, [volunteer_id])).get(volunteer_id)
+
+
 async def authenticate(
     session: AsyncSession, email: str, password: str
 ) -> AppUser | None:

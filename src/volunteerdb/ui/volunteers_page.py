@@ -11,9 +11,11 @@ from ..services import events as event_service
 from ..services import memberships as membership_service
 from ..services import photos as photo_service
 from ..services import teams as team_service
+from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from . import column_order
+from .account_status import last_login_text
 from .context import action_session, notify_errors, page_session
 from .elections_page import phase_badge
 from .layout import frame
@@ -252,6 +254,7 @@ async def volunteer_detail(volunteer_id: int):
             else None
         )
         spells = await volunteer_service.timeline(session, volunteer_id)
+        account = await user_service.account_for_volunteer(session, volunteer_id)
         all_teams = await team_service.list_all(session)
         paths = team_service.team_paths(all_teams)
         assignable = {
@@ -324,6 +327,11 @@ async def volunteer_detail(volunteer_id: int):
                 ui.label(
                     "Contact details visible to their team leaders and core members."
                 ).classes("text-sm text-gray-400 italic")
+            # outside the can_view gate on purpose: whether someone reads what
+            # the app sends them is not a contact detail
+            ui.label(f"Last login: {last_login_text(account)}").classes(
+                "text-sm text-gray-700"
+            )
 
         ui.label("Serves on").classes("text-lg font-medium")
         if not assignments:
