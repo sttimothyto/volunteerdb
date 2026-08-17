@@ -70,6 +70,21 @@ ignored. Copy `.env.example` as a starting point.
 `VDB_MAIL_FROM_NAME`
 : Sender display name. Default: `VolunteerDB`.
 
+`VDB_PUBLIC_BASE_URL`
+: Absolute origin (e.g. `https://vdb.sttimothyto.org`) used for links in
+  emails sent by cron jobs, which have no live request to derive one from —
+  today, the events link in the nightly reminder digest. Default: empty, in
+  which case those emails simply omit the link (mail sent from the GUI
+  keeps deriving links from the request either way). The deploy writes the
+  production domain and reads it back on later runs, like
+  `VDB_TEMPLATE_SHEET_URL`.
+
+`VDB_EVENT_REMINDER_DAYS`
+: How many days ahead the nightly `event_reminders` digest reminds people
+  of events they are scheduled to serve at, counted in parish days
+  (`VDB_TIMEZONE`). Default: `3`. See
+  [Events and scheduling](../explanation/events.md).
+
 `VDB_INVITE_TTL_HOURS`
 : How long an invite link stays redeemable — and since re-inviting is how a
   password is reset, how long a reset link lives. Default: `168` (7 days) — a
@@ -84,7 +99,8 @@ ignored. Copy `.env.example` as a starting point.
 : IANA zone the parish lives in. Default: `America/Toronto`. Date-typed
   values like planning deadlines mean "through the end of that day *here*":
   the phase of an open proposal is computed against today's date in this
-  zone, not against the container's clock (UTC in production).
+  zone, not against the container's clock (UTC in production). Event
+  reminder windows and the weekly repeat helper use the same zone.
 
 `VDB_DOCS_DIR`
 : Directory of built documentation HTML served at `/manual` (signed-in

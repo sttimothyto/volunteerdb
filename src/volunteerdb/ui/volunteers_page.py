@@ -5,6 +5,7 @@ from nicegui import app, ui
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
+from ..services import events as event_service
 from ..services import memberships as membership_service
 from ..services import photos as photo_service
 from ..services import planning as planning_service
@@ -211,6 +212,11 @@ async def volunteer_detail(volunteer_id: int):
         )
         # scoped inside the service: only proposals this actor may see
         involvements = await planning_service.involving(session, actor, volunteer_id)
+        hours = (
+            await event_service.hours_for_volunteer(session, volunteer_id)
+            if can_view
+            else None
+        )
         spells = await volunteer_service.timeline(session, volunteer_id)
         all_teams = await team_service.list_all(session)
         paths = team_service.team_paths(all_teams)
@@ -270,6 +276,15 @@ async def volunteer_detail(volunteer_id: int):
                 if can_edit and volunteer.notes:
                     ui.label(f"Notes: {volunteer.notes}").classes(
                         "text-sm text-gray-700"
+                    )
+                if hours is not None and hours.events_attended:
+                    ui.label(
+                        f"Service hours: {hours.total_hours:g} h across "
+                        f"{hours.events_attended} event"
+                        f"{'s' if hours.events_attended != 1 else ''}"
+                    ).classes("text-sm text-gray-700").tooltip(
+                        "Derived from event attendance: scheduled duration "
+                        "unless a leader recorded an exception"
                     )
             else:
                 ui.label(

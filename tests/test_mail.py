@@ -1,7 +1,9 @@
 """SMTP2GO send path via a mocked httpx transport — the 'never raises' contract."""
 
 import json
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -84,3 +86,66 @@ def test_ttl_window_renders_whole_days_as_days():
 def test_invite_email_states_the_default_week():
     _, body = mail.invite_email("https://vdb.example.org/invite/tok")
     assert "7 days" in body, "the 168-hour default must read as days"
+
+
+def test_event_digest_email_sections_and_link():
+    tz = ZoneInfo("America/Toronto")
+    items = [
+        mail.EventDigestItem(
+            kind="scheduled",
+            title="Sunday Mass",
+            path="Liturgy / Lectors",
+            slot="Lector",
+            starts_at=datetime(2026, 8, 23, 10, 30, tzinfo=tz),
+            ends_at=datetime(2026, 8, 23, 12, 0, tzinfo=tz),
+            location="Main church",
+        ),
+        mail.EventDigestItem(
+            kind="reminder",
+            title="Bazaar shift",
+            path="Bazaar Task Force",
+            slot="Volunteers",
+            starts_at=datetime(2026, 8, 25, 9, 0, tzinfo=tz),
+            ends_at=datetime(2026, 8, 25, 11, 0, tzinfo=tz),
+        ),
+    ]
+    subject, body = mail.event_digest_email(items, "https://vdb.example.org/events")
+    assert subject == "VolunteerDB: your upcoming service"
+    assert "You have been scheduled to serve:" in body
+    assert "Coming up soon" in body
+    assert "Sunday Mass — Lector (Liturgy / Lectors)" in body
+    assert "Sunday, August 23, 2026, 10:30 AM–12:00 PM, Main church" in body
+    assert "https://vdb.example.org/events" in body
+
+    _, without_link = mail.event_digest_email(items, None)
+    assert "https://" not in without_link, "no configured base URL, no link"
+
+
+def test_sub_request_email_carries_the_note_and_claim_link():
+    subject, body = mail.sub_request_email(
+        "Sunday Mass",
+        "Liturgy",
+        "Lector",
+        "Sunday, August 23, 2026, 10:30 AM–12:00 PM",
+        "Mia Member",
+        "out of town",
+        "https://vdb.example.org/events",
+    )
+    assert subject == "Substitute needed: Sunday Mass"
+    assert "Mia Member can no longer serve as Lector" in body
+    assert "out of town" in body
+    assert "https://vdb.example.org/events" in body
+
+
+def test_event_when_spans_days_when_needed():
+    tz = ZoneInfo("America/Toronto")
+    same_day = mail.event_when(
+        datetime(2026, 8, 23, 10, 30, tzinfo=tz),
+        datetime(2026, 8, 23, 12, 0, tzinfo=tz),
+    )
+    assert same_day == "Sunday, August 23, 2026, 10:30 AM–12:00 PM"
+    overnight = mail.event_when(
+        datetime(2026, 8, 23, 22, 0, tzinfo=tz),
+        datetime(2026, 8, 24, 2, 0, tzinfo=tz),
+    )
+    assert "August 23" in overnight and "August 24" in overnight

@@ -4,6 +4,7 @@ from starlette.responses import Response
 from ..models import Volunteer
 from ..permissions import Actor, require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
+from ..services import events as event_service
 from ..services import photos as photo_service
 from ..services import planning as planning_service
 from ..services import volunteers as service
@@ -16,6 +17,7 @@ from .schemas import (
     PhotoMetaOut,
     TimelineSegmentOut,
     TimelineSpellOut,
+    VolunteerHoursOut,
     VolunteerIn,
     VolunteerOut,
     VolunteerPatch,
@@ -192,6 +194,26 @@ async def volunteer_proposals(ctx: CtxDep, volunteer_id: int) -> list[Involvemen
         )
         for r in rows
     ]
+
+
+@router.get("/{volunteer_id}/hours")
+async def volunteer_hours(ctx: CtxDep, volunteer_id: int) -> VolunteerHoursOut:
+    """Derived service record: hours over past, non-cancelled events the
+    volunteer was assigned to (auto = scheduled duration, unless a manager
+    recorded an exception). Visible to whoever may view the full profile."""
+    if await service.get(ctx.session, volunteer_id) is None:
+        raise LookupError(f"volunteer {volunteer_id} not found")
+    team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
+    require(
+        ctx.actor.can_view_volunteer(volunteer_id, team_ids),
+        "view this volunteer's service record",
+    )
+    summary = await event_service.hours_for_volunteer(ctx.session, volunteer_id)
+    return VolunteerHoursOut(
+        volunteer_id=volunteer_id,
+        total_hours=float(summary.total_hours),
+        events_attended=summary.events_attended,
+    )
 
 
 @router.get("/{volunteer_id}/impact")

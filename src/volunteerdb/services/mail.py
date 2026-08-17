@@ -7,7 +7,8 @@ so tests can monkeypatch it.
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
@@ -199,6 +200,116 @@ def proposal_digest_email(items: list[DigestItem]) -> tuple[str, str]:
         "act through the end of the deadline day."
     )
     return ("VolunteerDB planning: your input is needed", body)
+
+
+# --- events -------------------------------------------------------------------
+
+
+def event_when(starts_at: datetime, ends_at: datetime) -> str:
+    """'Sunday, August 23, 2026, 10:30 AM–12:00 PM' in the parish's clock."""
+    tz = ZoneInfo(settings().timezone)
+    s, e = starts_at.astimezone(tz), ends_at.astimezone(tz)
+    if e.date() == s.date():
+        return f"{s:%A, %B %-d, %Y}, {s:%-I:%M %p}–{e:%-I:%M %p}"
+    return f"{s:%A, %B %-d, %Y}, {s:%-I:%M %p} – {e:%A, %B %-d, %Y}, {e:%-I:%M %p}"
+
+
+@dataclass(frozen=True)
+class EventDigestItem:
+    """One assignment in a volunteer's nightly events digest
+    (jobs/event_reminders.py)."""
+
+    kind: str  # "scheduled" | "reminder"
+    title: str
+    path: str  # team path, e.g. "Liturgy / Lectors"
+    slot: str
+    starts_at: datetime
+    ends_at: datetime
+    location: str | None = None
+
+
+_EVENT_DIGEST_HEADERS = {
+    "scheduled": "You have been scheduled to serve:",
+    "reminder": "Coming up soon — you are serving:",
+}
+
+
+def event_digest_email(
+    items: list[EventDigestItem], events_url: str | None = None
+) -> tuple[str, str]:
+    """One nightly email covering all of this volunteer's event notices —
+    never one email per event. events_url is settings().public_base_url via
+    the job; unset omits the link (the proposal-digest precedent)."""
+    sections = []
+    for kind, header in _EVENT_DIGEST_HEADERS.items():
+        lines = []
+        for item in (i for i in items if i.kind == kind):
+            where = f", {item.location}" if item.location else ""
+            lines.append(
+                f"  • {item.title} — {item.slot} ({item.path})\n"
+                f"    {event_when(item.starts_at, item.ends_at)}{where}"
+            )
+        if lines:
+            sections.append(header + "\n" + "\n".join(lines))
+    tail = (
+        "\n\nIf you can no longer serve, open the Events page in VolunteerDB "
+        "and request a substitute so a teammate can take the slot."
+    )
+    if events_url:
+        tail += f"\nYour events: {events_url}"
+    return ("VolunteerDB: your upcoming service", "\n\n".join(sections) + tail)
+
+
+def sub_request_email(
+    title: str,
+    path: str,
+    slot: str,
+    when: str,
+    requester_name: str,
+    note: str | None,
+    events_url: str,
+) -> tuple[str, str]:
+    """Sent to the event team's members (minus the requester and anyone
+    already serving that event) when someone asks for a substitute. The
+    audience is authenticated teammates, so the requester's short note may
+    appear — unlike the public interest form's mail."""
+    lines = [
+        f"{requester_name} can no longer serve as {slot} at:",
+        "",
+        f"  {title} — {path}",
+        f"  {when}",
+    ]
+    if note:
+        lines += ["", f"Their note: {note}"]
+    lines += [
+        "",
+        "The first teammate to claim the slot takes it — open the Events "
+        f"page to help out: {events_url}",
+    ]
+    return (f"Substitute needed: {title}", "\n".join(lines))
+
+
+def sub_claimed_email(
+    title: str, slot: str, when: str, claimant_name: str, asker_name: str
+) -> tuple[str, str]:
+    """Sent to the person who asked AND the team's leaders once a
+    substitution is claimed."""
+    return (
+        f"Substitute found: {title}",
+        f"{claimant_name} has taken over {asker_name}'s {slot} slot at "
+        f"{title} ({when}).\n\n"
+        "Nothing more to do — the schedule has been updated.",
+    )
+
+
+def event_cancelled_email(title: str, path: str, when: str) -> tuple[str, str]:
+    """Sent to every assignee when a manager cancels an upcoming event."""
+    return (
+        f"Cancelled: {title}",
+        f"The event {title} ({path}), scheduled for {when}, has been "
+        "cancelled.\n\n"
+        "You were signed up to serve there; no action is needed.",
+    )
 
 
 def welcome_email(login_url: str, has_password: bool) -> tuple[str, str]:

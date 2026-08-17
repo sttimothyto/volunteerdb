@@ -119,6 +119,8 @@ FETCH_PAGES_SCRIPT = "/usr/local/bin/volunteerdb-fetch-pages"
 # 03:30 proposal digest: after the 02:30 sync (post-sync roster) and the
 # 03:00 page fetch, and well clear of the 02:00 backup.
 PROPOSAL_DIGEST_SCRIPT = "/usr/local/bin/volunteerdb-proposal-digest"
+# 04:00 event reminders: last in the nightly chain, after the digest.
+EVENT_REMINDERS_SCRIPT = "/usr/local/bin/volunteerdb-event-reminders"
 APP_UID = 10001  # the image's `app` user; owns the bind-mounted sync workdir
 
 
@@ -147,6 +149,13 @@ template_sheet_url = (
     os.environ.get("VDB_TEMPLATE_SHEET_URL")
     or _existing.get("VDB_TEMPLATE_SHEET_URL")
     or ""
+)
+# Absolute origin for links in cron-job emails (the event-reminder digest);
+# defaults to the production domain this file's runbook already names.
+public_base_url = (
+    os.environ.get("VDB_PUBLIC_BASE_URL")
+    or _existing.get("VDB_PUBLIC_BASE_URL")
+    or "https://vdb.sttimothyto.org"
 )
 database_url = (
     f"postgresql+asyncpg://{DB_USER}:{db_password}@volunteerdb-db:5432/{DB_NAME}"
@@ -221,6 +230,7 @@ files.template(
     db_password=db_password,
     port=APP_PORT,
     template_sheet_url=template_sheet_url,
+    public_base_url=public_base_url,
 )
 files.template(
     name="Write /etc/volunteerdb/db.env",
@@ -471,6 +481,20 @@ files.template(
     mail_from="no-reply@sttimothyto.org",
     mail_from_name="VolunteerDB",
 )
+files.template(
+    name="Install event-reminders script",
+    src=str(HERE / "templates" / "volunteerdb-event-reminders.sh.j2"),
+    dest=EVENT_REMINDERS_SCRIPT,
+    mode="700",
+    user="root",
+    group="root",
+    image=IMAGE,
+    net=NET,
+    env_file=ENV_FILE,
+    alert_email=BACKUP_ALERT_EMAIL,
+    mail_from="no-reply@sttimothyto.org",
+    mail_from_name="VolunteerDB",
+)
 crontab.crontab(
     name="Nightly Drive roster sync crontab entry (02:30 America/Toronto)",
     command=f"systemd-cat -t volunteerdb-drive-sync {DRIVE_SYNC_SCRIPT}",
@@ -493,5 +517,13 @@ crontab.crontab(
     cron_name="volunteerdb-proposal-digest",
     minute="30",
     hour="3",
+    user="root",
+)
+crontab.crontab(
+    name="Nightly event reminders crontab entry (04:00 America/Toronto)",
+    command=f"systemd-cat -t volunteerdb-event-reminders {EVENT_REMINDERS_SCRIPT}",
+    cron_name="volunteerdb-event-reminders",
+    minute="0",
+    hour="4",
     user="root",
 )

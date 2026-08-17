@@ -19,7 +19,11 @@ def frame(
     """Header + page column. Pages that can time-travel pass asof_path (the URL
     the picker navigates back to) and the as_of they were rendered at."""
     dark = apply_theme()
-    nav_items = [("Teams", "/teams"), ("Volunteers", "/volunteers")]
+    nav_items = [
+        ("Teams", "/teams"),
+        ("Volunteers", "/volunteers"),
+        ("Events", "/events"),
+    ]
     if actor.can_access_planning:
         nav_items.append(("Planning", "/planning"))
     if actor.can_import_export:

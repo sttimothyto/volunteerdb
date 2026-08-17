@@ -1,0 +1,191 @@
+"""The nightly event digest: one email per person, scheduled-vs-reminder
+notices, the double-stamp rule for events already inside the window, retry
+after a failed send, and the exclusions (cancelled, past, self-signups)."""
+
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from volunteerdb.db import db_session
+from volunteerdb.jobs import event_reminders
+from volunteerdb.models import TeamRole
+from volunteerdb.services import events as event_service
+from volunteerdb.services import mail, memberships, teams, volunteers
+
+TZ = ZoneInfo("America/Toronto")
+
+
+@pytest.fixture
+def sent_mail(monkeypatch):
+    sent: list[tuple[str, str, str]] = []
+
+    async def fake(to: str, subject: str, text_body: str) -> bool:
+        sent.append((to, subject, text_body))
+        return True
+
+    monkeypatch.setattr(mail, "send_email", fake)
+    return sent
+
+
+def _at(days_ahead: int, hour: int) -> datetime:
+    return datetime.combine(date.today() + timedelta(days=days_ahead), time(hour), TZ)
+
+
+async def _team(n: int = 2) -> tuple[int, list[int]]:
+    async with db_session() as session:
+        team = await teams.create(session, "Liturgy")
+        vids = []
+        for i in range(n):
+            v = await volunteers.create(
+                session, f"Vol{i}", "Server", f"vol{i}@example.org"
+            )
+            await memberships.assign(
+                session, v.id, team.id, TeamRole.leader if i == 0 else TeamRole.member
+            )
+            vids.append(v.id)
+        return team.id, vids
+
+
+async def _event(team_id: int, days_ahead: int, title: str = "Mass") -> int:
+    async with db_session() as session:
+        created = await event_service.create_event(
+            session,
+            team_id=team_id,
+            title=title,
+            starts_at=_at(days_ahead, 10),
+            ends_at=_at(days_ahead, 12),
+            created_by=None,
+        )
+        return created[0].id
+
+
+async def _assign(event_id: int, volunteer_id: int) -> int:
+    async with db_session() as session:
+        view = await event_service.detail(session, event_id)
+        a = await event_service.assign(
+            session,
+            slot_id=view.slots[0].slot.id,
+            volunteer_id=volunteer_id,
+            assigned_by=None,
+        )
+        return a.id
+
+
+async def test_scheduled_notice_then_reminder_then_silence(database, sent_mail):
+    team_id, vids = await _team()
+    event_id = await _event(team_id, days_ahead=10)
+    await _assign(event_id, vids[1])
+
+    await event_reminders.main(today=date.today())
+    assert len(sent_mail) == 1
+    assert sent_mail[0][0] == "vol1@example.org"
+    assert "You have been scheduled" in sent_mail[0][2]
+    assert "Coming up" not in sent_mail[0][2]
+
+    sent_mail.clear()
+    await event_reminders.main(today=date.today())
+    assert sent_mail == [], "the scheduled notice is one-shot"
+
+    # ten days later the event is inside the 3-day window
+    await event_reminders.main(today=date.today() + timedelta(days=8))
+    assert len(sent_mail) == 1
+    assert "Coming up soon" in sent_mail[0][2]
+
+    sent_mail.clear()
+    await event_reminders.main(today=date.today() + timedelta(days=9))
+    assert sent_mail == [], "the reminder is one-shot too"
+
+
+async def test_inside_window_lists_once_and_stamps_both(database, sent_mail):
+    team_id, vids = await _team()
+    event_id = await _event(team_id, days_ahead=2)  # already inside the window
+    await _assign(event_id, vids[1])
+
+    await event_reminders.main(today=date.today())
+    assert len(sent_mail) == 1
+    body = sent_mail[0][2]
+    assert "You have been scheduled" in body
+    assert body.count("Mass") == 1, "listed once, not once per notice"
+
+    sent_mail.clear()
+    await event_reminders.main(today=date.today() + timedelta(days=1))
+    assert sent_mail == [], "both stamps were set — no reminder repeat"
+
+
+async def test_one_email_per_person_covers_all_events(database, sent_mail):
+    team_id, vids = await _team()
+    for days in (5, 10):
+        event_id = await _event(team_id, days_ahead=days, title=f"Mass+{days}")
+        await _assign(event_id, vids[1])
+
+    await event_reminders.main(today=date.today())
+    assert len(sent_mail) == 1
+    assert "Mass+5" in sent_mail[0][2] and "Mass+10" in sent_mail[0][2]
+
+
+async def test_failed_send_retries_next_night(database, sent_mail, monkeypatch):
+    team_id, vids = await _team()
+    event_id = await _event(team_id, days_ahead=10)
+    await _assign(event_id, vids[1])
+
+    async def failing(to: str, subject: str, text_body: str) -> bool:
+        return False
+
+    monkeypatch.setattr(mail, "send_email", failing)
+    await event_reminders.main(today=date.today())
+
+    monkeypatch.setattr(
+        mail,
+        "send_email",
+        lambda to, subject, text_body: _record(sent_mail, to, subject, text_body),
+    )
+    await event_reminders.main(today=date.today())
+    assert len(sent_mail) == 1, "stamps stayed NULL, so the notice retried"
+
+
+async def _record(sent, to, subject, body) -> bool:
+    sent.append((to, subject, body))
+    return True
+
+
+async def test_exclusions(database, sent_mail):
+    team_id, vids = await _team(3)
+
+    cancelled_id = await _event(team_id, days_ahead=5, title="Cancelled Mass")
+    await _assign(cancelled_id, vids[1])
+    async with db_session() as session:
+        await event_service.cancel_event(session, cancelled_id, cancelled_by=None)
+
+    signup_id = await _event(team_id, days_ahead=10, title="Signup Mass")
+    async with db_session() as session:
+        view = await event_service.detail(session, signup_id)
+        await event_service.sign_up(
+            session, slot_id=view.slots[0].slot.id, volunteer_id=vids[2]
+        )
+
+    await event_reminders.main(today=date.today())
+    assert sent_mail == [], (
+        "cancelled events are silent; self-signups get no scheduled notice"
+    )
+
+    # the self-signup still gets the window reminder later
+    await event_reminders.main(today=date.today() + timedelta(days=8))
+    assert [m[0] for m in sent_mail] == ["vol2@example.org"]
+    assert "Coming up soon" in sent_mail[0][2]
+    assert "You have been scheduled" not in sent_mail[0][2]
+
+
+async def test_link_only_with_public_base_url(database, sent_mail, monkeypatch):
+    team_id, vids = await _team()
+    event_id = await _event(team_id, days_ahead=10)
+    await _assign(event_id, vids[1])
+
+    from volunteerdb import config
+
+    patched = config.settings().model_copy(
+        update={"public_base_url": "https://vdb.example.org"}
+    )
+    monkeypatch.setattr(event_reminders, "settings", lambda: patched)
+    await event_reminders.main(today=date.today())
+    assert "https://vdb.example.org/events" in sent_mail[0][2]

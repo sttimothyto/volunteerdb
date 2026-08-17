@@ -66,6 +66,7 @@ explanation/history
 explanation/auth
 explanation/workload
 explanation/planning
+explanation/events
 explanation/deployment
 ```
 

@@ -4,6 +4,7 @@ def register_pages() -> None:
         account_page,
         admin_page,
         dashboard,
+        events_page,
         fields_admin_page,
         imports_page,
         login,

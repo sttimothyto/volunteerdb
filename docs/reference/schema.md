@@ -18,6 +18,11 @@ See [History and time travel](../explanation/history.md) for the design.
 Custom-field types (CHECK constraint, not a PG enum)
 : `text` · `number` · `select` · `date` · `checkbox`.
 
+Event statuses (CHECK constraints, not PG enums)
+: `event.status`: `scheduled` · `cancelled` — `event_assignment.kind`:
+  `signup` · `assigned` · `sub` — `event_sub_request.status`: `open` ·
+  `claimed` · `cancelled`.
+
 ## `volunteer` (versioned)
 
 | Column | Type | Notes |
@@ -275,6 +280,115 @@ repeat submissions cannot re-mail leaders or the typed address. Not
 versioned (like `proposal`): workflow data whose lifecycle is self-recorded
 in `created_at`/`resolved_at`.
 
+## `event` (not versioned)
+
+One occasion a team serves — a Mass, a fundraiser shift, a task-force work
+day (see [Events and scheduling](../explanation/events.md)). Always
+attached to exactly one team; a parish-wide occasion gets its own
+task-force team first. "Past" derives from `ends_at` against the clock and
+is never stored.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `team_id` | integer | FK → `team.id` ON DELETE CASCADE (covered by `ix_event_team_starts`) |
+| `title` | varchar(200) | |
+| `description` | text | nullable |
+| `location` | varchar(200) | nullable |
+| `starts_at` | timestamptz | CHECK `starts_at < ends_at` |
+| `ends_at` | timestamptz | |
+| `status` | varchar(20) | CHECK `scheduled / cancelled` (string + CHECK, like `proposal.status`) |
+| `cancelled_at` | timestamptz | nullable |
+| `cancelled_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `created_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `created_at` | timestamptz | |
+
+Indexes: `ix_event_team_starts (team_id, starts_at)` for team-scoped lists,
+`ix_event_starts_at` for the reminder job's date-window scans. Not
+versioned (as are the four tables below): workflow data whose lifecycle is
+self-recorded in `status`/`created_at`/`cancelled_at`.
+
+## `event_slot` (not versioned)
+
+A named position to fill at an event ("Lector", "Greeter — main door").
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `event_id` | integer | FK → `event.id` ON DELETE CASCADE (covered by the unique) |
+| `name` | varchar(100) | unique per event (`uq_event_slot_name`) |
+| `capacity` | smallint | nullable; NULL = unlimited, CHECK `>= 1` otherwise |
+| `position` | integer | display order |
+
+An event created without slots gets one unlimited `Volunteers` slot — the
+rule that lets one schema serve both staffed liturgies and attendance-only
+gatherings.
+
+## `event_assignment` (not versioned)
+
+One volunteer filling one slot. Attendance is **derived, not entered**: an
+assignment on a past, non-cancelled event counts as attended for the
+scheduled duration unless a manager recorded an exception in the two
+override columns.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `slot_id` | integer | FK → `event_slot.id` ON DELETE CASCADE, indexed (capacity counts) |
+| `event_id` | integer | FK → `event.id` ON DELETE CASCADE; denormalized like `proposal_ballot.proposal_id` — the service guarantees slot ∈ event |
+| `volunteer_id` | integer | FK → `volunteer.id` ON DELETE CASCADE, indexed ("my duties", hours) |
+| `kind` | varchar(20) | CHECK `signup / assigned / sub` — provenance only, no logic branches on it |
+| `assigned_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `created_at` | timestamptz | |
+| `assigned_notified_at` | timestamptz | nullable; nightly-digest stamp — set at insert for self sign-ups and sub claims (the person acted themselves) |
+| `reminder_sent_at` | timestamptz | nullable; nightly-digest stamp for the coming-up reminder |
+| `attended_override` | boolean | nullable; NULL = auto (attended) |
+| `hours_override` | numeric(5,2) | nullable; NULL = auto (scheduled duration), CHECK `>= 0` |
+
+Unique `uq_event_assignment (event_id, volunteer_id)`: one slot per person
+per event. Rosters freeze once the event ends — the rows become the
+attendance record; the overrides are the only post-event lever.
+
+## `event_rsvp` (not versioned)
+
+One volunteer's availability answer for one event; no row = not answered.
+Managers assign from this pool. Not a commitment — the assignment is.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `event_id` | integer | FK → `event.id` ON DELETE CASCADE (covered by the unique) |
+| `volunteer_id` | integer | FK → `volunteer.id` ON DELETE CASCADE, indexed |
+| `available` | boolean | |
+| `note` | varchar(200) | nullable ("only until 11") |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+Unique `uq_event_rsvp (event_id, volunteer_id)`; answers upsert (the
+ballot-PUT idiom).
+
+## `event_sub_request` (not versioned)
+
+An assignee's open call for a substitute. Teammates are emailed when it
+opens; the first to claim takes over — the assignment row itself moves to
+the claimant, `claimed_by_volunteer_id` records who.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK |
+| `assignment_id` | integer | FK → `event_assignment.id` ON DELETE CASCADE, indexed |
+| `requested_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `note` | varchar(200) | nullable; mailed to teammates (an authenticated audience, unlike the public interest form) |
+| `status` | varchar(20) | CHECK `open / claimed / cancelled` |
+| `claimed_by_volunteer_id` | integer | FK → `volunteer.id` ON DELETE SET NULL |
+| `created_at` | timestamptz | |
+| `resolved_at` | timestamptz | nullable |
+
+Partial unique index `uq_event_sub_request_open` on `(assignment_id) WHERE
+status = 'open'`: at most one open request per assignment, so repeat clicks
+cannot re-mail the team. Claims race through a guarded
+`UPDATE … WHERE status = 'open'`; the loser sees a friendly error.
+
 ## History twins and triggers
 
 `volunteer_history`, `team_history`, `membership_history` each hold the live
@@ -310,3 +424,4 @@ why adding a live column requires rebuilding the twin; see
 | `0013` | `team_page_image` (not versioned) — doc images cached locally, page html rewritten to `/ministries/img/…` |
 | `0014` | `app_user.confidentiality_agreed_at` — recorded when the invite's confidentiality notice is accepted |
 | `0015` | `team.application_form_url` (rebuilds `team_history`); `interest` (not versioned); `proposal_voter.added_notified_at`/`voting_notified_at` for the nightly digest |
+| `0016` | Scheduling subsystem: `event`, `event_slot`, `event_assignment`, `event_rsvp`, `event_sub_request` (all not versioned — no twin rebuilds) |

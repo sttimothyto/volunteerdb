@@ -333,6 +333,155 @@ class NewRoundIn(BaseModel):
     voting_deadline: date
 
 
+# --- events ---
+# ("Event" prefixes throughout: AssignmentOut above already means a
+# volunteer's team-role assignment, not an event slot assignment)
+
+
+class EventSlotIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    capacity: int | None = Field(default=None, ge=1)  # null = unlimited
+    position: int = 0
+
+
+class EventSlotPatch(BaseModel):
+    # None = leave unchanged (capacity cannot be cleared to unlimited by PATCH)
+    name: str | None = None
+    capacity: int | None = Field(default=None, ge=1)
+    position: int | None = None
+
+
+class EventSlotOut(ORMModel):
+    id: int
+    name: str
+    capacity: int | None  # null = unlimited
+    position: int
+
+
+class EventCreateIn(BaseModel):
+    team_id: int
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    location: str | None = None
+    starts_at: datetime  # timezone-aware instants
+    ends_at: datetime
+    slots: list[EventSlotIn] = []  # empty: one unlimited "Volunteers" slot
+    repeat_weekly_until: date | None = None  # inclusive, parish wall clock
+
+
+class EventPatch(BaseModel):
+    # None = leave unchanged
+    title: str | None = None
+    description: str | None = None
+    location: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
+class EventOut(ORMModel):
+    id: int
+    team_id: int
+    title: str
+    description: str | None
+    location: str | None
+    starts_at: datetime
+    ends_at: datetime
+    status: str
+    cancelled_at: datetime | None
+    created_at: datetime
+
+
+class EventSummaryOut(BaseModel):
+    """One row of GET /events: the event plus the caller's own standing."""
+
+    event: EventOut
+    path: str
+    filled: int
+    capacity: int | None  # null = at least one unlimited slot
+    my_assignment_id: int | None
+    my_rsvp_available: bool | None  # null = not answered
+
+
+class EventAssignmentOut(ORMModel):
+    id: int
+    slot_id: int
+    event_id: int
+    volunteer_id: int
+    volunteer_name: str = ""
+    kind: str  # signup/assigned/sub — provenance only
+    sub_requested: bool = False  # an open substitution call exists
+
+
+class SlotViewOut(BaseModel):
+    slot: EventSlotOut
+    entries: list[EventAssignmentOut]
+    open_spots: int | None  # null = unlimited
+
+
+class EventRsvpIn(BaseModel):
+    available: bool
+    note: str | None = Field(default=None, max_length=200)
+
+
+class EventRsvpOut(ORMModel):
+    volunteer_id: int
+    volunteer_name: str = ""
+    available: bool
+    note: str | None
+
+
+class AttendanceRowOut(BaseModel):
+    """Derived attendance for one assignment of a past event."""
+
+    assignment_id: int
+    volunteer_id: int
+    volunteer_name: str
+    slot_name: str
+    attended: bool
+    hours: float
+    overridden: bool  # a manager recorded an exception
+
+
+class EventDetailOut(BaseModel):
+    event: EventOut
+    path: str
+    slots: list[SlotViewOut]
+    rsvps: list[EventRsvpOut]
+    # only for managers of the team, and only once the event has ended
+    attendance: list[AttendanceRowOut] | None = None
+
+
+class EventAssignIn(BaseModel):
+    volunteer_id: int | None = None  # omitted: sign yourself up
+
+
+class SubRequestIn(BaseModel):
+    note: str | None = Field(default=None, max_length=200)
+
+
+class SubRequestOut(ORMModel):
+    id: int
+    assignment_id: int
+    note: str | None
+    status: str
+    claimed_by_volunteer_id: int | None
+    created_at: datetime
+    resolved_at: datetime | None
+
+
+class AttendanceIn(BaseModel):
+    attended: bool | None  # null clears the override back to auto
+    hours: float | None = Field(default=None, ge=0)
+
+
+class VolunteerHoursOut(BaseModel):
+    """Derived service record over past, non-cancelled events."""
+
+    volunteer_id: int
+    total_hours: float
+    events_attended: int
+
+
 # --- users ---
 
 

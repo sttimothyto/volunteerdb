@@ -175,6 +175,34 @@ only per-voter turnout flags and, once voting concludes, aggregates.
 | `POST /api/planning/proposals/{id}/cancel` | manage the team | Any open phase; already decided → 422 |
 | `POST /api/planning/proposals/{id}/new-round` | manage the team | 201; cancels the source, clones candidates + roll (never ballots) with fresh deadlines |
 
+### Events — `api/events.py`
+
+Every event belongs to one team; viewing follows the roster-names rule and
+taking part (RSVP, sign-up, claiming) additionally requires actual
+membership of that team, enforced in the service. Unlike the GUI, **these
+mutations send no email** (the repo rule: mail goes out from UI handlers
+after commit, and from the nightly digest) — an API-created assignment
+still reaches its volunteer through `jobs.event_reminders`.
+
+| Method & path | Permission | Notes |
+|---|---|---|
+| `GET /api/events` | signed in | Scoped to teams with roster-name rights (admins: all); `team_id=`, `from=`, `to=`, `include_cancelled=` filters |
+| `POST /api/events` | manage the team | 201, returns a **list**: `repeat_weekly_until` materializes one event per week (inclusive, ≤ 1 year), slots copied; no slots ⇒ one unlimited `Volunteers` slot |
+| `GET /api/events/{id}` | roster-name rights | Slots with entries and RSVPs; managers additionally get derived `attendance` once the event ended |
+| `PATCH /api/events/{id}` | manage the team | Details/times; allowed on past events (corrected times recompute auto hours), cancelled → 422 |
+| `POST /api/events/{id}/cancel` | manage the team | Resolves open sub requests with it; already cancelled → 422 |
+| `POST /api/events/{id}/slots` | manage the team | 201; future events only |
+| `PATCH /api/events/{id}/slots/{sid}` | manage the team | Shrinking capacity below occupancy → 422 |
+| `DELETE /api/events/{id}/slots/{sid}` | manage the team | 204; blocked while occupied, and an event keeps ≥ 1 slot |
+| `PUT /api/events/{id}/rsvp` | member of the team | 204; idempotent overwrite `{available, note?}` (the ballot idiom) |
+| `POST /api/events/{id}/slots/{sid}/assignments` | self: member; with `volunteer_id`: manager | 201; capacity full → 422, one slot per person per event → 422/409 |
+| `DELETE /api/events/assignments/{aid}` | owner or manager | 204; future events only — past rosters are the attendance record |
+| `POST /api/events/assignments/{aid}/sub-request` | owner or manager | 201; one open request per assignment → 422 |
+| `POST /api/events/sub-requests/{id}/claim` | member not already serving that event | First-come; the assignment moves to the caller, losers → 422 |
+| `POST /api/events/sub-requests/{id}/cancel` | requester or manager | Already resolved → 422 |
+| `PATCH /api/events/assignments/{aid}/attendance` | manage the team | `{attended?, hours?}`, nulls clear back to auto; past non-cancelled events only |
+| `GET /api/volunteers/{id}/hours` | view the volunteer's profile | Derived totals over past, non-cancelled events |
+
 ## Worked examples
 
 See [Use the JSON API](../how-to/api-recipes.md) for curl recipes.

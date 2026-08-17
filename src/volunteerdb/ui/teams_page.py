@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 from urllib.parse import quote
 
@@ -6,7 +7,9 @@ from fastapi import Request
 from nicegui import ui
 
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
+from ..services import events as event_service
 from ..services import interest as interest_service
+from ..services import mail
 from ..services import memberships as membership_service
 from ..services import pages as page_service
 from ..services import planning as planning_service
@@ -554,6 +557,13 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             if can_manage
             else []
         )
+        upcoming_events = (
+            await event_service.list_events(
+                session, actor, team_id=team_id, from_=datetime.now(UTC)
+            )
+            if can_names and at is None
+            else []
+        )
     slug = page_service.slug_map(paths).get(team_id)
 
     panel = VolunteerPanel(as_of)
@@ -627,6 +637,29 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                     ui.button(child.name).props(
                         f'outline dense href="/teams/{child.id}"'
                     )
+
+        if upcoming_events:
+            ui.label("Upcoming events").classes("text-lg font-medium")
+            with ui.column().classes("w-full gap-1"):
+                for s in upcoming_events[:5]:
+                    with ui.row().classes(
+                        "w-full items-center gap-2 p-2 rounded bg-gray-50"
+                    ):
+                        ui.link(s.event.title, f"/events/{s.event.id}").classes(
+                            "font-medium"
+                        )
+                        ui.label(
+                            mail.event_when(s.event.starts_at, s.event.ends_at)
+                        ).classes("text-sm text-gray-600")
+                        ui.space()
+                        cap = "∞" if s.capacity is None else s.capacity
+                        ui.label(f"{s.filled}/{cap} filled").classes(
+                            "text-sm text-gray-600"
+                        )
+                if len(upcoming_events) > 5:
+                    ui.link(
+                        f"All {len(upcoming_events)} upcoming events", "/events"
+                    ).classes("text-sm")
 
         if anniversaries:
             summary = "; ".join(

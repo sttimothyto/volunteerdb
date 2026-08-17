@@ -76,6 +76,8 @@ on stderr, having created nothing.
 python -m volunteerdb.jobs.fetch_pages
 python -m volunteerdb.jobs.drive_sync apply /sync
 python -m volunteerdb.jobs.drive_sync record /sync
+python -m volunteerdb.jobs.proposal_digest [--today YYYY-MM-DD]
+python -m volunteerdb.jobs.event_reminders [--today YYYY-MM-DD]
 ```
 
 `fetch_pages` refreshes every team home page from its public Google Doc
@@ -84,11 +86,18 @@ fetches in its own transaction, so one bad doc cannot block the rest.
 `drive_sync` is the Python half of the nightly roster sync (see
 [Sync team rosters with Google Sheets](../how-to/drive-roster-sync.md)):
 it only reads and writes a work directory — rclone on the host does all the
-Drive traffic. Both need `VDB_DATABASE_URL`. In production the host crontab
-runs them in one-shot app containers at 02:30 (`volunteerdb-drive-sync`)
-and 03:00 (`volunteerdb-fetch-pages`); journal tags match the script names.
-Nothing inside the app schedules jobs — periodic work belongs to the host
-crontab (see the backup pattern in `deploy/deploy.py`).
+Drive traffic. `proposal_digest` emails each proposal voter one nightly
+digest of what needs their input; `event_reminders` emails each volunteer
+their event notices (scheduled by a manager / serving within
+`VDB_EVENT_REMINDER_DAYS`). Both digests are per-person idempotent via
+notification stamps — a failed send retries the next night — and take
+`--today` for manual runs and tests. All need `VDB_DATABASE_URL`. In
+production the host crontab runs them in one-shot app containers at 02:30
+(`volunteerdb-drive-sync`), 03:00 (`volunteerdb-fetch-pages`), 03:30
+(`volunteerdb-proposal-digest`) and 04:00 (`volunteerdb-event-reminders`);
+journal tags match the script names. Nothing inside the app schedules jobs
+— periodic work belongs to the host crontab (see the backup pattern in
+`deploy/deploy.py`).
 
 ## `healthcheck.py` — container health probe
 

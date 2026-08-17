@@ -57,6 +57,46 @@ FIELD_TYPE_LABELS: dict[FieldType, str] = {
     FieldType.checkbox: "Checkbox",
 }
 
+
+class EventStatus(enum.StrEnum):
+    scheduled = "scheduled"
+    cancelled = "cancelled"
+
+
+EVENT_STATUS_LABELS: dict[EventStatus, str] = {
+    EventStatus.scheduled: "Scheduled",
+    EventStatus.cancelled: "Cancelled",
+}
+
+
+class AssignmentKind(enum.StrEnum):
+    """How an event assignment came to be — provenance only, no logic
+    branches on it."""
+
+    signup = "signup"  # the volunteer signed themself up
+    assigned = "assigned"  # a manager scheduled them
+    sub = "sub"  # they claimed a substitution request
+
+
+ASSIGNMENT_KIND_LABELS: dict[AssignmentKind, str] = {
+    AssignmentKind.signup: "Signed up",
+    AssignmentKind.assigned: "Scheduled",
+    AssignmentKind.sub: "Substitute",
+}
+
+
+class SubRequestStatus(enum.StrEnum):
+    open = "open"
+    claimed = "claimed"
+    cancelled = "cancelled"
+
+
+SUB_REQUEST_STATUS_LABELS: dict[SubRequestStatus, str] = {
+    SubRequestStatus.open: "Looking for a sub",
+    SubRequestStatus.claimed: "Claimed",
+    SubRequestStatus.cancelled: "Cancelled",
+}
+
 # sys_period marks when this row version became current; history triggers close it
 SYS_PERIOD_DEFAULT = sa.text("tstzrange(clock_timestamp(), NULL)")
 
@@ -335,6 +375,208 @@ class Interest(Base):
     resolved_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
+
+
+class Event(Base):
+    """One occasion a team serves: a Mass, a fundraiser shift, a task-force
+    work day. Always attached to exactly ONE team — a parish-wide occasion
+    gets its own task-force team first, so rosters, permissions and mail
+    audiences all reuse the team machinery.
+
+    "Past" derives from ends_at against the clock (the planning phase_of
+    idiom), never stored; status records only the cancellation decision.
+
+    Not system-versioned (like proposal): workflow data whose lifecycle is
+    self-recorded in status/created_at/cancelled_at.
+    """
+
+    __tablename__ = "event"
+    __table_args__ = (
+        sa.CheckConstraint("starts_at < ends_at", name="ck_event_times"),
+        sa.CheckConstraint(
+            "status IN ('scheduled', 'cancelled')", name="ck_event_status"
+        ),
+        # serves the team page's and /events' team-scoped upcoming lists
+        sa.Index("ix_event_team_starts", "team_id", "starts_at"),
+        # serves the reminder job's and /events' date-window scans
+        sa.Index("ix_event_starts_at", "starts_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # no separate index: ix_event_team_starts leads with team_id
+    team_id: Mapped[int] = mapped_column(sa.ForeignKey("team.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(sa.String(200))
+    description: Mapped[str | None] = mapped_column(sa.Text)
+    location: Mapped[str | None] = mapped_column(sa.String(200))
+    starts_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True))
+    # plain string + CHECK, not a PG enum, so adding statuses never needs ALTER TYPE
+    status: Mapped[str] = mapped_column(
+        sa.String(20), default=EventStatus.scheduled.value, server_default="scheduled"
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    cancelled_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+
+
+class EventSlot(Base):
+    """A named position to fill at an event ("Lector", "Greeter — main door").
+    capacity NULL means unlimited — the rule that lets one schema serve both
+    staffed liturgies and open attendance-style gatherings (create_event with
+    no slots makes a single unlimited "Volunteers" slot)."""
+
+    __tablename__ = "event_slot"
+    __table_args__ = (
+        # also serves event-scoped slot reads (leads with event_id)
+        sa.UniqueConstraint("event_id", "name", name="uq_event_slot_name"),
+        sa.CheckConstraint(
+            "capacity IS NULL OR capacity >= 1", name="ck_event_slot_capacity"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(sa.ForeignKey("event.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(sa.String(100))
+    capacity: Mapped[int | None] = mapped_column(sa.SmallInteger)
+    position: Mapped[int] = mapped_column(default=0, server_default=sa.text("0"))
+
+
+class EventAssignment(Base):
+    """One volunteer filling one slot of one event.
+
+    Attendance is derived, not entered: once the event has ended (and was not
+    cancelled) an assignment counts as attended for the scheduled duration
+    unless a manager recorded an exception in attended_override /
+    hours_override (services/events.effective).
+    """
+
+    __tablename__ = "event_assignment"
+    __table_args__ = (
+        # one slot per person per event; also serves event-scoped reads
+        sa.UniqueConstraint("event_id", "volunteer_id", name="uq_event_assignment"),
+        sa.CheckConstraint(
+            "kind IN ('signup', 'assigned', 'sub')", name="ck_event_assignment_kind"
+        ),
+        sa.CheckConstraint(
+            "hours_override IS NULL OR hours_override >= 0",
+            name="ck_event_assignment_hours",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # index serves the capacity count in sign_up/assign
+    slot_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("event_slot.id", ondelete="CASCADE"), index=True
+    )
+    # denormalized so per-event queries and the one-slot-per-person unique
+    # constraint are direct; the service guarantees slot_id belongs to event_id
+    event_id: Mapped[int] = mapped_column(sa.ForeignKey("event.id", ondelete="CASCADE"))
+    # index serves "my upcoming assignments" and the hours summary
+    volunteer_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("volunteer.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(sa.String(20))
+    assigned_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+    # nightly digest stamps (jobs/event_reminders.py), per assignment so a
+    # failed send retries just that row. assigned_notified_at is set at insert
+    # for self sign-ups and sub claims — the person acted themselves; only
+    # manager assignments need the "you have been scheduled" notice.
+    assigned_notified_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
+    reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
+    # manager-recorded exceptions to auto attendance; NULL = auto
+    attended_override: Mapped[bool | None]
+    hours_override: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2))
+
+
+class EventRsvp(Base):
+    """One volunteer's availability answer for one event; no row = not
+    answered. Managers assign from this pool. Not a commitment — the
+    assignment is."""
+
+    __tablename__ = "event_rsvp"
+    __table_args__ = (
+        sa.UniqueConstraint("event_id", "volunteer_id", name="uq_event_rsvp"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # no separate index: uq_event_rsvp leads with event_id
+    event_id: Mapped[int] = mapped_column(sa.ForeignKey("event.id", ondelete="CASCADE"))
+    # index serves "my RSVPs" on the events page
+    volunteer_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("volunteer.id", ondelete="CASCADE"), index=True
+    )
+    available: Mapped[bool]
+    note: Mapped[str | None] = mapped_column(sa.String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+    )
+
+
+class EventSubRequest(Base):
+    """An assignee's open call for a substitute. Teammates are emailed when it
+    opens; the first to claim takes over the assignment (the assignment row
+    itself moves to the claimant — claimed_by_volunteer_id records who).
+    Open requests are resolved by the event's cancellation.
+
+    Not system-versioned (like proposal): workflow data whose lifecycle is
+    self-recorded in status/created_at/resolved_at.
+    """
+
+    __tablename__ = "event_sub_request"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('open', 'claimed', 'cancelled')",
+            name="ck_event_sub_request_status",
+        ),
+        # at most one OPEN request per assignment
+        sa.Index(
+            "uq_event_sub_request_open",
+            "assignment_id",
+            unique=True,
+            postgresql_where=sa.text("status = 'open'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assignment_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("event_assignment.id", ondelete="CASCADE"), index=True
+    )
+    requested_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    note: Mapped[str | None] = mapped_column(sa.String(200))
+    # plain string + CHECK, not a PG enum, so adding statuses never needs ALTER TYPE
+    status: Mapped[str] = mapped_column(
+        sa.String(20), default=SubRequestStatus.open.value, server_default="open"
+    )
+    claimed_by_volunteer_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("volunteer.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
 
 
 class AppUser(Base):

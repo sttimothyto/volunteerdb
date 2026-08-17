@@ -52,6 +52,13 @@ class Actor:
         return self.can_manage_team(team_id) or proposal_id in self.voter_proposal_ids
 
     @property
+    def can_create_events(self) -> bool:
+        """The events page's "New event" button: admins, plus anyone who
+        leads (or seconds) a team. Per-event management is can_manage_team
+        on the event's team."""
+        return self.is_admin or bool(self.managed_team_ids)
+
+    @property
     def can_import_export(self) -> bool:
         """Import/Export page and POST /api/import: admins, plus anyone who
         leads (or seconds) a team. Non-admin imports are scoped row-by-row
