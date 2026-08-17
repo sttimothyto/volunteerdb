@@ -55,19 +55,34 @@ This is the one rotation that is **not** automated. `POSTGRES_PASSWORD` in
 change the role's password inside PostgreSQL.
 :::
 
-On the server, keeping the role, `db.env`, and the app env in sync:
+The password appears in three places: the role inside PostgreSQL,
+`POSTGRES_PASSWORD` in `db.env`, and `/etc/volunteerdb/env` — twice over,
+once as `VDB_DB_PASSWORD` and once inside `VDB_DATABASE_URL`. They cannot
+reference each other, because systemd `EnvironmentFile` does no `${}`
+expansion.
+
+Rather than edit all four by hand and hope they agree, change the two the
+deploy treats as input and let the deploy rewrite the rest — it already reads
+`VDB_DB_PASSWORD` back and rebuilds the connection URL from it. On the server:
 
 ```sh
 NEW=$(python3 -c "import secrets; print(secrets.token_hex(24))")
 podman exec volunteerdb-db psql -U volunteerdb -d volunteerdb \
   -c "ALTER ROLE volunteerdb PASSWORD '$NEW';"
-# update VDB_DB_PASSWORD and the password inside VDB_DATABASE_URL:
 sed -i "s/^VDB_DB_PASSWORD=.*/VDB_DB_PASSWORD=$NEW/" /etc/volunteerdb/env
-sed -i "s#^VDB_DATABASE_URL=postgresql+asyncpg://volunteerdb:[^@]*@#VDB_DATABASE_URL=postgresql+asyncpg://volunteerdb:$NEW@#" /etc/volunteerdb/env
 sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$NEW/" /etc/volunteerdb/db.env
-systemctl restart volunteerdb-app
 ```
 
-The deploy reads `VDB_DB_PASSWORD` back from the env file, so subsequent
-deploys keep using the new password. Verify with a login on the site and
-`systemctl status volunteerdb-app`.
+Then redeploy, which rewrites `VDB_DATABASE_URL` to match and restarts the
+app:
+
+```sh
+VDB_SITE=<your-site> uvx pyinfra deploy/inventory.py deploy/deploy.py -y
+```
+
+The app is briefly unable to reach the database between the `ALTER ROLE` and
+the redeploy. If you would rather not wait, do the third `sed` yourself and
+`systemctl restart volunteerdb-app` — but then the next deploy is what
+confirms the two agree, so run one anyway.
+
+Verify with a login on the site and `systemctl status volunteerdb-app`.

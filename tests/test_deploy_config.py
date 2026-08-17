@@ -147,6 +147,53 @@ def test_postgres_image_matches_compose():
     assert siteconf.PG_IMAGE in (REPO / "compose.yaml").read_text()
 
 
+def _containerignore_entries() -> list[str]:
+    text = (REPO / ".containerignore").read_text()
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def test_containerignore_and_the_sync_exclusions_account_for_each_other():
+    """The two lists act on the same tree in sequence — files.sync ships it to
+    the host, then podman builds from it applying .containerignore — so
+    something excluded by neither ends up in the image.
+
+    They are kept as two lists rather than derived one from the other because
+    the glob semantics genuinely differ (files.sync's `exclude` is fnmatch
+    over full REMOTE paths, hence the */ prefixes; `exclude_dir` affects
+    traversal but not deletion) and because two entries are deliberately
+    asymmetric. CONTAINERIGNORE_MAP records which is which.
+    """
+    entries = _containerignore_entries()
+    mapped = siteconf.CONTAINERIGNORE_MAP
+
+    unaccounted = [e for e in entries if e not in mapped]
+    assert not unaccounted, (
+        f".containerignore entries missing from CONTAINERIGNORE_MAP: {unaccounted}"
+    )
+    stale = [e for e in mapped if e not in entries]
+    assert not stale, (
+        f"CONTAINERIGNORE_MAP names entries not in .containerignore: {stale}"
+    )
+
+    known = set(siteconf.SYNC_EXCLUDE) | set(siteconf.SYNC_EXCLUDE_DIR)
+    for entry, sync_rule in mapped.items():
+        if sync_rule is None:
+            continue  # deliberate: synced as build input, excluded from the image
+        assert sync_rule in known, (
+            f".containerignore {entry!r} maps to {sync_rule!r}, "
+            "which is in neither SYNC_EXCLUDE nor SYNC_EXCLUDE_DIR"
+        )
+
+
+def test_the_build_inputs_are_synced_not_ignored():
+    """The asymmetry the map allows, stated as an assertion: podman needs the
+    Containerfile and .containerignore on the host to build from."""
+    known = set(siteconf.SYNC_EXCLUDE) | set(siteconf.SYNC_EXCLUDE_DIR)
+    for build_input in ("Containerfile", ".containerignore"):
+        assert siteconf.CONTAINERIGNORE_MAP[build_input] is None
+        assert build_input not in known, f"{build_input} must reach the host"
+
+
 TEMPLATES = sorted((DEPLOY / "templates").glob("*.j2"))
 # Rendered by loops that pass **unit_vars rather than naming each template.
 LOOPED = {f"{n}.j2" for n in siteconf.QUADLETS + siteconf.TIMER_UNITS}

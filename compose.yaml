@@ -1,15 +1,11 @@
 services:
   db:
     image: docker.io/library/postgres:17
-    # conservative tuning for a >=4 GB host shared with the app container;
-    # keep in sync with deploy/files/volunteerdb-db.container
-    command: >-
-      postgres
-      -c shared_buffers=512MB
-      -c effective_cache_size=2GB
-      -c work_mem=16MB
-      -c maintenance_work_mem=128MB
-      -c random_page_cost=1.1
+    # Deliberately untuned. Production's settings live in siteconf.PG_TUNING
+    # and are sized for a >=4 GB server shared with the app container —
+    # 512 MB of shared_buffers is the wrong answer on a laptop, and buys
+    # nothing against a seeded demo database. Keeping the two in step by
+    # comment was a standing invitation to drift.
     environment:
       POSTGRES_USER: volunteerdb
       # The :-volunteerdb fallback does NOT save you here: podman-compose

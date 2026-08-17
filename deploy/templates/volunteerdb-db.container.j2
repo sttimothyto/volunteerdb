@@ -5,8 +5,8 @@ Description=VolunteerDB PostgreSQL
 Image={{ pg_image }}
 ContainerName={{ db_container }}
 Network={{ net }}.network
-# conservative tuning for a >=4 GB host shared with the app container;
-# keep in sync with compose.yaml
+# Conservative tuning for a >=4 GB host shared with the app container, from
+# siteconf.PG_TUNING. Development runs untuned on purpose; see compose.yaml.
 Exec={{ pg_tuning }}
 EnvironmentFile={{ db_env_file }}
 Volume=volunteerdb-pgdata:/var/lib/postgresql/data

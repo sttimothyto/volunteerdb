@@ -128,6 +128,16 @@ def test_env_example_states_the_real_defaults(env_example):
     assert not mismatched, "\n".join(mismatched)
 
 
+def test_healthchecks_port_fallback_matches_the_settings_default():
+    """healthcheck.py stays free of volunteerdb imports on purpose — a probe
+    that fails because settings will not parse reports nothing useful, and it
+    runs every 30 seconds. The price is a duplicated default, pinned here."""
+    text = (REPO / "healthcheck.py").read_text()
+    match = re.search(r'os\.environ\.get\("VDB_PORT",\s*"(\d+)"\)', text)
+    assert match, "healthcheck.py no longer reads VDB_PORT with a literal fallback"
+    assert int(match.group(1)) == Settings.model_fields["port"].default
+
+
 def test_log_level_names_match_the_handler_thresholds():
     """config.py validates the name, log.py maps it to a number. If the two
     sets diverge, a value config accepts raises KeyError inside init_logging."""

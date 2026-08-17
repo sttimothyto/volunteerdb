@@ -86,6 +86,39 @@ SYNC_EXCLUDE_DIR = (
     "*/__pycache__",
 )
 
+# Which .containerignore entry each sync exclusion answers to. The two lists
+# are checked against each other by tests/test_deploy_config.py, because they
+# operate on the same tree in sequence — files.sync ships it to the host, then
+# podman builds from it applying .containerignore — and something excluded
+# from neither reaches the image.
+#
+# None means the asymmetry is deliberate, with the reason. Everything else
+# names the SYNC_EXCLUDE/SYNC_EXCLUDE_DIR entry that covers it.
+CONTAINERIGNORE_MAP = {
+    ".git": ".git",
+    ".github": ".github",
+    ".venv": ".venv",
+    ".env": "*/.env",
+    ".env.example": "*/.env.example",
+    ".gitignore": "*/.gitignore",
+    ".nicegui": ".nicegui",
+    ".claude": ".claude",
+    ".pytest_cache": ".pytest_cache",
+    ".ruff_cache": ".ruff_cache",
+    "__pycache__": "__pycache__",
+    "**/__pycache__": "*/__pycache__",
+    "*.pyc": "*.pyc",
+    "tests/": "tests",
+    "scripts/": "scripts",
+    "deploy/": "deploy",
+    "compose.yaml": "*/compose.yaml",
+    "docs/_build/": "docs/_build",
+    # These two must be SYNCED even though they are excluded from the image:
+    # they are what `podman build` reads to produce it.
+    ".containerignore": None,
+    "Containerfile": None,
+}
+
 QUADLETS = (
     "volunteerdb.network",
     "volunteerdb-db.container",
