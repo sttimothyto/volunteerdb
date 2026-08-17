@@ -120,11 +120,15 @@ jobs:
           # Which deploy/sites/*.toml to deploy. Everything specific to this
           # parish lives in that file.
           VDB_SITE: sttimothy
+          # Overrides the site file's [host] ssh_host, which is an ssh_config
+          # alias that means nothing on a runner. It also has to keep matching
+          # whatever DEPLOY_KNOWN_HOSTS pins, so the two stay set together.
+          # The ssh user still comes from the site file.
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           # Unset expands to "" — falsy, so deploy.py keeps the key already on
           # the host. Setting it rotates the key.
           VDB_SMTP2GO_API_KEY: ${{ secrets.VDB_SMTP2GO_API_KEY }}
           MODE: ${{ inputs.dry_run && '--dry' || '-y' }}
         run: |
-          uvx pyinfra==3.10.0 "$DEPLOY_HOST" deploy/deploy.py \
-            --ssh-user root --ssh-key ~/.ssh/id_deploy "$MODE"
+          uvx pyinfra==3.10.0 deploy/inventory.py deploy/deploy.py \
+            --ssh-key ~/.ssh/id_deploy "$MODE"
