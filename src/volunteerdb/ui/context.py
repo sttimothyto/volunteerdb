@@ -14,6 +14,7 @@ from ..db import db_session
 from ..log import bind_actor
 from ..permissions import Actor, Forbidden, load_actor
 from ..services import users as user_service
+from . import column_order
 
 SESSION_REMEMBER = timedelta(days=90)
 SESSION_SHORT = timedelta(days=1)
@@ -35,10 +36,13 @@ def establish_session(
 
 
 def clear_session() -> None:
-    """Sign out; keeps e.g. the dark-mode pref."""
+    """Sign out. Keeps the dark-mode pref — that is how this browser likes to
+    read, whoever is signed in — but drops the table column order, which is
+    scoped to the sitting rather than to the machine."""
     app.storage.user.pop("user_id", None)
     app.storage.user.pop("auth_method", None)
     app.storage.user.pop("session_expires_at", None)
+    app.storage.user.pop(column_order.STORAGE_KEY, None)
 
 
 def session_auth_method() -> str:

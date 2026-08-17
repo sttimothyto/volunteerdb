@@ -65,12 +65,11 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
             f"{guarded} must send anonymous browsers to the login page"
         )
 
-    response = await real_app_client.get(
-        "/static/cytoscape.esm.min.js", follow_redirects=False
-    )
-    assert response.status_code == 200, (
-        "the /static mount must serve without auth, or every page loads unstyled"
-    )
+    for asset in ("cytoscape.esm.min.js", "column_drag.js"):
+        response = await real_app_client.get(f"/static/{asset}", follow_redirects=False)
+        assert response.status_code == 200, (
+            "the /static mount must serve without auth, or every page loads unstyled"
+        )
 
     # the ministries pages are deliberately public (UNRESTRICTED_PREFIXES):
     # anonymous parishioners read them without an account

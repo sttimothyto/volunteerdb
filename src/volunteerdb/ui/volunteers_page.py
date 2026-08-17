@@ -12,6 +12,7 @@ from ..services import photos as photo_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
+from . import column_order
 from .context import action_session, notify_errors, page_session
 from .elections_page import phase_badge
 from .layout import frame
@@ -161,9 +162,11 @@ async def volunteers_page(q: str = "", band: str = ""):
                     format_custom(d, value, missing="") if visible else "•••"
                 )
             rows.append(row)
+        columns = column_order.apply_saved_order("volunteers", columns)
         table = ui.table(
             columns=columns, rows=rows, row_key="id", pagination=20
         ).classes("w-full vdb-clickable-rows")
+        column_order.make_draggable(table, "volunteers")
         if shows_workload:
             table.add_slot(
                 "body-cell-workload",

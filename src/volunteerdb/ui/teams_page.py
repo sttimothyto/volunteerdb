@@ -17,6 +17,7 @@ from ..services import reports as report_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..sheets import exporter
+from . import column_order
 from .context import (
     action_session,
     notify_errors,
@@ -178,6 +179,10 @@ async def teams_page(as_of: str = ""):
                 "field": "order",
                 "align": "left",
                 "sortable": True,
+                # the hierarchy, not a column of data: the body-cell-team slot
+                # indents by row depth and hangs a └ off it, which only reads as
+                # a tree while it is the leftmost thing on the row
+                column_order.FIXED: True,
             }
         ]
         if show_coverage:
@@ -215,9 +220,11 @@ async def teams_page(as_of: str = ""):
                 {"name": "gaps", "label": "Gaps", "field": "gaps", "sortable": True},
             ]
         # no pagination: the tree showed the whole parish at once and this replaces it
+        columns = column_order.apply_saved_order("teams", columns)
         table = ui.table(
             columns=columns, rows=rows, row_key="id", pagination=0
         ).classes("w-full vdb-clickable-rows")
+        column_order.make_draggable(table, "teams")
         table.add_slot(
             "body-cell-team",
             """

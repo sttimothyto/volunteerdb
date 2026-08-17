@@ -277,6 +277,28 @@ a.vdb-quiet:hover {
   background-color: var(--vdb-row-hover);
 }
 
+/* ---------- drag-to-reorder column headers (see ui/column_order.py) ---------- */
+
+/* the state markers are attributes, not classes: Quasar recomputes each th's
+   class on every header re-render and would wipe a class added from JS mid-drag */
+.q-table th[data-vdb-col] {
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none; /* or the browser starts a text selection instead of a drag */
+}
+
+.q-table th[data-vdb-drag] {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+/* the dragged column takes the hovered one's slot, and which side it lands on
+   follows the drag direction — so mark the whole cell rather than one edge */
+.q-table th[data-vdb-drop] {
+  background-color: var(--vdb-row-hover);
+  box-shadow: inset 0 -3px 0 var(--vdb-heading);
+}
+
 /* ---------- dark-mode remaps for fixed Tailwind tints ---------- */
 
 body.body--dark .text-gray-400 { color: #8a8072; }
