@@ -20,6 +20,8 @@ import structlog
 from .config import settings
 
 AUDIT = 25  # between INFO (20) and WARNING (30)
+# Keys must match config.LOG_LEVELS, which is what validates VDB_LOG_LEVEL;
+# tests/test_config_surface.py pins the two together.
 _MODE_NUM = {"DEBUG": 10, "INFO": 20, "AUDIT": AUDIT, "WARNING": 30, "ERROR": 40}
 
 
@@ -85,12 +87,8 @@ def init_logging() -> None:
         return
     _configured = True
     s = settings()
-    mode = s.log_level.upper()
-    threshold = _MODE_NUM.get(mode)
-    if threshold is None:
-        raise ValueError(
-            f"VDB_LOG_LEVEL must be one of {sorted(_MODE_NUM)}, got {s.log_level!r}"
-        )
+    # Settings validates the name and upper-cases it, so this cannot miss.
+    threshold = _MODE_NUM[s.log_level]
 
     structlog.configure(
         processors=[
