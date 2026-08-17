@@ -209,6 +209,43 @@ async def test_leader_creates_event_via_dialog(database):
         assert len(picnics) == 2, "day 1 and day 8"
 
 
+async def test_events_table_search_sort_and_column_drag(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+    await _seed_event(ids["liturgy"], title="Sunday Mass")
+    await _seed_event(ids["liturgy"], title="Bake sale")
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open("/events")
+        table = user.find(kind=ui.table).elements.pop()
+        assert {r["title"] for r in table.rows} == {"Sunday Mass", "Bake sale"}
+        assert all(c.get("sortable") for c in table.columns)
+        await user.should_see("2 events")
+
+        search = user.find(kind=ui.input, content="Search events").elements.pop()
+        search.value = "bake"
+        assert [r["title"] for r in table.rows] == ["Bake sale"]
+        await user.should_see("1 of 2 events")
+
+        search.value = "title ILIKE '%mass%'"
+        assert [r["title"] for r in table.rows] == ["Sunday Mass"]
+
+        search.value = "nonsense = 'field'"
+        await user.should_see("query error")
+
+        search.value = ""
+        assert len(table.rows) == 2
+
+        # a header drop reorders the columns there and then (leftwards drop
+        # lands before the target — the column_order.reorder contract)
+        user.find(kind=ui.table).trigger(
+            "vdbColMove", {"moved": "team", "target": "title"}
+        )
+        table = user.find(kind=ui.table).elements.pop()
+        assert [c["name"] for c in table.columns][:3] == ["when", "team", "title"]
+
+
 async def test_share_button_and_date_pickers(database):
     async with db_session() as session:
         ids = await _parish(session)

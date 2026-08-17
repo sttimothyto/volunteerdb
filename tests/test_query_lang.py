@@ -194,3 +194,58 @@ def test_teams_backend_rejects_unknown_fields():
         compile_t("phone = 'x'")
     with pytest.raises(query_lang.QueryError, match="unknown field"):
         compile_t("custom.years_served = 1")
+
+
+EVENT_ROWS = [
+    {
+        "id": 1,
+        "when": "2026-09-06 10:30",
+        "title": "Sunday Mass",
+        "team": "Liturgy",
+        "location": "Main church",
+        "filled": "2/3",
+        "filled_n": 2,
+        "capacity_n": 3,
+        "you": "serving",
+    },
+    {
+        "id": 2,
+        "when": "2026-12-24 19:00",
+        "title": "Carol night",
+        "team": "Liturgy > Music",
+        "location": "",
+        "filled": "0/∞",
+        "filled_n": 0,
+        "capacity_n": None,  # unlimited slots have no capacity
+        "you": "",
+    },
+]
+
+
+def compile_e(text):
+    ast = query_lang.parse(text)
+    assert ast is not None, f"expected a query: {text!r}"
+    return query_lang.compile_events(ast)
+
+
+def test_events_backend_semantics():
+    cases = [
+        ("title ILIKE '%mass%'", [True, False]),
+        ("date = '2026-09-06'", [True, False]),
+        ("date >= '2026-10-01'", [False, True]),
+        ("team LIKE '%Music'", [False, True]),
+        ("location IS NULL", [False, True]),  # empty location reads as NULL
+        ("filled = 0", [False, True]),
+        ("capacity IS NULL", [False, True]),  # None never matches a comparison…
+        ("capacity > 1", [True, False]),  # …and stays out of ranges too
+        ("you = 'serving'", [True, False]),
+        ("filled < 3 AND date < '2026-10-01'", [True, False]),
+    ]
+    for text, expected in cases:
+        pred = compile_e(text)
+        assert [pred(r) for r in EVENT_ROWS] == expected, text
+
+
+def test_events_backend_rejects_unknown_fields():
+    with pytest.raises(query_lang.QueryError, match="unknown field: slot"):
+        compile_e("slot = 'x'")

@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from nicegui import ui
 from starlette.requests import Request
 
+from .. import query_lang
 from ..config import settings
 from ..models import EventSlot, EventStatus, EventSubRequest, Volunteer
 from ..permissions import require
@@ -26,6 +27,7 @@ from ..services import events as event_service
 from ..services import interest as interest_service
 from ..services import mail
 from ..services import teams as team_service
+from . import column_order
 from .context import action_session, notify_errors, page_session
 from .date_input import date_input
 from .layout import frame
@@ -52,6 +54,45 @@ def _parse_local(day_s: str, time_s: str, what: str) -> datetime | None:
     except ValueError:
         ui.notify(f"{what}: use YYYY-MM-DD and HH:MM", color="warning")
         return None
+
+
+def _event_count(shown: int, total: int | None = None) -> str:
+    if total is None or shown == total:
+        return f"{shown} event{'s' if shown != 1 else ''}"
+    return f"{shown} of {total} events"
+
+
+def _wire_search(
+    search: ui.input, count: ui.label, table: ui.table, rows: list[dict]
+) -> None:
+    """Narrow the table as you type — the teams-page idiom: every listed event
+    is already in `rows`, so the filter swaps what the table shows without a
+    query or a reload."""
+
+    def matches(row: dict, text: str) -> bool:
+        return any(
+            text in (row[key] or "").lower()
+            for key in ("title", "team", "location", "when")
+        )
+
+    def apply() -> None:
+        text = (search.value or "").strip()
+        ast = query_lang.parse(text) if text else None
+        if ast is None:
+            shown = rows if not text else [r for r in rows if matches(r, text.lower())]
+        else:
+            try:
+                pred = query_lang.compile_events(ast)
+            except query_lang.QueryError as exc:
+                # inline, not a toast: this filter runs on every keystroke
+                count.set_text(f"query error: {exc}")
+                return
+            shown = [r for r in rows if pred(r)]
+        table.rows = shown
+        table.update()
+        count.set_text(_event_count(len(shown), len(rows)))
+
+    search.on_value_change(apply)
 
 
 def _share_event(base_url: str, event_id: int) -> None:
@@ -389,25 +430,6 @@ async def events_page(request: Request, past: str = ""):
                             on_click=lambda _, sid=c.sub.id: _claim_sub(sid),
                         ).props("dense outline")
 
-        with ui.row().classes("w-full items-center mt-4"):
-            ui.label(
-                ("Past events" if show_past else "Upcoming events")
-                + (" (all teams)" if actor.is_admin else " on your teams")
-            ).classes("text-lg font-medium")
-            ui.space()
-            ui.button(
-                "Show upcoming" if show_past else "Show past",
-                on_click=lambda: ui.navigate.to(
-                    "/events" if show_past else "/events?past=1"
-                ),
-            ).props("dense flat no-caps")
-            if managed_options:
-                ui.button(
-                    "New event",
-                    icon="event",
-                    on_click=lambda: _new_event_dialog(managed_options),
-                ).props("dense outline")
-
         rows = []
         for s in summaries:
             local = s.event.starts_at.astimezone(_tz())
@@ -428,24 +450,106 @@ async def events_page(request: Request, past: str = ""):
                         else ""
                     ),
                     "team": s.path,
+                    "location": s.event.location or "",
                     "filled": f"{s.filled}/{s.capacity if s.capacity is not None else '∞'}",
+                    # numeric twins for sorting and the query language
+                    "filled_n": s.filled,
+                    "capacity_n": s.capacity,
                     "you": you,
                 }
             )
+        with ui.row().classes("w-full items-center mt-4"):
+            ui.label(
+                ("Past events" if show_past else "Upcoming events")
+                + (" (all teams)" if actor.is_admin else " on your teams")
+            ).classes("text-lg font-medium")
+            # the search box grows into the free space and holds the buttons
+            # against the right edge (the teams-page idiom); with nothing to
+            # search the spacer takes over that job
+            search = (
+                ui.input("Search events…")
+                .props("outlined dense clearable debounce=200")
+                .classes("grow")
+                if rows
+                else None
+            )
+            if search is None:
+                ui.space()
+            ui.button(
+                "Show upcoming" if show_past else "Show past",
+                on_click=lambda: ui.navigate.to(
+                    "/events" if show_past else "/events?past=1"
+                ),
+            ).props("dense flat no-caps")
+            if managed_options:
+                ui.button(
+                    "New event",
+                    icon="event",
+                    on_click=lambda: _new_event_dialog(managed_options),
+                ).props("dense outline")
+
         if rows:
+            columns = [
+                {
+                    "name": "when",
+                    "label": "When",
+                    "field": "when",
+                    "align": "left",
+                    "sortable": True,  # ISO strings: lexicographic = chronological
+                },
+                {
+                    "name": "title",
+                    "label": "Event",
+                    "field": "title",
+                    "align": "left",
+                    "sortable": True,
+                },
+                {
+                    "name": "team",
+                    "label": "Team",
+                    "field": "team",
+                    "align": "left",
+                    "sortable": True,
+                },
+                {
+                    "name": "location",
+                    "label": "Location",
+                    "field": "location",
+                    "align": "left",
+                    "sortable": True,
+                },
+                # sorts on the count; the cell slot shows the pretty "3/∞"
+                {
+                    "name": "filled",
+                    "label": "Filled",
+                    "field": "filled_n",
+                    "sortable": True,
+                },
+                {
+                    "name": "you",
+                    "label": "You",
+                    "field": "you",
+                    "align": "left",
+                    "sortable": True,
+                },
+            ]
+            columns = column_order.apply_saved_order("events", columns)
             table = ui.table(
-                columns=[
-                    {"name": "when", "label": "When", "field": "when"},
-                    {"name": "title", "label": "Event", "field": "title"},
-                    {"name": "team", "label": "Team", "field": "team"},
-                    {"name": "filled", "label": "Filled", "field": "filled"},
-                    {"name": "you", "label": "You", "field": "you"},
-                ],
+                columns=columns,
                 rows=rows,
                 row_key="id",
-                pagination=0,
+                # upcoming is one screen like before; the past list grows forever
+                pagination=20 if show_past else 0,
             ).classes("w-full vdb-clickable-rows")
+            column_order.make_draggable(table, "events")
+            table.add_slot(
+                "body-cell-filled",
+                '<q-td key="filled" :props="props">{{ props.row.filled }}</q-td>',
+            )
             table.on("rowClick", lambda e: ui.navigate.to(f"/events/{e.args[1]['id']}"))
+            count = ui.label(_event_count(len(rows))).classes("text-sm text-gray-500")
+            if search is not None:
+                _wire_search(search, count, table, rows)
         else:
             ui.label(
                 "Nothing scheduled yet."
