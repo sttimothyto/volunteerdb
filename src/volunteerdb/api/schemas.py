@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -219,6 +220,73 @@ class CoverageOut(BaseModel):
     total: int
     missing_leader: bool
     missing_second: bool
+
+
+# --- dashboard statistics ---
+#
+# Mirrors services.stats one for one. A null section is one this caller may
+# not see (or, for the live-only ones, one a snapshot cannot answer) — as
+# opposed to a zero, which is a real count. The service decides; these
+# schemas only carry the answer.
+
+
+class ParishStatsOut(ORMModel):
+    active_volunteers: int
+    inactive_volunteers: int
+    active_teams: int
+    assignments: int
+    unassigned_volunteers: int
+    accounts: int | None
+    ministries_per_volunteer: float
+
+
+class GapTeamOut(ORMModel):
+    team_id: int
+    path: str
+    missing_leader: bool
+    missing_second: bool
+
+
+class BandCountOut(ORMModel):
+    label: str
+    color: str
+    count: int
+
+
+class PhaseCountOut(ORMModel):
+    phase: str
+    label: str
+    count: int
+
+
+class LeadershipStatsOut(ORMModel):
+    teams: int
+    people: int
+    people_without_email: int
+    teams_without_leader: int | None
+    teams_without_second: int | None
+    gap_teams: list[GapTeamOut]
+    bands: list[BandCountOut] | None
+    understaffed_events: int | None
+    open_elections: list[PhaseCountOut] | None
+
+
+class PersonalStatsOut(ORMModel):
+    upcoming_duties: int
+    next_duty_at: datetime | None
+    next_duty_title: str | None
+    next_duty_slot: str | None
+    claimable_subs: int
+    ballots_waiting: int
+    hours_served: Decimal
+    events_attended: int
+
+
+class DashboardStatsOut(ORMModel):
+    parish: ParishStatsOut | None
+    leadership: LeadershipStatsOut | None
+    personal: PersonalStatsOut | None
+    live: bool
 
 
 # --- elections ---

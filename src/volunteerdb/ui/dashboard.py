@@ -6,6 +6,7 @@ from nicegui import ui
 from .. import query_lang
 from ..models import ROLE_LABELS
 from ..services import graph as graph_service
+from ..services import stats as stats_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
@@ -14,7 +15,14 @@ from .context import action_session, page_session, parse_as_of
 from .cytoscape_element import CytoscapeGraph
 from .layout import frame
 from .search_box import search_box
+from .stat_tiles import chip_row, stat_chip, stat_section, stat_tile, tile_row
 from .volunteer_panel import VolunteerPanel
+
+# what a snapshot cannot answer, said once
+AS_OF_NOTE = (
+    "Counts are as of the snapshot; what is happening now — shifts, "
+    "elections and sign-ins — is left out."
+)
 
 
 @ui.page("/")
@@ -39,6 +47,9 @@ async def dashboard(request: Request, as_of: str = ""):
             if actor.volunteer_id
             else []
         )
+        # the teams list is already in hand; hand it over rather than paying
+        # for a second list_all inside the statistics
+        figures = await stats_service.dashboard(session, actor, at=at, teams=all_teams)
         # band chips in the legend, for the viewers who see coloured dots at all
         bands = (
             (await workload_service.get_config(session)).bands
@@ -80,17 +91,17 @@ async def dashboard(request: Request, as_of: str = ""):
         await refresh_graph()
 
     def render_chip() -> None:
-        chip_row.clear()
+        chip_holder.clear()
         if active["ids"] is None:
             return
 
         async def remove() -> None:
             active["ids"] = None
             active["text"] = ""
-            chip_row.clear()
+            chip_holder.clear()
             await refresh_graph()
 
-        with chip_row:
+        with chip_holder:
             ui.chip(active["text"], removable=True, icon="filter_alt").mark(
                 "graph-query-chip"
             ).on("remove", remove)
@@ -105,18 +116,16 @@ async def dashboard(request: Request, as_of: str = ""):
                 as_of=as_of,
             )
 
-        if my_assignments:
-            ui.label("My teams").classes("text-lg font-medium mt-4")
-            with ui.column().classes("w-full gap-1"):
-                for membership, team in my_assignments:
-                    with (
-                        ui.link(target=f"/teams/{team.id}").classes("w-full vdb-quiet"),
-                        ui.row().classes(
-                            "items-center gap-2 p-2 rounded bg-blue-50 cursor-pointer w-full"
-                        ),
-                    ):
-                        ui.label(team.name).classes("font-medium")
-                        ui.badge(ROLE_LABELS[membership.role])
+        # Statistics run widest-audience first: the parish, then what the
+        # people who run ministries must act on, then — below the graph — what
+        # is only about the reader. Each block is absent, not empty, for a
+        # viewer without the right to it; the service never ran its queries.
+        if figures.parish is not None:
+            _parish_section(figures.parish, live=figures.live)
+        if figures.leadership is not None:
+            _leadership_section(
+                figures.leadership, live=figures.live, is_admin=actor.is_admin
+            )
 
         with ui.row().classes("items-center gap-2 w-full"):
             team_filter = (
@@ -129,7 +138,7 @@ async def dashboard(request: Request, as_of: str = ""):
             ui.button(icon="fit_screen", on_click=lambda: graph.fit()).props(
                 "dense flat"
             ).tooltip("Fit the whole graph in view")
-            chip_row = ui.row().classes("items-center")
+            chip_holder = ui.row().classes("items-center")
             ui.space()
             with ui.row().classes("items-center gap-3 flex-wrap"):
                 _legend_entry("team", "background: var(--vdb-graph-team)")
@@ -157,8 +166,172 @@ async def dashboard(request: Request, as_of: str = ""):
             "w-full border rounded"
         )
         ui.label(
-            "Click a team to open its page; click a volunteer to open their side panel."
+            "Click a team to open its page; click a volunteer to open their side "
+            "panel. Zoom in to read names, or hover a node to isolate its "
+            "connections."
         ).classes("text-sm text-gray-400")
+
+        if my_assignments or figures.personal is not None:
+            _personal_section(figures.personal, my_assignments, as_of=as_of)
+
+
+def _parish_section(p: stats_service.ParishStats, *, live: bool) -> None:
+    with stat_section("Parish", None if live else AS_OF_NOTE):
+        with tile_row():
+            stat_tile(
+                p.active_volunteers,
+                "Active volunteers",
+                sub=f"{p.inactive_volunteers} inactive"
+                if p.inactive_volunteers
+                else None,
+                href="/volunteers",
+            )
+            stat_tile(p.active_teams, "Active teams", href="/teams")
+            stat_tile(
+                p.assignments,
+                "Assignments",
+                sub=f"{p.ministries_per_volunteer} per volunteer",
+                hint="One person on three teams counts three times.",
+            )
+            stat_tile(
+                p.unassigned_volunteers,
+                "On no team",
+                href="/volunteers",
+                warn=bool(p.unassigned_volunteers),
+                hint="Active volunteers holding no membership at all.",
+            )
+            if p.accounts is not None:
+                stat_tile(
+                    p.accounts,
+                    "Can sign in",
+                    sub=f"of {p.active_volunteers} volunteers",
+                    href="/admin/users",
+                )
+
+
+def _leadership_section(
+    lead: stats_service.LeadershipStats, *, live: bool, is_admin: bool
+) -> None:
+    with stat_section("Needs attention", None if live else AS_OF_NOTE):
+        with tile_row():
+            # an admin's scope is the whole parish, so these two would only
+            # repeat the section above; for everyone else they are the size
+            # of what they are responsible for, and belong here
+            if not is_admin:
+                stat_tile(lead.teams, "Teams I help run", href="/teams")
+                stat_tile(lead.people, "People on them", href="/volunteers")
+            stat_tile(
+                lead.people_without_email,
+                "No email address",
+                warn=bool(lead.people_without_email),
+                hint="They cannot be invited to an account or emailed about an event.",
+                href="/volunteers",
+            )
+            if lead.teams_without_leader is not None:
+                stat_tile(
+                    lead.teams_without_leader,
+                    "Without a leader",
+                    warn=bool(lead.teams_without_leader),
+                    href="/teams",
+                )
+                stat_tile(
+                    lead.teams_without_second,
+                    "Without a second",
+                    warn=bool(lead.teams_without_second),
+                    href="/teams",
+                )
+            if lead.understaffed_events is not None:
+                stat_tile(
+                    lead.understaffed_events,
+                    "Shifts short of people",
+                    sub="next 30 days",
+                    warn=bool(lead.understaffed_events),
+                    href="/events",
+                )
+        if lead.gap_teams:
+            with chip_row("Gaps:"):
+                for gap in lead.gap_teams:
+                    missing = " and ".join(
+                        f"no {what}"
+                        for what, absent in (
+                            ("leader", gap.missing_leader),
+                            ("second", gap.missing_second),
+                        )
+                        if absent
+                    )
+                    ui.link(f"{gap.path} — {missing}", f"/teams/{gap.team_id}").classes(
+                        "text-sm"
+                    )
+        if lead.bands:
+            with chip_row("Workload:"):
+                for band in lead.bands:
+                    stat_chip(
+                        band.label,
+                        band.count,
+                        color=band.color,
+                        href=f"/volunteers?band={band.label}",
+                    )
+        if lead.open_elections:
+            with chip_row("Open seats:"):
+                for phase in lead.open_elections:
+                    stat_chip(phase.label, phase.count, href="/elections")
+
+
+def _personal_section(
+    mine: stats_service.PersonalStats | None, assignments: list, *, as_of: str
+) -> None:
+    """The reader's own service, last on the page: it is the narrowest
+    audience there is. Never their workload band — nobody sees their own."""
+    with stat_section("My service"):
+        if mine is not None:
+            with tile_row():
+                stat_tile(
+                    mine.upcoming_duties,
+                    "Upcoming duties",
+                    sub=mine.next_duty_at.astimezone().strftime("next %-d %b, %H:%M")
+                    if mine.next_duty_at
+                    else None,
+                    hint=f"{mine.next_duty_title} · {mine.next_duty_slot}"
+                    if mine.next_duty_title
+                    else None,
+                    href="/events",
+                )
+                if mine.claimable_subs:
+                    stat_tile(
+                        mine.claimable_subs,
+                        "Shifts I could cover",
+                        href="/events",
+                    )
+                if mine.ballots_waiting:
+                    stat_tile(
+                        mine.ballots_waiting,
+                        "Ballots waiting",
+                        warn=True,
+                        href="/elections",
+                    )
+                stat_tile(
+                    # Decimal("3.00") formats as "3.00" under :g; via float it
+                    # reads as "3", and 3.5 still reads as "3.5"
+                    f"{float(mine.hours_served):g}",
+                    "Hours served",
+                    sub=f"{mine.events_attended} event"
+                    f"{'' if mine.events_attended == 1 else 's'} attended",
+                )
+        if assignments:
+            ui.label("My teams").classes("text-sm text-gray-500")
+            with ui.column().classes("w-full gap-1"):
+                for membership, team in assignments:
+                    suffix = f"?as_of={as_of}" if as_of else ""
+                    with (
+                        ui.link(target=f"/teams/{team.id}{suffix}").classes(
+                            "w-full vdb-quiet"
+                        ),
+                        ui.row().classes(
+                            "items-center gap-2 p-2 rounded bg-blue-50 cursor-pointer w-full"
+                        ),
+                    ):
+                        ui.label(team.name).classes("font-medium")
+                        ui.badge(ROLE_LABELS[membership.role])
 
 
 def _legend_entry(

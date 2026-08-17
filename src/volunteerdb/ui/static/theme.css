@@ -30,6 +30,10 @@
   --vdb-link: #2e5e7e;
   --vdb-selection: #d6edff;
   --vdb-header-bg: #a5573e;
+  /* "this wants attention" — a deeper, redder terracotta than --vdb-heading,
+     so a flagged figure separates from an ordinary one without leaving the
+     palette */
+  --vdb-warn: #a33a28;
 
   --vdb-graph-team: #a5573e;
   --vdb-graph-team-label: #fdf6e3;
@@ -53,6 +57,7 @@ body.body--dark {
   --vdb-link: #9dc1d9;
   --vdb-selection: #3a4a5a;
   --vdb-header-bg: #2a2622;
+  --vdb-warn: #e08a72;
 
   --vdb-graph-team: #c97b5d;
   --vdb-graph-team-label: #1c1917;
@@ -274,6 +279,72 @@ a.vdb-quiet:hover {
   height: 3px;
   border-radius: 2px;
   flex: none;
+}
+
+/* ---------- dashboard statistic tiles (see ui/stat_tiles.py) ---------- */
+
+/* .q-card above already supplies the surface and the rule; this only sets the
+   tile's proportions, so a tile stays a card and follows the theme with one. */
+.vdb-stat {
+  min-width: 9.5rem;
+  padding: 0.75rem 1rem;
+  gap: 0.125rem;
+  box-shadow: none;
+  height: 100%;
+}
+
+a.vdb-quiet .vdb-stat:hover {
+  background-color: var(--vdb-row-hover);
+}
+
+/* the figure carries the display face the page titles use: a statistic is a
+   heading for the sentence underneath it */
+.vdb-stat-value {
+  font-family: var(--vdb-display);
+  font-size: 1.75rem;
+  line-height: 1.15;
+  color: var(--vdb-heading);
+}
+
+.vdb-stat-caption {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6b6255;
+}
+
+.vdb-stat-sub {
+  font-size: 12px;
+  color: #8a8072;
+  min-height: 1.2em; /* reserved even when empty, so tiles share a baseline */
+}
+
+/* a figure that wants doing something about, not merely a large one */
+.vdb-stat-warn .vdb-stat-value {
+  color: var(--vdb-warn);
+}
+
+.vdb-stat-warn {
+  border-left: 3px solid var(--vdb-warn);
+}
+
+.vdb-stat-chip {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--vdb-rule);
+  border-radius: 999px;
+  background-color: var(--vdb-surface);
+}
+
+a.vdb-quiet .vdb-stat-chip:hover {
+  background-color: var(--vdb-row-hover);
+}
+
+body.body--dark .vdb-stat-caption {
+  color: #a89e8f;
+}
+
+body.body--dark .vdb-stat-sub {
+  color: #8a8072;
 }
 
 /* ---------- clickable table rows (mark the table with .vdb-clickable-rows) ---------- */
