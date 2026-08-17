@@ -146,6 +146,17 @@ ignored. Copy `.env.example` as a starting point.
   template sheet exists. See
   [Sync team rosters with Google Sheets](../how-to/drive-roster-sync.md).
 
+`VDB_GCAL_CLIENT_ID`, `VDB_GCAL_CLIENT_SECRET`, `VDB_GCAL_REFRESH_TOKEN`, `VDB_GCAL_CALENDAR_ID`
+: Google Calendar sync: the OAuth client and refresh token authorised as
+  the parish Google account, and the id of the public calendar it owns.
+  With all four set, the in-app scheduler reconciles upcoming events onto
+  that calendar every 30 minutes (one-way, VolunteerDB → Google; an edit
+  reaches the calendar within half an hour) and the **/events** page embeds
+  it. Defaults: empty — the sync exits "not configured" and nothing embeds.
+  The deploy writes them and reads them back on later runs, like
+  `VDB_TEMPLATE_SHEET_URL`; set them once after the one-time authorization.
+  See [Publish events to a Google Calendar](../how-to/google-calendar-sync.md).
+
 `VDB_DOCS_DIR`
 : Directory of built documentation HTML served at `/manual` (signed-in
   users). Default: `docs/_build/html`, resolved against the working

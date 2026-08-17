@@ -33,6 +33,10 @@ class Secrets:
     template_sheet_url: str
     public_base_url: str
     database_url: str
+    gcal_client_id: str
+    gcal_client_secret: str
+    gcal_refresh_token: str
+    gcal_calendar_id: str
 
 
 def _remote_env(env_file: str) -> dict[str, str]:
@@ -78,5 +82,28 @@ def resolve(
         ),
         database_url=(
             f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:5432/{db_name}"
+        ),
+        # Google Calendar sync credentials + target calendar: set once after
+        # the one-time authorization (docs/how-to/google-calendar-sync.md),
+        # reused on every later deploy — the sheet-URL pattern.
+        gcal_client_id=(
+            os.environ.get("VDB_GCAL_CLIENT_ID")
+            or existing.get("VDB_GCAL_CLIENT_ID")
+            or ""
+        ),
+        gcal_client_secret=(
+            os.environ.get("VDB_GCAL_CLIENT_SECRET")
+            or existing.get("VDB_GCAL_CLIENT_SECRET")
+            or ""
+        ),
+        gcal_refresh_token=(
+            os.environ.get("VDB_GCAL_REFRESH_TOKEN")
+            or existing.get("VDB_GCAL_REFRESH_TOKEN")
+            or ""
+        ),
+        gcal_calendar_id=(
+            os.environ.get("VDB_GCAL_CALENDAR_ID")
+            or existing.get("VDB_GCAL_CALENDAR_ID")
+            or ""
         ),
     )

@@ -438,6 +438,11 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
+    # calendar-sync bookkeeping, owned by jobs/calendar_sync.py — never
+    # user-editable. NULL google_event_id = not (yet) on the parish calendar;
+    # the fingerprint is a hash of the last-pushed payload (change detection).
+    google_event_id: Mapped[str | None] = mapped_column(sa.String(1024))
+    google_fingerprint: Mapped[str | None] = mapped_column(sa.String(64))
 
 
 class EventSlot(Base):

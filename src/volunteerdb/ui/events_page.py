@@ -25,8 +25,8 @@ from ..log import audit_log
 from ..models import EventSlot, EventStatus, EventSubRequest, Volunteer
 from ..permissions import require
 from ..services import events as event_service
+from ..services import gcal, mail
 from ..services import interest as interest_service
-from ..services import mail
 from ..services import teams as team_service
 from . import column_order
 from .context import action_session, notify_errors, page_session
@@ -600,6 +600,14 @@ async def events_page(request: Request, past: str = ""):
                             icon="volunteer_activism",
                             on_click=lambda _, sid=c.sub.id: _claim_sub(sid),
                         ).props("dense outline")
+
+        # the public parish calendar, when one is configured — Google serves
+        # the embed itself, so this costs the page nothing but the iframe
+        embed = gcal.embed_url()
+        if embed and not show_past:
+            ui.element("iframe").props(f'src="{embed}"').classes(
+                "w-full rounded mt-4"
+            ).style("height: 24rem; border: 0").mark("gcal-embed")
 
         rows = []
         for s in summaries:

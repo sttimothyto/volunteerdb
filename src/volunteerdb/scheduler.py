@@ -43,7 +43,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .config import settings
 from .db import db_session
-from .jobs import event_reminders, fetch_pages, job_lock, proposal_digest
+from .jobs import calendar_sync, event_reminders, fetch_pages, job_lock, proposal_digest
 from .models import JobRun
 from .services import mail
 
@@ -73,6 +73,8 @@ JOBS: tuple[Job, ...] = (
     Job("fetch_pages", "fetch_pages_at", fetch_pages.main),
     Job("proposal_digest", "proposal_digest_at", proposal_digest.main),
     Job("event_reminders", "event_reminders_at", event_reminders.main),
+    # last: an interval job must never delay the nightly chain
+    Job("calendar_sync", None, calendar_sync.main, every=timedelta(minutes=30)),
 )
 
 

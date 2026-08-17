@@ -214,6 +214,30 @@ async def test_leader_creates_event_via_dialog(database):
         assert len(picnics) == 2, "day 1 and day 8"
 
 
+async def test_calendar_embed_follows_configuration(database, monkeypatch):
+    from volunteerdb.config import settings
+    from volunteerdb.services import gcal
+
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open("/events")
+        await user.should_not_see(marker="gcal-embed")
+
+    cfg = settings().model_copy(
+        update={"gcal_calendar_id": "parish@group.calendar.google.com"}
+    )
+    monkeypatch.setattr(gcal, "settings", lambda: cfg)
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open("/events")
+        await user.should_see(marker="gcal-embed")
+        await user.open("/events?past=1")
+        await user.should_not_see(marker="gcal-embed")
+
+
 async def test_events_table_search_sort_and_column_drag(database):
     async with db_session() as session:
         ids = await _parish(session)

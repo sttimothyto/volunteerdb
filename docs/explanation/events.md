@@ -112,6 +112,22 @@ goes out immediately from the GUI after the transaction commits. The API
 sends no mail at all (the repo-wide rule); an API-created assignment still
 reaches its volunteer through the digest.
 
+## The public calendar
+
+With the `VDB_GCAL_*` settings provisioned
+([how-to](../how-to/google-calendar-sync.md)), a 30-minute in-app job
+reconciles events one-way onto a public Google Calendar the parish account
+owns, and `/events` embeds it. Published: title, time, location,
+description — never slots, rosters, or names, and no team path (so
+repointing an event to a task-force team causes no calendar churn).
+Cancelled events leave the calendar; past ones stay as history. The sync is
+the *single writer*: nothing pushes from the create/edit handlers, so an
+edit reaches the calendar within half an hour, and every entry it manages
+carries a private marker — hand-made calendar entries are never touched.
+Change detection is a payload fingerprint stored on the event row
+(`google_event_id` / `google_fingerprint`), which keeps an untouched event
+free of API calls.
+
 ## Not versioned
 
 None of the five tables is system-versioned, per the `proposal`/`interest`

@@ -334,6 +334,20 @@ async def test_lock_holder_excludes_the_scheduler(
     assert calls == ["a"]
 
 
+# --- the real registry --------------------------------------------------------
+
+
+def test_registry_mixes_nightly_and_interval_jobs():
+    by_name = {j.name: j for j in scheduler.JOBS}
+    for name in ("fetch_pages", "proposal_digest", "event_reminders"):
+        assert by_name[name].every is None and by_name[name].at_setting
+    sync = by_name["calendar_sync"]
+    assert (sync.at_setting, sync.every) == (None, timedelta(minutes=30))
+    assert list(by_name)[-1] == "calendar_sync", (
+        "interval jobs come last so they never delay the nightly chain"
+    )
+
+
 # --- the activation seam ------------------------------------------------------
 
 
