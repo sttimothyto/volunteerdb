@@ -19,6 +19,14 @@ in-memory on purpose: a restart resets it, and a redeploy is often the fix.
 Jobs are per-person idempotent (NULL-stamp pattern), so retries and even
 double runs are safe. Each run holds the jobs.job_lock advisory lock, so a
 manually launched one-shot job container can never overlap the scheduler.
+
+Some jobs run on an *interval* instead of at a nightly time (Job.every):
+due whenever the interval has passed since the last attempt — attempt, not
+success, so a failing job retries at its own cadence rather than
+hot-looping, and MAX_ATTEMPTS_PER_DAY does not apply. last_attempt_at is
+hydrated from job_run at startup so a crash-looping container cannot hammer
+an external API, and a persistent failure alerts at most once per parish
+day (a 30-minute job failing all day must not send 48 emails).
 """
 
 import asyncio
@@ -35,7 +43,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .config import settings
 from .db import db_session
-from .jobs import event_reminders, fetch_pages, job_lock, proposal_digest
+from .jobs import (
+    calendar_sync,
+    event_reminders,
+    fetch_pages,
+    job_lock,
+    proposal_digest,
+    task_force_cleanup,
+)
 from .models import JobRun
 from .services import mail
 
@@ -50,8 +65,12 @@ EXIT_EXCEPTION = -1  # sentinel exit code recorded for an uncaught exception
 @dataclass(frozen=True)
 class Job:
     name: str  # job_run.job_name; also the log/alert label
-    at_setting: str  # Settings attribute holding the parish-local run time
+    at_setting: str | None  # Settings attribute holding the parish-local run time
     run: Callable[[], Awaitable[int]]
+    # interval mode — exactly one of at_setting/every is set. A literal, not
+    # a Setting: a reconcile cadence has no parish-local coupling to tune,
+    # and the daily jobs' positional construction stays untouched.
+    every: timedelta | None = None
 
 
 # Registry order is execution order when several jobs are due at once (e.g.
@@ -61,6 +80,9 @@ JOBS: tuple[Job, ...] = (
     Job("fetch_pages", "fetch_pages_at", fetch_pages.main),
     Job("proposal_digest", "proposal_digest_at", proposal_digest.main),
     Job("event_reminders", "event_reminders_at", event_reminders.main),
+    # last: interval jobs must never delay the nightly chain
+    Job("calendar_sync", None, calendar_sync.main, every=timedelta(minutes=30)),
+    Job("task_force_cleanup", None, task_force_cleanup.main, every=timedelta(hours=1)),
 )
 
 
@@ -72,6 +94,7 @@ class JobState:
     attempts_on: date | None = None
     attempts: int = 0
     last_attempt_at: datetime | None = None
+    alerted_on: date | None = None  # interval jobs: one failure alert per day
 
 
 _task: asyncio.Task | None = None
@@ -101,6 +124,15 @@ def is_due(scheduled: time, state: JobState, now: datetime) -> bool:
     return True
 
 
+def is_due_every(every: timedelta, state: JobState, now: datetime) -> bool:
+    """Whether an interval job should run at `now`. Pure — unit-tested.
+
+    Keyed off the last *attempt*, not success: a failing job retries on its
+    own cadence instead of hot-looping every tick, and MAX_ATTEMPTS_PER_DAY
+    does not apply — the cadence itself is the limit."""
+    return state.last_attempt_at is None or now - state.last_attempt_at >= every
+
+
 async def _load_state() -> None:
     _state.clear()
     for job in JOBS:
@@ -109,6 +141,9 @@ async def _load_state() -> None:
         for row in await session.scalars(sa.select(JobRun)):
             if row.job_name in _state:
                 _state[row.job_name].last_success_on = row.last_success_on
+                # interval jobs pace off this even across restarts, so a
+                # crash-looping container cannot hammer an external API
+                _state[row.job_name].last_attempt_at = row.last_attempt_at
 
 
 async def _record(
@@ -143,6 +178,21 @@ async def _alert(name: str, exit_code: int, attempt: int) -> None:
         f"Job {name} failed (exit {exit_code}, attempt "
         f"{attempt}/{MAX_ATTEMPTS_PER_DAY}) at {local_now():%Y-%m-%d %H:%M %Z}.\n"
         f"It retries after {RETRY_DELAY // timedelta(minutes=1)} minutes.\n"
+        "Details: journalctl -u volunteerdb-app\n",
+    )
+
+
+async def _alert_interval(name: str, exit_code: int, every: timedelta) -> None:
+    to = settings().alert_email
+    if not to:
+        return
+    await mail.send_email(  # never raises
+        to,
+        f"[volunteerdb] {name} FAILED",
+        f"Job {name} failed (exit {exit_code}) at "
+        f"{local_now():%Y-%m-%d %H:%M %Z}.\n"
+        f"It runs every {every // timedelta(minutes=1)} minutes and keeps "
+        "retrying; this alert repeats at most once per day.\n"
         "Details: journalctl -u volunteerdb-app\n",
     )
 
@@ -183,12 +233,22 @@ async def _run_job(job: Job, now: datetime) -> None:
             attempt=st.attempts,
             ms=ms,
         )
-        await _alert(job.name, code, st.attempts)
+        if job.every is None:
+            await _alert(job.name, code, st.attempts)
+        elif st.alerted_on != now.date():
+            st.alerted_on = now.date()
+            await _alert_interval(job.name, code, job.every)
+
+
+def _job_due(job: Job, now: datetime) -> bool:
+    if job.every is not None:
+        return is_due_every(job.every, _state[job.name], now)
+    return is_due(getattr(settings(), job.at_setting), _state[job.name], now)
 
 
 async def _tick(now: datetime) -> None:
     for job in JOBS:  # sequential: app jobs never overlap each other
-        if is_due(getattr(settings(), job.at_setting), _state[job.name], now):
+        if _job_due(job, now):
             await _run_job(job, now)
 
 

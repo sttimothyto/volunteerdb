@@ -53,9 +53,6 @@ class Settings(BaseSettings):
     # https://vdb.sttimothyto.org). UI-sent mail derives links from the live
     # request instead; empty means job emails simply carry no link.
     public_base_url: str = ""
-    # How many days ahead the nightly digest (jobs/event_reminders.py)
-    # reminds people of events they are scheduled to serve at.
-    event_reminder_days: int = Field(default=3, gt=0)
     # In-app scheduler (volunteerdb.scheduler) driving the nightly jobs
     # below. Forced off under VDB_RELOAD regardless: dev reload restarts the
     # process on every save, which would re-fire startup hooks.
@@ -80,6 +77,16 @@ class Settings(BaseSettings):
     # Set: the /import page links there instead of offering the bare CSV.
     # Empty (dev): the page falls back to a plain CSV download.
     template_sheet_url: str = ""
+    # Google Calendar sync (jobs/calendar_sync.py): OAuth client + refresh
+    # token authorised as the parish Google account, and the id of the public
+    # calendar it owns. All four set: upcoming events reconcile onto that
+    # calendar every 30 minutes and /events embeds it. Any empty: the sync
+    # exits "not configured" and no embed renders. Provisioning walkthrough:
+    # docs/how-to/google-calendar-sync.md.
+    gcal_client_id: str = ""
+    gcal_client_secret: str = ""
+    gcal_refresh_token: str = ""
+    gcal_calendar_id: str = ""
     # Built HTML manual served at /manual (signed-in users). Relative paths
     # resolve against the cwd (repo root in dev); the container bakes the
     # docs in and sets VDB_DOCS_DIR=/app/docs-html.

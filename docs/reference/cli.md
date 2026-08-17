@@ -94,7 +94,7 @@ with.
 database is touched: too short or too well-known and it exits 2 with the reason
 on stderr, having created nothing.
 
-## `volunteerdb.jobs` — nightly one-shot jobs
+## `volunteerdb.jobs` — scheduled one-shot jobs
 
 ```sh
 python -m volunteerdb.jobs.fetch_pages
@@ -102,6 +102,8 @@ python -m volunteerdb.jobs.drive_sync apply /sync
 python -m volunteerdb.jobs.drive_sync record /sync
 python -m volunteerdb.jobs.proposal_digest [--today YYYY-MM-DD]
 python -m volunteerdb.jobs.event_reminders [--today YYYY-MM-DD]
+python -m volunteerdb.jobs.calendar_sync
+python -m volunteerdb.jobs.task_force_cleanup
 ```
 
 `fetch_pages` refreshes every team home page from its public Google Doc
@@ -112,18 +114,28 @@ fetches in its own transaction, so one bad doc cannot block the rest.
 it only reads and writes a work directory — rclone on the host does all the
 Drive traffic. `proposal_digest` emails each proposal voter one nightly
 digest of what needs their input; `event_reminders` emails each volunteer
-their event notices (scheduled by a manager / serving within
-`VDB_EVENT_REMINDER_DAYS`). Both digests are per-person idempotent via
-notification stamps — a failed send retries the next night — and take
-`--today` for manual runs and tests. All need `VDB_DATABASE_URL`.
+their event notices (scheduled by a manager, serving this week, serving
+tomorrow — the reminder stages honour the per-sign-up preferences). Both
+digests are per-person idempotent via notification stamps — a failed send
+retries the next night — and take `--today` for manual runs and tests. All
+need `VDB_DATABASE_URL`.
 
-`fetch_pages`, `proposal_digest` and `event_reminders` run **inside the app
-process**: `volunteerdb.scheduler` fires each at its parish-local time
+`calendar_sync` reconciles events onto the public parish Google Calendar
+(see [Publish events to a Google Calendar](../how-to/google-calendar-sync.md));
+unconfigured it exits 0 with "not configured", so it is always safe to run.
+`task_force_cleanup` dismantles the auto-created task-force team of every
+finished or cancelled event (see
+[Events and scheduling](../explanation/events.md)).
+
+All of these except `drive_sync` run **inside the app process**:
+`volunteerdb.scheduler` fires the nightly three at their parish-local times
 (`VDB_FETCH_PAGES_AT` 03:00, `VDB_PROPOSAL_DIGEST_AT` 03:30,
-`VDB_EVENT_REMINDERS_AT` 04:00), records completion in the `job_run` table
-so a restart or redeploy cannot skip a night, retries a failure every 30
-minutes (3 attempts/day) and emails `VDB_ALERT_EMAIL` on each failed
-attempt. Their output lands in the app journal (`journalctl -u
+`VDB_EVENT_REMINDERS_AT` 04:00), `calendar_sync` every 30 minutes and
+`task_force_cleanup` hourly, records completion in the `job_run` table
+so a restart or redeploy cannot skip a night, retries a nightly failure
+every 30 minutes (3 attempts/day) and emails `VDB_ALERT_EMAIL` on each
+failed attempt — an interval job instead retries on its own cadence and
+alerts at most once per day. Their output lands in the app journal (`journalctl -u
 volunteerdb-app`, grep `scheduler`). The `python -m` forms above stay for
 manual runs — in production:
 `podman run --rm --network volunteerdb --env-file /etc/volunteerdb/env

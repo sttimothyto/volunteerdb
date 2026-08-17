@@ -1,9 +1,10 @@
 import enum
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, TSTZRANGE, Range
+from sqlalchemy.dialects.postgresql import JSONB, TSTZRANGE, UUID, Range
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -414,6 +415,12 @@ class Event(Base):
         sa.Index("ix_event_team_starts", "team_id", "starts_at"),
         # serves the reminder job's and /events' date-window scans
         sa.Index("ix_event_starts_at", "starts_at"),
+        # serves sign_up_series's "future rows of this series" sweep
+        sa.Index(
+            "ix_event_series",
+            "series_id",
+            postgresql_where=sa.text("series_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -438,6 +445,15 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
+    # calendar-sync bookkeeping, owned by jobs/calendar_sync.py — never
+    # user-editable. NULL google_event_id = not (yet) on the parish calendar;
+    # the fingerprint is a hash of the last-pushed payload (change detection).
+    google_event_id: Mapped[str | None] = mapped_column(sa.String(1024))
+    google_fingerprint: Mapped[str | None] = mapped_column(sa.String(64))
+    # stamped by create_event on weekly repeats; NULL = standalone. Not a
+    # recurrence engine: the id exists solely so a sign-up can copy itself
+    # onto the later weeks of the same series.
+    series_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
 class EventSlot(Base):
@@ -510,12 +526,65 @@ class EventAssignment(Base):
     assigned_notified_at: Mapped[datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True)
     )
-    reminder_sent_at: Mapped[datetime | None] = mapped_column(
+    # the two reminder stages, each an opt-outable preference (chosen at
+    # sign-up, pre-checked) with its own one-shot stamp: "this week" once the
+    # event is ≤7 parish days out, "tomorrow" the day before
+    notify_7d: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
+    notify_24h: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
+    reminded_7d_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    reminded_24h_at: Mapped[datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True)
     )
     # manager-recorded exceptions to auto attendance; NULL = auto
     attended_override: Mapped[bool | None]
     hours_override: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2))
+
+
+class EventTaskForce(Base):
+    """Marks an event whose owning team was swapped for an auto-created
+    "task force" team so several teams can staff it (services/task_force.py
+    automates the documented one-event-one-team pattern). owner_team_id is
+    the real owner, restored at teardown BEFORE the meta team is deleted —
+    event.team_id cascades on team delete, so that order is load-bearing.
+
+    Not system-versioned: provenance whose lifecycle is create/teardown.
+    The meta team and its memberships are ordinary versioned rows — that is
+    what keeps a torn-down task force visible in as-of history."""
+
+    __tablename__ = "event_task_force"
+
+    event_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("event.id", ondelete="CASCADE"), primary_key=True
+    )
+    # the auto-created meta team the event was repointed to
+    team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE"), unique=True
+    )
+    owner_team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE")
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+
+
+class EventTaskForceSource(Base):
+    """One team whose roster was copied into a task force (the owner team is
+    always a source too)."""
+
+    __tablename__ = "event_task_force_source"
+    __table_args__ = (
+        sa.UniqueConstraint("event_id", "team_id", name="uq_task_force_source"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("event_task_force.event_id", ondelete="CASCADE")
+    )
+    team_id: Mapped[int] = mapped_column(sa.ForeignKey("team.id", ondelete="CASCADE"))
 
 
 class EventRsvp(Base):

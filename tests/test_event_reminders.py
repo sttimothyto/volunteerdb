@@ -1,6 +1,7 @@
-"""The nightly event digest: one email per person, scheduled-vs-reminder
-notices, the double-stamp rule for events already inside the window, retry
-after a failed send, and the exclusions (cancelled, past, self-signups)."""
+"""The nightly event digest: one email per person, the scheduled notice and
+the two staged reminders (week / day-before) with their per-sign-up
+preferences, the stamp-everything-satisfied rule, retry after a failed
+send, and the exclusions (cancelled, past, self-signups)."""
 
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -72,7 +73,7 @@ async def _assign(event_id: int, volunteer_id: int) -> int:
         return a.id
 
 
-async def test_scheduled_notice_then_reminder_then_silence(database, sent_mail):
+async def test_scheduled_notice_then_staged_reminders_then_silence(database, sent_mail):
     team_id, vids = await _team()
     event_id = await _event(team_id, days_ahead=10)
     await _assign(event_id, vids[1])
@@ -87,19 +88,31 @@ async def test_scheduled_notice_then_reminder_then_silence(database, sent_mail):
     await event_reminders.main(today=date.today())
     assert sent_mail == [], "the scheduled notice is one-shot"
 
-    # ten days later the event is inside the 3-day window
-    await event_reminders.main(today=date.today() + timedelta(days=8))
+    await event_reminders.main(today=date.today() + timedelta(days=2))
+    assert sent_mail == [], "eight days out: no reminder window yet"
+
+    await event_reminders.main(today=date.today() + timedelta(days=3))
     assert len(sent_mail) == 1
-    assert "Coming up soon" in sent_mail[0][2]
+    assert "Coming up this week" in sent_mail[0][2]
+
+    sent_mail.clear()
+    await event_reminders.main(today=date.today() + timedelta(days=4))
+    assert sent_mail == [], "the week reminder is one-shot"
+
+    await event_reminders.main(today=date.today() + timedelta(days=9))
+    assert len(sent_mail) == 1
+    assert "Tomorrow — you are serving" in sent_mail[0][2]
 
     sent_mail.clear()
     await event_reminders.main(today=date.today() + timedelta(days=9))
-    assert sent_mail == [], "the reminder is one-shot too"
+    assert sent_mail == [], "the day reminder is one-shot too"
 
 
-async def test_inside_window_lists_once_and_stamps_both(database, sent_mail):
+async def test_pending_everything_lists_once_and_stamps_every_stage(
+    database, sent_mail
+):
     team_id, vids = await _team()
-    event_id = await _event(team_id, days_ahead=2)  # already inside the window
+    event_id = await _event(team_id, days_ahead=1)  # inside every window
     await _assign(event_id, vids[1])
 
     await event_reminders.main(today=date.today())
@@ -109,8 +122,44 @@ async def test_inside_window_lists_once_and_stamps_both(database, sent_mail):
     assert body.count("Mass") == 1, "listed once, not once per notice"
 
     sent_mail.clear()
+    await event_reminders.main(today=date.today())
+    assert sent_mail == []
     await event_reminders.main(today=date.today() + timedelta(days=1))
-    assert sent_mail == [], "both stamps were set — no reminder repeat"
+    assert sent_mail == [], "every satisfied stage stamped — no repeats"
+
+
+async def test_opted_out_stages_stay_silent(database, sent_mail):
+    team_id, vids = await _team(3)
+    event_id = await _event(team_id, days_ahead=5)
+    async with db_session() as session:
+        view = await event_service.detail(session, event_id)
+        await event_service.sign_up(
+            session,
+            slot_id=view.slots[0].slot.id,
+            volunteer_id=vids[1],
+            notify_7d=False,
+            notify_24h=True,
+        )
+        await event_service.sign_up(
+            session,
+            slot_id=view.slots[0].slot.id,
+            volunteer_id=vids[2],
+            notify_7d=True,
+            notify_24h=False,
+        )
+
+    await event_reminders.main(today=date.today())
+    assert [m[0] for m in sent_mail] == ["vol2@example.org"], (
+        "vol1 opted out of the week stage; vol2 kept it"
+    )
+    assert "Coming up this week" in sent_mail[0][2]
+
+    sent_mail.clear()
+    await event_reminders.main(today=date.today() + timedelta(days=4))
+    assert [m[0] for m in sent_mail] == ["vol1@example.org"], (
+        "the day before: vol1's 24h stage fires; vol2 opted out of it"
+    )
+    assert "Tomorrow" in sent_mail[0][2]
 
 
 async def test_one_email_per_person_covers_all_events(database, sent_mail):
@@ -169,10 +218,10 @@ async def test_exclusions(database, sent_mail):
         "cancelled events are silent; self-signups get no scheduled notice"
     )
 
-    # the self-signup still gets the window reminder later
-    await event_reminders.main(today=date.today() + timedelta(days=8))
+    # the self-signup still gets the week reminder later
+    await event_reminders.main(today=date.today() + timedelta(days=3))
     assert [m[0] for m in sent_mail] == ["vol2@example.org"]
-    assert "Coming up soon" in sent_mail[0][2]
+    assert "Coming up this week" in sent_mail[0][2]
     assert "You have been scheduled" not in sent_mail[0][2]
 
 

@@ -13,7 +13,7 @@ from volunteerdb.config import settings
 from volunteerdb.db import db_session
 from volunteerdb.jobs import job_lock
 from volunteerdb.models import JobRun
-from volunteerdb.scheduler import JobState, is_due
+from volunteerdb.scheduler import JobState, is_due, is_due_every
 from volunteerdb.services import mail
 
 TZ = ZoneInfo("America/Toronto")
@@ -243,6 +243,79 @@ async def test_failure_does_not_erase_last_success(
     assert (row.last_exit_code, row.last_success_on) == (1, YESTERDAY)
 
 
+# --- interval jobs ------------------------------------------------------------
+
+
+def _patch_interval_job(
+    monkeypatch, outcome: int | Exception, every: timedelta = timedelta(minutes=30)
+) -> list[str]:
+    calls: list[str] = []
+
+    async def run() -> int:
+        calls.append("i")
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(
+        scheduler, "JOBS", (scheduler.Job("i", None, run, every=every),)
+    )
+    return calls
+
+
+def test_interval_due_predicate():
+    every = timedelta(minutes=30)
+    assert is_due_every(every, JobState(), _now(TODAY, 3, 0)), (
+        "no attempt on record: due on the first tick, whatever the clock says"
+    )
+    ran = JobState(last_attempt_at=_now(TODAY, 4, 0))
+    assert not is_due_every(every, ran, _now(TODAY, 4, 29))
+    assert is_due_every(every, ran, _now(TODAY, 4, 30))
+
+
+async def test_interval_job_runs_on_its_cadence(database, monkeypatch, quiet_settings):
+    calls = _patch_interval_job(monkeypatch, 0)
+    await scheduler._load_state()
+    await scheduler._tick(_now(TODAY, 3, 0))  # the nightly time gate is not its
+    assert calls == ["i"]
+    await scheduler._tick(_now(TODAY, 3, 29))
+    assert calls == ["i"]
+    await scheduler._tick(_now(TODAY, 3, 30))
+    assert calls == ["i", "i"]
+
+
+async def test_interval_pacing_survives_a_restart(
+    database, monkeypatch, quiet_settings
+):
+    calls = _patch_interval_job(monkeypatch, 0)
+    await scheduler._record(
+        "i", exit_code=0, success_on=TODAY, attempted_at=_now(TODAY, 4, 0)
+    )
+    await scheduler._load_state()  # hydrates last_attempt_at
+    await scheduler._tick(_now(TODAY, 4, 10))
+    assert calls == [], "a crash-looping container cannot hammer the API"
+    await scheduler._tick(_now(TODAY, 4, 30))
+    assert calls == ["i"]
+
+
+async def test_interval_failure_alerts_once_a_day_but_keeps_retrying(
+    database, monkeypatch, sent_mail
+):
+    patched = settings().model_copy(update={"alert_email": "ops@example.org"})
+    monkeypatch.setattr(scheduler, "settings", lambda: patched)
+    calls = _patch_interval_job(monkeypatch, 1)
+    await scheduler._load_state()
+    await scheduler._tick(_now(TODAY, 4, 0))
+    await scheduler._tick(_now(TODAY, 4, 30))
+    await scheduler._tick(_now(TODAY, 5, 0))
+    assert len(calls) == 3, "MAX_ATTEMPTS_PER_DAY never throttles the cadence"
+    assert [(to, subject) for to, subject, _ in sent_mail] == [
+        ("ops@example.org", "[volunteerdb] i FAILED")
+    ], "one alert for the day, not one per failure"
+    await scheduler._tick(_now(TODAY + timedelta(days=1), 4, 0))
+    assert len(sent_mail) == 2, "a new parish day alerts afresh"
+
+
 # --- the advisory job lock ----------------------------------------------------
 
 
@@ -259,6 +332,22 @@ async def test_lock_holder_excludes_the_scheduler(
     assert await _row("a") is None
     await scheduler._tick(_now(TODAY, 4, 31))  # released: next tick runs it
     assert calls == ["a"]
+
+
+# --- the real registry --------------------------------------------------------
+
+
+def test_registry_mixes_nightly_and_interval_jobs():
+    by_name = {j.name: j for j in scheduler.JOBS}
+    for name in ("fetch_pages", "proposal_digest", "event_reminders"):
+        assert by_name[name].every is None and by_name[name].at_setting
+    sync = by_name["calendar_sync"]
+    assert (sync.at_setting, sync.every) == (None, timedelta(minutes=30))
+    cleanup = by_name["task_force_cleanup"]
+    assert (cleanup.at_setting, cleanup.every) == (None, timedelta(hours=1))
+    assert all(j.every is not None for j in scheduler.JOBS[3:]), (
+        "interval jobs come last so they never delay the nightly chain"
+    )
 
 
 # --- the activation seam ------------------------------------------------------

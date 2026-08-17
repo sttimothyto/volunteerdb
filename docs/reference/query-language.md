@@ -53,6 +53,15 @@ coverage counts `leaders`, `seconds`, `core`, `members`, `total`, `gaps`
 you do not manage they never match. Query matches keep their ancestor rows,
 exactly like the substring filter, so the tree indent stays intact.
 
+## Event fields (events list)
+
+`title`, `team`, `location`, `you` (text), `date` (date, quoted ISO like
+`date >= '2026-09-01'`), and `filled`, `capacity` (integers). `capacity` is
+absent (`IS NULL`) as soon as one slot is unlimited; `you` holds
+`serving`, `available`, or `unavailable` — your own relationship to the
+event. The list is already scoped to the teams you may see, so the filter
+never reveals more than the unfiltered page.
+
 ## What each role's filter can see
 
 Filters obey the same visibility rules as everything else; a filter cannot

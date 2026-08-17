@@ -19,14 +19,19 @@ from zoneinfo import ZoneInfo
 from nicegui import ui
 from starlette.requests import Request
 
+from .. import query_lang
 from ..config import settings
+from ..log import audit_log
 from ..models import EventSlot, EventStatus, EventSubRequest, Volunteer
 from ..permissions import require
 from ..services import events as event_service
+from ..services import gcal, mail
 from ..services import interest as interest_service
-from ..services import mail
+from ..services import task_force as task_force_service
 from ..services import teams as team_service
+from . import column_order
 from .context import action_session, notify_errors, page_session
+from .date_input import date_input
 from .layout import frame
 
 
@@ -51,6 +56,67 @@ def _parse_local(day_s: str, time_s: str, what: str) -> datetime | None:
     except ValueError:
         ui.notify(f"{what}: use YYYY-MM-DD and HH:MM", color="warning")
         return None
+
+
+def _event_count(shown: int, total: int | None = None) -> str:
+    if total is None or shown == total:
+        return f"{shown} event{'s' if shown != 1 else ''}"
+    return f"{shown} of {total} events"
+
+
+def _wire_search(
+    search: ui.input, count: ui.label, table: ui.table, rows: list[dict]
+) -> None:
+    """Narrow the table as you type — the teams-page idiom: every listed event
+    is already in `rows`, so the filter swaps what the table shows without a
+    query or a reload."""
+
+    def matches(row: dict, text: str) -> bool:
+        return any(
+            text in (row[key] or "").lower()
+            for key in ("title", "team", "location", "when")
+        )
+
+    def apply() -> None:
+        text = (search.value or "").strip()
+        ast = query_lang.parse(text) if text else None
+        if ast is None:
+            shown = rows if not text else [r for r in rows if matches(r, text.lower())]
+        else:
+            try:
+                pred = query_lang.compile_events(ast)
+            except query_lang.QueryError as exc:
+                # inline, not a toast: this filter runs on every keystroke
+                count.set_text(f"query error: {exc}")
+                return
+            shown = [r for r in rows if pred(r)]
+        table.rows = shown
+        table.update()
+        count.set_text(_event_count(len(shown), len(rows)))
+
+    search.on_value_change(apply)
+
+
+def _share_event(base_url: str, event_id: int) -> None:
+    """Copy the event link, then say what the recipients will need.
+
+    The copy happens up front (the click IS the intent); the dialog exists for
+    the caveat — the link asks for a sign-in, so a leader texting it out has to
+    make sure everyone on the list has an account first.
+    """
+    url = f"{base_url}/events/{event_id}"
+    ui.clipboard.write(url)
+    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+        ui.label("Event link copied").classes("text-lg font-medium")
+        ui.input(value=url).props("readonly outlined dense").classes("w-full")
+        ui.label(
+            "Before you email or text this link out, make sure every "
+            "volunteer has a VolunteerDB account — opening it asks for a "
+            "sign-in, and the event is shown only to members of its team."
+        ).classes("text-sm text-gray-500")
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Close", on_click=dialog.close).props("flat dense")
+    dialog.open()
 
 
 async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
@@ -129,6 +195,139 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
     dialog.open()
 
 
+async def _substitute_dialog(
+    assignment_id: int, options: dict[int, str], base_url: str
+) -> None:
+    """Hand a slot straight to a chosen teammate — no open call, no race."""
+    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+        ui.label("Hand this slot to a teammate").classes("text-lg font-medium")
+        ui.label(
+            "They take the slot immediately and are emailed about it. The "
+            "change is recorded: who made it, and when, goes into the log."
+        ).classes("text-sm text-gray-500")
+        pick = (
+            ui.select(options, label="Who takes it?", with_input=True)
+            .props("outlined dense")
+            .classes("w-full")
+        )
+
+        @notify_errors
+        async def save() -> None:
+            if not pick.value:
+                ui.notify("Pick a teammate first", color="warning")
+                return
+            async with action_session() as (session, actor):
+                assignment = await event_service.get_assignment(session, assignment_id)
+                if assignment is None:
+                    raise LookupError("assignment vanished")
+                event = await event_service.get(session, assignment.event_id)
+                if event is None:
+                    raise LookupError("event vanished")
+                require(
+                    assignment.volunteer_id == actor.volunteer_id
+                    or actor.can_manage_team(event.team_id),
+                    "hand off someone else's slot",
+                )
+                assignment, outgoing, incoming = await event_service.substitute(
+                    session,
+                    assignment_id=assignment_id,
+                    new_volunteer_id=pick.value,
+                    acted_by=actor.user.id,
+                )
+                slot = await session.get(EventSlot, assignment.slot_id)
+                message = mail.substituted_in_email(
+                    event.title,
+                    slot.name if slot else "volunteer",
+                    mail.event_when(event.starts_at, event.ends_at),
+                    outgoing.full_name,
+                    f"{base_url}/events",
+                )
+                incoming_email = incoming.email
+                incoming_name = incoming.full_name
+                audit_log(
+                    "event.substitute",
+                    event_id=event.id,
+                    assignment_id=assignment_id,
+                    from_volunteer_id=outgoing.id,
+                    to_volunteer_id=incoming.id,
+                )
+            if incoming_email:  # after commit; send_email never raises
+                await mail.send_email(incoming_email, *message)
+            dialog.close()
+            ui.notify(f"{incoming_name} now holds the slot", color="positive")
+            ui.navigate.reload()
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Hand it over", icon="swap_horiz", on_click=save)
+    dialog.open()
+
+
+async def _self_removal_dialog(assignment_id: int) -> None:
+    """Take yourself off a slot, telling the leaders why."""
+    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+        ui.label("Take yourself off this slot").classes("text-lg font-medium")
+        ui.label(
+            "Say why — your reason is emailed to the team leader(s) so they "
+            "can fill the gap."
+        ).classes("text-sm text-gray-500")
+        reason = (
+            ui.textarea("Why can you no longer serve?")
+            .props("outlined dense rows=3")
+            .classes("w-full")
+        )
+
+        @notify_errors
+        async def save() -> None:
+            text = (reason.value or "").strip()
+            if not text:
+                ui.notify("A reason is required", color="warning")
+                return
+            async with action_session() as (session, actor):
+                assignment = await event_service.get_assignment(session, assignment_id)
+                if assignment is None:
+                    raise LookupError("assignment vanished")
+                require(
+                    assignment.volunteer_id == actor.volunteer_id,
+                    "take somebody else off their slot",
+                )
+                event = await event_service.get(session, assignment.event_id)
+                if event is None:
+                    raise LookupError("event vanished")
+                slot = await session.get(EventSlot, assignment.slot_id)
+                me = await session.get(Volunteer, assignment.volunteer_id)
+                paths = team_service.team_paths(await team_service.list_all(session))
+                audience = await interest_service.leader_emails(session, event.team_id)
+                message = mail.self_removal_email(
+                    event.title,
+                    paths.get(event.team_id, ""),
+                    slot.name if slot else "volunteer",
+                    mail.event_when(event.starts_at, event.ends_at),
+                    me.full_name if me else "A volunteer",
+                    text,
+                )
+                await event_service.remove_assignment(session, assignment_id)
+                audit_log(
+                    "event.self_removal",
+                    event_id=event.id,
+                    volunteer_id=actor.volunteer_id,
+                    reason=text[:500],
+                )
+            for address in audience:  # after commit; send_email never raises
+                await mail.send_email(address, *message)
+            dialog.close()
+            ui.notify(
+                "You're off the slot — the leaders have been told",
+                color="positive",
+            )
+            ui.navigate.reload()
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Take me off", on_click=save).props("color=negative")
+    dialog.open()
+
+
 @notify_errors
 async def _claim_sub(sub_request_id: int) -> None:
     async with action_session() as (session, actor):
@@ -176,6 +375,31 @@ async def _withdraw_sub(sub_request_id: int) -> None:
     ui.navigate.reload()
 
 
+async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
+    """The double-booking warning: advisory, never a block. A masked title
+    means the colliding event belongs to a team outside the creator's view —
+    the when/where is the warning; the details stay theirs."""
+    with ui.dialog() as dialog, ui.card().classes("w-[28rem] gap-3"):
+        ui.label("Possible double booking").classes("text-lg font-medium")
+        ui.label(
+            "Something similar is already on the calendar at that location "
+            "on the same day:"
+        ).classes("text-sm text-gray-500")
+        for hit in hits:
+            with ui.column().classes("w-full gap-0 p-2 rounded bg-amber-50"):
+                ui.label(hit.title or "Another team's event").classes("font-medium")
+                ui.label(
+                    f"{mail.event_when(hit.starts_at, hit.ends_at)} · "
+                    f"{hit.location} · {hit.team_path}"
+                ).classes("text-sm text-gray-600")
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Go back", on_click=lambda: dialog.submit(False)).props("flat")
+            ui.button("Create anyway", on_click=lambda: dialog.submit(True)).props(
+                "color=warning"
+            )
+    return bool(await dialog)
+
+
 def _new_event_dialog(managed_options: dict[int, str]) -> None:
     with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
         ui.label("New event").classes("text-lg font-medium")
@@ -187,11 +411,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
         title = ui.input("Title").props("outlined dense").classes("w-full")
         tomorrow = date.today() + timedelta(days=1)
         with ui.row().classes("w-full gap-2"):
-            day = (
-                ui.input("Date (YYYY-MM-DD)", value=str(tomorrow))
-                .props("outlined dense")
-                .classes("grow")
-            )
+            day = date_input("Date (YYYY-MM-DD)", value=str(tomorrow)).classes("grow")
             start = (
                 ui.input("Starts (HH:MM)", value="10:00")
                 .props("outlined dense")
@@ -230,11 +450,9 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
         ui.button(
             "Add another slot", icon="add", on_click=lambda: add_slot_row()
         ).props("flat dense no-caps")
-        repeat = (
-            ui.input("Repeat weekly until (YYYY-MM-DD, optional)")
-            .props("outlined dense clearable")
-            .classes("w-full")
-        )
+        repeat = date_input(
+            "Repeat weekly until (YYYY-MM-DD, optional)", clearable=True
+        ).classes("w-full")
 
         @notify_errors
         async def save() -> None:
@@ -259,6 +477,18 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
                 for i, (n, c) in enumerate(slot_rows)
                 if (n.value or "").strip()
             ]
+            async with action_session() as (session, actor):
+                require(actor.can_manage_team(team.value), "manage this team's events")
+                hits = await event_service.similar_events(
+                    session,
+                    actor,
+                    starts_at=starts_at,
+                    ends_at=ends_at,
+                    repeat_until=until,
+                    location=location.value,
+                )
+            if hits and not await _confirm_similar(hits):
+                return  # back to the still-open form
             async with action_session() as (session, actor):
                 require(actor.can_manage_team(team.value), "manage this team's events")
                 created = await event_service.create_event(
@@ -372,24 +602,13 @@ async def events_page(request: Request, past: str = ""):
                             on_click=lambda _, sid=c.sub.id: _claim_sub(sid),
                         ).props("dense outline")
 
-        with ui.row().classes("w-full items-center mt-4"):
-            ui.label(
-                ("Past events" if show_past else "Upcoming events")
-                + (" (all teams)" if actor.is_admin else " on your teams")
-            ).classes("text-lg font-medium")
-            ui.space()
-            ui.button(
-                "Show upcoming" if show_past else "Show past",
-                on_click=lambda: ui.navigate.to(
-                    "/events" if show_past else "/events?past=1"
-                ),
-            ).props("dense flat no-caps")
-            if managed_options:
-                ui.button(
-                    "New event",
-                    icon="event",
-                    on_click=lambda: _new_event_dialog(managed_options),
-                ).props("dense outline")
+        # the public parish calendar, when one is configured — Google serves
+        # the embed itself, so this costs the page nothing but the iframe
+        embed = gcal.embed_url()
+        if embed and not show_past:
+            ui.element("iframe").props(f'src="{embed}"').classes(
+                "w-full rounded mt-4"
+            ).style("height: 24rem; border: 0").mark("gcal-embed")
 
         rows = []
         for s in summaries:
@@ -411,24 +630,106 @@ async def events_page(request: Request, past: str = ""):
                         else ""
                     ),
                     "team": s.path,
+                    "location": s.event.location or "",
                     "filled": f"{s.filled}/{s.capacity if s.capacity is not None else '∞'}",
+                    # numeric twins for sorting and the query language
+                    "filled_n": s.filled,
+                    "capacity_n": s.capacity,
                     "you": you,
                 }
             )
+        with ui.row().classes("w-full items-center mt-4"):
+            ui.label(
+                ("Past events" if show_past else "Upcoming events")
+                + (" (all teams)" if actor.is_admin else " on your teams")
+            ).classes("text-lg font-medium")
+            # the search box grows into the free space and holds the buttons
+            # against the right edge (the teams-page idiom); with nothing to
+            # search the spacer takes over that job
+            search = (
+                ui.input("Search events…")
+                .props("outlined dense clearable debounce=200")
+                .classes("grow")
+                if rows
+                else None
+            )
+            if search is None:
+                ui.space()
+            ui.button(
+                "Show upcoming" if show_past else "Show past",
+                on_click=lambda: ui.navigate.to(
+                    "/events" if show_past else "/events?past=1"
+                ),
+            ).props("dense flat no-caps")
+            if managed_options:
+                ui.button(
+                    "New event",
+                    icon="event",
+                    on_click=lambda: _new_event_dialog(managed_options),
+                ).props("dense outline")
+
         if rows:
+            columns = [
+                {
+                    "name": "when",
+                    "label": "When",
+                    "field": "when",
+                    "align": "left",
+                    "sortable": True,  # ISO strings: lexicographic = chronological
+                },
+                {
+                    "name": "title",
+                    "label": "Event",
+                    "field": "title",
+                    "align": "left",
+                    "sortable": True,
+                },
+                {
+                    "name": "team",
+                    "label": "Team",
+                    "field": "team",
+                    "align": "left",
+                    "sortable": True,
+                },
+                {
+                    "name": "location",
+                    "label": "Location",
+                    "field": "location",
+                    "align": "left",
+                    "sortable": True,
+                },
+                # sorts on the count; the cell slot shows the pretty "3/∞"
+                {
+                    "name": "filled",
+                    "label": "Filled",
+                    "field": "filled_n",
+                    "sortable": True,
+                },
+                {
+                    "name": "you",
+                    "label": "You",
+                    "field": "you",
+                    "align": "left",
+                    "sortable": True,
+                },
+            ]
+            columns = column_order.apply_saved_order("events", columns)
             table = ui.table(
-                columns=[
-                    {"name": "when", "label": "When", "field": "when"},
-                    {"name": "title", "label": "Event", "field": "title"},
-                    {"name": "team", "label": "Team", "field": "team"},
-                    {"name": "filled", "label": "Filled", "field": "filled"},
-                    {"name": "you", "label": "You", "field": "you"},
-                ],
+                columns=columns,
                 rows=rows,
                 row_key="id",
-                pagination=0,
+                # upcoming is one screen like before; the past list grows forever
+                pagination=20 if show_past else 0,
             ).classes("w-full vdb-clickable-rows")
+            column_order.make_draggable(table, "events")
+            table.add_slot(
+                "body-cell-filled",
+                '<q-td key="filled" :props="props">{{ props.row.filled }}</q-td>',
+            )
             table.on("rowClick", lambda e: ui.navigate.to(f"/events/{e.args[1]['id']}"))
+            count = ui.label(_event_count(len(rows))).classes("text-sm text-gray-500")
+            if search is not None:
+                _wire_search(search, count, table, rows)
         else:
             ui.label(
                 "Nothing scheduled yet."
@@ -451,11 +752,9 @@ def _edit_event_dialog(event) -> None:
             .classes("w-full")
         )
         with ui.row().classes("w-full gap-2"):
-            day = (
-                ui.input("Date (YYYY-MM-DD)", value=str(local_start.date()))
-                .props("outlined dense")
-                .classes("grow")
-            )
+            day = date_input(
+                "Date (YYYY-MM-DD)", value=str(local_start.date())
+            ).classes("grow")
             start = (
                 ui.input("Starts (HH:MM)", value=f"{local_start:%H:%M}")
                 .props("outlined dense")
@@ -565,7 +864,16 @@ async def event_detail_page(request: Request, event_id: int):
         am_member = actor.volunteer_id is not None and await event_service.is_member(
             session, actor.volunteer_id, event.team_id
         )
-        roster = await team_service.roster(session, event.team_id) if can_manage else []
+        am_assigned = actor.volunteer_id is not None and any(
+            v.id == actor.volunteer_id for sv in view.slots for _, v in sv.entries
+        )
+        # members holding a slot need the roster too: the hand-off picker
+        # shows names, which everyone past can_view_roster_names may see
+        roster = (
+            await team_service.roster(session, event.team_id)
+            if can_manage or am_assigned
+            else []
+        )
         attendance = (
             await event_service.attendance_rows(session, event_id)
             if can_manage
@@ -573,6 +881,22 @@ async def event_detail_page(request: Request, event_id: int):
             and event.status == EventStatus.scheduled.value
             else None
         )
+        tf_view = await task_force_service.get_for_event(session, event_id)
+        collaborator_options: dict[int, str] = {}
+        if can_manage:
+            all_teams = await team_service.list_all(session)
+            paths = team_service.team_paths(all_teams)
+            staffing = {t.id for t in tf_view.sources} if tf_view else {event.team_id}
+            if tf_view:
+                staffing.add(tf_view.task_force.team_id)
+            collaborator_options = {
+                t.id: paths[t.id]
+                for t in all_teams
+                if t.is_active and t.id not in staffing
+            }
+            source_paths = (
+                [paths.get(t.id, t.name) for t in tf_view.sources] if tf_view else []
+            )
 
     upcoming = (
         event.status == EventStatus.scheduled.value and not event_service.is_past(event)
@@ -614,13 +938,116 @@ async def event_detail_page(request: Request, event_id: int):
             )
         ui.navigate.reload()
 
+    def _signup_dialog(slot_id: int, slot_name: str) -> None:
+        series = event.series_id is not None
+        with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+            ui.label(f"Sign up — {slot_name}").classes("text-lg font-medium")
+            repeat = None
+            if series:
+                repeat = ui.checkbox(
+                    "Also sign me up for the later weeks of this series"
+                ).props("dense")
+                ui.label(
+                    "Weeks already full, or where you already serve, are skipped."
+                ).classes("text-sm text-gray-500")
+            ui.label("Email me a reminder:").classes("text-sm text-gray-500")
+            week = ui.checkbox("7 days before", value=True).props("dense")
+            day = ui.checkbox("24 hours before", value=True).props("dense")
+
+            @notify_errors
+            async def save() -> None:
+                async with action_session() as (session, actor):
+                    if repeat is not None and repeat.value:
+                        _, result = await event_service.sign_up_series(
+                            session,
+                            slot_id=slot_id,
+                            volunteer_id=actor.volunteer_id,
+                            notify_7d=bool(week.value),
+                            notify_24h=bool(day.value),
+                        )
+                    else:
+                        await event_service.sign_up(
+                            session,
+                            slot_id=slot_id,
+                            volunteer_id=actor.volunteer_id,
+                            notify_7d=bool(week.value),
+                            notify_24h=bool(day.value),
+                        )
+                        result = None
+                dialog.close()
+                if result is None or result == event_service.SeriesSignupResult(
+                    0, 0, 0
+                ):
+                    ui.notify("You're on the list", color="positive")
+                else:
+                    skipped = result.skipped_full + result.skipped_conflict
+                    ui.notify(
+                        f"You're on the list — this week plus {result.joined} more"
+                        + (f", {skipped} week(s) skipped" if skipped else ""),
+                        color="positive",
+                    )
+                ui.navigate.reload()
+
+            with ui.row().classes("justify-end w-full gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+                ui.button("Sign up", icon="person_add", on_click=save).mark(
+                    "signup-confirm"
+                )
+        dialog.open()
+
+    async def _confirm_add_collaborator(team_label: str) -> bool:
+        with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+            ui.label(f"Add {team_label} to this event?").classes("font-medium")
+            ui.label(
+                "A temporary task-force team is created holding both rosters: "
+                "members of the added team can sign up for slots, its leaders "
+                "co-manage the event, and the team is removed automatically "
+                "after the event ends (it stays visible in history)."
+            ).classes("text-sm text-gray-500")
+            with ui.row().classes("justify-end w-full gap-2"):
+                ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat")
+                ui.button(
+                    "Add team", icon="group_add", on_click=lambda: dialog.submit(True)
+                ).mark("confirm-collaborator")
+        return bool(await dialog)
+
     @notify_errors
-    async def _signup(slot_id: int) -> None:
+    async def _add_collaborator(team_id_value) -> None:
+        if not team_id_value:
+            ui.notify("Pick a team first", color="warning")
+            return
+        label = collaborator_options.get(team_id_value, "that team")
+        if not await _confirm_add_collaborator(label):
+            return
         async with action_session() as (session, actor):
-            await event_service.sign_up(
-                session, slot_id=slot_id, volunteer_id=actor.volunteer_id
+            current = await event_service.get(session, event_id)
+            if current is None:
+                raise LookupError("event vanished")
+            require(actor.can_manage_team(current.team_id), "manage this team's events")
+            meta = await task_force_service.add_collaborating_team(
+                session,
+                event_id=event_id,
+                source_team_id=team_id_value,
+                created_by=actor.user.id,
             )
-        ui.notify("You're on the list", color="positive")
+            audit_log(
+                "event.collaboration_added",
+                event_id=event_id,
+                source_team_id=team_id_value,
+                task_force_team_id=meta.id,
+            )
+        ui.notify("Team added — their roster can sign up now", color="positive")
+        ui.navigate.reload()
+
+    @notify_errors
+    async def _sync_rosters() -> None:
+        async with action_session() as (session, actor):
+            current = await event_service.get(session, event_id)
+            if current is None:
+                raise LookupError("event vanished")
+            require(actor.can_manage_team(current.team_id), "manage this team's events")
+            added = await task_force_service.refresh_rosters(session, event_id)
+        ui.notify(f"Rosters synced — {added} member(s) added", color="positive")
         ui.navigate.reload()
 
     @notify_errors
@@ -750,6 +1177,11 @@ async def event_detail_page(request: Request, event_id: int):
             if event.location:
                 ui.label(f"· {event.location}").classes("text-sm text-gray-600")
             ui.space()
+            ui.button(
+                "Share",
+                icon="share",
+                on_click=lambda: _share_event(base_url, event_id),
+            ).props("dense outline").mark("share-event")
             if can_manage and event.status == EventStatus.scheduled.value:
                 ui.button(
                     "Edit", icon="edit", on_click=lambda: _edit_event_dialog(event)
@@ -759,6 +1191,50 @@ async def event_detail_page(request: Request, event_id: int):
                 )
         if event.description:
             ui.label(event.description).classes("text-sm text-gray-600")
+
+        if can_manage and upcoming:
+            with ui.card().classes("w-full gap-2 p-3"):
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.label("Collaboration").classes("font-medium")
+                    if tf_view is not None:
+                        ui.badge("task force", color="secondary")
+                    ui.space()
+                    if tf_view is not None:
+                        ui.button(
+                            "Sync rosters", icon="sync", on_click=_sync_rosters
+                        ).props("dense flat").tooltip(
+                            "Re-copy the source rosters — people who joined a "
+                            "staffing team since then join the task force"
+                        )
+                if tf_view is not None:
+                    ui.label("Staffed by: " + " · ".join(source_paths)).classes(
+                        "text-sm text-gray-600"
+                    )
+                else:
+                    ui.label(
+                        "Need another ministry for this event? Adding a "
+                        "collaborating team creates a temporary task-force "
+                        "team holding both rosters, so everyone can sign up; "
+                        "it is removed automatically after the event."
+                    ).classes("text-sm text-gray-500")
+                if collaborator_options:
+                    with ui.row().classes("w-full items-center gap-2"):
+                        collab_pick = (
+                            ui.select(
+                                collaborator_options,
+                                label="Add collaborating team",
+                                with_input=True,
+                            )
+                            .props("outlined dense")
+                            .classes("w-72")
+                        )
+                        # default-arg capture: the slots section below rebinds
+                        # its own `pick`, and a bare closure would read that
+                        ui.button(
+                            "Add",
+                            icon="group_add",
+                            on_click=lambda p=collab_pick: _add_collaborator(p.value),
+                        ).props("dense outline").mark("add-collaborator")
 
         if am_member and upcoming:
             with ui.card().classes("w-full gap-2 p-3"):
@@ -810,7 +1286,9 @@ async def event_detail_page(request: Request, event_id: int):
                         ui.button(
                             "Sign up",
                             icon="person_add",
-                            on_click=lambda _, sid=slot.id: _signup(sid),
+                            on_click=lambda _, sid=slot.id, sn=slot.name: (
+                                _signup_dialog(sid, sn)
+                            ),
                         ).props("dense outline")
                     if can_manage and upcoming and not sv.entries:
                         ui.button(
@@ -842,13 +1320,26 @@ async def event_detail_page(request: Request, event_id: int):
                                     _sub_request_dialog(aid, base_url)
                                 ),
                             ).props("dense outline")
-                        if upcoming and (
-                            can_manage or volunteer.id == actor.volunteer_id
-                        ):
+                        if upcoming and volunteer.id == actor.volunteer_id:
+                            # handing off with an open sub call cancels the call
                             ui.button(
-                                "Withdraw"
-                                if volunteer.id == actor.volunteer_id
-                                else "Remove",
+                                "Hand off",
+                                icon="swap_horiz",
+                                on_click=lambda _, aid=assignment.id: (
+                                    _substitute_dialog(
+                                        aid, picker_options(assigned_vids), base_url
+                                    )
+                                ),
+                            ).props("dense outline")
+                            ui.button(
+                                "Withdraw",
+                                on_click=lambda _, aid=assignment.id: (
+                                    _self_removal_dialog(aid)
+                                ),
+                            ).props("dense flat")
+                        elif upcoming and can_manage:
+                            ui.button(
+                                "Remove",
                                 on_click=lambda _, aid=assignment.id: _withdraw(aid),
                             ).props("dense flat")
                 if can_manage and upcoming:

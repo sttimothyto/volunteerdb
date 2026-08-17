@@ -351,7 +351,10 @@ async def test_claim_moves_the_assignment_and_records_who(database):
         assert assignment.volunteer_id == vids[2]
         assert assignment.kind == "sub"
         assert assignment.assigned_notified_at is not None, "claimant acted themselves"
-        assert assignment.reminder_sent_at is None, "new person still gets a reminder"
+        assert (assignment.reminded_7d_at, assignment.reminded_24h_at) == (
+            None,
+            None,
+        ), "new person still gets the reminders"
     async with db_session() as session:
         with pytest.raises(ValueError, match="already claimed"):
             await event_service.claim_sub(
@@ -538,3 +541,278 @@ async def test_summary_counts_fill_and_capacity(database):
         assert unlimited  # any unlimited slot makes the event unlimited
         summaries = await event_service.list_events(session, actor)
         assert summaries[-1].capacity is None
+
+
+# --- the double-booking warning -----------------------------------------------
+
+
+async def _admin_actor(session):
+    admin = await users.create(session, "checker@example.org", is_admin=True)
+    return await load_actor(session, admin)
+
+
+async def test_similar_events_matches_fuzzy_same_day_locations(database):
+    team_id, _ = await _team_with_members()
+    day = date.today() + timedelta(days=7)
+    await _one_event(team_id, location="Parish Hall")
+    async with db_session() as session:
+        actor = await _admin_actor(session)
+
+        hits = await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(day, 14),
+            ends_at=_at(day, 16),
+            location="parish  hall (main)",
+        )
+        assert [h.title for h in hits] == ["Sunday Mass"], (
+            "case, spacing, and a suffix still read as the same place"
+        )
+
+        next_day = day + timedelta(days=1)
+        assert not await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(next_day, 14),
+            ends_at=_at(next_day, 16),
+            location="Parish Hall",
+        ), "a different day is no collision"
+
+        assert not await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(day, 14),
+            ends_at=_at(day, 16),
+            location="Rectory",
+        ), "dissimilar locations stay quiet"
+
+        assert not await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(day, 14),
+            ends_at=_at(day, 16),
+            location="",
+        ), "no location, no check"
+
+
+async def test_similar_events_masks_titles_outside_the_actors_scope(database):
+    team_id, vids = await _team_with_members()
+    day = date.today() + timedelta(days=7)
+    async with db_session() as session:
+        other = await teams.create(session, "Garden Guild")
+        await event_service.create_event(
+            session,
+            team_id=other.id,
+            title="Secret planning",
+            starts_at=_at(day, 10),
+            ends_at=_at(day, 12),
+            location="Parish Hall",
+            created_by=None,
+        )
+    async with db_session() as session:
+        member = await users.create(session, "vol1@example.org", volunteer_id=vids[1])
+        actor = await load_actor(session, member)
+        hits = await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(day, 14),
+            ends_at=_at(day, 16),
+            location="Parish Hall",
+        )
+        assert [(h.title, h.team_path) for h in hits] == [(None, "Garden Guild")], (
+            "the when/where warns; the invisible team's title stays masked"
+        )
+
+
+async def test_similar_events_checks_every_repeat_occurrence(database):
+    team_id, _ = await _team_with_members()
+    clash_day = date.today() + timedelta(days=21)
+    await _one_event(team_id, start=_at(clash_day, 10), location="Parish Hall")
+    first = date.today() + timedelta(days=7)
+    async with db_session() as session:
+        actor = await _admin_actor(session)
+        hits = await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(first, 10),
+            ends_at=_at(first, 12),
+            repeat_until=first + timedelta(days=28),
+            location="Parish Hall",
+        )
+        assert len(hits) == 1, "the collision sits three weeks into the repeat"
+
+
+# --- direct substitution ------------------------------------------------------
+
+
+async def test_substitute_hands_the_slot_over(database):
+    team_id, vids = await _team_with_members(3)
+    event_id = await _one_event(team_id)
+    async with db_session() as session:
+        a = await event_service.sign_up(
+            session, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
+        )
+        sub = await event_service.request_sub(
+            session, assignment_id=a.id, requested_by=None
+        )
+        assignment_id, sub_id = a.id, sub.id
+    async with db_session() as session:
+        assignment, outgoing, incoming = await event_service.substitute(
+            session,
+            assignment_id=assignment_id,
+            new_volunteer_id=vids[2],
+            acted_by=None,
+        )
+        assert (assignment.volunteer_id, outgoing.id, incoming.id) == (
+            vids[2],
+            vids[1],
+            vids[2],
+        )
+        assert assignment.kind == "sub"
+        assert assignment.assigned_notified_at is not None, (
+            "the caller mails the incoming volunteer right away"
+        )
+        assert (assignment.reminded_7d_at, assignment.reminded_24h_at) == (
+            None,
+            None,
+        ), "the new person still needs the reminders"
+        assert assignment.notify_7d and assignment.notify_24h, (
+            "prefs reset to defaults — the incoming volunteer never chose"
+        )
+        open_call = await session.get(EventSubRequest, sub_id)
+        assert open_call.status == SubRequestStatus.cancelled.value, (
+            "the open call dies with the hand-off"
+        )
+
+
+async def test_substitute_rejects_bad_targets(database):
+    team_id, vids = await _team_with_members(3)
+    event_id = await _one_event(team_id, slots=[event_service.SlotInput("Lector", 3)])
+    async with db_session() as session:
+        slot_id = await _first_slot(event_id)
+        a = await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[1])
+        await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[2])
+        outsider = await volunteers.create(session, "Out", "Sider", "out@example.org")
+        assignment_id, outsider_id = a.id, outsider.id
+    async with db_session() as session:
+        with pytest.raises(ValueError, match="already hold"):
+            await event_service.substitute(
+                session,
+                assignment_id=assignment_id,
+                new_volunteer_id=vids[1],
+                acted_by=None,
+            )
+        with pytest.raises(ValueError, match="already serve"):
+            await event_service.substitute(
+                session,
+                assignment_id=assignment_id,
+                new_volunteer_id=vids[2],
+                acted_by=None,
+            )
+        with pytest.raises(ValueError, match="only members"):
+            await event_service.substitute(
+                session,
+                assignment_id=assignment_id,
+                new_volunteer_id=outsider_id,
+                acted_by=None,
+            )
+
+
+async def test_substitute_refuses_once_the_event_ended(database):
+    team_id, vids = await _team_with_members(3)
+    _, assignment_id = await _past_event(team_id, vids[1])
+    async with db_session() as session:
+        with pytest.raises(ValueError, match="already ended"):
+            await event_service.substitute(
+                session,
+                assignment_id=assignment_id,
+                new_volunteer_id=vids[2],
+                acted_by=None,
+            )
+
+
+# --- series sign-up -----------------------------------------------------------
+
+
+async def test_weekly_repeats_share_a_series_id_and_singles_do_not(database):
+    team_id, _ = await _team_with_members()
+    start = _at(date.today() + timedelta(days=7), 10)
+    async with db_session() as session:
+        series = await event_service.create_event(
+            session,
+            team_id=team_id,
+            title="Sunday Mass",
+            starts_at=start,
+            ends_at=start + timedelta(hours=2),
+            repeat_weekly_until=start.date() + timedelta(days=21),
+            created_by=None,
+        )
+        single = await event_service.create_event(
+            session,
+            team_id=team_id,
+            title="Bake sale",
+            starts_at=start,
+            ends_at=start + timedelta(hours=2),
+            created_by=None,
+        )
+        sids = {e.series_id for e in series}
+        assert len(series) == 4 and len(sids) == 1 and None not in sids
+        assert single[0].series_id is None
+
+
+async def test_sign_up_series_copies_forward_and_skips_gracefully(database):
+    team_id, vids = await _team_with_members(3)
+    start = _at(date.today() + timedelta(days=7), 10)
+    async with db_session() as session:
+        weeks = await event_service.create_event(
+            session,
+            team_id=team_id,
+            title="Sunday Mass",
+            starts_at=start,
+            ends_at=start + timedelta(hours=2),
+            slots=[event_service.SlotInput("Lector", 1)],
+            repeat_weekly_until=start.date() + timedelta(days=28),
+            created_by=None,
+        )
+        week_ids = [e.id for e in weeks]
+        assert len(week_ids) == 5
+
+    async with db_session() as session:
+        # week 3's Lector is taken; week 4's slot gets renamed
+        d3 = await event_service.detail(session, week_ids[2])
+        await event_service.sign_up(
+            session, slot_id=d3.slots[0].slot.id, volunteer_id=vids[2]
+        )
+        d4 = await event_service.detail(session, week_ids[3])
+        await event_service.update_slot(session, d4.slots[0].slot.id, name="Cantor")
+
+    async with db_session() as session:
+        d1 = await event_service.detail(session, week_ids[0])
+        first, result = await event_service.sign_up_series(
+            session, slot_id=d1.slots[0].slot.id, volunteer_id=vids[1]
+        )
+        assert first.volunteer_id == vids[1]
+        assert (result.joined, result.skipped_full, result.skipped_conflict) == (
+            2,
+            1,
+            1,
+        ), "weeks 2+5 join; week 3 is full; week 4's slot is gone"
+
+    async with db_session() as session:
+        for week_id, expect in zip(
+            week_ids, [True, True, False, False, True], strict=True
+        ):
+            d = await event_service.detail(session, week_id)
+            names = {v.id for sv in d.slots for _, v in sv.entries}
+            assert (vids[1] in names) is expect, f"week {week_id}"
+
+
+async def test_sign_up_series_on_a_standalone_event_is_just_a_sign_up(database):
+    team_id, vids = await _team_with_members()
+    event_id = await _one_event(team_id)
+    async with db_session() as session:
+        first, result = await event_service.sign_up_series(
+            session, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
+        )
+        assert first.volunteer_id == vids[1]
+        assert result == event_service.SeriesSignupResult(0, 0, 0)

@@ -16,9 +16,11 @@ first use of a row lock in this codebase, because a *counted* capacity has
 no partial-unique-index backstop the way one-open-per-seat rules do.
 """
 
+import difflib
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
@@ -232,6 +234,9 @@ async def create_event(
     slot_inputs = slots or [SlotInput("Volunteers")]
     _check_slots(slot_inputs)
 
+    # weekly repeats share a series id (even a range that yields one row —
+    # it was created AS a series); standalone events carry NULL
+    series_id = uuid4() if repeat_weekly_until is not None else None
     events: list[Event] = []
     for s, e in _occurrences(starts_at, ends_at, repeat_weekly_until):
         event = Event(
@@ -242,6 +247,7 @@ async def create_event(
             starts_at=s,
             ends_at=e,
             created_by=created_by,
+            series_id=series_id,
         )
         session.add(event)
         events.append(event)
@@ -519,6 +525,97 @@ async def list_events(
     ]
 
 
+# similarity floor for the double-booking warning: "Parish Hall" still hits
+# "parish  hall" or "Parish hall (main)", while "Rectory" stays clear of it
+SIMILARITY_THRESHOLD = 0.6
+
+
+@dataclass(frozen=True)
+class SimilarEvent:
+    starts_at: datetime
+    ends_at: datetime
+    location: str
+    team_path: str
+    title: str | None  # None: outside the actor's visible teams — masked
+
+
+def _norm_location(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+async def similar_events(
+    session: AsyncSession,
+    actor: Actor,
+    *,
+    starts_at: datetime,
+    ends_at: datetime,
+    repeat_until: date | None = None,
+    location: str | None,
+    limit: int = 5,
+) -> list[SimilarEvent]:
+    """Scheduled events sharing a parish-local day with any occurrence of the
+    proposed event, at a location that reads like `location` — the advisory
+    double-booking check behind the create dialog's warning.
+
+    Deliberately NOT scoped by visible_team_ids: a collision with a team the
+    creator cannot see is exactly the case worth warning about. What that
+    leaks is kept small — the when/where and the team path (the team
+    directory is readable by every member anyway); the title is masked
+    outside the actor's scope. difflib does the matching: parish-scale event
+    counts need no index (pg_trgm's similarity() is there if this ever grows).
+    """
+    wanted = _norm_location(location or "")
+    if not wanted:
+        return []
+    tz = ZoneInfo(settings().timezone)
+    day_set: set[date] = set()
+    for occ_start, occ_end in _occurrences(starts_at, ends_at, repeat_until):
+        day = occ_start.astimezone(tz).date()
+        last = occ_end.astimezone(tz).date()
+        while day <= last:
+            day_set.add(day)
+            day += timedelta(days=1)
+    window_start = datetime.combine(min(day_set), time.min, tz)
+    window_end = datetime.combine(max(day_set) + timedelta(days=1), time.min, tz)
+    candidates = await session.scalars(
+        sa.select(Event)
+        .where(
+            Event.status == EventStatus.scheduled.value,
+            Event.starts_at < window_end,
+            Event.ends_at > window_start,
+            Event.location.is_not(None),
+        )
+        .order_by(Event.starts_at, Event.id)
+    )
+    visible = visible_team_ids(actor)
+    paths = team_service.team_paths(await team_service.list_all(session))
+    out: list[SimilarEvent] = []
+    for event in candidates:
+        have = _norm_location(event.location or "")
+        if not have:
+            continue
+        if difflib.SequenceMatcher(None, wanted, have).ratio() < SIMILARITY_THRESHOLD:
+            continue
+        first = event.starts_at.astimezone(tz).date()
+        last = event.ends_at.astimezone(tz).date()
+        if not any(first <= day <= last for day in day_set):
+            continue  # inside the window but not on a shared calendar day
+        out.append(
+            SimilarEvent(
+                starts_at=event.starts_at,
+                ends_at=event.ends_at,
+                location=event.location or "",
+                team_path=paths.get(event.team_id, f"team {event.team_id}"),
+                title=(
+                    event.title if visible is None or event.team_id in visible else None
+                ),
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
 async def detail(session: AsyncSession, event_id: int) -> EventDetail:
     event = await _get_or_raise(session, event_id)
     paths = team_service.team_paths(await team_service.list_all(session))
@@ -751,6 +848,8 @@ async def _join_slot(
     volunteer_id: int,
     kind: AssignmentKind,
     assigned_by: int | None,
+    notify_7d: bool = True,
+    notify_24h: bool = True,
 ) -> EventAssignment:
     # FOR UPDATE: a counted capacity has no unique-index backstop, so the two
     # concurrent sign-ups that both counted a free spot must serialize here
@@ -787,6 +886,8 @@ async def _join_slot(
         # the person acted themselves for signup/sub; only manager
         # assignments leave this NULL for the digest's "scheduled" notice
         assigned_notified_at=(None if kind is AssignmentKind.assigned else _now()),
+        notify_7d=notify_7d,
+        notify_24h=notify_24h,
     )
     session.add(assignment)
     await session.flush()
@@ -794,7 +895,12 @@ async def _join_slot(
 
 
 async def sign_up(
-    session: AsyncSession, *, slot_id: int, volunteer_id: int | None
+    session: AsyncSession,
+    *,
+    slot_id: int,
+    volunteer_id: int | None,
+    notify_7d: bool = True,
+    notify_24h: bool = True,
 ) -> EventAssignment:
     if volunteer_id is None:
         raise ValueError("your account is not linked to a volunteer record")
@@ -804,7 +910,84 @@ async def sign_up(
         volunteer_id=volunteer_id,
         kind=AssignmentKind.signup,
         assigned_by=None,
+        notify_7d=notify_7d,
+        notify_24h=notify_24h,
     )
+
+
+@dataclass(frozen=True)
+class SeriesSignupResult:
+    """What copying a sign-up forward achieved, for the caller's toast."""
+
+    joined: int  # later weeks joined (beyond the clicked slot)
+    skipped_full: int
+    skipped_conflict: int  # already serving that week, or its slot is gone
+
+
+async def sign_up_series(
+    session: AsyncSession,
+    *,
+    slot_id: int,
+    volunteer_id: int | None,
+    notify_7d: bool = True,
+    notify_24h: bool = True,
+) -> tuple[EventAssignment, SeriesSignupResult]:
+    """Sign up on the given slot, then copy the sign-up onto every later
+    week of the same series with a slot of the same NAME (names are the
+    series-wide identity — slot ids differ per materialized row). Each week
+    joins inside a SAVEPOINT, so a full week or an existing assignment
+    skips that week instead of aborting the whole sign-up."""
+    first = await sign_up(
+        session,
+        slot_id=slot_id,
+        volunteer_id=volunteer_id,
+        notify_7d=notify_7d,
+        notify_24h=notify_24h,
+    )
+    slot = await session.get(EventSlot, first.slot_id)
+    event = await session.get(Event, first.event_id)
+    assert slot is not None and event is not None  # sign_up just used them
+    if event.series_id is None:
+        return first, SeriesSignupResult(0, 0, 0)
+    future_rows = (
+        await session.execute(
+            sa.select(Event.id, EventSlot.id)
+            .join(
+                EventSlot,
+                sa.and_(EventSlot.event_id == Event.id, EventSlot.name == slot.name),
+                isouter=True,
+            )
+            .where(
+                Event.series_id == event.series_id,
+                Event.starts_at > event.starts_at,
+                Event.status == EventStatus.scheduled.value,
+            )
+            .order_by(Event.starts_at, Event.id)
+        )
+    ).all()
+    joined = skipped_full = skipped_conflict = 0
+    for _future_event_id, future_slot_id in future_rows:
+        if future_slot_id is None:
+            skipped_conflict += 1  # that week's slot was renamed or removed
+            continue
+        try:
+            async with session.begin_nested():
+                await _join_slot(
+                    session,
+                    slot_id=future_slot_id,
+                    volunteer_id=first.volunteer_id,
+                    kind=AssignmentKind.signup,
+                    assigned_by=None,
+                    notify_7d=notify_7d,
+                    notify_24h=notify_24h,
+                )
+            joined += 1
+        except ValueError as exc:
+            if "full" in str(exc):
+                skipped_full += 1
+            else:
+                skipped_conflict += 1
+    return first, SeriesSignupResult(joined, skipped_full, skipped_conflict)
 
 
 async def assign(
@@ -919,10 +1102,63 @@ async def claim_sub(
     assignment.volunteer_id = vid
     assignment.kind = AssignmentKind.sub.value
     assignment.assigned_notified_at = _now()  # the claimant acted themselves
-    assignment.reminder_sent_at = None  # the new person still needs a reminder
+    # the new person still needs the reminders, on default preferences
+    assignment.notify_7d = assignment.notify_24h = True
+    assignment.reminded_7d_at = assignment.reminded_24h_at = None
     await session.flush()
     await session.refresh(sub)
     return sub, assignment, asker
+
+
+async def substitute(
+    session: AsyncSession,
+    *,
+    assignment_id: int,
+    new_volunteer_id: int,
+    acted_by: int | None,
+) -> tuple[EventAssignment, Volunteer, Volunteer]:
+    """Hand a slot directly to a chosen teammate — the claim flow minus the
+    open call. Any open substitute request on the assignment is cancelled in
+    the same transaction. Returns (assignment, outgoing, incoming) for the
+    caller's post-commit mail to the person now on the hook."""
+    assignment = await session.get(EventAssignment, assignment_id)
+    if assignment is None:
+        raise LookupError(f"assignment {assignment_id} not found")
+    event = await _get_or_raise(session, assignment.event_id)
+    _require_open(event, "substitute on this event")
+    vid = await _require_member(session, new_volunteer_id, event.team_id)
+    if assignment.volunteer_id == vid:
+        raise ValueError("they already hold this slot")
+    already = await session.scalar(
+        sa.select(EventAssignment.id).where(
+            EventAssignment.event_id == event.id,
+            EventAssignment.volunteer_id == vid,
+        )
+    )
+    if already is not None:
+        raise ValueError("they already serve at this event")
+    outgoing = await session.get(Volunteer, assignment.volunteer_id)
+    incoming = await session.get(Volunteer, vid)
+    assert outgoing is not None and incoming is not None  # FKs guarantee the rows
+    await session.execute(
+        sa.update(EventSubRequest)
+        .where(
+            EventSubRequest.assignment_id == assignment_id,
+            EventSubRequest.status == SubRequestStatus.open.value,
+        )
+        .values(status=SubRequestStatus.cancelled.value, resolved_at=sa.func.now())
+    )
+    assignment.volunteer_id = vid
+    assignment.kind = AssignmentKind.sub.value
+    assignment.assigned_by = acted_by
+    # the caller mails the incoming volunteer right after commit, so the
+    # digest's "scheduled" notice would only duplicate it
+    assignment.assigned_notified_at = _now()
+    # the new person still needs the reminders, on default preferences
+    assignment.notify_7d = assignment.notify_24h = True
+    assignment.reminded_7d_at = assignment.reminded_24h_at = None
+    await session.flush()
+    return assignment, outgoing, incoming
 
 
 async def cancel_sub(session: AsyncSession, sub_request_id: int) -> EventSubRequest:

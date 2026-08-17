@@ -213,7 +213,7 @@ still reaches its volunteer through `jobs.event_reminders`.
 | Method & path | Permission | Notes |
 |---|---|---|
 | `GET /api/events` | signed in | Scoped to teams with roster-name rights (admins: all); `team_id=`, `from=`, `to=`, `include_cancelled=` filters |
-| `POST /api/events` | manage the team | 201, returns a **list**: `repeat_weekly_until` materializes one event per week (inclusive, ≤ 1 year), slots copied; no slots ⇒ one unlimited `Volunteers` slot |
+| `POST /api/events` | manage the team | 201, returns a **list**: `repeat_weekly_until` materializes one event per week (inclusive, ≤ 1 year) sharing a `series_id`, slots copied; no slots ⇒ one unlimited `Volunteers` slot |
 | `GET /api/events/{id}` | roster-name rights | Slots with entries and RSVPs; managers additionally get derived `attendance` once the event ended |
 | `PATCH /api/events/{id}` | manage the team | Details/times; allowed on past events (corrected times recompute auto hours), cancelled → 422 |
 | `POST /api/events/{id}/cancel` | manage the team | Resolves open sub requests with it; already cancelled → 422 |
@@ -221,7 +221,7 @@ still reaches its volunteer through `jobs.event_reminders`.
 | `PATCH /api/events/{id}/slots/{sid}` | manage the team | Shrinking capacity below occupancy → 422 |
 | `DELETE /api/events/{id}/slots/{sid}` | manage the team | 204; blocked while occupied, and an event keeps ≥ 1 slot |
 | `PUT /api/events/{id}/rsvp` | member of the team | 204; idempotent overwrite `{available, note?}` (the ballot idiom) |
-| `POST /api/events/{id}/slots/{sid}/assignments` | self: member; with `volunteer_id`: manager | 201; capacity full → 422, one slot per person per event → 422/409 |
+| `POST /api/events/{id}/slots/{sid}/assignments` | self: member; with `volunteer_id`: manager | 201; capacity full → 422, one slot per person per event → 422/409. Self sign-ups may pass `repeat_series: true` to copy the sign-up onto later weeks of the series (same slot name; full/conflicting weeks skip) and `notify_7d`/`notify_24h` (default true) to choose reminder stages |
 | `DELETE /api/events/assignments/{aid}` | owner or manager | 204; future events only — past rosters are the attendance record |
 | `POST /api/events/assignments/{aid}/sub-request` | owner or manager | 201; one open request per assignment → 422 |
 | `POST /api/events/sub-requests/{id}/claim` | member not already serving that event | First-come; the assignment moves to the caller, losers → 422 |

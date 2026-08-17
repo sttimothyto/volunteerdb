@@ -94,12 +94,6 @@ ignored. Copy `.env.example` as a starting point.
   production domain and reads it back on later runs, like
   `VDB_TEMPLATE_SHEET_URL`.
 
-`VDB_EVENT_REMINDER_DAYS`
-: How many days ahead the nightly `event_reminders` digest reminds people
-  of events they are scheduled to serve at, counted in parish days
-  (`VDB_TIMEZONE`). Default: `3`. See
-  [Events and scheduling](../explanation/events.md).
-
 `VDB_SCHEDULER_ENABLED`
 : The in-app scheduler that runs the nightly jobs (`fetch_pages`,
   `proposal_digest`, `event_reminders`) inside the server process. Default:
@@ -111,7 +105,9 @@ ignored. Copy `.env.example` as a starting point.
 : Where the scheduler emails when a nightly job fails (after each failed
   attempt; a job retries every 30 minutes, at most 3 attempts per parish
   day). Default: empty — failures only log at ERROR. Production sets the
-  same address the host backup/sync wrappers alert.
+  same address the host backup/sync wrappers alert. Some jobs run on a
+  fixed interval rather than at a nightly time; those keep retrying on
+  their own cadence and alert this address at most once per parish day.
 
 `VDB_FETCH_PAGES_AT`, `VDB_PROPOSAL_DIGEST_AT`, `VDB_EVENT_REMINDERS_AT`
 : Parish-local (`VDB_TIMEZONE`) times the in-app scheduler runs each
@@ -143,6 +139,17 @@ ignored. Copy `.env.example` as a starting point.
   back on later runs, like `VDB_PUBLIC_BASE_URL`; set it once after the
   template sheet exists. See
   [Sync team rosters with Google Sheets](../how-to/drive-roster-sync.md).
+
+`VDB_GCAL_CLIENT_ID`, `VDB_GCAL_CLIENT_SECRET`, `VDB_GCAL_REFRESH_TOKEN`, `VDB_GCAL_CALENDAR_ID`
+: Google Calendar sync: the OAuth client and refresh token authorised as
+  the parish Google account, and the id of the public calendar it owns.
+  With all four set, the in-app scheduler reconciles upcoming events onto
+  that calendar every 30 minutes (one-way, VolunteerDB → Google; an edit
+  reaches the calendar within half an hour) and the **/events** page embeds
+  it. Defaults: empty — the sync exits "not configured" and nothing embeds.
+  The deploy writes them and reads them back on later runs, like
+  `VDB_TEMPLATE_SHEET_URL`; set them once after the one-time authorization.
+  See [Publish events to a Google Calendar](../how-to/google-calendar-sync.md).
 
 `VDB_DOCS_DIR`
 : Directory of built documentation HTML served at `/manual` (signed-in

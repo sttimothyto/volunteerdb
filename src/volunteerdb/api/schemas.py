@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -457,6 +458,7 @@ class EventOut(ORMModel):
     status: str
     cancelled_at: datetime | None
     created_at: datetime
+    series_id: UUID | None  # shared by weekly repeats; null = standalone
 
 
 class EventSummaryOut(BaseModel):
@@ -478,6 +480,8 @@ class EventAssignmentOut(ORMModel):
     volunteer_name: str = ""
     kind: str  # signup/assigned/sub — provenance only
     sub_requested: bool = False  # an open substitution call exists
+    notify_7d: bool = True  # reminder-stage preferences (see EventAssignIn)
+    notify_24h: bool = True
 
 
 class SlotViewOut(BaseModel):
@@ -521,6 +525,12 @@ class EventDetailOut(BaseModel):
 
 class EventAssignIn(BaseModel):
     volunteer_id: int | None = None  # omitted: sign yourself up
+    # self sign-ups only: copy the sign-up onto later weeks of the series
+    repeat_series: bool = False
+    # reminder-stage preferences for self sign-ups (manager assignments
+    # keep the defaults — the volunteer never chose)
+    notify_7d: bool = True
+    notify_24h: bool = True
 
 
 class SubRequestIn(BaseModel):

@@ -512,17 +512,20 @@ class _PyBackend:
     conj = staticmethod(lambda a, b: lambda row: a(row) and b(row))
     disj = staticmethod(lambda a, b: lambda row: a(row) or b(row))
 
+    def __init__(self, fields: dict[str, tuple[FieldType, Callable[[dict], Any]]]):
+        self._fields = fields
+
     def leaf(self, node: exp.Expression, negate: bool) -> Callable[[dict], bool]:
         col, op, lit_nodes, self_neg = _leaf_parts(node)
         negate ^= self_neg
         if col.args.get("db") or col.args.get("catalog") or col.table:
             raise QueryError(f"unknown field: {col.sql(dialect='postgres')}")
         name = col.name.lower()
-        if name not in _TEAM_FIELDS:
+        if name not in self._fields:
             raise QueryError(
-                f"unknown field: {name} (fields: {', '.join(sorted(_TEAM_FIELDS))})"
+                f"unknown field: {name} (fields: {', '.join(sorted(self._fields))})"
             )
-        kind, getter = _TEAM_FIELDS[name]
+        kind, getter = self._fields[name]
         _check_op(op, kind, name)
         vals = [_literal(kind, n, name) for n in lit_nodes]
         return _py_cmp(getter, op, vals, negate)
@@ -535,4 +538,28 @@ def compile_teams(ast: exp.Expression) -> Callable[[dict], bool]:
     coverage counts are already blanked server-side for unmanaged teams,
     and the blank reads as NULL (comparisons never match it).
     """
-    return _compile(ast, False, _PyBackend())
+    return _compile(ast, False, _PyBackend(_TEAM_FIELDS))
+
+
+# --- events: the same row-dict backend, a different field map -----------------
+
+_EVENT_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
+    "title": (FieldType.text, _text_of("title")),
+    "team": (FieldType.text, _text_of("team")),
+    "location": (FieldType.text, _text_of("location")),
+    "you": (FieldType.text, _text_of("you")),
+    "date": (FieldType.date, lambda row: date.fromisoformat(row["when"][:10])),
+    # numeric twins of the pretty "3/∞" display cell; capacity None = unlimited,
+    # which reads as NULL, so comparisons never match it (SQL semantics)
+    "filled": (FieldType.integer, lambda row: row.get("filled_n")),
+    "capacity": (FieldType.integer, lambda row: row.get("capacity_n")),
+}
+
+
+def compile_events(ast: exp.Expression) -> Callable[[dict], bool]:
+    """A Python predicate over events-page row dicts. Raises QueryError.
+
+    The listing is already scoped server-side (visible_team_ids), so like
+    teams there is no actor scoping to re-apply here.
+    """
+    return _compile(ast, False, _PyBackend(_EVENT_FIELDS))

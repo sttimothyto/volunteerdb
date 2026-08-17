@@ -311,3 +311,40 @@ async def test_slot_crud_guards(client, seeded, token_leader, token_member):
         f"/api/events/{event_id}/slots/{lector['slot']['id']}", headers=token_member
     )
     assert r.status_code == 403
+
+
+async def test_repeat_series_signup_via_api(client, seeded, token_leader, token_member):
+    body = _payload(seeded["team_id"])
+    body["repeat_weekly_until"] = (date.today() + timedelta(days=21)).isoformat()
+    r = await client.post("/api/events", json=body, headers=token_leader)
+    assert r.status_code == 201
+    weeks = r.json()
+    assert weeks[0]["series_id"] is not None
+    assert all(e["series_id"] == weeks[0]["series_id"] for e in weeks)
+
+    async def usher_slot(event_id: int) -> dict:
+        detail = (
+            await client.get(f"/api/events/{event_id}", headers=token_member)
+        ).json()
+        return next(s for s in detail["slots"] if s["slot"]["name"] == "Usher")
+
+    first = weeks[0]["id"]
+    slot_id = (await usher_slot(first))["slot"]["id"]
+    r = await client.post(
+        f"/api/events/{first}/slots/{slot_id}/assignments",
+        json={"repeat_series": True},
+        headers=token_member,
+    )
+    assert r.status_code == 201, r.text
+    for week in weeks[1:]:
+        assert len((await usher_slot(week["id"]))["entries"]) == 1, (
+            "the sign-up copied itself onto the later weeks"
+        )
+
+    # a manager scheduling somebody cannot ask for the copy-forward
+    r = await client.post(
+        f"/api/events/{first}/slots/{slot_id}/assignments",
+        json={"volunteer_id": seeded["volunteer_id"], "repeat_series": True},
+        headers=token_leader,
+    )
+    assert r.status_code == 422
