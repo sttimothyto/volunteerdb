@@ -1,7 +1,7 @@
 name: CI
 
-# Every push runs lint + tests + docs. A green push to main deploys to
-# sttimothyto-prod via the same pyinfra script used by hand
+# Every push runs lint + tests + docs. A green push to main deploys the site
+# named by VDB_SITE below, via the same pyinfra script used by hand
 # (docs/how-to/deploy.md), from a clean checkout of that commit.
 
 on:
@@ -92,6 +92,9 @@ jobs:
     timeout-minutes: 30
     environment:
       name: production
+      # Only the link GitHub shows beside the deployment; nothing reads it.
+      # Actions cannot interpolate from the site file, so it is the one place
+      # the domain is repeated — keep it equal to [host] domain.
       url: https://vdb.sttimothyto.org
     concurrency:
       group: deploy-production
