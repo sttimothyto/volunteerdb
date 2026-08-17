@@ -200,7 +200,7 @@ still reaches its volunteer through `jobs.event_reminders`.
 | `PATCH /api/events/{id}/slots/{sid}` | manage the team | Shrinking capacity below occupancy → 422 |
 | `DELETE /api/events/{id}/slots/{sid}` | manage the team | 204; blocked while occupied, and an event keeps ≥ 1 slot |
 | `PUT /api/events/{id}/rsvp` | member of the team | 204; idempotent overwrite `{available, note?}` (the ballot idiom) |
-| `POST /api/events/{id}/slots/{sid}/assignments` | self: member; with `volunteer_id`: manager | 201; capacity full → 422, one slot per person per event → 422/409. Self sign-ups may pass `repeat_series: true` to copy the sign-up onto later weeks of the series (same slot name; full/conflicting weeks skip) |
+| `POST /api/events/{id}/slots/{sid}/assignments` | self: member; with `volunteer_id`: manager | 201; capacity full → 422, one slot per person per event → 422/409. Self sign-ups may pass `repeat_series: true` to copy the sign-up onto later weeks of the series (same slot name; full/conflicting weeks skip) and `notify_7d`/`notify_24h` (default true) to choose reminder stages |
 | `DELETE /api/events/assignments/{aid}` | owner or manager | 204; future events only — past rosters are the attendance record |
 | `POST /api/events/assignments/{aid}/sub-request` | owner or manager | 201; one open request per assignment → 422 |
 | `POST /api/events/sub-requests/{id}/claim` | member not already serving that event | First-come; the assignment moves to the caller, losers → 422 |

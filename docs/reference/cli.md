@@ -113,10 +113,11 @@ fetches in its own transaction, so one bad doc cannot block the rest.
 it only reads and writes a work directory — rclone on the host does all the
 Drive traffic. `proposal_digest` emails each proposal voter one nightly
 digest of what needs their input; `event_reminders` emails each volunteer
-their event notices (scheduled by a manager / serving within
-`VDB_EVENT_REMINDER_DAYS`). Both digests are per-person idempotent via
-notification stamps — a failed send retries the next night — and take
-`--today` for manual runs and tests. All need `VDB_DATABASE_URL`.
+their event notices (scheduled by a manager, serving this week, serving
+tomorrow — the reminder stages honour the per-sign-up preferences). Both
+digests are per-person idempotent via notification stamps — a failed send
+retries the next night — and take `--today` for manual runs and tests. All
+need `VDB_DATABASE_URL`.
 
 `calendar_sync` reconciles events onto the public parish Google Calendar
 (see [Publish events to a Google Calendar](../how-to/google-calendar-sync.md));

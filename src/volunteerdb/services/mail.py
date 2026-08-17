@@ -241,7 +241,7 @@ class EventDigestItem:
     """One assignment in a volunteer's nightly events digest
     (jobs/event_reminders.py)."""
 
-    kind: str  # "scheduled" | "reminder"
+    kind: str  # "scheduled" | "week" | "day"
     title: str
     path: str  # team path, e.g. "Liturgy / Lectors"
     slot: str
@@ -250,9 +250,11 @@ class EventDigestItem:
     location: str | None = None
 
 
+# dict order is section order in the email: strongest notice first
 _EVENT_DIGEST_HEADERS = {
     "scheduled": "You have been scheduled to serve:",
-    "reminder": "Coming up soon — you are serving:",
+    "day": "Tomorrow — you are serving:",
+    "week": "Coming up this week — you are serving:",
 }
 
 

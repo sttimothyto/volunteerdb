@@ -94,12 +94,6 @@ ignored. Copy `.env.example` as a starting point.
   production domain and reads it back on later runs, like
   `VDB_TEMPLATE_SHEET_URL`.
 
-`VDB_EVENT_REMINDER_DAYS`
-: How many days ahead the nightly `event_reminders` digest reminds people
-  of events they are scheduled to serve at, counted in parish days
-  (`VDB_TIMEZONE`). Default: `3`. See
-  [Events and scheduling](../explanation/events.md).
-
 `VDB_SCHEDULER_ENABLED`
 : The in-app scheduler that runs the nightly jobs (`fetch_pages`,
   `proposal_digest`, `event_reminders`) inside the server process. Default:

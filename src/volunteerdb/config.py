@@ -53,9 +53,6 @@ class Settings(BaseSettings):
     # https://vdb.sttimothyto.org). UI-sent mail derives links from the live
     # request instead; empty means job emails simply carry no link.
     public_base_url: str = ""
-    # How many days ahead the nightly digest (jobs/event_reminders.py)
-    # reminds people of events they are scheduled to serve at.
-    event_reminder_days: int = Field(default=3, gt=0)
     # In-app scheduler (volunteerdb.scheduler) driving the nightly jobs
     # below. Forced off under VDB_RELOAD regardless: dev reload restarts the
     # process on every save, which would re-fire startup hooks.

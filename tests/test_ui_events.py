@@ -299,6 +299,29 @@ async def test_share_button_and_date_pickers(database):
         assert len(user.find(kind=ui.date).elements) == 2
 
 
+async def test_signup_notification_prefs_persist(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+    event_id = await _seed_event(ids["liturgy"])
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/events/{event_id}")
+        user.find("Sign up", kind=ui.button).click()
+        await user.should_see("Email me a reminder")
+        week = user.find(kind=ui.checkbox, content="7 days").elements.pop()
+        day = user.find(kind=ui.checkbox, content="24 hours").elements.pop()
+        assert week.value and day.value, "both stages pre-checked"
+        day.value = False
+        user.find(marker="signup-confirm").click()
+        await user.should_see("You're on the list", retries=30)
+
+    async with db_session() as session:
+        view = await event_service.detail(session, event_id)
+        assignment = view.slots[0].entries[0][0]
+        assert (assignment.notify_7d, assignment.notify_24h) == (True, False)
+
+
 async def test_series_signup_repeats_across_weeks(database):
     async with db_session() as session:
         ids = await _parish(session)
@@ -321,7 +344,7 @@ async def test_series_signup_repeats_across_weeks(database):
         await user.open(f"/events/{week_ids[0]}")
         user.find("Sign up", kind=ui.button).click()
         await user.should_see("later weeks of this series")
-        box = user.find(kind=ui.checkbox).elements.pop()
+        box = user.find(kind=ui.checkbox, content="later weeks").elements.pop()
         box.value = True
         user.find(marker="signup-confirm").click()
         await user.should_see("this week plus 2 more", retries=30)

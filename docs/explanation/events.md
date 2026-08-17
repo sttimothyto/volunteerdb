@@ -107,14 +107,18 @@ not attendance.
 
 The in-app scheduler is the one clock the app owns. Its 04:00 job
 [`jobs.event_reminders`](../reference/cli.md) sends each volunteer at most
-one email per night: events a manager scheduled them for, and events they
-serve at within the next `VDB_EVENT_REMINDER_DAYS` parish days. Idempotency
-is the proposal-digest pattern — nullable per-assignment stamps
-(`assigned_notified_at`, `reminder_sent_at`) that a failed send leaves NULL
-to retry the next night. Self sign-ups and substitution claims are stamped
-at insert: the person acted themselves, so only manager assignments earn
-the "you have been scheduled" notice; a newly scheduled event already
-inside the reminder window is listed once and stamps both columns.
+one email per night: events a manager scheduled them for, plus two staged
+reminders — "coming up this week" once the event is 7 parish days out, and
+"tomorrow" the morning before. The stages are per-assignment *preferences*
+chosen at sign-up (pre-checked; unticking one silences just that stage).
+Day-granularity is deliberate: reminders arrive with the one nightly
+digest, not at a computed instant. Idempotency is the proposal-digest
+pattern — nullable per-assignment stamps (`assigned_notified_at`,
+`reminded_7d_at`, `reminded_24h_at`) that a failed send leaves NULL to
+retry the next night. Self sign-ups and substitution claims are stamped at
+insert: the person acted themselves, so only manager assignments earn the
+"you have been scheduled" notice; an event pending several notices at once
+is listed once, under the strongest, stamping every stage it satisfied.
 Time-sensitive mail — the substitution call, its claim, a cancellation —
 goes out immediately from the GUI after the transaction commits. The API
 sends no mail at all (the repo-wide rule); an API-created assignment still

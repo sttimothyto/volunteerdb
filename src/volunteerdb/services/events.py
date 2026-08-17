@@ -848,6 +848,8 @@ async def _join_slot(
     volunteer_id: int,
     kind: AssignmentKind,
     assigned_by: int | None,
+    notify_7d: bool = True,
+    notify_24h: bool = True,
 ) -> EventAssignment:
     # FOR UPDATE: a counted capacity has no unique-index backstop, so the two
     # concurrent sign-ups that both counted a free spot must serialize here
@@ -884,6 +886,8 @@ async def _join_slot(
         # the person acted themselves for signup/sub; only manager
         # assignments leave this NULL for the digest's "scheduled" notice
         assigned_notified_at=(None if kind is AssignmentKind.assigned else _now()),
+        notify_7d=notify_7d,
+        notify_24h=notify_24h,
     )
     session.add(assignment)
     await session.flush()
@@ -891,7 +895,12 @@ async def _join_slot(
 
 
 async def sign_up(
-    session: AsyncSession, *, slot_id: int, volunteer_id: int | None
+    session: AsyncSession,
+    *,
+    slot_id: int,
+    volunteer_id: int | None,
+    notify_7d: bool = True,
+    notify_24h: bool = True,
 ) -> EventAssignment:
     if volunteer_id is None:
         raise ValueError("your account is not linked to a volunteer record")
@@ -901,6 +910,8 @@ async def sign_up(
         volunteer_id=volunteer_id,
         kind=AssignmentKind.signup,
         assigned_by=None,
+        notify_7d=notify_7d,
+        notify_24h=notify_24h,
     )
 
 
@@ -914,14 +925,25 @@ class SeriesSignupResult:
 
 
 async def sign_up_series(
-    session: AsyncSession, *, slot_id: int, volunteer_id: int | None
+    session: AsyncSession,
+    *,
+    slot_id: int,
+    volunteer_id: int | None,
+    notify_7d: bool = True,
+    notify_24h: bool = True,
 ) -> tuple[EventAssignment, SeriesSignupResult]:
     """Sign up on the given slot, then copy the sign-up onto every later
     week of the same series with a slot of the same NAME (names are the
     series-wide identity — slot ids differ per materialized row). Each week
     joins inside a SAVEPOINT, so a full week or an existing assignment
     skips that week instead of aborting the whole sign-up."""
-    first = await sign_up(session, slot_id=slot_id, volunteer_id=volunteer_id)
+    first = await sign_up(
+        session,
+        slot_id=slot_id,
+        volunteer_id=volunteer_id,
+        notify_7d=notify_7d,
+        notify_24h=notify_24h,
+    )
     slot = await session.get(EventSlot, first.slot_id)
     event = await session.get(Event, first.event_id)
     assert slot is not None and event is not None  # sign_up just used them
@@ -956,6 +978,8 @@ async def sign_up_series(
                     volunteer_id=first.volunteer_id,
                     kind=AssignmentKind.signup,
                     assigned_by=None,
+                    notify_7d=notify_7d,
+                    notify_24h=notify_24h,
                 )
             joined += 1
         except ValueError as exc:
@@ -1078,7 +1102,9 @@ async def claim_sub(
     assignment.volunteer_id = vid
     assignment.kind = AssignmentKind.sub.value
     assignment.assigned_notified_at = _now()  # the claimant acted themselves
-    assignment.reminder_sent_at = None  # the new person still needs a reminder
+    # the new person still needs the reminders, on default preferences
+    assignment.notify_7d = assignment.notify_24h = True
+    assignment.reminded_7d_at = assignment.reminded_24h_at = None
     await session.flush()
     await session.refresh(sub)
     return sub, assignment, asker
@@ -1128,7 +1154,9 @@ async def substitute(
     # the caller mails the incoming volunteer right after commit, so the
     # digest's "scheduled" notice would only duplicate it
     assignment.assigned_notified_at = _now()
-    assignment.reminder_sent_at = None  # the new person still needs a reminder
+    # the new person still needs the reminders, on default preferences
+    assignment.notify_7d = assignment.notify_24h = True
+    assignment.reminded_7d_at = assignment.reminded_24h_at = None
     await session.flush()
     return assignment, outgoing, incoming
 

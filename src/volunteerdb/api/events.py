@@ -256,11 +256,19 @@ async def create_assignment(
     if data.volunteer_id is None:
         if data.repeat_series:
             assignment, _ = await event_service.sign_up_series(
-                ctx.session, slot_id=slot_id, volunteer_id=ctx.actor.volunteer_id
+                ctx.session,
+                slot_id=slot_id,
+                volunteer_id=ctx.actor.volunteer_id,
+                notify_7d=data.notify_7d,
+                notify_24h=data.notify_24h,
             )
         else:
             assignment = await event_service.sign_up(
-                ctx.session, slot_id=slot_id, volunteer_id=ctx.actor.volunteer_id
+                ctx.session,
+                slot_id=slot_id,
+                volunteer_id=ctx.actor.volunteer_id,
+                notify_7d=data.notify_7d,
+                notify_24h=data.notify_24h,
             )
     else:
         if data.repeat_series:

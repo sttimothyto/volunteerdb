@@ -346,7 +346,8 @@ override columns.
 | `assigned_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
 | `created_at` | timestamptz | |
 | `assigned_notified_at` | timestamptz | nullable; nightly-digest stamp — set at insert for self sign-ups and sub claims (the person acted themselves) |
-| `reminder_sent_at` | timestamptz | nullable; nightly-digest stamp for the coming-up reminder |
+| `notify_7d`, `notify_24h` | boolean | not null, default true; reminder-stage preferences chosen at sign-up |
+| `reminded_7d_at`, `reminded_24h_at` | timestamptz | nullable; nightly-digest stamps for the week / day-before reminders |
 | `attended_override` | boolean | nullable; NULL = auto (attended) |
 | `hours_override` | numeric(5,2) | nullable; NULL = auto (scheduled duration), CHECK `>= 0` |
 

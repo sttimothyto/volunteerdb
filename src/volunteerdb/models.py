@@ -526,7 +526,13 @@ class EventAssignment(Base):
     assigned_notified_at: Mapped[datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True)
     )
-    reminder_sent_at: Mapped[datetime | None] = mapped_column(
+    # the two reminder stages, each an opt-outable preference (chosen at
+    # sign-up, pre-checked) with its own one-shot stamp: "this week" once the
+    # event is ≤7 parish days out, "tomorrow" the day before
+    notify_7d: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
+    notify_24h: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
+    reminded_7d_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    reminded_24h_at: Mapped[datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True)
     )
     # manager-recorded exceptions to auto attendance; NULL = auto

@@ -351,7 +351,10 @@ async def test_claim_moves_the_assignment_and_records_who(database):
         assert assignment.volunteer_id == vids[2]
         assert assignment.kind == "sub"
         assert assignment.assigned_notified_at is not None, "claimant acted themselves"
-        assert assignment.reminder_sent_at is None, "new person still gets a reminder"
+        assert (assignment.reminded_7d_at, assignment.reminded_24h_at) == (
+            None,
+            None,
+        ), "new person still gets the reminders"
     async with db_session() as session:
         with pytest.raises(ValueError, match="already claimed"):
             await event_service.claim_sub(
@@ -669,8 +672,12 @@ async def test_substitute_hands_the_slot_over(database):
         assert assignment.assigned_notified_at is not None, (
             "the caller mails the incoming volunteer right away"
         )
-        assert assignment.reminder_sent_at is None, (
-            "the new person still needs a reminder"
+        assert (assignment.reminded_7d_at, assignment.reminded_24h_at) == (
+            None,
+            None,
+        ), "the new person still needs the reminders"
+        assert assignment.notify_7d and assignment.notify_24h, (
+            "prefs reset to defaults — the incoming volunteer never chose"
         )
         open_call = await session.get(EventSubRequest, sub_id)
         assert open_call.status == SubRequestStatus.cancelled.value, (

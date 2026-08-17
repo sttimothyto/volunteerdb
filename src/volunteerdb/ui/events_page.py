@@ -933,17 +933,28 @@ async def event_detail_page(request: Request, event_id: int):
                 ui.label(
                     "Weeks already full, or where you already serve, are skipped."
                 ).classes("text-sm text-gray-500")
+            ui.label("Email me a reminder:").classes("text-sm text-gray-500")
+            week = ui.checkbox("7 days before", value=True).props("dense")
+            day = ui.checkbox("24 hours before", value=True).props("dense")
 
             @notify_errors
             async def save() -> None:
                 async with action_session() as (session, actor):
                     if repeat is not None and repeat.value:
                         _, result = await event_service.sign_up_series(
-                            session, slot_id=slot_id, volunteer_id=actor.volunteer_id
+                            session,
+                            slot_id=slot_id,
+                            volunteer_id=actor.volunteer_id,
+                            notify_7d=bool(week.value),
+                            notify_24h=bool(day.value),
                         )
                     else:
                         await event_service.sign_up(
-                            session, slot_id=slot_id, volunteer_id=actor.volunteer_id
+                            session,
+                            slot_id=slot_id,
+                            volunteer_id=actor.volunteer_id,
+                            notify_7d=bool(week.value),
+                            notify_24h=bool(day.value),
                         )
                         result = None
                 dialog.close()
