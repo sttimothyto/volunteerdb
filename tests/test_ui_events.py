@@ -209,6 +209,29 @@ async def test_leader_creates_event_via_dialog(database):
         assert len(picnics) == 2, "day 1 and day 8"
 
 
+async def test_share_button_and_date_pickers(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+    event_id = await _seed_event(ids["liturgy"])
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        # any viewer can share; the dialog carries the accounts caveat
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/events/{event_id}")
+        user.find(marker="share-event").click()
+        await user.should_see("Event link copied")
+        await user.should_see("make sure every")
+        url_box = user.find(kind=ui.input, content=f"/events/{event_id}")
+        assert url_box.elements, "the copied link is shown for hand-copying"
+
+        # both date fields of the create dialog carry popup calendars
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open("/events")
+        user.find("New event", kind=ui.button).click()
+        await user.should_see("Repeat weekly until")
+        assert len(user.find(kind=ui.date).elements) == 2
+
+
 async def test_attendance_section_on_past_event(database):
     async with db_session() as session:
         ids = await _parish(session)

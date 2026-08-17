@@ -27,6 +27,7 @@ from ..services import interest as interest_service
 from ..services import mail
 from ..services import teams as team_service
 from .context import action_session, notify_errors, page_session
+from .date_input import date_input
 from .layout import frame
 
 
@@ -51,6 +52,28 @@ def _parse_local(day_s: str, time_s: str, what: str) -> datetime | None:
     except ValueError:
         ui.notify(f"{what}: use YYYY-MM-DD and HH:MM", color="warning")
         return None
+
+
+def _share_event(base_url: str, event_id: int) -> None:
+    """Copy the event link, then say what the recipients will need.
+
+    The copy happens up front (the click IS the intent); the dialog exists for
+    the caveat — the link asks for a sign-in, so a leader texting it out has to
+    make sure everyone on the list has an account first.
+    """
+    url = f"{base_url}/events/{event_id}"
+    ui.clipboard.write(url)
+    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+        ui.label("Event link copied").classes("text-lg font-medium")
+        ui.input(value=url).props("readonly outlined dense").classes("w-full")
+        ui.label(
+            "Before you email or text this link out, make sure every "
+            "volunteer has a VolunteerDB account — opening it asks for a "
+            "sign-in, and the event is shown only to members of its team."
+        ).classes("text-sm text-gray-500")
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Close", on_click=dialog.close).props("flat dense")
+    dialog.open()
 
 
 async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
@@ -187,11 +210,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
         title = ui.input("Title").props("outlined dense").classes("w-full")
         tomorrow = date.today() + timedelta(days=1)
         with ui.row().classes("w-full gap-2"):
-            day = (
-                ui.input("Date (YYYY-MM-DD)", value=str(tomorrow))
-                .props("outlined dense")
-                .classes("grow")
-            )
+            day = date_input("Date (YYYY-MM-DD)", value=str(tomorrow)).classes("grow")
             start = (
                 ui.input("Starts (HH:MM)", value="10:00")
                 .props("outlined dense")
@@ -230,11 +249,9 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
         ui.button(
             "Add another slot", icon="add", on_click=lambda: add_slot_row()
         ).props("flat dense no-caps")
-        repeat = (
-            ui.input("Repeat weekly until (YYYY-MM-DD, optional)")
-            .props("outlined dense clearable")
-            .classes("w-full")
-        )
+        repeat = date_input(
+            "Repeat weekly until (YYYY-MM-DD, optional)", clearable=True
+        ).classes("w-full")
 
         @notify_errors
         async def save() -> None:
@@ -451,11 +468,9 @@ def _edit_event_dialog(event) -> None:
             .classes("w-full")
         )
         with ui.row().classes("w-full gap-2"):
-            day = (
-                ui.input("Date (YYYY-MM-DD)", value=str(local_start.date()))
-                .props("outlined dense")
-                .classes("grow")
-            )
+            day = date_input(
+                "Date (YYYY-MM-DD)", value=str(local_start.date())
+            ).classes("grow")
             start = (
                 ui.input("Starts (HH:MM)", value=f"{local_start:%H:%M}")
                 .props("outlined dense")
@@ -750,6 +765,11 @@ async def event_detail_page(request: Request, event_id: int):
             if event.location:
                 ui.label(f"· {event.location}").classes("text-sm text-gray-600")
             ui.space()
+            ui.button(
+                "Share",
+                icon="share",
+                on_click=lambda: _share_event(base_url, event_id),
+            ).props("dense outline").mark("share-event")
             if can_manage and event.status == EventStatus.scheduled.value:
                 ui.button(
                     "Edit", icon="edit", on_click=lambda: _edit_event_dialog(event)
