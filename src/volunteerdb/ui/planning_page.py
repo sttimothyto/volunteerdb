@@ -30,7 +30,7 @@ IGNATIAN_NOTE = (
     "This is a consulatative vote; the final appointment is an act proper to the pastor of the parish. See Code of Canon Law 536 §1, 515 §1."
 )
 STAR_NOTE = (
-    "STAR voting: score every candidate 0–5 on their own merits. Unlike "
+    "STAR voting: score every candidate 0 (worst) – 5 (best) on their own merits. Unlike "
     "first-past-the-post, similar candidates don't split the vote — there "
     "is no spoiler effect, so score honestly."
     "Individual votes are secret. Final points will be visible."
