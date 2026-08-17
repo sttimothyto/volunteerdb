@@ -79,6 +79,7 @@ authenticated account.
 | `GET /api/volunteers/{id}/timeline` | full profile view | All-time service spells |
 | `GET /api/volunteers/{id}/impact` | full profile view | "If they leave" hole report, `as_of=` |
 | `GET /api/volunteers/{id}/proposals` | admin, leader/second, or voting member | Proposals involving them, with `as_candidate`/`as_voter`/`appointed` flags; scoped like `GET /api/elections/proposals` |
+| `POST /api/volunteers/{id}/invite` | admin, or full-roster rights on one of their teams | Create (or re-arm) their account and return it with `invite_token` + `invite_expires_at`. The one account-creating route that is not admin-only — see the [permission matrix](permissions.md#permission-matrix). Mints only: **it does not email**, so deliver the link yourself. 422 when the volunteer is archived, has no address on file, the address belongs to another account, or the account already carries a password or has been signed into; 409 if two callers race |
 
 The volunteer list and detail responses carry `has_photo` (null on embedded
 volunteer objects elsewhere). Browsers load images from the cookie-
@@ -113,6 +114,10 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | `GET /api/graph` | signed in | Cytoscape.js elements; `team_id=` focus filter, `as_of=` |
 
 ### Users — `api/users.py` (all admin-only)
+
+Account *management* is admin-only throughout. The one exception lives with the
+volunteer it concerns: `POST /api/volunteers/{id}/invite` above lets a team's
+leaders, seconds and core members create an account for one of their own people.
 
 | Method & path | Notes |
 |---|---|

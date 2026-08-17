@@ -217,6 +217,70 @@ async def reissue_invite(session: AsyncSession, user_id: int) -> str:
     return token
 
 
+async def invite_volunteer(
+    session: AsyncSession, volunteer_id: int
+) -> tuple[AppUser, str]:
+    """Give one volunteer the sign-in account they don't have yet, with its
+    invite link armed. Returns (account, token).
+
+    This is the narrow, team-scoped counterpart to bulk_provision: it is what a
+    ministry leader triggers from their own roster, so it refuses anything that
+    would touch an account they don't plainly own the creation of. Permission is
+    the caller's job (permissions.Actor.can_invite_volunteer).
+
+    Refusals are ValueError (422 / a warning toast) with a sentence the leader
+    can act on, because every one of them has a different remedy.
+    """
+    volunteer = await volunteer_service.get(session, volunteer_id)
+    if volunteer is None:
+        raise LookupError(f"volunteer {volunteer_id} not found")
+    if not volunteer.is_active:
+        raise ValueError(
+            f"{volunteer.full_name} is archived — reactivate them before inviting"
+        )
+    addr = (volunteer.email or "").strip().lower()
+    if not addr:
+        raise ValueError(
+            f"{volunteer.full_name} has no email address on file — add one first"
+        )
+
+    account = await account_for_volunteer(session, volunteer_id)
+    if account is None:
+        # An account may already sit at this address without being linked to
+        # them: created before the volunteer record, or held by a spouse (email
+        # is unique on app_user, volunteer.email is not). bulk_provision adopts
+        # an unlinked one, but that is an admin acting parish-wide — linking an
+        # existing login to a volunteer hands whoever holds it this volunteer's
+        # identity, which is more than "invite my team member" should reach.
+        clash = await get_by_email(session, addr)
+        if clash is not None:
+            raise ValueError(
+                f"{addr} already signs in to another account — a shared address "
+                "can only hold one. Ask a parish admin to sort out the link."
+            )
+        user = await create(session, addr, volunteer_id=volunteer_id)
+        # create() arms an invite whenever no password is given, which is our
+        # case; the fallback keeps the return type honest rather than asserting.
+        return user, user.invite_token or _issue_invite(user)
+
+    if not account.is_active:
+        raise ValueError(
+            f"{volunteer.full_name}'s account is switched off — "
+            "a parish admin can switch it back on"
+        )
+    # Deliberately not reissue_invite(): that clears password_hash so an admin
+    # can force a reset, and a leader must never be able to invalidate a working
+    # password. Re-arming is only safe on an account nobody has ever used.
+    if account.password_hash is not None or account.last_login_at is not None:
+        raise ValueError(
+            f"{volunteer.full_name} already has a working account — "
+            "they can sign in, or reset from the login page"
+        )
+    token = _issue_invite(account)
+    await session.flush()
+    return account, token
+
+
 async def redeem_invite(
     session: AsyncSession,
     token: str,

@@ -12,8 +12,11 @@ from ..permissions import volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import photos as photo_service
 from ..services import teams as team_service
+from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
+from . import invites
+from .account_status import invitable, last_login_text
 from .context import action_session, notify_errors, parse_as_of
 from .photo_dialog import photo_avatar
 
@@ -31,9 +34,12 @@ def format_custom(defn: CustomFieldDef, value, missing: str = "—") -> str:
 
 
 class VolunteerPanel:
-    def __init__(self, as_of: str = "") -> None:
+    def __init__(self, as_of: str = "", base_url: str = "") -> None:
         self.at = parse_as_of(as_of)
         self._asof_query = f"?as_of={as_of}" if as_of else ""
+        # only needed to build an invite link; without it the panel simply
+        # reports sign-in status without offering to fix it
+        self.base_url = base_url
         self.drawer = ui.right_drawer(value=False, fixed=True, bordered=True).props(
             "overlay"
         )
@@ -66,6 +72,13 @@ class VolunteerPanel:
             )
             photo_at = (await photo_service.versions(session, [volunteer_id])).get(
                 volunteer_id
+            )
+            account = await user_service.account_for_volunteer(session, volunteer_id)
+            can_invite = (
+                actor.can_invite_volunteer(team_ids)
+                and self.at is None
+                and volunteer.is_active
+                and self.base_url != ""
             )
 
         self.content.clear()
@@ -116,6 +129,21 @@ class VolunteerPanel:
                 ui.label(
                     "Contact details visible to their team leaders and core members."
                 ).classes("text-sm text-gray-400 italic")
+
+            # outside the can_view gate, like the profile page's Last login line
+            with ui.row().classes("items-center gap-2 no-wrap"):
+                ui.label(f"Last login: {last_login_text(account)}").classes(
+                    "text-sm text-gray-700"
+                )
+                if can_invite and invitable(account):
+                    invites.invite_control(
+                        volunteer_id,
+                        volunteer.full_name,
+                        volunteer.email,
+                        account,
+                        self.base_url,
+                        where="detail",
+                    )
 
             ui.label("Serves on").classes("font-medium mt-2")
             if not assignments:

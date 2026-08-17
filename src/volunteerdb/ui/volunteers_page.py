@@ -1,5 +1,6 @@
 from urllib.parse import quote_plus
 
+from fastapi import Request
 from nicegui import app, ui
 
 from .. import query_lang
@@ -14,8 +15,8 @@ from ..services import teams as team_service
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
-from . import column_order
-from .account_status import last_login_text
+from . import column_order, invites
+from .account_status import invitable, last_login_text
 from .context import action_session, notify_errors, page_session
 from .elections_page import phase_badge
 from .layout import frame
@@ -28,7 +29,7 @@ ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
 
 @ui.page("/volunteers")
-async def volunteers_page(q: str = "", band: str = ""):
+async def volunteers_page(request: Request, q: str = "", band: str = ""):
     is_query = query_lang.parse(q) is not None
     query_error: str | None = None
     async with page_session() as (session, actor):
@@ -52,7 +53,7 @@ async def volunteers_page(q: str = "", band: str = ""):
         # filtering happens strictly within the permitted set — no workload leak
         found = [v for v in found if v.id in wl and wl[v.id][1].label == band]
 
-    panel = VolunteerPanel()
+    panel = VolunteerPanel("", str(request.base_url).rstrip("/"))
     with frame("Volunteers", actor):
         if query_error:
             ui.notify(query_error, color="warning")
@@ -228,7 +229,8 @@ def _new_volunteer_dialog() -> None:
 
 
 @ui.page("/volunteers/{volunteer_id}")
-async def volunteer_detail(volunteer_id: int):
+async def volunteer_detail(request: Request, volunteer_id: int):
+    base_url = str(request.base_url).rstrip("/")
     async with page_session() as (session, actor):
         volunteer = await volunteer_service.get(session, volunteer_id)
         if volunteer is None:
@@ -329,9 +331,24 @@ async def volunteer_detail(volunteer_id: int):
                 ).classes("text-sm text-gray-400 italic")
             # outside the can_view gate on purpose: whether someone reads what
             # the app sends them is not a contact detail
-            ui.label(f"Last login: {last_login_text(account)}").classes(
-                "text-sm text-gray-700"
-            )
+            with ui.row().classes("items-center gap-2 no-wrap"):
+                ui.label(f"Last login: {last_login_text(account)}").classes(
+                    "text-sm text-gray-700"
+                )
+                # just the control here: the line above already says the status
+                if (
+                    actor.can_invite_volunteer(team_ids)
+                    and volunteer.is_active
+                    and invitable(account)
+                ):
+                    invites.invite_control(
+                        volunteer_id,
+                        volunteer.full_name,
+                        volunteer.email,
+                        account,
+                        base_url,
+                        where="profile",
+                    )
 
         ui.label("Serves on").classes("text-lg font-medium")
         if not assignments:

@@ -120,6 +120,60 @@ async def test_import_export_rights(parish):
         assert not actor.can_import_export, f"{name} may not import/export"
 
 
+async def test_invite_rights_reach_core_but_stop_at_plain_members(parish):
+    """Inviting is the one account-shaped power that is not admin-only. It
+    tracks full-roster rights — the people who read the whole roster are the
+    people who notice nobody can reach half of it — so core members are in and
+    plain members are out, even for a teammate they can see by name."""
+    accounts, ids = parish
+    async with db_session() as session:
+        member_teams = await volunteer_team_ids(session, ids["member_vid"])
+        outsider_teams = await volunteer_team_ids(session, ids["outsider_vid"])
+
+    for name in ("leader", "second", "core", "admin"):
+        actor = await _actor(accounts, name)
+        assert actor.can_invite_volunteer(member_teams), f"{name} may invite"
+
+    member = await _actor(accounts, "member")
+    assert member.can_view_roster_names(ids["liturgy"]), "sees the name..."
+    assert not member.can_invite_volunteer(member_teams), "...but cannot invite"
+
+    outsider = await _actor(accounts, "outsider")
+    assert not outsider.can_invite_volunteer(member_teams)
+
+    for name in ("leader", "second", "core"):
+        actor = await _actor(accounts, name)
+        assert not actor.can_invite_volunteer(outsider_teams), (
+            f"{name} may not invite another ministry's people"
+        )
+    admin = await _actor(accounts, "admin")
+    assert admin.can_invite_volunteer(outsider_teams)
+
+    # the case the parish actually has: Liturgy's people run its sub-teams
+    async with db_session() as session:
+        singer = await volunteers.create(
+            session, "Singer", "Person", "sing@example.org"
+        )
+        await memberships.assign(session, singer.id, ids["music"], TeamRole.member)
+        music_teams = await volunteer_team_ids(session, singer.id)
+    for name in ("leader", "second", "core"):
+        actor = await _actor(accounts, name)
+        assert actor.can_invite_volunteer(music_teams), (
+            f"{name} of Liturgy reaches a Music member — rights cascade"
+        )
+    assert not member.can_invite_volunteer(music_teams), "member rights do not cascade"
+
+
+async def test_only_an_admin_invites_someone_on_no_team(parish):
+    """A volunteer on no team has no leader answerable for them."""
+    accounts, _ = parish
+    for name in ("leader", "second", "core", "member", "outsider"):
+        actor = await _actor(accounts, name)
+        assert not actor.can_invite_volunteer(set())
+    admin = await _actor(accounts, "admin")
+    assert admin.can_invite_volunteer(set())
+
+
 async def test_workload_view_rights(parish):
     accounts, ids = parish
     async with db_session() as session:

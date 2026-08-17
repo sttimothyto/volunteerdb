@@ -7,6 +7,7 @@ from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
 from ..services import events as event_service
 from ..services import photos as photo_service
+from ..services import users as user_service
 from ..services import volunteers as service
 from .deps import AsOf, CtxDep
 from .elections import proposal_out
@@ -17,6 +18,7 @@ from .schemas import (
     PhotoMetaOut,
     TimelineSegmentOut,
     TimelineSpellOut,
+    UserOut,
     VolunteerHoursOut,
     VolunteerIn,
     VolunteerOut,
@@ -174,6 +176,28 @@ async def volunteer_timeline(ctx: CtxDep, volunteer_id: int) -> list[TimelineSpe
         )
         for s in spells
     ]
+
+
+@router.post("/{volunteer_id}/invite")
+async def invite_volunteer(ctx: CtxDep, volunteer_id: int) -> UserOut:
+    """Create the sign-in account this volunteer does not have yet, with its
+    invite link armed, and return it.
+
+    Open to admins and to leaders/seconds/core of a team the volunteer is on —
+    the GUI counterpart is the roster's invite control. Unlike the admin
+    endpoints under /api/users this is scoped to one volunteer and only ever
+    mints a non-admin account linked to them.
+
+    Like every other users endpoint it does **not** email: the caller gets
+    `invite_token` back and decides how to deliver it. 422 when the volunteer is
+    archived, has no email, or already has a working account.
+    """
+    team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
+    require(ctx.actor.can_invite_volunteer(team_ids), "invite this volunteer")
+    account, _token = await user_service.invite_volunteer(ctx.session, volunteer_id)
+    out = UserOut.model_validate(account)
+    out.has_password = account.password_hash is not None
+    return out
 
 
 @router.get("/{volunteer_id}/proposals")

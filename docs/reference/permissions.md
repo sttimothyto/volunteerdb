@@ -20,6 +20,7 @@ GUI and the API. For the rationale, see
 | Spreadsheet import/export, their teams | ✓ | ✓ | | | |
 | See workload scores/bands of volunteers on their teams | ✓ | ✓ | | | |
 | View full roster incl. contact details, their teams | ✓ | ✓ | ✓ | | |
+| Invite a volunteer on their teams to create an account | ✓ | ✓ | ✓ | | |
 | Set the team's public home-page doc, their teams | ✓ | ✓ | ✓ | | |
 | View full volunteer profiles (shared team) | ✓ | ✓ | ✓ | | |
 | View roster names (no contact details), own team | ✓ | ✓ | ✓ | ✓ | |
@@ -70,9 +71,22 @@ Additional rules:
   *Last login* for every volunteer, to every viewer, whether or not that
   viewer may read their contact details; the team roster adds a badge per
   member saying whether they have a VolunteerDB account at all, visible to
-  everyone who can see the roster's names. Managing accounts is still
-  admin-only (`/admin/users`) — this only reports. Account state is not
+  everyone who can see the roster's names. Account state is not
   system-versioned, so an as-of roster reports who can sign in *now*.
+- **Inviting** is the one account-shaped power that is not admin-only, and it
+  hangs off that badge. To a viewer with full-roster rights — leader, second
+  or core member of the person's team — the *no account* badge becomes an
+  **invite to create account** button on hover or keyboard focus; it confirms,
+  creates the account, emails the link, and the badge then reads **invite
+  sent** until the link is redeemed or lapses. A lapsed link may be replaced
+  (*send a new invite*), because an account nobody has ever used holds no
+  credential to lose. Everything else about accounts stays admin-only at
+  `/admin/users`: this cannot disable, promote, relink or reset anybody, it
+  only ever mints a non-admin account at the volunteer's own address, and the
+  service refuses any account that carries a password or has been signed into.
+  No control appears on an as-of snapshot, or for a volunteer with no email
+  address on file. Same rule over the API:
+  `POST /api/volunteers/{id}/invite`.
 
 ## GUI page index
 
@@ -86,9 +100,9 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/invite/{token}` | Redeem invite, optionally set password | public (valid, unexpired token) |
 | `/account` | Own sign-in settings: set, change or remove the password (header gear → *Password & sign-in*) | signed in |
 | `/teams` | Team hierarchy + coverage counts in one sortable table, search box, as-of picker | signed in (coverage columns: admin/leaders; "New team": admin) |
-| `/teams/{id}` | Team detail, roster, as-of picker, roster export | signed in; roster per matrix |
+| `/teams/{id}` | Team detail, roster, as-of picker, roster export, invite a member | signed in; roster per matrix; invite needs full-roster rights |
 | `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
-| `/volunteers/{id}` | Profile, timeline, impact report | signed in; detail per matrix |
+| `/volunteers/{id}` | Profile, timeline, impact report, invite | signed in; detail per matrix |
 | `/elections` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |
 | `/elections/{id}` | One proposal: candidates, roll, ballot form, tally, appoint | managers of that team or its voting members |
 | `/import` | Spreadsheet import/export | admin or leader/second (scoped to their teams) |

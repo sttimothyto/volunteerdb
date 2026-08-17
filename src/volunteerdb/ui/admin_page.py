@@ -1,11 +1,10 @@
 from fastapi import Request
 from nicegui import ui
 
-from ..config import settings
 from ..permissions import require
-from ..services import mail
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
+from . import invites
 from .context import action_session, notify_errors, page_session
 from .layout import frame
 
@@ -23,46 +22,11 @@ async def users_page(request: Request):
             session, include_inactive=True
         )
 
-    def invite_url(token: str) -> str:
-        return f"{base_url}/invite/{token}"
-
     async def email_invite(address: str, token: str) -> bool:
-        return await mail.send_email(address, *mail.invite_email(invite_url(token)))
+        return await invites.email_invite(base_url, address, token)
 
     def show_invite(token: str, email: str, sent: bool | None = None) -> None:
-        with ui.dialog() as dialog, ui.card().classes("gap-2 w-[34rem]"):
-            ui.label(f"Invite link for {email}").classes("font-medium")
-            url = invite_url(token)
-            ui.input(value=url).props("readonly outlined dense").classes("w-full")
-            window = mail.ttl_window(settings().invite_ttl_hours)
-            ui.label(
-                f"Usable once, and only for the next {window}. After that "
-                "they sign in with an emailed code and can set a password "
-                "themselves — or you re-invite them."
-            ).classes("text-sm text-gray-500")
-            if sent is None:
-                note, color = (
-                    "Hand this link to the volunteer (email, print, or in person).",
-                    "text-gray-500",
-                )
-            elif sent:
-                note, color = (
-                    f"Invite email sent to {email}. Backup link above.",
-                    "text-gray-500",
-                )
-            else:
-                note, color = (
-                    "Couldn't send the invite email — hand this link out instead.",
-                    "text-negative",
-                )
-            ui.label(note).classes(f"text-sm {color}")
-            with ui.row().classes("justify-end w-full gap-2"):
-                ui.button(
-                    "Copy",
-                    on_click=lambda: (ui.clipboard.write(url), ui.notify("Copied")),
-                ).props("dense")
-                ui.button("Close", on_click=dialog.close).props("flat dense")
-        dialog.open()
+        invites.show_invite(base_url, token, email, sent)
 
     with frame("Accounts", actor):
         with ui.row().classes("gap-2"):

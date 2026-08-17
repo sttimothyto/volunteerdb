@@ -1,7 +1,14 @@
-"""Account management endpoints — all admin-only."""
+"""Account management endpoints — /api/users is admin-only throughout.
+
+The one account-creating route that is not is POST /api/volunteers/{id}/invite,
+covered at the bottom: it is scoped to one volunteer on the caller's own teams.
+"""
+
+import pytest
 
 from volunteerdb.db import db_session
-from volunteerdb.services import volunteers
+from volunteerdb.models import TeamRole
+from volunteerdb.services import memberships, users, volunteers
 
 from tests.conftest import _token
 
@@ -201,3 +208,84 @@ async def test_provision_endpoint_reports_created_and_skipped(client, seeded):
     )
     assert skipped[shared.id]["name"] == "Bob Family"
     assert skipped[seeded["volunteer_id"]]["reason"] == "already has an account"
+
+
+@pytest.fixture
+async def rostered(seeded):
+    """Someone on the seeded Liturgy team with an email and no account —
+    exactly what a leader finds on their roster and wants to fix."""
+    async with db_session() as session:
+        nils = await volunteers.create(session, "Nils", "Nobody", "nils@example.org")
+        await memberships.assign(session, nils.id, seeded["team_id"], TeamRole.member)
+        return nils.id
+
+
+async def test_volunteer_invite_is_open_to_leaders_and_core(
+    client, seeded, rostered, token_leader, token_core
+):
+    r = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_leader)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["email"] == "nils@example.org"
+    assert body["volunteer_id"] == rostered, "linked to the person invited"
+    assert body["invite_token"], "the caller gets the link to hand over"
+    assert body["invite_expires_at"]
+    assert body["has_password"] is False
+    assert body["is_admin"] is False, "a leader can never mint an admin"
+
+    # core members hold the same right; here the account already exists, so this
+    # exercises the re-arm path rather than creation
+    async with db_session() as session:
+        account = await users.account_for_volunteer(session, rostered)
+        account.invite_expires_at = None
+    again = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_core)
+    assert again.status_code == 200, again.text
+    assert again.json()["invite_token"] != body["invite_token"], "a fresh token"
+
+
+async def test_volunteer_invite_refuses_a_plain_member(
+    client, seeded, rostered, token_member
+):
+    r = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_member)
+    assert r.status_code == 403
+    async with db_session() as session:
+        assert await users.account_for_volunteer(session, rostered) is None
+
+
+async def test_volunteer_invite_maps_service_refusals(client, seeded, token_admin):
+    """Admins reach anyone, so 404 is visible here; to anyone else an unknown id
+    and another ministry's volunteer both answer 403, which is the point."""
+    r = await client.post("/api/volunteers/424242/invite", headers=token_admin)
+    assert r.status_code == 404
+
+    async with db_session() as session:
+        quiet = await volunteers.create(session, "Hank", "Host")  # no email
+    r = await client.post(f"/api/volunteers/{quiet.id}/invite", headers=token_admin)
+    assert r.status_code == 422
+    assert "no email address" in r.json()["detail"]
+
+    # the seeded member already has a working, password-bearing account
+    r = await client.post(
+        f"/api/volunteers/{seeded['volunteer_id']}/invite", headers=token_admin
+    )
+    assert r.status_code == 422
+    assert "already has a working account" in r.json()["detail"]
+
+
+async def test_volunteer_invite_does_not_email(
+    client, seeded, rostered, token_leader, monkeypatch
+):
+    """Like every other users endpoint this mints only — the GUI is where mail
+    gets sent. The caller decides how to deliver the link it gets back."""
+    from volunteerdb.services import mail
+
+    sent: list[tuple[str, str, str]] = []
+
+    async def fake_send(to: str, subject: str, body: str) -> bool:
+        sent.append((to, subject, body))
+        return True
+
+    monkeypatch.setattr(mail, "send_email", fake_send)
+    r = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_leader)
+    assert r.status_code == 200
+    assert sent == [], "no mail from the API"

@@ -242,3 +242,19 @@ async def token_leader(client, seeded) -> dict:
             password="leader-pass-phrase",
         )
     return await _token(client, "lena@example.org", "leader-pass-phrase")
+
+
+@pytest.fixture
+async def token_core(client, seeded) -> dict:
+    """A core member of the seeded Liturgy team: full-roster rights, no
+    management rights — the boundary most permission tests care about."""
+    async with db_session() as session:
+        cora = await volunteers.create(session, "Cora", "Core", "cora@example.org")
+        await memberships.assign(session, cora.id, seeded["team_id"], TeamRole.core)
+        await users.create(
+            session,
+            "cora@example.org",
+            volunteer_id=cora.id,
+            password="core-pass-phrase-1",
+        )
+    return await _token(client, "cora@example.org", "core-pass-phrase-1")

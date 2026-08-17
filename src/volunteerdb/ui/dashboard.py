@@ -1,5 +1,6 @@
 from urllib.parse import quote_plus
 
+from fastapi import Request
 from nicegui import ui
 
 from .. import query_lang
@@ -17,7 +18,7 @@ from .volunteer_panel import VolunteerPanel
 
 
 @ui.page("/")
-async def dashboard(as_of: str = ""):
+async def dashboard(request: Request, as_of: str = ""):
     # the graph library is loaded via dynamic import() at Vue mount, far too
     # late for the browser's preload scanner — announce it in the head instead
     ui.add_head_html(
@@ -45,7 +46,7 @@ async def dashboard(as_of: str = ""):
             else []
         )
 
-    panel = VolunteerPanel(as_of)
+    panel = VolunteerPanel(as_of, str(request.base_url).rstrip("/"))
     # a submitted WHERE filter narrows the graph in place; plain text still
     # navigates to the volunteers list like it always has
     active: dict = {"ids": None, "text": ""}

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import partial
 from urllib.parse import quote
 
 import httpx
@@ -19,7 +20,7 @@ from ..services import teams as team_service
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..sheets import exporter
-from . import column_order
+from . import column_order, invites
 from .account_status import roster_account
 from .context import (
     action_session,
@@ -638,6 +639,9 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         can_names = actor.can_view_roster_names(team_id)
         can_full = actor.can_view_full_roster(team_id)
         can_manage = actor.can_manage_team(team_id) and at is None
+        # leader/second/core of this team may invite its members; never off a
+        # snapshot, where the roster is history and the addresses may be stale
+        can_invite = can_full and at is None
         roster = await team_service.roster(session, team_id, at=at) if can_names else []
         # accounts are not system-versioned (like photos): an as-of roster still
         # reports who can sign in *now*
@@ -671,7 +675,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         )
     slug = page_service.slug_map(paths).get(team_id)
 
-    panel = VolunteerPanel(as_of)
+    panel = VolunteerPanel(as_of, base_url)
     with frame(
         paths.get(team_id, team.name), actor, as_of=at, asof_path=f"/teams/{team_id}"
     ):
@@ -815,8 +819,23 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                         )
                         ui.label(volunteer.phone or "").classes("text-sm text-gray-600")
                     ui.space()
-                    # every member sees this, not just full-roster viewers
-                    roster_account(accounts.get(volunteer.id))
+                    # every member sees this, not just full-roster viewers; the
+                    # invite control rides along for leaders/seconds/core only
+                    roster_account(
+                        accounts.get(volunteer.id),
+                        action=(
+                            partial(
+                                invites.invite_control,
+                                volunteer.id,
+                                volunteer.full_name,
+                                volunteer.email,
+                                accounts.get(volunteer.id),
+                                base_url,
+                            )
+                            if can_invite and volunteer.is_active
+                            else None
+                        ),
+                    )
                     if can_manage:
                         ui.button(
                             icon="person_remove",

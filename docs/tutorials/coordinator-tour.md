@@ -52,6 +52,11 @@ Header → **Teams** → *Liturgy*. Because Maria leads it:
   **no account** for someone who has never been registered) and the date
   they last logged in. That is who can be reached through the app, as
   opposed to who is merely on the list.
+- Hover a **no account** badge. Because Maria leads the team, it becomes
+  **invite to create account**: click it, confirm the address, and VolunteerDB
+  creates the account and emails them a setup link — no admin needed. The row
+  then reads **invite sent**, and clicking that brings the link back up in case
+  you would rather hand it over in person.
 - Sub-teams (*Altar Servers*, *Lectors*, *Music Ministry*, *Sacristans*)
   are listed — Maria's leadership covers them too.
 - **Add a member:** pick any volunteer, role *Member*. **Change a role:**

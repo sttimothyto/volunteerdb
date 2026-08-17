@@ -24,7 +24,11 @@ LOGGED_IN_AT = datetime(2026, 3, 1, 16, 0, tzinfo=UTC)
 
 async def _parish(session) -> dict[str, int]:
     """Music (under Liturgy, which Lena leads) with one member of each kind:
-    Mia never signed in, Nils has no account, Opal has, Quin's is switched off."""
+    Mia never signed in, Nils has no account, Opal has, Quin's is switched off.
+
+    Note that users.create with no password arms an invite link, so Mia — who
+    has never used hers — reads as "invite sent" rather than "account". Opal is
+    given a password to make her the plain settled case."""
     liturgy = await teams.create(session, "Liturgy")
     music = await teams.create(session, "Music", parent_team_id=liturgy.id)
 
@@ -42,6 +46,7 @@ async def _parish(session) -> dict[str, int]:
     opal_u = await users.create(session, "opal@example.org", volunteer_id=opal.id)
     quin_u = await users.create(session, "quin@example.org", volunteer_id=quin.id)
     opal_u.last_login_at = LOGGED_IN_AT
+    opal_u.password_hash = "x"  # settled: signed in and chose a password
     quin_u.last_login_at = LOGGED_IN_AT
     quin_u.is_active = False
     await session.flush()
@@ -69,9 +74,15 @@ async def test_roster_shows_who_has_an_account_to_plain_members(database):
         await user.should_not_see("opal@example.org")
         # ...and yet the whole account column
         await user.should_see("no account")  # Nils
-        await user.should_see("never signed in")  # Mia herself
+        await user.should_see("invite sent")  # Mia herself, link still unused
+        await user.should_see("never signed in")  # and the line beneath it
+        await user.should_see("account")  # Opal, settled
         await user.should_see("last login 2026-03-01")  # Opal
         await user.should_see("disabled")  # Quin
+
+        # reporting only: a plain member is offered no way to act on any of it
+        await user.should_not_see("invite to create account")
+        await user.should_not_see("send a new invite")
 
 
 async def test_last_login_shows_on_a_profile_the_viewer_cannot_read(database):

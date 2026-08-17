@@ -1,8 +1,10 @@
 # Manage user accounts
 
-Accounts are admin-provisioned — there is no self-signup. All of this
-happens on **`/admin/users`** (header → *Accounts*); the equivalent API
-endpoints are under [`/api/users`](../reference/http-api.md).
+There is no self-signup: accounts are handed out. Almost all of that happens
+on **`/admin/users`** (header → *Accounts*) and is admin-only; the equivalent
+API endpoints are under [`/api/users`](../reference/http-api.md). The one
+exception is [inviting one of your own team](#let-a-ministry-leader-invite-their-own-people),
+which ministry leaders do from their roster.
 
 ## Create one account
 
@@ -39,6 +41,45 @@ address but is linked to nobody is linked to them instead of being skipped —
 run this after an import to adopt accounts created before their volunteer
 record existed. The result reports how many were created, linked, and
 skipped. Invite links are emailed/available per account as above.
+
+(let-a-ministry-leader-invite-their-own-people)=
+## Let a ministry leader invite their own people
+
+Leaders do not need `/admin/users` to close the commonest gap — somebody on
+their roster who cannot be reached through the app at all. On a team page, the
+per-member **no account** badge turns into an **invite to create account**
+button for anyone with full-roster rights on that team: its leader, its
+second-in-command, or a core member (and admins everywhere). The same control
+sits on the volunteer's side panel and profile page. Hovering reveals it;
+keyboard focus does too, and on a touch screen the mail icon marks it and a tap
+opens it.
+
+Clicking asks for confirmation, naming the address the link will go to, then
+creates the account, emails the invite, and shows the link so it can also be
+handed over in person. The badge then reads **invite sent** until the link is
+redeemed or runs out; clicking it again brings the link back up, with a *Send
+again* button.
+
+Once the link expires unused, the control returns as **send a new invite**. That
+is safe precisely because nobody has ever used the account: there is no password
+to invalidate. The moment an account has a password or a login recorded against
+it, the button disappears and the service refuses — a leader can never reset
+somebody's credentials, which stays an admin's job under
+[Reset access](#reset-access-forgot-password-lost-invite). No control appears on
+an as-of snapshot, or for a volunteer with no email address on file.
+
+Two differences from the bulk button worth knowing, both deliberate:
+
+- **It will not adopt an existing account** at the same address. The bulk
+  provision above does, because an admin acting parish-wide wants exactly that.
+  A leader acting on one person does not: `volunteer.email` is not unique —
+  families share an address — so adopting could hand a parent's login to their
+  child. It refuses and points here instead.
+- **It only ever creates a plain account** linked to that volunteer. It cannot
+  make an admin, relink, disable, or promote.
+
+Over the API this is `POST /api/volunteers/{id}/invite`, with the same
+permission rule. Note the API mints the link but does not email it.
 
 ## Fix a wrong or missing link
 

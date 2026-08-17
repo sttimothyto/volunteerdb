@@ -7,6 +7,9 @@ Rules (team roles cascade down to sub-teams):
                           info of volunteers on those teams; spreadsheet
                           import/export scoped to those teams
 - core of T             — view full roster (incl. contact details) of T + sub-teams
+- leader/second/core     — invite a volunteer on those teams to create an account
+                          (an account-creation link only; account management
+                          proper stays admin-only)
 - member of T           — view roster names of T (no contact details)
 - any signed-in user    — browse the team directory, see/edit own profile
 """
@@ -86,6 +89,20 @@ class Actor:
         if self.is_admin or volunteer_id == self.volunteer_id:
             return True
         return bool(self.full_view_team_ids & volunteer_team_ids)
+
+    def can_invite_volunteer(self, volunteer_team_ids: set[int]) -> bool:
+        """Send an account-creation link to a volunteer on one of their teams:
+        admin, or leader/second/core of a team the volunteer is on.
+
+        Wider than can_edit_volunteer — core members are included, because they
+        already read the full roster, contact details and all, and they are the
+        people who notice a missing account. Narrower than account management
+        proper, which stays admin-only at /admin/users: this mints one
+        non-admin account linked to that one volunteer and nothing else.
+
+        No self clause (unlike can_edit_volunteer): the actor is signed in, so
+        they already have the account this would create."""
+        return self.is_admin or bool(self.full_view_team_ids & volunteer_team_ids)
 
     def can_view_workload(self, volunteer_team_ids: set[int]) -> bool:
         """Workload band/score: admins, or leaders/seconds of one of the

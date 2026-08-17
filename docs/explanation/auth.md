@@ -100,6 +100,14 @@ modest. Token and expiry are set and cleared as
 a pair, so a link that has run out is refused exactly like one that never
 existed — same message, no hint which.
 
+That doubling is precisely why a ministry leader's invite button
+([who may](permissions.md#accounts-enter-the-model-at-the-edge)) is *not*
+allowed to reuse the re-invite path: re-inviting invalidates a password, and
+that hammer stays with admins. A leader's button refuses any account carrying
+a password or a recorded login, so it can only ever arm a link on an account
+nobody has used — where there is no credential to invalidate. A link that
+expired unused may therefore be replaced by a leader; a password may not.
+
 The everyday reset needs no admin at all. Anyone can sign in with an emailed
 code and set a password from **/account** (header gear → *Password &
 sign-in*). §4.1.2.1 is explicit that this is not account recovery:
