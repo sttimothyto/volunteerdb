@@ -136,8 +136,10 @@ ignored. Copy `.env.example` as a starting point.
 
 `VDB_SEED_ADMIN_PASSWORD`
 : Password for the demo admin account created by `scripts/seed.py`.
-  Default: `demo-parish-admin`. Whatever you set has to clear the password
-  policy (15 characters, not a well-known one) like any other password.
+  Default: `demo`, the same password every other seeded account gets. The
+  seed hashes it directly, so — unlike every other way into the database —
+  it is **not** held to the password policy; set this to something real if
+  the demo instance is going to be reachable by anyone else.
 
 `VDB_CONTACT_EMAIL`
 : Address in this manual's page footer ("See something inappropriate? Report

@@ -152,7 +152,8 @@ password policy
   §3.1.1.2). Enforced wherever a password is set; never expires.
 
 seeded data
-  The demo dataset created by `scripts/seed.py` — teams (including a filled
-  {term}`clergy team`), 33 volunteers, history spells, and four demo logins —
-  used by the tutorials and tests.
+  The demo dataset created by `scripts/seed.py` — 34 teams (including a
+  filled {term}`clergy team`), ~150 volunteers, history spells, a schedule
+  either side of today, a proposal in every state and 33 demo logins (all on
+  the password `demo`) — used by the tutorials. The tests build their own.
 ```

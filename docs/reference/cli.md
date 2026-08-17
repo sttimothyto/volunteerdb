@@ -35,24 +35,43 @@ Targets the database from `VDB_DATABASE_URL` (the `sqlalchemy.url` in
 uv run python scripts/seed.py
 ```
 
-Seeds a fresh database with demo data shaped to exercise every feature:
-17 teams (with sub-teams), 33 volunteers, weighted teams, two custom fields,
-ended/rejoined membership spells and a mid-spell promotion for the timeline
-chart. A team named **Clergy** is filled, which is all it takes to be the
+Seeds a fresh database with a whole demo parish, shaped to exercise every
+feature: 34 teams three levels deep, ~150 volunteers (some archived, some
+with no email, one household sharing an address), ~290 memberships,
+ended/rejoined spells and mid-spell promotions for the timeline chart, five
+custom fields, placeholder headshots, ~55 events either side of today with
+rosters, RSVPs, substitutions and attendance overrides, one proposal in
+every state (nominating, voting, awaiting decision, appointed, cancelled,
+re-opened), six published ministry pages and ten interest submissions. A
+team named **Clergy** is filled, which is all it takes to be the
 {term}`clergy team`, so proposals opened on the demo data get a realistic
 voting roll. Refuses to run if any volunteers exist.
 
-Environment: `VDB_SEED_ADMIN_PASSWORD` (default `demo-parish-admin`); it
-is held to the same password policy as any other account.
+Everything is deterministic — one fixed RNG seed, dates relative to today —
+so reseeding reproduces the same parish.
 
-Created logins:
+Created logins: 33 accounts, one for the administrator and one for each
+ministry leader, **all on the password `demo`**. The notable ones:
 
 | Email | Password | Role |
 |---|---|---|
-| `admin@sttimothy.example` | `$VDB_SEED_ADMIN_PASSWORD` | admin |
-| `maria.alvarez@example.org` | `parish-demo-login` | ministry leader (two teams) |
-| `felix.garcia@example.org` | `parish-demo-login` | plain member |
-| `dominic.ferraro@example.org` | `parish-demo-login` | clergy — sits on every voting roll |
+| `admin@example.org` | `$VDB_SEED_ADMIN_PASSWORD` (default `demo`) | admin |
+| `helen.park@example.org` | `demo` | a second admin, linked to a volunteer |
+| `maria.alvarez@example.org` | `demo` | ministry leader (two teams, red workload) |
+| `felix.garcia@example.org` | `demo` | plain member |
+| `dominic.ferraro@example.org` | `demo` | clergy — sits on every voting roll |
+| `claire.dubois@example.org` | — | invite not yet redeemed |
+| `irene.p@example.org` | — | no password: signs in with an emailed code |
+| `george.ivanov@example.org` | `demo` | deactivated: sign-in is refused |
+
+```{warning}
+`demo` is four characters, so it does **not** clear the
+[password policy](../explanation/auth.md#what-a-password-has-to-be).
+`users.create` would refuse it; the seed writes the argon2 hash onto the
+account itself instead. That bypass exists only in this script — no path a
+user can reach was widened — and it is why nothing but a throwaway
+development database should ever be seeded.
+```
 
 ## `deploy/files/create_admin.py` — admin bootstrap
 

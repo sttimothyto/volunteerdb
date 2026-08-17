@@ -60,10 +60,13 @@ the literal `${POSTGRES_PASSWORD:-volunteerdb}` in as its password. If that
 happened, recreate it with `make clean` (`podman compose down -v`). Going
 through `make` avoids this entirely — it writes `.env` first.
 
-Sign in with the printed admin login. Seeded demo logins:
-`admin@sttimothy.example` (admin), `maria.alvarez@example.org` (a ministry
-leader), `felix.garcia@example.org` (a plain member) — see seed output for
-passwords.
+Sign in with the printed admin login. Every seeded account uses the password
+`demo`: `admin@example.org` (admin), `maria.alvarez@example.org` (a ministry
+leader), `felix.garcia@example.org` (a plain member), plus one per ministry
+leader — the seed prints the notable ones. `demo` is four characters and so
+does not clear the [password policy](docs/explanation/auth.md); the seed
+writes the hash directly, which is a localhost-only convenience and the
+reason nothing but a throwaway database should ever be seeded.
 
 To also containerize the app itself: `podman compose --profile app up -d --build`.
 
@@ -131,7 +134,7 @@ policy and its NIST SP 800-63B provenance are in
 ```sh
 TOKEN=$(curl -s localhost:8080/api/auth/login \
   -H 'content-type: application/json' \
-  -d '{"email":"admin@sttimothy.example","password":"…"}' | jq -r .token)
+  -d '{"email":"admin@example.org","password":"…"}' | jq -r .token)
 
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/teams
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/api/volunteers?q=alvarez

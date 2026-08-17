@@ -11,7 +11,7 @@ dev instance (`localhost:8080`) and `jq`; substitute
 ```sh
 TOKEN=$(curl -s localhost:8080/api/auth/login \
   -H 'content-type: application/json' \
-  -d '{"email":"admin@sttimothy.example","password":"demo-parish-admin"}' | jq -r .token)
+  -d '{"email":"admin@example.org","password":"demo"}' | jq -r .token)
 ```
 
 The account needs a password — OTP-only accounts cannot obtain tokens. Each

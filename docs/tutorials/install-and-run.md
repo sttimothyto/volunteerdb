@@ -53,15 +53,22 @@ traceback.
 uv run python scripts/seed.py
 ```
 
-This loads 17 teams, 33 volunteers, membership history for the timeline
-features, two custom fields, and four logins. It ends by printing:
+This loads a whole parish — 34 teams, about 150 volunteers, membership
+history for the timeline features, five custom fields, some 55 events either
+side of today, six proposals, six public ministry pages and 33 logins. It
+ends by printing a count of each and the notable accounts:
 
 ```
-  Clergy team filled — its members join every proposal's voting roll
-  admin login:  admin@sttimothy.example / demo-parish-admin
-  leader login: maria.alvarez@example.org / parish-demo-login
-  member login: felix.garcia@example.org / parish-demo-login
-  clergy login: dominic.ferraro@example.org / parish-demo-login
+Seeded a demo parish:
+     34  teams
+    151  volunteers
+    293  memberships
+    ...
+Every login below uses the password: demo
+  admin@example.org                demo           administrator
+  maria.alvarez@example.org        demo           ministry leader (two teams, red workload)
+  felix.garcia@example.org         demo           plain member
+  dominic.ferraro@example.org      demo           clergy — sits on every voting roll
 ```
 
 The clergy login is the useful one for trying out planning: those three
@@ -69,7 +76,7 @@ volunteers sit on *every* proposal's voting roll, so Fr. Dominic can score a
 ballot on any seat in the parish.
 
 (The script refuses to run on a non-empty database — that's it working as
-designed.)
+designed. `make fresh` wipes the volume first.)
 
 ## 5. Run the app and sign in
 
@@ -78,23 +85,35 @@ uv run volunteerdb
 ```
 
 Open <http://localhost:8080>. You are redirected to the login page; sign in
-as `admin@sttimothy.example` with password `demo-parish-admin` (leave "Keep
-me signed in" ticked if you like — that's the 90-day session). The demo
-logins are long because every password is: at least 15 characters, per the
-[policy](../explanation/auth.md#what-a-password-has-to-be).
+as `admin@example.org` with password `demo` (leave "Keep me signed in"
+ticked if you like — that's the 90-day session). `demo` is a seed-only
+convenience: it is far below the 15-character
+[policy](../explanation/auth.md#what-a-password-has-to-be), so the app will
+refuse it the moment you try to *set* it from `/account` or the API — the
+seed writes the hash directly. Any password you choose yourself still has to
+clear the policy.
 
 ## 6. Look around
 
-You land on the **Dashboard**. Three things confirm the seed did its job:
+You land on the **Dashboard**. Five things confirm the seed did its job:
 
-- Header → **Planning**: **Vacancies** lists *Hospitality* — the demo team
-  seeded without a leader.
+- Header → **Planning**: **Vacancies** lists *Hospitality* and a dozen other
+  seats — the teams seeded without a leader or a second.
+- Header → **Planning** → **Proposals**: one proposal in every state, from
+  *Nominating* through *Awaiting decision* to *Appointed*.
+- Header → **Events**: rosters on both sides of today — past Masses with
+  attendance already derived, upcoming ones with RSVPs and two open calls
+  for a substitute.
 - Search for `maria` in the quick-search box and open **Maria Alvarez**:
   she leads two ministries, her workload badge is deep in the red, and her
   timeline chart shows an ended Youth Group spell.
 - Header → **Teams** → *Liturgy*: a team with sub-teams and a roster you
   can manage; try the "View as of" date picker (header settings gear) with
   last year's date and note the amber read-only banner.
+
+Signed out, <http://localhost:8080/ministries/> lists the six ministries
+that publish a public home page, each with the "I'm interested" form that
+feeds the interest pipeline.
 
 Because `.env` has no `VDB_SMTP2GO_API_KEY`, any email the app "sends"
 (try signing out and logging in as Maria with a blank password — the OTP

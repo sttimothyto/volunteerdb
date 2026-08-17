@@ -41,14 +41,15 @@ background; ready when `curl http://127.0.0.1:8123/login` returns 200.
 - Cookie per role: `curl -c admin.jar http://127.0.0.1:8123/login-dev/<app_user id>`.
   Look up ids: `podman exec volunteerdb_db_1 psql -U volunteerdb -t -c
   "SELECT id, email, is_admin FROM app_user" volunteerdb`.
-  Seed logins: admin@sttimothy.example (admin), maria.alvarez@example.org
-  (leader), felix.garcia@example.org (member).
+  Seed logins: admin@example.org (admin), maria.alvarez@example.org
+  (leader), felix.garcia@example.org (member); 33 accounts in all, one per
+  ministry leader.
 - Page evidence: the initial element tree is JSON embedded in the GET HTML —
   grep for row dicts (e.g. `"workload":"red"`), labels, or "Admins only.".
 - JSON API: `POST /api/auth/login {"email","password"}` → Bearer token
-  (seed passwords: demo-parish-admin / parish-demo-login / parish-demo-login;
-  any password you set has to clear the 15-character policy in
-  `volunteerdb/passwords.py`).
+  (every seeded account's password is `demo` — the seed hashes it directly
+  because it is below the 15-character policy; any password *you* set has to
+  clear that policy in `volunteerdb/passwords.py`).
 - History spot-checks go straight to Postgres via
   `podman exec volunteerdb_db_1 psql -U volunteerdb -t -c "..." volunteerdb`.
 - As-of views: `?as_of=<ISO ts>` — remember URL-encode `+00:00` as `%2B00:00`.
