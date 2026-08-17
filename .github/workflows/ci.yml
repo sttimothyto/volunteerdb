@@ -117,6 +117,9 @@ jobs:
       # non-zero if the app does not come back, so this step is the gate.
       - name: pyinfra deploy
         env:
+          # Which deploy/sites/*.toml to deploy. Everything specific to this
+          # parish lives in that file.
+          VDB_SITE: sttimothy
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           # Unset expands to "" — falsy, so deploy.py keeps the key already on
           # the host. Setting it rotates the key.

@@ -1,0 +1,80 @@
+# Template for a new instance. Copy to deploy/sites/<yourname>.toml, fill in
+# every value, and commit it — then deploy with VDB_SITE=<yourname>.
+#
+# The walkthrough that puts this in order (DNS, Caddy, mail, Google Drive,
+# the first deploy) is docs/how-to/new-instance.md. The per-key reference is
+# docs/reference/site-config.md.
+#
+# No secrets belong in this file. The deploy generates the session secret and
+# the database password on its first run and reads them back from
+# /etc/volunteerdb/env on every run after that; the mail API key is passed on
+# the command line once. Nothing here is sensitive, which is why it is
+# committed.
+
+[site]
+# Must equal this file's name, so that VDB_SITE=x always deploys x.
+name = "example"
+# Appears in outbound mail: "Your VolunteerDB account at <org_name>". Write it
+# the way you would say it — "St. Peter's", "Holy Family Parish".
+org_name = "Example Parish"
+# IANA zone. Election deadlines and event reminders mean "through the end of
+# that day HERE", and the nightly systemd timers fire on this zone too.
+timezone = "America/Toronto"
+
+[host]
+# How pyinfra reaches the server: an ssh_config alias, a hostname, or an IP.
+ssh_host = "example-prod"
+# The deploy installs packages and writes to /etc, so it needs root.
+ssh_user = "root"
+# Recorded for the DNS A record; no operation reads it.
+public_ip = "203.0.113.10"
+# Public hostname. Caddy serves TLS for it; the app builds email links from it.
+domain = "vdb.example.org"
+# Host loopback port the app publishes on, and that Caddy proxies to. Change
+# it only if something else on the box already uses it.
+listen_port = 8090
+
+[mail]
+# MUST be on a domain your mail provider is authorised to send for, or
+# delivery simply fails. Leaving another parish's address here is the single
+# most likely reason a new instance sends nothing.
+from_address = "no-reply@example.org"
+from_name = "VolunteerDB"
+# The administrator account the deploy bootstraps, and the only way into a
+# fresh instance — pass VDB_ADMIN_PASSWORD on the first deploy.
+admin_email = "admin@example.org"
+# Where a failed backup, a failed Drive sync, or a failed nightly job reports.
+# Point it at a mailbox a human actually reads; "" disables the emails.
+alert_email = "admin@example.org"
+# Shown in the footer of the built manual ("report it to ..."). Baked in at
+# image build time, so changing it needs a redeploy.
+contact_email = "admin@example.org"
+
+[backup]
+# Name of the rclone remote you provision by hand (docs/how-to/backup-restore.md).
+# The encrypting wrapper is this name + "-crypt"; the deploy asserts both exist.
+rclone_remote = "volunteerdb-gdrive-backup"
+# Plaintext dumps kept on the server; root-only, on the same host as the live
+# database.
+retain_local_days = 14
+# Encrypted copies kept on Drive.
+retain_remote_days = 730
+
+[drive_sync]
+# Google Drive folder holding one roster sheet per team.
+sheets_folder = "volunteerdb-spreadsheets"
+# Leave false until every team has a leader or second with an email address on
+# file. Turning it on revokes anyone-with-link access, which locks out anyone
+# who has no individual grant to fall back on.
+revoke_public_links = false
+
+[schedule]
+# Parish-local times. Keep the ordering: the backup must precede the Drive
+# sync, so its dump is a restore point taken immediately before the only
+# automated bulk write in the system, and the three in-app jobs must come
+# after both. tests/test_deploy_config.py enforces that ordering.
+backup_at = "02:00"
+drive_sync_at = "02:30"
+fetch_pages_at = "03:00"
+proposal_digest_at = "03:30"
+event_reminders_at = "04:00"

@@ -1,10 +1,12 @@
 """
 Deploy VolunteerDB to sttimothyto-prod as a containerized stack (podman Quadlet).
 
-Usage (from the pyinfra checkout):
-    cd ~/pyinfra
-    uv run pyinfra sttimothyto-prod /home/ben/volunteerdb/deploy/deploy.py --dry
-    VDB_ADMIN_PASSWORD='...' uv run pyinfra sttimothyto-prod /home/ben/volunteerdb/deploy/deploy.py
+Usage — VDB_SITE names a file in deploy/sites/, which holds everything
+specific to that parish (deploy/siteconf.py holds what is the same on all of
+them). The inventory reads the host from the same file:
+
+    VDB_SITE=sttimothy uvx pyinfra deploy/inventory.py deploy/deploy.py --dry
+    VDB_SITE=sttimothy VDB_ADMIN_PASSWORD='...' uvx pyinfra deploy/inventory.py deploy/deploy.py -y
 
 Outbound email (SMTP2GO): pass VDB_SMTP2GO_API_KEY='api-...' on the first
 deploy after the mail feature; it is read back from the remote env file on
@@ -61,6 +63,7 @@ MANUAL POST-DEPLOY STEPS (unchanged):
 
 import os
 import secrets as pysecrets
+import sys
 from pathlib import Path
 
 from pyinfra import host
@@ -69,45 +72,50 @@ from pyinfra.facts.systemd import SystemdStatus
 from pyinfra.operations import apt, files, server, systemd
 
 # pyinfra resolves relative src paths against the invocation cwd, not this
-# file — anchor everything here so the deploy works from any directory.
+# file — anchor everything here so the deploy works from any directory. It
+# also execs this file rather than importing it, so HERE has to go on
+# sys.path before siteconf can be imported.
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
+sys.path.insert(0, str(HERE))
 
-APP_DIR = "/opt/volunteerdb/app"  # synced source == podman build context
-ENV_FILE = "/etc/volunteerdb/env"
-DB_ENV_FILE = "/etc/volunteerdb/db.env"
-QUADLET_DIR = "/etc/containers/systemd"
-QUADLETS = (
-    "volunteerdb.network",
-    "volunteerdb-db.container",
-    "volunteerdb-app.container",
-)
-IMAGE = "localhost/volunteerdb:latest"
-PG_IMAGE = "docker.io/library/postgres:17"
-NET = "volunteerdb"
-PORT = 8090  # host loopback port Caddy proxies to (PublishPort in the app quadlet)
-APP_PORT = 8080  # port inside the app container
-DB_NAME = DB_USER = "volunteerdb"
+import siteconf  # noqa: E402  (must follow the sys.path line above)
+
+# Everything specific to this parish; everything else is a siteconf constant.
+site = siteconf.load()
+
+APP_DIR = siteconf.APP_DIR  # synced source == podman build context
+ENV_FILE = siteconf.ENV_FILE
+DB_ENV_FILE = siteconf.DB_ENV_FILE
+QUADLET_DIR = siteconf.QUADLET_DIR
+QUADLETS = siteconf.QUADLETS
+IMAGE = siteconf.IMAGE
+PG_IMAGE = siteconf.PG_IMAGE
+NET = siteconf.NET
+PORT = site.host_listen_port  # host loopback port Caddy proxies to
+APP_PORT = siteconf.APP_PORT  # port inside the app container
+DB_NAME = siteconf.DB_NAME
+DB_USER = siteconf.DB_USER
 DUMP = "/var/backups/volunteerdb-cutover.sql"
 OLD_UNIT = "/etc/systemd/system/volunteerdb.service"
-ADMIN_EMAIL = "admin@sttimothyto.org"
+ADMIN_EMAIL = site.mail_admin_email
 ADMIN_PASSWORD = os.environ.get("VDB_ADMIN_PASSWORD")
 
 # Nightly backups (script + systemd timer installed at the end of this deploy).
-DB_CONTAINER = "volunteerdb-db"
-BACKUP_SCRIPT = "/usr/local/bin/volunteerdb-backup"
-BACKUP_DIR = "/var/backups/volunteerdb"
-RCLONE_REMOTE = "volunteerdb-gdrive-backup"
-# Crypt wrapper around RCLONE_REMOTE:volunteerdb-backups — dump contents and
-# names are encrypted client-side before upload; Drive only sees ciphertext.
-RCLONE_CRYPT_REMOTE = f"{RCLONE_REMOTE}-crypt"
-RCLONE_DEST = f"{RCLONE_CRYPT_REMOTE}:"
-RCLONE_CONF = "/root/.config/rclone/rclone.conf"
-BACKUP_RETAIN_LOCAL_DAYS = 14
-BACKUP_RETAIN_REMOTE_DAYS = 730
+DB_CONTAINER = siteconf.DB_CONTAINER
+BACKUP_SCRIPT = siteconf.BACKUP_SCRIPT
+BACKUP_DIR = siteconf.BACKUP_DIR
+RCLONE_REMOTE = site.backup_rclone_remote
+# Crypt wrapper around RCLONE_REMOTE — dump contents and names are encrypted
+# client-side before upload; Drive only sees ciphertext.
+RCLONE_CRYPT_REMOTE = site.rclone_crypt_remote
+RCLONE_DEST = site.rclone_dest
+RCLONE_CONF = siteconf.RCLONE_CONF
+BACKUP_RETAIN_LOCAL_DAYS = site.backup_retain_local_days
+BACKUP_RETAIN_REMOTE_DAYS = site.backup_retain_remote_days
 # Alerts for backup/drive-sync wrapper failures AND (as VDB_ALERT_EMAIL) for
 # in-app scheduler job failures; "" disables the emails.
-BACKUP_ALERT_EMAIL = ADMIN_EMAIL
+BACKUP_ALERT_EMAIL = site.mail_alert_email
 
 # Nightly Drive roster sync (02:30 timer, AFTER the 02:00 backup: the dump is
 # then a restore point taken right before the only automated bulk write). The
@@ -116,28 +124,17 @@ BACKUP_ALERT_EMAIL = ADMIN_EMAIL
 # proposal digest, event reminders) run inside the app itself
 # (volunteerdb.scheduler), so they need nothing from this deploy beyond the
 # env file.
-SHEETS_FOLDER = "volunteerdb-spreadsheets"
-SYNC_WORKDIR = "/var/lib/volunteerdb-drive-sync"
-DRIVE_SYNC_SCRIPT = "/usr/local/bin/volunteerdb-drive-sync"
-DECORATE_SCRIPT = "/usr/local/bin/volunteerdb-decorate-sheets"
-APP_UID = 10001  # the image's `app` user; owns the bind-mounted sync workdir
-# Phase two of the move to per-leader sheet access. The sync grants each
-# team's leaders/seconds edit access from the start; flipping this to True
-# also strips the anyone-with-link and domain-wide grants the sheets carry
-# today. Do that only once the nightly "no leader or second with an email"
-# alert has been worked down — everyone on that list edits by link, and
-# revoking it locks them out with nothing to fall back on.
-REVOKE_PUBLIC_LINKS = False
+SHEETS_FOLDER = site.drive_sync_sheets_folder
+SYNC_WORKDIR = siteconf.SYNC_WORKDIR
+DRIVE_SYNC_SCRIPT = siteconf.DRIVE_SYNC_SCRIPT
+DECORATE_SCRIPT = siteconf.DECORATE_SCRIPT
+APP_UID = siteconf.APP_UID  # the image's `app` user; owns the sync workdir
+REVOKE_PUBLIC_LINKS = site.drive_sync_revoke_public_links
 
 # Host-side scheduling is plain systemd timer/service units (not quadlets —
 # nothing container-scoped about them), installed into /etc/systemd/system.
-SYSTEMD_DIR = "/etc/systemd/system"
-TIMER_UNITS = (
-    "volunteerdb-backup.service",
-    "volunteerdb-backup.timer",
-    "volunteerdb-drive-sync.service",
-    "volunteerdb-drive-sync.timer",
-)
+SYSTEMD_DIR = siteconf.SYSTEMD_DIR
+TIMER_UNITS = siteconf.TIMER_UNITS
 
 
 # Reuse secrets already on the server; generate once if absent.
@@ -166,15 +163,15 @@ template_sheet_url = (
     or _existing.get("VDB_TEMPLATE_SHEET_URL")
     or ""
 )
-# Absolute origin for links in cron-job emails (the event-reminder digest);
-# defaults to the production domain this file's runbook already names.
+# Absolute origin for links in nightly-job emails (the event-reminder
+# digest); defaults to the site's own domain.
 public_base_url = (
     os.environ.get("VDB_PUBLIC_BASE_URL")
     or _existing.get("VDB_PUBLIC_BASE_URL")
-    or "https://vdb.sttimothyto.org"
+    or site.public_base_url
 )
 database_url = (
-    f"postgresql+asyncpg://{DB_USER}:{db_password}@volunteerdb-db:5432/{DB_NAME}"
+    f"postgresql+asyncpg://{DB_USER}:{db_password}@{DB_CONTAINER}:5432/{DB_NAME}"
 )
 
 # First containerized run against a host still serving the native deploy?
@@ -396,8 +393,8 @@ files.template(
     retain_remote_days=BACKUP_RETAIN_REMOTE_DAYS,
     alert_email=BACKUP_ALERT_EMAIL,
     env_file=ENV_FILE,
-    mail_from="no-reply@sttimothyto.org",
-    mail_from_name="VolunteerDB",
+    mail_from=site.mail_from_address,
+    mail_from_name=site.mail_from_name,
 )
 # Both rclone remotes (Drive + crypt wrapper) are provisioned ONCE by hand
 # (docs/how-to/backup-restore.md): rclone rewrites the OAuth token inside
@@ -453,8 +450,8 @@ files.template(
     decorate_script=DECORATE_SCRIPT,
     revoke_public_links=REVOKE_PUBLIC_LINKS,
     alert_email=BACKUP_ALERT_EMAIL,
-    mail_from="no-reply@sttimothyto.org",
-    mail_from_name="VolunteerDB",
+    mail_from=site.mail_from_address,
+    mail_from_name=site.mail_from_name,
 )
 # --- systemd timers for the two host-coupled jobs (crontab retired) ----------
 # The backup (02:00) and Drive sync (02:30) stay host-side — rclone config,

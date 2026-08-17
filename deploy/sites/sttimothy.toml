@@ -1,0 +1,52 @@
+# St. Timothy Parish, Toronto — the instance at https://vdb.sttimothyto.org.
+#
+# Every value the deploy needs that is specific to this parish. Anything not
+# here is the same on every instance and lives in deploy/siteconf.py.
+# Secrets are NOT here: the deploy generates them on first run and reads them
+# back from /etc/volunteerdb/env afterwards (see deploy/steps/secrets.py).
+#
+# Per-key reference: docs/reference/site-config.md
+
+[site]
+name = "sttimothy"        # must equal this file's name
+org_name = "St. Timothy's"
+timezone = "America/Toronto"
+
+[host]
+ssh_host = "sttimothyto-prod"
+ssh_user = "root"
+public_ip = "91.99.133.210"
+domain = "vdb.sttimothyto.org"
+listen_port = 8090
+
+[mail]
+from_address = "no-reply@sttimothyto.org"
+from_name = "VolunteerDB"
+admin_email = "admin@sttimothyto.org"
+alert_email = "admin@sttimothyto.org"
+contact_email = "admin@sttimothyto.org"
+
+[backup]
+rclone_remote = "volunteerdb-gdrive-backup"
+retain_local_days = 14
+retain_remote_days = 730
+
+[drive_sync]
+sheets_folder = "volunteerdb-spreadsheets"
+# Phase two of the move to per-leader sheet access. The sync grants each
+# team's leaders/seconds edit access already; turning this on also strips the
+# anyone-with-link and domain-wide grants the sheets still carry. Do that only
+# once the nightly "no leader or second with an email" alert has been worked
+# down — everyone on that list edits by link, and revoking it locks them out
+# with nothing to fall back on.
+revoke_public_links = false
+
+[schedule]
+# Parish-local (see [site] timezone). The backup runs first so its dump is a
+# restore point taken immediately before the Drive sync, the only automated
+# bulk write in the system. The three in-app jobs are kept clear of both.
+backup_at = "02:00"
+drive_sync_at = "02:30"
+fetch_pages_at = "03:00"
+proposal_digest_at = "03:30"
+event_reminders_at = "04:00"
