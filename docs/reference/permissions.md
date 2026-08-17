@@ -29,6 +29,8 @@ GUI and the API. For the rationale, see
 | Coverage report | ✓ | their teams | | | |
 | Elections: see vacancies, open proposals, edit deadlines/rolls, appoint, cancel, new round | ✓ | their teams | | | |
 | Elections: nominate candidates and vote (STAR) | ✓* | ✓* | ✓* | ✓* | |
+| Events: create, edit, cancel, slots, assign, attendance, their teams | ✓ | ✓ | | | |
+| Events: view listing/detail, RSVP, sign up, substitutions — own team's events | ✓† | ✓† | ✓† | ✓† | |
 | Create/edit/delete teams | ✓ | | | | |
 | Create/delete volunteers; toggle active | ✓ | | | | |
 | Parish-wide import/export | ✓ | | | | |
@@ -50,6 +52,17 @@ Additional rules:
   deleting that team confers or retires it for future rolls. Managers may
   still add or drop individual voters on one proposal while nominations are
   open; that edits a roll, it does not move the standing.
+- † **Events** follow the roster-names domain for visibility: an event and
+  its assignee names are shown to anyone who may see the owning team's
+  roster names. *Participation* — RSVPs, sign-ups, claiming or receiving a
+  substitution — additionally requires real membership of that team, admin
+  or not: the service enforces it as a domain invariant. A volunteer may
+  hand their own slot to a chosen teammate or take themselves off it (the
+  required reason is emailed to the team's leaders); managers may hand off
+  or remove anyone's slot. Hand-offs land in the audit log with who acted
+  and when. Creating an event also runs the advisory cross-team
+  double-booking check described in
+  [Events and scheduling](../explanation/events.md).
 - Volunteers may always view and edit their **own** contact info, whatever
   their roles.
 - Workload is deliberately hidden from core members *and from the volunteer
@@ -103,6 +116,8 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export, invite a member | signed in; roster per matrix; invite needs full-roster rights |
 | `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report, invite | signed in; detail per matrix |
+| `/events` | Duties, claimable substitutions, searchable event table | signed in; listings scoped per matrix ("New event": admin or leader/second) |
+| `/events/{id}` | One event: slots, sign-up, RSVP, substitutions, attendance | roster-names rights on the owning team |
 | `/elections` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |
 | `/elections/{id}` | One proposal: candidates, roll, ballot form, tally, appoint | managers of that team or its voting members |
 | `/import` | Spreadsheet import/export | admin or leader/second (scoped to their teams) |

@@ -21,6 +21,7 @@ from starlette.requests import Request
 
 from .. import query_lang
 from ..config import settings
+from ..log import audit_log
 from ..models import EventSlot, EventStatus, EventSubRequest, Volunteer
 from ..permissions import require
 from ..services import events as event_service
@@ -190,6 +191,139 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
             ui.button("Ask the team", icon="campaign", on_click=save)
+    dialog.open()
+
+
+async def _substitute_dialog(
+    assignment_id: int, options: dict[int, str], base_url: str
+) -> None:
+    """Hand a slot straight to a chosen teammate — no open call, no race."""
+    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+        ui.label("Hand this slot to a teammate").classes("text-lg font-medium")
+        ui.label(
+            "They take the slot immediately and are emailed about it. The "
+            "change is recorded: who made it, and when, goes into the log."
+        ).classes("text-sm text-gray-500")
+        pick = (
+            ui.select(options, label="Who takes it?", with_input=True)
+            .props("outlined dense")
+            .classes("w-full")
+        )
+
+        @notify_errors
+        async def save() -> None:
+            if not pick.value:
+                ui.notify("Pick a teammate first", color="warning")
+                return
+            async with action_session() as (session, actor):
+                assignment = await event_service.get_assignment(session, assignment_id)
+                if assignment is None:
+                    raise LookupError("assignment vanished")
+                event = await event_service.get(session, assignment.event_id)
+                if event is None:
+                    raise LookupError("event vanished")
+                require(
+                    assignment.volunteer_id == actor.volunteer_id
+                    or actor.can_manage_team(event.team_id),
+                    "hand off someone else's slot",
+                )
+                assignment, outgoing, incoming = await event_service.substitute(
+                    session,
+                    assignment_id=assignment_id,
+                    new_volunteer_id=pick.value,
+                    acted_by=actor.user.id,
+                )
+                slot = await session.get(EventSlot, assignment.slot_id)
+                message = mail.substituted_in_email(
+                    event.title,
+                    slot.name if slot else "volunteer",
+                    mail.event_when(event.starts_at, event.ends_at),
+                    outgoing.full_name,
+                    f"{base_url}/events",
+                )
+                incoming_email = incoming.email
+                incoming_name = incoming.full_name
+                audit_log(
+                    "event.substitute",
+                    event_id=event.id,
+                    assignment_id=assignment_id,
+                    from_volunteer_id=outgoing.id,
+                    to_volunteer_id=incoming.id,
+                )
+            if incoming_email:  # after commit; send_email never raises
+                await mail.send_email(incoming_email, *message)
+            dialog.close()
+            ui.notify(f"{incoming_name} now holds the slot", color="positive")
+            ui.navigate.reload()
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Hand it over", icon="swap_horiz", on_click=save)
+    dialog.open()
+
+
+async def _self_removal_dialog(assignment_id: int) -> None:
+    """Take yourself off a slot, telling the leaders why."""
+    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+        ui.label("Take yourself off this slot").classes("text-lg font-medium")
+        ui.label(
+            "Say why — your reason is emailed to the team leader(s) so they "
+            "can fill the gap."
+        ).classes("text-sm text-gray-500")
+        reason = (
+            ui.textarea("Why can you no longer serve?")
+            .props("outlined dense rows=3")
+            .classes("w-full")
+        )
+
+        @notify_errors
+        async def save() -> None:
+            text = (reason.value or "").strip()
+            if not text:
+                ui.notify("A reason is required", color="warning")
+                return
+            async with action_session() as (session, actor):
+                assignment = await event_service.get_assignment(session, assignment_id)
+                if assignment is None:
+                    raise LookupError("assignment vanished")
+                require(
+                    assignment.volunteer_id == actor.volunteer_id,
+                    "take somebody else off their slot",
+                )
+                event = await event_service.get(session, assignment.event_id)
+                if event is None:
+                    raise LookupError("event vanished")
+                slot = await session.get(EventSlot, assignment.slot_id)
+                me = await session.get(Volunteer, assignment.volunteer_id)
+                paths = team_service.team_paths(await team_service.list_all(session))
+                audience = await interest_service.leader_emails(session, event.team_id)
+                message = mail.self_removal_email(
+                    event.title,
+                    paths.get(event.team_id, ""),
+                    slot.name if slot else "volunteer",
+                    mail.event_when(event.starts_at, event.ends_at),
+                    me.full_name if me else "A volunteer",
+                    text,
+                )
+                await event_service.remove_assignment(session, assignment_id)
+                audit_log(
+                    "event.self_removal",
+                    event_id=event.id,
+                    volunteer_id=actor.volunteer_id,
+                    reason=text[:500],
+                )
+            for address in audience:  # after commit; send_email never raises
+                await mail.send_email(address, *message)
+            dialog.close()
+            ui.notify(
+                "You're off the slot — the leaders have been told",
+                color="positive",
+            )
+            ui.navigate.reload()
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Take me off", on_click=save).props("color=negative")
     dialog.open()
 
 
@@ -721,7 +855,16 @@ async def event_detail_page(request: Request, event_id: int):
         am_member = actor.volunteer_id is not None and await event_service.is_member(
             session, actor.volunteer_id, event.team_id
         )
-        roster = await team_service.roster(session, event.team_id) if can_manage else []
+        am_assigned = actor.volunteer_id is not None and any(
+            v.id == actor.volunteer_id for sv in view.slots for _, v in sv.entries
+        )
+        # members holding a slot need the roster too: the hand-off picker
+        # shows names, which everyone past can_view_roster_names may see
+        roster = (
+            await team_service.roster(session, event.team_id)
+            if can_manage or am_assigned
+            else []
+        )
         attendance = (
             await event_service.attendance_rows(session, event_id)
             if can_manage
@@ -1003,13 +1146,26 @@ async def event_detail_page(request: Request, event_id: int):
                                     _sub_request_dialog(aid, base_url)
                                 ),
                             ).props("dense outline")
-                        if upcoming and (
-                            can_manage or volunteer.id == actor.volunteer_id
-                        ):
+                        if upcoming and volunteer.id == actor.volunteer_id:
+                            # handing off with an open sub call cancels the call
                             ui.button(
-                                "Withdraw"
-                                if volunteer.id == actor.volunteer_id
-                                else "Remove",
+                                "Hand off",
+                                icon="swap_horiz",
+                                on_click=lambda _, aid=assignment.id: (
+                                    _substitute_dialog(
+                                        aid, picker_options(assigned_vids), base_url
+                                    )
+                                ),
+                            ).props("dense outline")
+                            ui.button(
+                                "Withdraw",
+                                on_click=lambda _, aid=assignment.id: (
+                                    _self_removal_dialog(aid)
+                                ),
+                            ).props("dense flat")
+                        elif upcoming and can_manage:
+                            ui.button(
+                                "Remove",
                                 on_click=lambda _, aid=assignment.id: _withdraw(aid),
                             ).props("dense flat")
                 if can_manage and upcoming:

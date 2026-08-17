@@ -117,7 +117,12 @@ async def test_signup_withdraw_and_leader_assign(database):
         user.find("Sign up", kind=ui.button).click()
         await user.should_see("Mia Member", retries=30)
         await user.should_see("1/2")
+        # withdrawing asks for a reason (mailed to the leaders) since Phase 4
         user.find("Withdraw", kind=ui.button).click()
+        await user.should_see("Why can you no longer serve?")
+        box = user.find(kind=ui.textarea).elements.pop()
+        box.value = "schedule conflict"
+        user.find("Take me off", kind=ui.button).click()
         await user.should_see("0/2", retries=30)
 
         # the leader schedules Noor from the picker
@@ -267,6 +272,48 @@ async def test_share_button_and_date_pickers(database):
         user.find("New event", kind=ui.button).click()
         await user.should_see("Repeat weekly until")
         assert len(user.find(kind=ui.date).elements) == 2
+
+
+async def test_handoff_and_self_removal_flows_with_mail(database, sent_mail):
+    async with db_session() as session:
+        ids = await _parish(session)
+    event_id = await _seed_event(
+        ids["liturgy"], slots=[event_service.SlotInput("Lector", 2)]
+    )
+    async with db_session() as session:
+        view = await event_service.detail(session, event_id)
+        await event_service.sign_up(
+            session, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
+        )
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        # Mia hands the slot straight to Noor
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/events/{event_id}")
+        user.find("Hand off", kind=ui.button).click()
+        await user.should_see("Hand this slot to a teammate")
+        await user.should_see("goes into the log")
+        pick = user.find(kind=ui.select, content="Who takes it?").elements.pop()
+        pick.value = ids["noor"]
+        user.find("Hand it over", kind=ui.button).click()
+        await user.should_see("Noor Member now holds the slot", retries=30)
+        assert [m[0] for m in sent_mail] == ["noor@example.org"]
+        assert "You're now serving" in sent_mail[0][1]
+        assert "Mia Member" in sent_mail[0][2]
+        sent_mail.clear()
+
+        # Noor takes themselves off; the reason goes to the leaders
+        await user.open(f"/login-dev/{ids['noor_u']}")
+        await user.open(f"/events/{event_id}")
+        user.find("Withdraw", kind=ui.button).click()
+        await user.should_see("your reason is emailed")
+        box = user.find(kind=ui.textarea).elements.pop()
+        box.value = "travelling that weekend"
+        user.find("Take me off", kind=ui.button).click()
+        await user.should_see("the leaders have been told", retries=30)
+        assert {m[0] for m in sent_mail} == {"lena@example.org"}
+        assert "Off the roster" in sent_mail[0][1]
+        assert "travelling that weekend" in sent_mail[0][2]
 
 
 async def test_duplicate_location_warning_on_create(database):

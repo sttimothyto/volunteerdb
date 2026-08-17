@@ -324,6 +324,37 @@ def sub_claimed_email(
     )
 
 
+def substituted_in_email(
+    title: str, slot: str, when: str, outgoing_name: str, events_url: str
+) -> tuple[str, str]:
+    """Sent to the incoming volunteer when a teammate hands them the slot
+    directly (no open call)."""
+    return (
+        f"You're now serving: {title}",
+        f"{outgoing_name} has handed you their {slot} slot at {title} "
+        f"({when}).\n\n"
+        "The schedule has been updated — if this doesn't work for you, open "
+        f"the Events page to pass it on or ask for a substitute: {events_url}",
+    )
+
+
+def self_removal_email(
+    title: str, path: str, slot: str, when: str, volunteer_name: str, reason: str
+) -> tuple[str, str]:
+    """Sent to the team's leaders when somebody takes themselves off a slot.
+    The reason is required in the dialog and quoted verbatim — the audience
+    is the leadership, the same trust boundary as the sub-request note."""
+    return (
+        f"Off the roster: {title}",
+        f"{volunteer_name} has taken themselves off the {slot} slot at:\n\n"
+        f"  {title} — {path}\n"
+        f"  {when}\n\n"
+        f"Their reason: {reason}\n\n"
+        "The slot is open again — assign someone from the event page if it "
+        "needs filling.",
+    )
+
+
 def event_cancelled_email(title: str, path: str, when: str) -> tuple[str, str]:
     """Sent to every assignee when a manager cancels an upcoming event."""
     return (

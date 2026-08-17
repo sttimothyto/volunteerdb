@@ -637,3 +637,88 @@ async def test_similar_events_checks_every_repeat_occurrence(database):
             location="Parish Hall",
         )
         assert len(hits) == 1, "the collision sits three weeks into the repeat"
+
+
+# --- direct substitution ------------------------------------------------------
+
+
+async def test_substitute_hands_the_slot_over(database):
+    team_id, vids = await _team_with_members(3)
+    event_id = await _one_event(team_id)
+    async with db_session() as session:
+        a = await event_service.sign_up(
+            session, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
+        )
+        sub = await event_service.request_sub(
+            session, assignment_id=a.id, requested_by=None
+        )
+        assignment_id, sub_id = a.id, sub.id
+    async with db_session() as session:
+        assignment, outgoing, incoming = await event_service.substitute(
+            session,
+            assignment_id=assignment_id,
+            new_volunteer_id=vids[2],
+            acted_by=None,
+        )
+        assert (assignment.volunteer_id, outgoing.id, incoming.id) == (
+            vids[2],
+            vids[1],
+            vids[2],
+        )
+        assert assignment.kind == "sub"
+        assert assignment.assigned_notified_at is not None, (
+            "the caller mails the incoming volunteer right away"
+        )
+        assert assignment.reminder_sent_at is None, (
+            "the new person still needs a reminder"
+        )
+        open_call = await session.get(EventSubRequest, sub_id)
+        assert open_call.status == SubRequestStatus.cancelled.value, (
+            "the open call dies with the hand-off"
+        )
+
+
+async def test_substitute_rejects_bad_targets(database):
+    team_id, vids = await _team_with_members(3)
+    event_id = await _one_event(team_id, slots=[event_service.SlotInput("Lector", 3)])
+    async with db_session() as session:
+        slot_id = await _first_slot(event_id)
+        a = await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[1])
+        await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[2])
+        outsider = await volunteers.create(session, "Out", "Sider", "out@example.org")
+        assignment_id, outsider_id = a.id, outsider.id
+    async with db_session() as session:
+        with pytest.raises(ValueError, match="already hold"):
+            await event_service.substitute(
+                session,
+                assignment_id=assignment_id,
+                new_volunteer_id=vids[1],
+                acted_by=None,
+            )
+        with pytest.raises(ValueError, match="already serve"):
+            await event_service.substitute(
+                session,
+                assignment_id=assignment_id,
+                new_volunteer_id=vids[2],
+                acted_by=None,
+            )
+        with pytest.raises(ValueError, match="only members"):
+            await event_service.substitute(
+                session,
+                assignment_id=assignment_id,
+                new_volunteer_id=outsider_id,
+                acted_by=None,
+            )
+
+
+async def test_substitute_refuses_once_the_event_ended(database):
+    team_id, vids = await _team_with_members(3)
+    _, assignment_id = await _past_event(team_id, vids[1])
+    async with db_session() as session:
+        with pytest.raises(ValueError, match="already ended"):
+            await event_service.substitute(
+                session,
+                assignment_id=assignment_id,
+                new_volunteer_id=vids[2],
+                acted_by=None,
+            )

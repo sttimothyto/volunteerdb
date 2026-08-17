@@ -63,13 +63,23 @@ for a single count-and-insert inside one transaction.
 Volunteers answer *available / not available* (with a short note) per
 event. The answer is *only* a signal: managers see the pool sorted
 available-first when assigning, and an assigned person who flips to
-unavailable gets an amber badge — nothing automatic happens. The one
-explicit path off a slot is the **substitution request**: the assignee
-posts it, teammates not already serving that event get one email, and the
-first to claim takes over — the assignment row itself moves to the
-claimant, in the same transaction as the guarded status flip that decides
-the race. A partial unique index allows one open request per assignment, so
-repeat clicks cannot re-mail the team.
+unavailable gets an amber badge — nothing automatic happens. Three explicit
+paths lead off a slot, all self-serve:
+
+- **Substitution request** — the open call: the assignee posts it,
+  teammates not already serving that event get one email, and the first to
+  claim takes over — the assignment row itself moves to the claimant, in
+  the same transaction as the guarded status flip that decides the race. A
+  partial unique index allows one open request per assignment, so repeat
+  clicks cannot re-mail the team.
+- **Hand off** — the direct version: the assignee picks the teammate
+  themselves, who takes the slot immediately and is emailed. Any open call
+  on the assignment is cancelled with it, and the hand-off lands in the
+  audit log with who acted and when — the dialog says so up front.
+- **Withdraw** — leaving the slot open: a reason is required, and it is
+  emailed to the team's leaders so the gap gets filled deliberately rather
+  than discovered on Sunday. (A manager removing somebody else skips the
+  reason — that is their own scheduling decision.)
 
 ## Attendance is derived
 

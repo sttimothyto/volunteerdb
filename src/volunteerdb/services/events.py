@@ -1017,6 +1017,55 @@ async def claim_sub(
     return sub, assignment, asker
 
 
+async def substitute(
+    session: AsyncSession,
+    *,
+    assignment_id: int,
+    new_volunteer_id: int,
+    acted_by: int | None,
+) -> tuple[EventAssignment, Volunteer, Volunteer]:
+    """Hand a slot directly to a chosen teammate — the claim flow minus the
+    open call. Any open substitute request on the assignment is cancelled in
+    the same transaction. Returns (assignment, outgoing, incoming) for the
+    caller's post-commit mail to the person now on the hook."""
+    assignment = await session.get(EventAssignment, assignment_id)
+    if assignment is None:
+        raise LookupError(f"assignment {assignment_id} not found")
+    event = await _get_or_raise(session, assignment.event_id)
+    _require_open(event, "substitute on this event")
+    vid = await _require_member(session, new_volunteer_id, event.team_id)
+    if assignment.volunteer_id == vid:
+        raise ValueError("they already hold this slot")
+    already = await session.scalar(
+        sa.select(EventAssignment.id).where(
+            EventAssignment.event_id == event.id,
+            EventAssignment.volunteer_id == vid,
+        )
+    )
+    if already is not None:
+        raise ValueError("they already serve at this event")
+    outgoing = await session.get(Volunteer, assignment.volunteer_id)
+    incoming = await session.get(Volunteer, vid)
+    assert outgoing is not None and incoming is not None  # FKs guarantee the rows
+    await session.execute(
+        sa.update(EventSubRequest)
+        .where(
+            EventSubRequest.assignment_id == assignment_id,
+            EventSubRequest.status == SubRequestStatus.open.value,
+        )
+        .values(status=SubRequestStatus.cancelled.value, resolved_at=sa.func.now())
+    )
+    assignment.volunteer_id = vid
+    assignment.kind = AssignmentKind.sub.value
+    assignment.assigned_by = acted_by
+    # the caller mails the incoming volunteer right after commit, so the
+    # digest's "scheduled" notice would only duplicate it
+    assignment.assigned_notified_at = _now()
+    assignment.reminder_sent_at = None  # the new person still needs a reminder
+    await session.flush()
+    return assignment, outgoing, incoming
+
+
 async def cancel_sub(session: AsyncSession, sub_request_id: int) -> EventSubRequest:
     sub = await session.get(EventSubRequest, sub_request_id)
     if sub is None:
