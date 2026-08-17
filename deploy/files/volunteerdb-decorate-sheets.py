@@ -416,6 +416,21 @@ def team_values_for(name: str, manifest: dict | None) -> list[str] | None:
     return values
 
 
+def editors_for(name: str, manifest: dict | None) -> list[str] | None:
+    """Who may edit one sheet, or None to leave its access alone entirely.
+
+    None for anything the manifest does not name — a sheet whose team was
+    archived, and the TEMPLATE. The template is deliberately shared
+    anyone-with-link *reader* so the /import page's "Roster template" button
+    works for every leader; it belongs to no team, so leaving it out of the
+    reconciler is what keeps --revoke-links from stripping that link.
+    """
+    if manifest is None:
+        return None
+    entry = manifest["sheets"].get(name)
+    return entry["editors"] if entry else None
+
+
 def _inherited(permission: dict) -> bool:
     """Granted on the parent folder, not this file. Drive refuses to delete
     such a permission from the file — it has to go from the folder."""
@@ -564,11 +579,11 @@ def main(argv: list[str]) -> int:
             failures += 1
             print(f"decorate FAILED {name}: {err}", file=sys.stderr)
 
-        entry = manifest["sheets"].get(name) if manifest else None
-        if entry is not None:
+        editors = editors_for(name, manifest)
+        if editors is not None:
             try:
                 result = share_one(
-                    token, file_id, entry["editors"], args.revoke_links, args.dry_run
+                    token, file_id, editors, args.revoke_links, args.dry_run
                 )
             except ServiceDisabled as err:  # every other sheet would fail alike
                 print(f"share: {err}", file=sys.stderr)
@@ -583,8 +598,8 @@ def main(argv: list[str]) -> int:
                 for message in result["errors"]:
                     alerts.append(f"sheet {name!r}: {message}")
                     print(f"share {name}: {message}", file=sys.stderr)
-                if not entry["editors"]:
-                    unshared.append(entry["team"])
+                if not editors:
+                    unshared.append(manifest["sheets"][name]["team"])
                 if args.verbose or result["granted"] or result["revoked"]:
                     print(
                         f"{name}: +{result['granted']} editor(s), "

@@ -175,6 +175,20 @@ def test_unknown_and_manifestless_sheets_keep_whatever_they_have():
     )
 
 
+def test_the_template_is_never_touched_by_the_reconciler():
+    """It is shared anyone-with-link reader so the /import page's template
+    button works for leaders; belonging to no team is what keeps
+    --revoke-links from stripping that link back off."""
+    assert (
+        decorate.editors_for("ROSTER TEMPLATE (copy me, do not edit)", _MANIFEST)
+        is None
+    )
+    assert decorate.editors_for("archived-team-membership-list", _MANIFEST) is None
+    assert decorate.editors_for("choir-choir-sun-10am-membership-list", _MANIFEST) == [
+        "cantor@gmail.com"
+    ]
+
+
 def test_an_oversized_team_list_skips_the_rule_rather_than_failing():
     huge = {"teams": [f"Team {i}" for i in range(decorate.MAX_VALIDATION_VALUES + 1)]}
     assert decorate.team_values_for("ROSTER TEMPLATE", huge) is None

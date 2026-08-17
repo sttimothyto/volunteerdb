@@ -80,6 +80,14 @@ new team needs no manual Drive work. The rules:
   of the move off public links: leave it `False` until the no-email list
   above is short, because everyone on it is editing by link today and has
   nothing to fall back on.
+- **The template is the deliberate exception**: it is shared
+  *anyone-with-link, **reader***, because the `/import` page hands its link
+  to every leader and a leader who cannot open it cannot start an import.
+  Reader is the whole grant — the sheet is a blank header row, and viewers
+  may still *File → Make a copy* (`copyRequiresWriterPermission` is false),
+  which is the only thing anyone should do with it. The reconciler never
+  touches the template: it belongs to no team, so it has no manifest entry,
+  and `--revoke-links` leaves its link alone.
 
 ## Sheet decoration (self-healing)
 
@@ -136,6 +144,18 @@ rclone --config $CONF --drive-import-formats csv copyto /tmp/template.csv \
 
 The next sync (or a standalone decorate run right after, if no sync has
 run since) decorates it, adding 25 dropdown-ready blank rows.
+
+A re-created template starts private, and the `/import` button then dead-ends
+at Google's "You need access" wall for every leader. Re-grant the link:
+
+```sh
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"type":"anyone","role":"reader"}' \
+  "https://www.googleapis.com/drive/v3/files/$FILE_ID/permissions"
+```
+
+(`$TOKEN` minted from `rclone.conf` the same way the decorate script does it.)
+Reader, never writer — see [Who can edit a sheet](#who-can-edit-a-sheet).
 
 ## Architecture
 
