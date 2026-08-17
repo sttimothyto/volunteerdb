@@ -269,6 +269,45 @@ async def test_share_button_and_date_pickers(database):
         assert len(user.find(kind=ui.date).elements) == 2
 
 
+async def test_duplicate_location_warning_on_create(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+    async with db_session() as session:
+        await event_service.create_event(
+            session,
+            team_id=ids["liturgy"],
+            title="Sunday Mass",
+            starts_at=_next_week(10),
+            ends_at=_next_week(12),
+            location="Parish Hall",
+            created_by=None,
+        )
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open("/events")
+        user.find("New event", kind=ui.button).click()
+        await user.should_see("Repeat weekly until")
+        team = user.find(kind=ui.select, content="Team").elements.pop()
+        team.value = ids["liturgy"]
+        title = user.find(kind=ui.input, content="Title").elements.pop()
+        title.value = "Bake sale"
+        day = user.find(kind=ui.input, content="Date (YYYY-MM-DD)").elements.pop()
+        day.value = str(date.today() + timedelta(days=7))
+        loc = user.find(kind=ui.input, content="Location").elements.pop()
+        loc.value = "parish hall"
+        user.find("Create event", kind=ui.button).click()
+        await user.should_see("Possible double booking", retries=30)
+        await user.should_see("Sunday Mass")
+        user.find("Go back", kind=ui.button).click()
+
+        # the form is still open; forcing it through this time works
+        user.find("Create event", kind=ui.button).click()
+        await user.should_see("Possible double booking", retries=30)
+        user.find("Create anyway", kind=ui.button).click()
+        await user.should_see("0/∞", retries=50)
+
+
 async def test_attendance_section_on_past_event(database):
     async with db_session() as session:
         ids = await _parish(session)

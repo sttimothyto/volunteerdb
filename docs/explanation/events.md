@@ -34,6 +34,19 @@ recombines wall-clock times in the parish's timezone
 across a DST change stays 10:30 — adding `timedelta(weeks=1)` to the
 timestamptz would silently shift it an hour.
 
+### The double-booking warning
+
+Creating an event runs an advisory check: scheduled events sharing a
+parish-local calendar day with any occurrence, whose location reads like
+the new one (`difflib` similarity — "parish  hall" still hits "Parish
+Hall"), come back as a warning the creator can override with *Create
+anyway*. The check deliberately looks across **all** teams — a collision
+with a ministry you cannot see is exactly the case worth flagging — but
+reveals only the when, the location, and the team path (the team directory
+is readable by every member anyway); the title is masked outside the
+creator's visibility. The API skips the check: scripts know what they are
+inserting.
+
 ## Slots and the capacity lock
 
 An event carries named **slots** ("Lector ×2", "Greeter — main door");

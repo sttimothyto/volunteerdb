@@ -16,8 +16,9 @@ first use of a row lock in this codebase, because a *counted* capacity has
 no partial-unique-index backstop the way one-open-per-seat rules do.
 """
 
+import difflib
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -517,6 +518,97 @@ async def list_events(
         )
         for e in events
     ]
+
+
+# similarity floor for the double-booking warning: "Parish Hall" still hits
+# "parish  hall" or "Parish hall (main)", while "Rectory" stays clear of it
+SIMILARITY_THRESHOLD = 0.6
+
+
+@dataclass(frozen=True)
+class SimilarEvent:
+    starts_at: datetime
+    ends_at: datetime
+    location: str
+    team_path: str
+    title: str | None  # None: outside the actor's visible teams — masked
+
+
+def _norm_location(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+async def similar_events(
+    session: AsyncSession,
+    actor: Actor,
+    *,
+    starts_at: datetime,
+    ends_at: datetime,
+    repeat_until: date | None = None,
+    location: str | None,
+    limit: int = 5,
+) -> list[SimilarEvent]:
+    """Scheduled events sharing a parish-local day with any occurrence of the
+    proposed event, at a location that reads like `location` — the advisory
+    double-booking check behind the create dialog's warning.
+
+    Deliberately NOT scoped by visible_team_ids: a collision with a team the
+    creator cannot see is exactly the case worth warning about. What that
+    leaks is kept small — the when/where and the team path (the team
+    directory is readable by every member anyway); the title is masked
+    outside the actor's scope. difflib does the matching: parish-scale event
+    counts need no index (pg_trgm's similarity() is there if this ever grows).
+    """
+    wanted = _norm_location(location or "")
+    if not wanted:
+        return []
+    tz = ZoneInfo(settings().timezone)
+    day_set: set[date] = set()
+    for occ_start, occ_end in _occurrences(starts_at, ends_at, repeat_until):
+        day = occ_start.astimezone(tz).date()
+        last = occ_end.astimezone(tz).date()
+        while day <= last:
+            day_set.add(day)
+            day += timedelta(days=1)
+    window_start = datetime.combine(min(day_set), time.min, tz)
+    window_end = datetime.combine(max(day_set) + timedelta(days=1), time.min, tz)
+    candidates = await session.scalars(
+        sa.select(Event)
+        .where(
+            Event.status == EventStatus.scheduled.value,
+            Event.starts_at < window_end,
+            Event.ends_at > window_start,
+            Event.location.is_not(None),
+        )
+        .order_by(Event.starts_at, Event.id)
+    )
+    visible = visible_team_ids(actor)
+    paths = team_service.team_paths(await team_service.list_all(session))
+    out: list[SimilarEvent] = []
+    for event in candidates:
+        have = _norm_location(event.location or "")
+        if not have:
+            continue
+        if difflib.SequenceMatcher(None, wanted, have).ratio() < SIMILARITY_THRESHOLD:
+            continue
+        first = event.starts_at.astimezone(tz).date()
+        last = event.ends_at.astimezone(tz).date()
+        if not any(first <= day <= last for day in day_set):
+            continue  # inside the window but not on a shared calendar day
+        out.append(
+            SimilarEvent(
+                starts_at=event.starts_at,
+                ends_at=event.ends_at,
+                location=event.location or "",
+                team_path=paths.get(event.team_id, f"team {event.team_id}"),
+                title=(
+                    event.title if visible is None or event.team_id in visible else None
+                ),
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
 
 
 async def detail(session: AsyncSession, event_id: int) -> EventDetail:

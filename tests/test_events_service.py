@@ -538,3 +538,102 @@ async def test_summary_counts_fill_and_capacity(database):
         assert unlimited  # any unlimited slot makes the event unlimited
         summaries = await event_service.list_events(session, actor)
         assert summaries[-1].capacity is None
+
+
+# --- the double-booking warning -----------------------------------------------
+
+
+async def _admin_actor(session):
+    admin = await users.create(session, "checker@example.org", is_admin=True)
+    return await load_actor(session, admin)
+
+
+async def test_similar_events_matches_fuzzy_same_day_locations(database):
+    team_id, _ = await _team_with_members()
+    day = date.today() + timedelta(days=7)
+    await _one_event(team_id, location="Parish Hall")
+    async with db_session() as session:
+        actor = await _admin_actor(session)
+
+        hits = await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(day, 14),
+            ends_at=_at(day, 16),
+            location="parish  hall (main)",
+        )
+        assert [h.title for h in hits] == ["Sunday Mass"], (
+            "case, spacing, and a suffix still read as the same place"
+        )
+
+        next_day = day + timedelta(days=1)
+        assert not await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(next_day, 14),
+            ends_at=_at(next_day, 16),
+            location="Parish Hall",
+        ), "a different day is no collision"
+
+        assert not await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(day, 14),
+            ends_at=_at(day, 16),
+            location="Rectory",
+        ), "dissimilar locations stay quiet"
+
+        assert not await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(day, 14),
+            ends_at=_at(day, 16),
+            location="",
+        ), "no location, no check"
+
+
+async def test_similar_events_masks_titles_outside_the_actors_scope(database):
+    team_id, vids = await _team_with_members()
+    day = date.today() + timedelta(days=7)
+    async with db_session() as session:
+        other = await teams.create(session, "Garden Guild")
+        await event_service.create_event(
+            session,
+            team_id=other.id,
+            title="Secret planning",
+            starts_at=_at(day, 10),
+            ends_at=_at(day, 12),
+            location="Parish Hall",
+            created_by=None,
+        )
+    async with db_session() as session:
+        member = await users.create(session, "vol1@example.org", volunteer_id=vids[1])
+        actor = await load_actor(session, member)
+        hits = await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(day, 14),
+            ends_at=_at(day, 16),
+            location="Parish Hall",
+        )
+        assert [(h.title, h.team_path) for h in hits] == [(None, "Garden Guild")], (
+            "the when/where warns; the invisible team's title stays masked"
+        )
+
+
+async def test_similar_events_checks_every_repeat_occurrence(database):
+    team_id, _ = await _team_with_members()
+    clash_day = date.today() + timedelta(days=21)
+    await _one_event(team_id, start=_at(clash_day, 10), location="Parish Hall")
+    first = date.today() + timedelta(days=7)
+    async with db_session() as session:
+        actor = await _admin_actor(session)
+        hits = await event_service.similar_events(
+            session,
+            actor,
+            starts_at=_at(first, 10),
+            ends_at=_at(first, 12),
+            repeat_until=first + timedelta(days=28),
+            location="Parish Hall",
+        )
+        assert len(hits) == 1, "the collision sits three weeks into the repeat"

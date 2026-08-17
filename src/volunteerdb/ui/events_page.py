@@ -240,6 +240,31 @@ async def _withdraw_sub(sub_request_id: int) -> None:
     ui.navigate.reload()
 
 
+async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
+    """The double-booking warning: advisory, never a block. A masked title
+    means the colliding event belongs to a team outside the creator's view —
+    the when/where is the warning; the details stay theirs."""
+    with ui.dialog() as dialog, ui.card().classes("w-[28rem] gap-3"):
+        ui.label("Possible double booking").classes("text-lg font-medium")
+        ui.label(
+            "Something similar is already on the calendar at that location "
+            "on the same day:"
+        ).classes("text-sm text-gray-500")
+        for hit in hits:
+            with ui.column().classes("w-full gap-0 p-2 rounded bg-amber-50"):
+                ui.label(hit.title or "Another team's event").classes("font-medium")
+                ui.label(
+                    f"{mail.event_when(hit.starts_at, hit.ends_at)} · "
+                    f"{hit.location} · {hit.team_path}"
+                ).classes("text-sm text-gray-600")
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Go back", on_click=lambda: dialog.submit(False)).props("flat")
+            ui.button("Create anyway", on_click=lambda: dialog.submit(True)).props(
+                "color=warning"
+            )
+    return bool(await dialog)
+
+
 def _new_event_dialog(managed_options: dict[int, str]) -> None:
     with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
         ui.label("New event").classes("text-lg font-medium")
@@ -317,6 +342,18 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
                 for i, (n, c) in enumerate(slot_rows)
                 if (n.value or "").strip()
             ]
+            async with action_session() as (session, actor):
+                require(actor.can_manage_team(team.value), "manage this team's events")
+                hits = await event_service.similar_events(
+                    session,
+                    actor,
+                    starts_at=starts_at,
+                    ends_at=ends_at,
+                    repeat_until=until,
+                    location=location.value,
+                )
+            if hits and not await _confirm_similar(hits):
+                return  # back to the still-open form
             async with action_session() as (session, actor):
                 require(actor.can_manage_team(team.value), "manage this team's events")
                 created = await event_service.create_event(
