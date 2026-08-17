@@ -37,6 +37,13 @@ def deploy_app(site, secrets, *, here, repo_root, unit_vars, admin_password) -> 
         template_sheet_url=secrets.template_sheet_url,
         public_base_url=secrets.public_base_url,
         alert_email=site.mail_alert_email,
+        org_name=site.site_org_name,
+        mail_from=site.mail_from_address,
+        mail_from_name=site.mail_from_name,
+        timezone=site.site_timezone,
+        fetch_pages_at=site.schedule_fetch_pages_at,
+        proposal_digest_at=site.schedule_proposal_digest_at,
+        event_reminders_at=site.schedule_event_reminders_at,
     )
     files.template(
         name="Write /etc/volunteerdb/db.env",
