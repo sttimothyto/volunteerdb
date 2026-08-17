@@ -151,16 +151,20 @@ async def teams_page(as_of: str = ""):
         # bound as row data, not interpolated into the slot template: as_of is
         # a raw query param and must never reach Vue's template compiler
         row["href"] = f"/teams/{row['id']}{suffix}"
-    with frame("Teams", actor, as_of=at, asof_path="/teams"):
+    with frame("Teams", actor, as_of=at, asof_path="/teams", wide=True):
         with ui.row().classes("items-center gap-2 w-full"):
             search = (
                 ui.input("Search teams…")
                 .props("outlined dense clearable debounce=200")
-                .classes("w-72")
+                .classes("grow")
                 if rows
                 else None
             )
-            ui.space()
+            # the search box grows into the free space and holds New team against
+            # the right edge; with no teams to search there is nothing growing,
+            # so the spacer takes over that job
+            if search is None:
+                ui.space()
             if actor.is_admin and at is None:
                 ui.button(
                     "New team", icon="add", on_click=lambda: _team_dialog(all_teams)

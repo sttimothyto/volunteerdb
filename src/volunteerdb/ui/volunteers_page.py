@@ -44,7 +44,7 @@ async def volunteers_page(q: str = "", band: str = ""):
         found = [v for v in found if v.id in wl and wl[v.id][1].label == band]
 
     panel = VolunteerPanel()
-    with frame("Volunteers", actor):
+    with frame("Volunteers", actor, wide=True):
         with ui.row().classes("items-center gap-2 w-full"):
             band_select: ui.select | None = None
 
@@ -72,7 +72,8 @@ async def volunteers_page(q: str = "", band: str = ""):
                     .classes("w-40")
                 )
                 band_select.on_value_change(lambda: go(search.value or ""))
-            ui.space()
+            # no ui.space(): the search box grows instead, which is what keeps
+            # New volunteer on the right edge
             if actor.is_admin:
                 ui.button(
                     "New volunteer", icon="person_add", on_click=_new_volunteer_dialog

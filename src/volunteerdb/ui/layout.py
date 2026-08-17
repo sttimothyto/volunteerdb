@@ -15,9 +15,14 @@ def frame(
     *,
     as_of: datetime | None = None,
     asof_path: str | None = None,
+    wide: bool = False,
 ):
     """Header + page column. Pages that can time-travel pass asof_path (the URL
-    the picker navigates back to) and the as_of they were rendered at."""
+    the picker navigates back to) and the as_of they were rendered at.
+
+    wide=True drops the reading-width cap for the pages that are mostly table —
+    Dash, Teams, Volunteers — so the columns get the whole window. Everything
+    else stays capped: prose and forms are harder to read the wider they run."""
     dark = apply_theme()
     nav_items = [
         ("Teams", "/teams"),
@@ -63,7 +68,11 @@ def frame(
         ui.button(icon="logout", on_click=_logout).props(
             "flat color=white dense"
         ).tooltip("Sign out")
-    with ui.column().classes("w-full max-w-5xl mx-auto p-4 gap-4"):
+    # p-4 either way, so a wide page still keeps a gutter and lines up with the
+    # header's own px-4 instead of running into the window edge
+    with ui.column().classes(
+        "w-full p-4 gap-4" if wide else "w-full max-w-5xl mx-auto p-4 gap-4"
+    ):
         ui.label(title).classes("text-2xl vdb-page-title")
         if as_of is not None and asof_path is not None:
             asof_banner(as_of, asof_path)

@@ -43,10 +43,13 @@ def search_box(
     clicked suggestion (normally ``VolunteerPanel.open``).
     """
     asof_query = f"?as_of={as_of}" if as_of else ""
+    # grow, not a fixed width: the box takes whatever the row has left, so it
+    # stretches with the window. Callers must not put a ui.space() in the same
+    # row — QSpace grows too, and two growing siblings split the slack.
     search = (
         ui.input(label, value=value)
         .props(f"outlined dense clearable debounce={SUGGEST_DEBOUNCE_MS}")
-        .classes("w-72")
+        .classes("grow")
     )
     with search:
         menu = (

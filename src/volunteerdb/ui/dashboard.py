@@ -45,7 +45,7 @@ async def dashboard(as_of: str = ""):
         )
 
     panel = VolunteerPanel(as_of)
-    with frame("Dashboard", actor, as_of=at, asof_path="/"):
+    with frame("Dashboard", actor, as_of=at, asof_path="/", wide=True):
         with ui.row().classes("items-center gap-2 w-full"):
             search_box(
                 "Find volunteers or teams…",
