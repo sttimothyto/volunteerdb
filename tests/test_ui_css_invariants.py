@@ -1,4 +1,6 @@
-"""Tailwind utilities that Quasar's stylesheet silently overrules.
+"""CSS mistakes that render perfectly and still come out wrong.
+
+Tailwind utilities that Quasar's stylesheet silently overrules.
 
 NiceGUI serves Quasar and Tailwind side by side, and quasar.important.css ships
 `.hidden{display:none!important}`. Tailwind's `hidden` is the same class name but plain
@@ -16,6 +18,7 @@ import re
 from pathlib import Path
 
 UI_DIR = Path(__file__).resolve().parents[1] / "src" / "volunteerdb" / "ui"
+THEME_CSS = UI_DIR / "static" / "theme.css"
 
 _DISPLAY = "flex|block|inline|inline-flex|inline-block|grid|inline-grid|table|contents|flow-root"
 
@@ -66,4 +69,30 @@ def test_no_tailwind_hidden_paired_with_a_responsive_display():
     assert len(literals) >= 50, (
         f"only found {len(literals)} .classes() literals under {UI_DIR} — the AST sweep "
         "stopped seeing the call sites and is no longer covering them"
+    )
+
+
+def test_every_vdb_class_is_defined_in_the_theme():
+    """A vdb-* class is ours alone: nothing but theme.css gives it any effect, so a
+    typo (or a rename on one side only) is a class that quietly does nothing. The
+    element still renders, just unstyled — .vdb-prose without its rule is a page of
+    window-wide running text, and no headless assertion notices."""
+    defined = set(re.findall(r"\.(vdb-[a-z0-9-]+)", THEME_CSS.read_text()))
+
+    used = {
+        (path, lineno, token)
+        for path, lineno, classes in _class_literals()
+        for token in classes.split()
+        if token.startswith("vdb-")
+    }
+    assert used, "no vdb-* classes found in .classes() literals — the sweep missed them"
+
+    undefined = sorted(
+        f"{path.name}:{lineno}: {token}"
+        for path, lineno, token in used
+        if token not in defined
+    )
+    assert not undefined, (
+        f"these classes are used but never defined in {THEME_CSS.name}, so they style "
+        "nothing:\n  " + "\n  ".join(undefined)
     )

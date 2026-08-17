@@ -45,7 +45,7 @@ async def volunteers_page(q: str = "", band: str = ""):
         found = [v for v in found if v.id in wl and wl[v.id][1].label == band]
 
     panel = VolunteerPanel()
-    with frame("Volunteers", actor, wide=True):
+    with frame("Volunteers", actor):
         with ui.row().classes("items-center gap-2 w-full"):
             band_select: ui.select | None = None
 

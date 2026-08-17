@@ -29,7 +29,7 @@ async def workload_page():
             "team's workload weight × their role's multiplier. Bands colour-code the score on "
             "the volunteers list and the graph. Visible to admins and to the "
             "leaders/seconds of a volunteer's teams; configured here by admins only."
-        ).classes("text-sm text-gray-500")
+        ).classes("text-sm text-gray-500 vdb-prose")
 
         with ui.card().classes("w-full gap-2 p-4"):
             ui.label("Role multipliers").classes("text-lg font-medium")
@@ -103,7 +103,7 @@ async def workload_page():
             ui.label(
                 "Optional per-ministry weight; empty teams don't count towards anyone's score. "
                 "Also editable on each team's edit dialog."
-            ).classes("text-sm text-gray-500")
+            ).classes("text-sm text-gray-500 vdb-prose")
             weight_inputs: dict[int, ui.number] = {}
             originals: dict[int, Decimal | None] = {}
             for team in sorted(all_teams, key=lambda t: paths[t.id].lower()):

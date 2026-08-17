@@ -100,6 +100,15 @@ a,
   text-decoration: none;
 }
 
+/* Every page runs the full window width (see ui/layout.py frame()), which is
+   right for the tables and row lists but not for a paragraph: a line of running
+   text past ~70 characters is hard to track back to the next one. Mark the
+   multi-sentence explanations with this and they keep a measure while the page
+   around them stays the same width as every other page. */
+.vdb-prose {
+  max-width: 68ch;
+}
+
 a:hover,
 .nicegui-link:hover {
   border-bottom: 1px dotted currentColor;

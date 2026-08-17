@@ -24,7 +24,7 @@ async def fields_page():
         ui.label(
             "Extra volunteer properties. Values are edited on each volunteer's page and "
             "are visible to whoever may see that volunteer's contact details."
-        ).classes("text-sm text-gray-500")
+        ).classes("text-sm text-gray-500 vdb-prose")
         ui.button("New field", icon="add", on_click=lambda: _field_dialog()).props(
             "dense"
         )

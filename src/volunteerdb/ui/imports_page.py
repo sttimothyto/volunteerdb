@@ -62,7 +62,7 @@ async def import_page():
                 if actor.is_admin
                 else " Covers the teams you lead, including sub-teams."
             )
-        ).classes("text-sm text-gray-500")
+        ).classes("text-sm text-gray-500 vdb-prose")
 
         ui.separator()
         ui.label("Import").classes("text-lg font-medium")
@@ -82,7 +82,7 @@ async def import_page():
                 else " Rows are limited to the teams you lead; new volunteers must be "
                 "put on one of your teams in the same file."
             )
-        ).classes("text-sm text-gray-500")
+        ).classes("text-sm text-gray-500 vdb-prose")
 
         report_area = ui.column().classes("w-full gap-2")
 

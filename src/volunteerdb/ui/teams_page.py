@@ -152,7 +152,7 @@ async def teams_page(as_of: str = ""):
         # bound as row data, not interpolated into the slot template: as_of is
         # a raw query param and must never reach Vue's template compiler
         row["href"] = f"/teams/{row['id']}{suffix}"
-    with frame("Teams", actor, as_of=at, asof_path="/teams", wide=True):
+    with frame("Teams", actor, as_of=at, asof_path="/teams"):
         with ui.row().classes("items-center gap-2 w-full"):
             search = (
                 ui.input("Search teams…")
@@ -361,7 +361,7 @@ def _home_page_section(
             ui.label(
                 "Link a public Google Doc to publish this team's page under "
                 "/ministries/ — no sign-in needed to read it."
-            ).classes("text-sm text-gray-500")
+            ).classes("text-sm text-gray-500 vdb-prose")
         return
 
     published = team_page is not None and team_page.html
@@ -410,7 +410,7 @@ def _sheet_section(team_sheet: TeamSheet | None) -> None:
         ui.label(
             "The nightly sync (2:30) creates a Google Sheet for this team's "
             "roster; the link will appear here."
-        ).classes("text-sm text-gray-500")
+        ).classes("text-sm text-gray-500 vdb-prose")
         return
     with ui.row().classes("items-center gap-2"):
         ui.link(
@@ -423,7 +423,7 @@ def _sheet_section(team_sheet: TeamSheet | None) -> None:
             "the sheet leave the roster. The same sync grants this team's "
             "leaders and seconds edit access, at the email on their volunteer "
             "record — Google emails an invitation the first time."
-        ).classes("text-sm text-gray-500")
+        ).classes("text-sm text-gray-500 vdb-prose")
     if team_sheet.last_status == "error":
         ui.label(f"Last sync failed: {team_sheet.last_error}").classes(
             "text-negative text-sm"
@@ -449,7 +449,7 @@ def _application_form_section(team, team_id: int) -> None:
             ui.label(
                 "Link the team's Google Form — people who express interest on "
                 "the public ministry page get it emailed automatically."
-            ).classes("text-sm text-gray-500")
+            ).classes("text-sm text-gray-500 vdb-prose")
         return
     with ui.row().classes("items-center gap-2"):
         ui.link("Google Form", team.application_form_url, new_tab=True)
@@ -757,7 +757,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                 "Continuous service on this team, measured from the database's "
                 "records — members imported when VolunteerDB was set up count "
                 "from that import."
-            ).classes("text-xs text-gray-500")
+            ).classes("text-xs text-gray-500 vdb-prose")
 
         ui.label("Roster").classes("text-lg font-medium")
         if not can_names:
