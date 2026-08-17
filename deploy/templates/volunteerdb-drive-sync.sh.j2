@@ -8,7 +8,8 @@
 #   3. rclone: apply renames, upload regenerated CSVs (convert-on-upload
 #      keeps each file a native Google Sheet, updated IN PLACE so shared
 #      links keep working — verified per docs/how-to/drive-roster-sync.md)
-#   4. decorate: re-apply dropdowns/notes/protection that the convert wipes
+#   4. decorate: re-apply dropdowns/notes/protection that the convert wipes,
+#      and grant each team's leaders/seconds edit access to their own sheet
 #      (non-fatal; MUST precede the relist so `record` stores post-decorate
 #      ModTimes — else every sheet looks leader-edited tomorrow)
 #   5. rclone: relist; container: drive_sync record  (store file ids +
@@ -61,7 +62,7 @@ trap cleanup EXIT
 
 # fresh run state; the workdir itself persists (owned by the container user)
 rm -rf "$WORKDIR/in" "$WORKDIR/out" "$WORKDIR/post"
-rm -f "$WORKDIR/renames.txt" "$WORKDIR/alerts.txt"
+rm -f "$WORKDIR/renames.txt" "$WORKDIR/alerts.txt" "$WORKDIR/manifest.json"
 install -d -o 10001 -g 10001 "$WORKDIR/in" "$WORKDIR/out" "$WORKDIR/post"
 
 # --- 1. download ------------------------------------------------------------
@@ -87,13 +88,16 @@ for f in "$WORKDIR"/out/*.csv; do
     echo "uploaded $(basename "$f")"
 done
 
-# --- 4. decorate (dropdowns/notes/protection; non-fatal by design) ----------
+# --- 4. decorate + share (non-fatal by design) ------------------------------
 if ! '{{ decorate_script }}' --rclone-conf "$RCLONE_CONF" \
-        --remote '{{ rclone_remote }}' --folder '{{ sheets_folder }}'; then
+        --remote '{{ rclone_remote }}' --folder '{{ sheets_folder }}' \
+        --manifest "$WORKDIR/manifest.json" \
+        --alerts-file "$WORKDIR/alerts.txt" \
+        {% if revoke_public_links %}--revoke-links{% endif %}; then
     # `if !` keeps set -e and the ERR trap out of it: a cosmetic failure
     # alerts (via the tail block below) but never fails the data sync.
-    echo "sheet decoration FAILED - data sync itself unaffected" >&2
-    echo "sheet decoration failed (data sync OK) - details: journalctl -u volunteerdb-drive-sync" >> "$WORKDIR/alerts.txt"
+    echo "sheet decoration/sharing FAILED - data sync itself unaffected" >&2
+    echo "sheet decoration or sharing failed (data sync OK) - details: journalctl -u volunteerdb-drive-sync" >> "$WORKDIR/alerts.txt"
 fi
 
 # --- 5. record --------------------------------------------------------------

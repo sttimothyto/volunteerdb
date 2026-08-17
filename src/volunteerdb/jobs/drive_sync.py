@@ -10,6 +10,8 @@ Work-dir contract (host side: deploy/templates/volunteerdb-drive-sync.sh.j2):
     out/<name>.csv     regenerated rosters to upload (converted back to Sheets)
     renames.txt        "<old>TAB<new>" Drive names where a team's slug changed
     alerts.txt         human-readable problems; non-empty triggers the email
+    manifest.json      per-sheet team path + who may edit it, for the host's
+                       decorate/share leg (the only thing that talks to Drive)
     post/listing.json  listing taken after the upload, read by `record`
 
 Subcommands:
@@ -40,6 +42,7 @@ import sqlalchemy as sa
 from ..db import db_session
 from ..log import init_logging
 from ..models import TeamSheet
+from ..services import interest as interest_service
 from ..services import pages as page_service
 from ..services import teams as team_service
 from ..services import users as user_service
@@ -119,6 +122,25 @@ async def _active_teams() -> tuple[list[tuple[int, str, str]], dict[int, tuple]]
             for s in (await session.execute(sa.select(TeamSheet))).scalars()
         }
     return active, stored
+
+
+async def _manifest(active: list[tuple[int, str, str]]) -> dict:
+    """What the host's decorate/share leg needs but cannot know: the Team
+    dropdown values, and who may edit each sheet.
+
+    Covers every active team, deliberately including ones whose apply failed —
+    edit access must not hinge on a sheet passing validation, and a team whose
+    sheet is broken is exactly the one whose leader needs to get into it.
+    """
+    async with db_session() as session:
+        sheets = {
+            expected: {
+                "team": path,
+                "editors": await interest_service.leader_emails(session, team_id),
+            }
+            for team_id, path, expected in active
+        }
+    return {"teams": sorted({path for _id, path, _name in active}), "sheets": sheets}
 
 
 async def _set_sheet_status(team_id: int, status: str, error: str | None) -> None:
@@ -232,6 +254,9 @@ async def apply(workdir: Path) -> int:
         "".join(f"{old}\t{new}\n" for old, new in renames)
     )
     (workdir / "alerts.txt").write_text("".join(f"{line}\n" for line in alerts))
+    (workdir / "manifest.json").write_text(
+        json.dumps(await _manifest(active), indent=1)
+    )
     print(
         f"sync apply: {counts['applied']} applied, {counts['unchanged']} unchanged, "
         f"{counts['new']} new, {counts['error']} failed of {len(active)} teams"

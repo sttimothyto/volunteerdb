@@ -83,7 +83,10 @@ async def resolve(
 
 
 async def leader_emails(session: AsyncSession, team_id: int) -> list[str]:
-    """Emails of the team's leader(s) and second(s) — who a new interest goes to."""
+    """Emails of the team's leader(s) and second(s) — who a new interest goes
+    to, and who the nightly Drive sync grants edit access to the team's roster
+    sheet. Lowercased and blank-free: imports leave '' where a roster had no
+    address, and neither a mailer nor a Drive share can do anything with it."""
     rows = await session.scalars(
         sa.select(Volunteer.email)
         .join(Membership, Membership.volunteer_id == Volunteer.id)
@@ -91,6 +94,7 @@ async def leader_emails(session: AsyncSession, team_id: int) -> list[str]:
             Membership.team_id == team_id,
             Membership.role.in_([TeamRole.leader, TeamRole.second]),
             Volunteer.email.is_not(None),
+            Volunteer.email != "",
         )
     )
-    return sorted(set(rows))
+    return sorted({email.strip().lower() for email in rows if email.strip()})

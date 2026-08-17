@@ -21,9 +21,8 @@ left blank in a team's own sheet.
 ## What leaders need to know
 
 - The team page in VolunteerDB shows the **Google Sheet** link (and the
-  last sync status) to the team's leaders/seconds. Edit access to the sheet
-  is granted **on the Google side** — share the sheet or the folder from
-  `admin@sttimothyto.org`.
+  last sync status) to the team's leaders/seconds. Edit access is granted
+  by the sync itself — see [Who can edit a sheet](#who-can-edit-a-sheet).
 - Deleting a row removes that person from the roster at the next sync.
   Their history is preserved and visible in as-of views and timelines.
   Re-adding a row for someone the sync had archived puts them back on the
@@ -52,29 +51,72 @@ left blank in a team's own sheet.
   a copy (*File → Make a copy*; copies are never synced), not in extra
   tabs. The sheets carry a note saying the same.
 
+## Who can edit a sheet
+
+Each roster sheet is shared with **that team's leaders and seconds**, at
+whatever address their volunteer record carries, and with nobody else the
+sync ever adds. This is reconciled nightly, so a leadership change or a
+new team needs no manual Drive work. The rules:
+
+- A leader with **no email on file** cannot be granted anything. The
+  sync counts those teams and names them in the alert mail — that list is
+  a roster gap to fix in the app, and until it is fixed only
+  `admin@sttimothyto.org` can edit those sheets.
+- A **non-Google address** (hotmail, yahoo, a parish domain elsewhere) is
+  still worth sharing to: Google mails an invitation, and the person can
+  accept it by signing in to a Google account on that address. Whether
+  they can edit *without* one depends on **visitor sharing** being enabled
+  for the Workspace domain. Grants Drive refuses are reported per sheet;
+  they never fail the sync.
+- The invitation email goes out **once**, when the grant is first created
+  — a nightly re-run finds the permission already there and is silent.
+- The sync **never removes** the owner, a grant inherited from the Drive
+  folder (`pastor@sttimothyto.org` today — the API refuses to delete an
+  inherited grant from a single file, so unshare the *folder* to change
+  that), or anyone a human shared a sheet with by hand.
+- The one thing it will remove is an **anyone-with-link** or domain-wide
+  grant, and only under `--revoke-links` (deploy constant
+  `REVOKE_PUBLIC_LINKS`, `deploy/deploy.py`). That flag is the second half
+  of the move off public links: leave it `False` until the no-email list
+  above is short, because everyone on it is editing by link today and has
+  nothing to fall back on.
+
 ## Sheet decoration (self-healing)
 
 Every sheet gets leader-facing polish: a **Role dropdown** of the four
 role labels (strict — free-typed roles are rejected at entry instead of
-failing the night's sync), a **structure warning** note on the first two
-header cells, a **frozen, warning-protected header row**, and a **hidden
-ID column** (hidden columns still export, so the pin survives).
+failing the night's sync), a **Team dropdown** holding exactly that
+sheet's own team path (the sync rejects rows naming another team, so
+there is nothing else worth offering; the template gets all of them), a
+**structure warning** note on the first two header cells, a **frozen,
+warning-protected header row**, and a **hidden ID column** (hidden
+columns still export, so the pin survives).
 
 The nightly rewrite wipes all of this — decoration is therefore a leg of
 the sync itself (`/usr/local/bin/volunteerdb-decorate-sheets`, installed
 from `deploy/files/volunteerdb-decorate-sheets.py`): after the upload
 loop it re-decorates every roster sheet and the template, skipping sheets
-already compliant. It runs **before** the relist that `record` reads —
-decoration bumps Drive ModTime, and the stored sync marks must postdate
-it or every sheet would look leader-edited the next night. A decoration
-failure emails an alert but never fails the data sync. Never run it by
-hand between a sync's `record` and the next timer run for the same reason;
-if you must, immediately re-run the full sync afterwards.
+already compliant, and reconciles their sharing in the same pass. It runs
+**before** the relist that `record` reads — decoration bumps Drive
+ModTime, and the stored sync marks must postdate it or every sheet would
+look leader-edited the next night. A decoration or sharing failure emails
+an alert but never fails the data sync. Never run it by hand between a
+sync's `record` and the next timer run for the same reason; if you must,
+immediately re-run the full sync afterwards.
+
+Team names and leader addresses are things only the app knows, so `apply`
+leaves them in `manifest.json` in the work dir and the script reads it
+(`--manifest`). Without that file it decorates only — no Team dropdown,
+no sharing — which is what a hand-run without the flag gets. `--dry-run`
+reports what it would do and changes nothing.
 
 It authenticates by minting an access token from the rclone remote's
 OAuth client (`rclone.conf` is read, never written) and needs the
 **Google Sheets API enabled** in that client's Cloud project — a
-`SERVICE_DISABLED` error aborts with the one-time activation URL.
+`SERVICE_DISABLED` error aborts with the one-time activation URL. The
+Drive API it shares with rclone is already enabled, and rclone's
+`drive.file` scope covers permission writes on files this system created
+(verified live: create and delete both succeed).
 
 ## The template sheet
 
@@ -107,8 +149,10 @@ human-editable). The Python side never talks to Drive: the host script
 in a work dir (`/var/lib/volunteerdb-drive-sync`), runs
 `python -m volunteerdb.jobs.drive_sync apply /sync` in a one-shot app
 container, uploads the regenerated CSVs back with convert-on-upload,
-re-decorates the sheets (see above), then `… record /sync` stores each
-sheet's Drive **file id** and sync mark.
+re-decorates and re-shares the sheets (see above), then `… record /sync`
+stores each sheet's Drive **file id** and sync mark. The decorate/share
+leg is the one exception to "never talks to Drive" — it is a host script
+too, and it reaches Drive only with what `apply` wrote to `manifest.json`.
 
 Details that make it safe:
 
@@ -164,8 +208,9 @@ from `rclone.conf`) in a small `jobs/drive_upload.py` — no schema change
 needed, `record` reconciles by name.
 
 Then: run the sync once by hand (command above), check the sheets appear
-in Drive, share the folder with the leaders, and open a team page to see
-the link.
+in Drive, and open a team page to see the link. Leaders are shared in by
+the sync — see [Who can edit a sheet](#who-can-edit-a-sheet); the folder
+itself does not need sharing with anyone.
 
 ## Recovery
 

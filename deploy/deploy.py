@@ -121,6 +121,13 @@ SYNC_WORKDIR = "/var/lib/volunteerdb-drive-sync"
 DRIVE_SYNC_SCRIPT = "/usr/local/bin/volunteerdb-drive-sync"
 DECORATE_SCRIPT = "/usr/local/bin/volunteerdb-decorate-sheets"
 APP_UID = 10001  # the image's `app` user; owns the bind-mounted sync workdir
+# Phase two of the move to per-leader sheet access. The sync grants each
+# team's leaders/seconds edit access from the start; flipping this to True
+# also strips the anyone-with-link and domain-wide grants the sheets carry
+# today. Do that only once the nightly "no leader or second with an email"
+# alert has been worked down — everyone on that list edits by link, and
+# revoking it locks them out with nothing to fall back on.
+REVOKE_PUBLIC_LINKS = False
 
 # Host-side scheduling is plain systemd timer/service units (not quadlets —
 # nothing container-scoped about them), installed into /etc/systemd/system.
@@ -450,6 +457,7 @@ files.template(
     net=NET,
     env_file=ENV_FILE,
     decorate_script=DECORATE_SCRIPT,
+    revoke_public_links=REVOKE_PUBLIC_LINKS,
     alert_email=BACKUP_ALERT_EMAIL,
     mail_from="no-reply@sttimothyto.org",
     mail_from_name="VolunteerDB",

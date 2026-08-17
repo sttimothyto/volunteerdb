@@ -409,8 +409,9 @@ def _sheet_section(team_sheet: TeamSheet | None) -> None:
         )
         ui.label(
             "Edits sync into the database nightly (2:30); rows removed from "
-            "the sheet leave the roster. Ask an admin for edit access — it is "
-            "granted on the Google side."
+            "the sheet leave the roster. The same sync grants this team's "
+            "leaders and seconds edit access, at the email on their volunteer "
+            "record — Google emails an invitation the first time."
         ).classes("text-sm text-gray-500")
     if team_sheet.last_status == "error":
         ui.label(f"Last sync failed: {team_sheet.last_error}").classes(

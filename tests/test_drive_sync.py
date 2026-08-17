@@ -226,6 +226,41 @@ async def test_failed_sheet_is_never_overwritten(choir, tmp_path):
     assert (workdir / "out" / "ushers-membership-list.csv").exists()
 
 
+async def test_manifest_carries_team_paths_and_editors_to_the_host(choir, tmp_path):
+    """The host's decorate/share leg cannot reach the database, so apply hands
+    it the Team dropdown values and who may edit each sheet."""
+    async with db_session() as session:
+        sopranos = await teams.create(
+            session, "Sopranos", parent_team_id=choir["choir"]
+        )
+        sam = await volunteers.create(session, "Sam", "Second", "sam@example.org")
+        await memberships.assign(session, sam.id, sopranos.id, TeamRole.second)
+        await teams.create(session, "Flowers")  # nobody in charge
+
+    workdir = _workdir(tmp_path)
+    _listing(workdir, [(NAME, "f123", NOW)])
+    (workdir / "in" / f"{NAME}.csv").write_bytes(
+        _sheet_csv([["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "oui"]])
+    )
+
+    assert await drive_sync.apply(workdir) == 0
+    manifest = json.loads((workdir / "manifest.json").read_text())
+
+    assert manifest["teams"] == ["Choir", "Choir / Sopranos", "Flowers"], (
+        "the template's dropdown offers every active team, as a display path"
+    )
+    assert manifest["sheets"]["choir-sopranos-membership-list"] == {
+        "team": "Choir / Sopranos",
+        "editors": ["sam@example.org"],  # a second counts, a plain member does not
+    }
+    assert manifest["sheets"]["flowers-membership-list"]["editors"] == []
+    assert manifest["sheets"][NAME]["editors"] == ["lena@example.org"], (
+        "a sheet that failed to apply still gets shared — its leader is exactly "
+        "the person who has to go in and fix it"
+    )
+    assert (await _sheet_row(choir["choir"])).last_status == "error"
+
+
 async def test_applied_sheet_with_suspected_churn_still_alerts(choir, tmp_path):
     """An edited email on a blank-ID row applies as remove-plus-create; the
     sheet is fine, but the alert email must still fire so a human checks for

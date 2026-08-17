@@ -101,10 +101,15 @@ async def test_leader_emails_covers_leader_and_second_only(database):
         sam = await volunteers.create(session, "Sam", "Second", "sam@example.org")
         cora = await volunteers.create(session, "Cora", "Core", "cora@example.org")
         noel = await volunteers.create(session, "Noel", "NoEmail")
+        # what an import of a roster with an empty Email cell can leave behind:
+        # not NULL, but nothing a mailer or a Drive share can use either
+        blank = await volunteers.create(session, "Bea", "Blank")
+        blank.email = "  "
         await memberships.assign(session, lena.id, team_id, TeamRole.leader)
         await memberships.assign(session, sam.id, team_id, TeamRole.second)
         await memberships.assign(session, cora.id, team_id, TeamRole.core)
         await memberships.assign(session, noel.id, team_id, TeamRole.second)
+        await memberships.assign(session, blank.id, team_id, TeamRole.leader)
         assert await interest.leader_emails(session, team_id) == [
             "lena@example.org",
             "sam@example.org",

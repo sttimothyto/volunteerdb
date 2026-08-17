@@ -128,11 +128,16 @@ The Google Sheets the nightly sync maintains (and the template sheet the
 `/import` page links to) carry cosmetic guardrails, re-applied every night
 by the sync's decorate leg
 ([how-to](../how-to/drive-roster-sync.md#sheet-decoration-self-healing)):
-a strict **Role dropdown** of the four display labels, a **hidden ID
-column** (still exported — the pin survives), a **frozen,
-warning-protected header row**, and a structure-warning note on the
-header. Decoration never touches cell values and never affects what the
-sync reads or writes.
+a strict **Role dropdown** of the four display labels, a strict **Team
+dropdown**, a **hidden ID column** (still exported — the pin survives), a
+**frozen, warning-protected header row**, and a structure-warning note on
+the header. Decoration never touches cell values and never affects what
+the sync reads or writes.
+
+A team's own sheet offers exactly **one** team in the Team dropdown — its
+own display path — because the sync rejects a row naming any other team;
+the blank the column usually carries stays legal. The template offers
+every active team, since it is copied for hand imports.
 
 ## Export variants
 
