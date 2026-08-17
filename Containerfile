@@ -13,9 +13,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 
 # ---- docs stage ----
-# Builds the Sphinx manual served at /manual. Uses PyPI sphinx (the dev
-# workflow's local-checkout uv source is not available in the container);
-# conf.py reads the version from pyproject.toml, so nothing is installed.
+# Builds the Sphinx manual served at /manual. Pins sphinx here rather than
+# reusing the `docs` dependency group, so the manual builds without resolving
+# the app's own dependencies; conf.py reads the version from pyproject.toml,
+# so the project itself is never installed in this stage.
 FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim AS docs
 WORKDIR /build
 COPY pyproject.toml ./

@@ -121,6 +121,14 @@ ignored. Copy `.env.example` as a starting point.
   zone, not against the container's clock (UTC in production). Event
   reminder windows and the weekly repeat helper use the same zone.
 
+`VDB_TEMPLATE_SHEET_URL`
+: URL of the decorated roster-template Google Sheet in the Drive folder.
+  Default: empty, in which case the **/import** page offers a plain CSV
+  download instead of linking to the sheet. The deploy writes it and reads it
+  back on later runs, like `VDB_PUBLIC_BASE_URL`; set it once after the
+  template sheet exists. See
+  [Sync team rosters with Google Sheets](../how-to/drive-roster-sync.md).
+
 `VDB_DOCS_DIR`
 : Directory of built documentation HTML served at `/manual` (signed-in
   users). Default: `docs/_build/html`, resolved against the working
@@ -133,6 +141,14 @@ ignored. Copy `.env.example` as a starting point.
 `VDB_ADMIN_EMAIL`, `VDB_ADMIN_PASSWORD`
 : Required by `deploy/files/create_admin.py`, the idempotent admin bootstrap
   baked into the container image. See [Commands and scripts](cli.md).
+
+`VDB_DB_PASSWORD`
+: The PostgreSQL role password, written into `/etc/volunteerdb/env` by the
+  deploy and **ignored by the application** — which reads its credentials from
+  `VDB_DATABASE_URL`. It exists so the deploy can read the password back on
+  the next run and keep the role, the connection URL, and
+  `/etc/volunteerdb/db.env` in agreement. Generated once, then reused. See
+  [Rotate secrets](../how-to/rotate-secrets.md).
 
 `VDB_SEED_ADMIN_PASSWORD`
 : Password for the demo admin account created by `scripts/seed.py`.

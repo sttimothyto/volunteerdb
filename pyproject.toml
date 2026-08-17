@@ -52,7 +52,6 @@ testpaths = ["tests"]
 # Ruff's default width, stated explicitly so it cannot drift under us. The
 # source is formatted to it -- run `make format` rather than rewrapping by hand.
 line-length = 88
-extend-exclude = ["ingest-data"]  # one-off import scripts, not part of the app
 
 [tool.ruff.lint]
 # Ruff's defaults (E4/E7/E9 + F) plus import sorting. E501 is deliberately left

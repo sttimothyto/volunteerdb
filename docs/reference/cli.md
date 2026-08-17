@@ -166,5 +166,6 @@ Needs the development database container running. See
 uv run --group docs sphinx-build -W --keep-going -b html docs docs/_build/html
 ```
 
-Sphinx comes from the local checkout at `/home/ben/sphinx` (wired via
-`[tool.uv.sources]` in `pyproject.toml`).
+Sphinx and its extensions come from PyPI, pinned in the `docs` dependency
+group in `pyproject.toml`. The container image builds the same manual in its
+own stage, so `/manual` always documents the release that is running.
