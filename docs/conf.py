@@ -5,12 +5,17 @@ Links:  uv run --group docs sphinx-build -b linkcheck docs docs/_build/linkcheck
 """
 
 import os
+import re
 import tomllib
+from datetime import date
 from pathlib import Path
 
 project = "VolunteerDB"
-author = "St. Timothy Parish"
-copyright = "2026 St. Timothy Parish"
+# Both read at BUILD time, like vdb_contact_email below. The container's docs
+# stage takes them as build args from the site file, so the manual an instance
+# serves at /manual carries that instance's name.
+author = os.environ.get("VDB_ORG_NAME") or "VolunteerDB"
+copyright = f"{date.today().year} {author}"
 # From pyproject.toml, not importlib.metadata: the container's docs build
 # stage runs sphinx via uvx without the volunteerdb package installed.
 _pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
@@ -39,7 +44,9 @@ templates_path = ["_templates"]
 # Read at build time, not runtime: the container bakes this HTML into the
 # image, so VDB_CONTACT_EMAIL must be set for the docs build to change it.
 html_context = {
-    "vdb_contact_email": os.environ.get("VDB_CONTACT_EMAIL", "admin@sttimothyto.org"),
+    # `or`, not a .get default: the container sets these ARGs to "" when the
+    # deploy does not pass them, and an empty address would render as one.
+    "vdb_contact_email": os.environ.get("VDB_CONTACT_EMAIL") or "admin@example.invalid",
 }
 
 # Neo-greco palette mirroring the web app: tokens from
@@ -157,6 +164,9 @@ copybutton_prompt_is_regexp = True
 linkcheck_ignore = [
     r"http://localhost.*",
     r"http://127\.0\.0\.1.*",
-    r"https://vdb\.sttimothyto\.org.*",  # auth-walled production instance
-    r".*\.example.*",  # seeded demo addresses
+    r".*\.example.*",  # seeded demo addresses and the placeholder domain
+    r".*\.invalid.*",
 ]
+# A running instance is auth-walled, so linkcheck cannot follow links to it.
+if _base_url := os.environ.get("VDB_PUBLIC_BASE_URL"):
+    linkcheck_ignore.append(re.escape(_base_url) + ".*")

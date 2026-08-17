@@ -366,10 +366,30 @@ async def test_sync_user_is_idempotent_and_cannot_log_in(database):
     assert first == second
 
     async with db_session() as session:
-        user = await users.get_by_email(session, drive_sync.SYNC_USER_EMAIL)
+        user = await users.get_by_email(session, drive_sync.sync_user_email())
         assert user.is_active is False
         assert user.invite_token is None, "no redeemable invite"
         assert user.is_admin is False
+
+
+def test_sync_user_follows_the_sender_domain(monkeypatch):
+    """Derived from VDB_MAIL_FROM rather than configured separately, so it
+    cannot land on a domain the parish does not own.
+
+    The St. Timothy value is asserted explicitly because that instance already
+    has a drive-sync@sttimothyto.org account with history attributed to it —
+    deriving a different address would orphan those rows behind a second user.
+    """
+    from volunteerdb.config import settings
+
+    monkeypatch.setenv("VDB_MAIL_FROM", "no-reply@sttimothyto.org")
+    settings.cache_clear()
+    assert drive_sync.sync_user_email() == "drive-sync@sttimothyto.org"
+
+    monkeypatch.setenv("VDB_MAIL_FROM", "no-reply@stpeters.example.org")
+    settings.cache_clear()
+    assert drive_sync.sync_user_email() == "drive-sync@stpeters.example.org"
+    settings.cache_clear()
 
 
 async def test_missing_listing_is_a_systemic_failure(database, tmp_path):

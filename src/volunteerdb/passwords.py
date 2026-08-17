@@ -48,6 +48,9 @@ factor, stored parameters) lives in `auth.py`.
 """
 
 import unicodedata
+from functools import lru_cache
+
+from .config import settings
 
 MIN_LENGTH = 15
 MAX_LENGTH = 128
@@ -59,19 +62,16 @@ GUIDANCE = (
 )
 
 # Context-specific words: "the name of the service, the username, and
-# derivatives thereof" (§3.1.1.2). The account's own email address is added
-# per-check; these are the service's own names.
-SERVICE_TERMS = frozenset(
+# derivatives thereof" (§3.1.1.2). These are the ones true of every instance;
+# the account's own address is added per check, and the organisation's own
+# name and domains by _org_terms() below.
+GENERIC_SERVICE_TERMS = frozenset(
     {
         "volunteerdb",
         "vdb",
         "volunteer",
         "volunteers",
         "volunteerdatabase",
-        "sttimothy",
-        "sttimothys",
-        "sainttimothy",
-        "sainttimothys",
         "parish",
         "church",
         "ministry",
@@ -289,9 +289,40 @@ def _forms(password: str) -> set[str]:
     return forms - {""}
 
 
+@lru_cache
+def _org_terms(org_name: str, mail_from: str, public_base_url: str) -> frozenset[str]:
+    """This instance's own names, folded — the half of §3.1.1.2's
+    "name of the service" that depends on who is running it.
+
+    Derived rather than configured, so that a new parish gets its own terms
+    blocked without having to think about it. For "St. Timothy's" at
+    sttimothyto.org this yields sttimothys, sttimothy, sainttimothys,
+    sainttimothy and sttimothyto — which is what the list used to hardcode,
+    plus the mail domain it did not.
+    """
+    terms: set[str] = set()
+    if org_name:
+        folded = _fold(org_name)
+        terms |= {folded, folded.removesuffix("s")}
+        # "St." is the common abbreviation; block the spelled-out form too.
+        if folded.startswith("st") and not folded.startswith("saint"):
+            spelled = "saint" + folded[2:]
+            terms |= {spelled, spelled.removesuffix("s")}
+    for source in (mail_from, public_base_url):
+        # Every label of the host except the public suffix: sttimothyto.org
+        # contributes sttimothyto, vdb.example.org contributes vdb and example.
+        host = source.rsplit("@", 1)[-1].split("//")[-1].split("/")[0]
+        labels = host.split(".")
+        terms |= {_fold(label) for label in labels[:-1]}
+    return frozenset(terms - {""})
+
+
 def _context_terms(email: str | None) -> set[str]:
     """The service's names plus the account's own address, folded."""
-    terms = set(SERVICE_TERMS)
+    s = settings()
+    terms = set(GENERIC_SERVICE_TERMS) | _org_terms(
+        s.org_name, s.mail_from, s.public_base_url
+    )
     if email:
         local, _, domain = email.strip().partition("@")
         terms |= {_fold(email), _fold(local)}

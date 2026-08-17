@@ -88,6 +88,29 @@ def test_context_specific_words_are_rejected():
     check("maria bakes rhubarb pies", email="maria.alvarez@example.org")
 
 
+def test_the_organisations_own_names_are_context_words(monkeypatch):
+    """Half of "the name of the service" depends on who is running the
+    instance, so it is derived from the configured identity rather than
+    listed. For "St. Timothy's" at sttimothyto.org this must reproduce
+    exactly the four terms that used to be hardcoded — plus the mail domain,
+    which was not.
+    """
+    from volunteerdb.config import settings
+    from volunteerdb.passwords import _org_terms
+
+    settings.cache_clear()
+    terms = _org_terms(
+        "St. Timothy's", "no-reply@sttimothyto.org", "https://vdb.sttimothyto.org"
+    )
+    assert {"sttimothy", "sttimothys", "sainttimothy", "sainttimothys"} <= terms
+    assert "sttimothyto" in terms, "the mail domain is a context word too"
+
+    # A parish with an unrelated name gets its own, and not St. Timothy's.
+    other = _org_terms("Holy Family", "no-reply@holyfamily.example", "")
+    assert "holyfamily" in other
+    assert "sttimothy" not in other
+
+
 @pytest.mark.parametrize(
     ("password", "reason"),
     [

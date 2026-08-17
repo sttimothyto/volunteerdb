@@ -19,6 +19,16 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # so the project itself is never installed in this stage.
 FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim AS docs
 WORKDIR /build
+# The manual carries the instance's own name and contact address, so these are
+# build args: conf.py reads them at build time and the HTML is baked in. The
+# deploy passes them from the site file; a plain `podman build .` gets the
+# neutral defaults in conf.py.
+ARG VDB_ORG_NAME=""
+ARG VDB_CONTACT_EMAIL=""
+ARG VDB_PUBLIC_BASE_URL=""
+ENV VDB_ORG_NAME=$VDB_ORG_NAME \
+    VDB_CONTACT_EMAIL=$VDB_CONTACT_EMAIL \
+    VDB_PUBLIC_BASE_URL=$VDB_PUBLIC_BASE_URL
 COPY pyproject.toml ./
 COPY docs ./docs
 RUN --mount=type=cache,target=/root/.cache/uv \

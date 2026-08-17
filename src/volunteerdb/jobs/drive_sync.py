@@ -39,6 +39,7 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
+from ..config import settings
 from ..db import db_session
 from ..log import init_logging
 from ..models import TeamSheet
@@ -50,9 +51,7 @@ from ..sheets import exporter, importer
 
 SHEET_SUFFIX = "-membership-list"
 MAX_SHEET_BYTES = 5_000_000  # a roster CSV is KBs; anything near this is wrong
-# History attribution: sync writes carry a named account, not NULL. The
-# account can never sign in — random discarded password, deactivated.
-SYNC_USER_EMAIL = "drive-sync@sttimothyto.org"
+SYNC_USER_LOCALPART = "drive-sync"  # see sync_user_email()
 
 
 @dataclass
@@ -90,13 +89,25 @@ def _same_rows(a: bytes, b: bytes) -> bool:
         return False
 
 
+def sync_user_email() -> str:
+    """History attribution for sync writes: a named account, never NULL.
+
+    Derived from the sender domain rather than configured separately — one
+    fewer thing to set, and it cannot end up on a domain the parish does not
+    own. The mail_from validator guarantees the "@", so the split is total.
+    The account can never sign in: random discarded password, deactivated.
+    """
+    return f"{SYNC_USER_LOCALPART}@{settings().mail_from.rsplit('@', 1)[1]}"
+
+
 async def _ensure_sync_user() -> int:
+    email = sync_user_email()
     async with db_session() as session:
-        user = await user_service.get_by_email(session, SYNC_USER_EMAIL)
+        user = await user_service.get_by_email(session, email)
         if user is None:
             user = await user_service.create(
                 session,
-                SYNC_USER_EMAIL,
+                email,
                 password=secrets.token_urlsafe(32),
                 link_by_email=False,  # a bot, never a volunteer's login
             )

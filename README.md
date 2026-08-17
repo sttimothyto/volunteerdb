@@ -1,4 +1,7 @@
-# VolunteerDB (VDB) — St. Timothy Parish
+# VolunteerDB (VDB)
+
+Built for and running at St. Timothy Parish, Toronto. To stand up your own
+instance, see [docs/how-to/new-instance.md](docs/how-to/new-instance.md).
 
 Who serves where? ~500 volunteers across ~50 ministry teams (with sub-teams),
 each volunteer holding a role per team. Built to answer the priest's question

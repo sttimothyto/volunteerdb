@@ -88,6 +88,43 @@ def test_invite_email_states_the_default_week():
     assert "7 days" in body, "the 168-hour default must read as days"
 
 
+def test_mail_names_the_organisation_when_one_is_configured(monkeypatch):
+    from volunteerdb.config import settings
+
+    monkeypatch.setenv("VDB_ORG_NAME", "St. Timothy's")
+    settings.cache_clear()
+
+    subject, body = mail.invite_email("https://vdb.example.org/invite/tok")
+    assert subject == "Your VolunteerDB account at St. Timothy's"
+    assert "the volunteer database for St. Timothy's." in body
+    # Never a possessive: any name ending in s would produce "Timothy's's".
+    assert "'s's" not in body and "'s's" not in subject
+
+    _, applicant = mail.interest_applicant_email("Hospitality", None)
+    assert "ministry at St. Timothy's — " in applicant
+    settings.cache_clear()
+
+
+def test_mail_reads_cleanly_with_no_organisation_set(monkeypatch):
+    """The default is empty rather than a placeholder, so the copy has to
+    survive it — no double spaces, no dangling "at", no orphaned dash."""
+    from volunteerdb.config import settings
+
+    monkeypatch.setenv("VDB_ORG_NAME", "")
+    settings.cache_clear()
+
+    subject, body = mail.invite_email("https://vdb.example.org/invite/tok")
+    _, applicant = mail.interest_applicant_email("Hospitality", None)
+
+    assert subject == "Your VolunteerDB account"
+    for text in (subject, body, applicant):
+        assert "  " not in text, f"double space in {text!r}"
+        assert " at ." not in text and text.rstrip() == text.rstrip()
+    assert body.startswith("An account has been created for you in VolunteerDB, ")
+    assert "ministry — the ministry leaders" in applicant
+    settings.cache_clear()
+
+
 def test_event_digest_email_sections_and_link():
     tz = ZoneInfo("America/Toronto")
     items = [

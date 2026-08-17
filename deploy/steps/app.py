@@ -4,6 +4,8 @@ Ends with a smoke test that fails the deploy if the app does not come back,
 which is what makes an unattended run from CI safe to gate on.
 """
 
+import shlex
+
 import siteconf
 from pyinfra.api.deploy import deploy
 from pyinfra.operations import files, server, systemd
@@ -64,9 +66,21 @@ def deploy_app(site, secrets, *, here, repo_root, unit_vars, admin_password) -> 
             f"|| podman pull -q {siteconf.PG_IMAGE}"
         ],
     )
+    # The docs stage bakes the manual into the image, so the instance's name,
+    # contact address and origin have to be known at BUILD time. shlex.quote
+    # on every one of them: an organisation name legitimately contains spaces
+    # and apostrophes ("St. Timothy's" is both).
+    build_args = " ".join(
+        f"--build-arg {key}={shlex.quote(value)}"
+        for key, value in (
+            ("VDB_ORG_NAME", site.site_org_name),
+            ("VDB_CONTACT_EMAIL", site.mail_contact_email),
+            ("VDB_PUBLIC_BASE_URL", secrets.public_base_url),
+        )
+    )
     server.shell(
         name="Build app image",
-        commands=[f"podman build -t {siteconf.IMAGE} {siteconf.APP_DIR}"],
+        commands=[f"podman build {build_args} -t {siteconf.IMAGE} {siteconf.APP_DIR}"],
     )
 
     for quadlet in siteconf.QUADLETS:

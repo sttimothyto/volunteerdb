@@ -64,8 +64,23 @@ ignored. Copy `.env.example` as a starting point.
   instead of sent — useful in development, where the printed OTP code is how
   you complete a passwordless login.
 
+`VDB_ORG_NAME`
+: The organisation this instance serves, e.g. `St. Timothy's`. It appears in
+  outbound mail ("Your VolunteerDB account at …"), and its name and mail
+  domain become context-specific terms in the
+  [password policy](../explanation/auth.md) — so a parish's own name cannot
+  be used as a password. Default: empty, in which case the mail copy drops
+  the clause rather than naming a placeholder. Production sets it from the
+  site file, which also passes it to the docs build so the manual at
+  `/manual` carries the same name.
+
 `VDB_MAIL_FROM`
-: Sender address for outbound email. Default: `no-reply@sttimothyto.org`.
+: Sender address for outbound email. Default: `no-reply@example.invalid` —
+  a reserved domain, so an instance that never set it is obvious rather than
+  quietly sending as someone else. **The address must be on a domain your
+  mail provider is authorised to send for**, or delivery fails. The
+  `drive-sync@…` account that owns Drive-sync history entries is derived from
+  this domain.
 
 `VDB_MAIL_FROM_NAME`
 : Sender display name. Default: `VolunteerDB`.

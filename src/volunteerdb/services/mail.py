@@ -57,13 +57,33 @@ def ttl_window(hours: int) -> str:
     return f"{hours} hours"
 
 
+def org() -> str:
+    """The parish this instance serves (VDB_ORG_NAME), or "" if unset.
+
+    Every use below reads as a complete sentence either way. The phrasing
+    deliberately avoids a possessive — "St. Timothy's's volunteer database" is
+    otherwise unavoidable for any name ending in s.
+    """
+    return settings().org_name.strip()
+
+
 def invite_email(invite_url: str, ttl_hours: int | None = None) -> tuple[str, str]:
     hours = settings().invite_ttl_hours if ttl_hours is None else ttl_hours
     window = ttl_window(hours)
+    where = org()
+    subject = "Your VolunteerDB account"
+    if where:
+        subject += f" at {where}"
+    opening = (
+        f"An account has been created for you in VolunteerDB, the volunteer "
+        f"database for {where}."
+        if where
+        else "An account has been created for you in VolunteerDB, the volunteer "
+        "database."
+    )
     return (
-        "Your VolunteerDB account at St. Timothy's",
-        "An account has been created for you in VolunteerDB, St. Timothy's "
-        "volunteer database.\n\n"
+        subject,
+        f"{opening}\n\n"
         f"Finish setting it up here: {invite_url}\n\n"
         "Setting a password is optional. If you skip it, we'll email you a "
         "one-time sign-in code each time you log in.\n\n"
@@ -151,10 +171,12 @@ def interest_applicant_email(
             "The ministry leader will follow up with you about the next "
             "steps, including an application form."
         )
+    where = org()
+    at_org = f" at {where}" if where else ""
     return (
         f"Thank you for your interest in {team_name}",
-        f"Thank you for your interest in the {team_name} ministry at "
-        f"St. Timothy's — the ministry leaders have been told.\n\n"
+        f"Thank you for your interest in the {team_name} ministry{at_org}"
+        " — the ministry leaders have been told.\n\n"
         f"{next_step}\n\n"
         "If you didn't fill in a form on our ministries site, you can safely "
         "ignore this email.",

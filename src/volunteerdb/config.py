@@ -35,8 +35,19 @@ class Settings(BaseSettings):
     # IANA zone the parish lives in: date-typed things like election deadlines
     # mean "end of that day HERE", not in UTC (the container's clock).
     timezone: str = "America/Toronto"
+    # The organisation this instance serves, e.g. "St. Timothy's". Appears in
+    # outbound mail, and its name and mail domain become context-specific
+    # terms in the password policy (passwords.py). Empty by default rather
+    # than a placeholder: the mail copy drops the clause cleanly when it is
+    # unset, where a default of "VolunteerDB" would produce "Your VolunteerDB
+    # account at VolunteerDB" on every instance that forgot to set it.
+    org_name: str = ""
     smtp2go_api_key: str = ""  # empty: emails are printed to the log, not sent
-    mail_from: str = "no-reply@sttimothyto.org"
+    # RFC 2606 reserved, so an instance that never set this is obvious in the
+    # logs and cannot deliver anywhere real. Production sets it from the site
+    # file; the address must be on a domain the mail provider is authorised
+    # to send for.
+    mail_from: str = "no-reply@example.invalid"
     mail_from_name: str = "VolunteerDB"
     # Absolute origin for links in nightly-job emails (e.g.
     # https://vdb.sttimothyto.org). UI-sent mail derives links from the live
