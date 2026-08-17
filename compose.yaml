@@ -33,6 +33,9 @@ services:
     profiles: ["app"]
     build: .
     environment:
+      # NOT a copy of the VDB_DATABASE_URL in .env / config.py: this one names
+      # `db`, the service's hostname on the compose network, where those name
+      # localhost. It has to be spelled out here for the same reason.
       VDB_DATABASE_URL: postgresql+asyncpg://volunteerdb:${POSTGRES_PASSWORD:-volunteerdb}@db:5432/volunteerdb
       # Empty is valid (a random per-boot secret; sessions reset on restart),
       # so this must not be `:?` — that rejects empty as well as unset, and

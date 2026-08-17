@@ -35,6 +35,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from volunteerdb import db
+from volunteerdb.config import settings
 from volunteerdb.db import db_session
 from volunteerdb.models import (
     FieldType,
@@ -55,10 +56,9 @@ from volunteerdb.services import workload as workload_service
 from volunteerdb.sheets.exporter import export_csv
 from volunteerdb.sheets.importer import run_import
 
-BASE_URL = os.environ.get(
-    "VDB_DATABASE_URL",
-    "postgresql+asyncpg://volunteerdb:volunteerdb@localhost:5432/volunteerdb",
-)
+# Through Settings, not os.environ, so the bench reaches the same database
+# .env points the app at (see the note in tests/conftest.py).
+BASE_URL = settings().database_url
 BENCH_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_bench"
 
 # landmark accounts/volunteers the patterns look up by email at run time

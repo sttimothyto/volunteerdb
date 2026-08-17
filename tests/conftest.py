@@ -26,10 +26,12 @@ from volunteerdb.log import shared_processors
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
-BASE_URL = os.environ.get(
-    "VDB_DATABASE_URL",
-    "postgresql+asyncpg://volunteerdb:volunteerdb@localhost:5432/volunteerdb",
-)
+# Go through Settings rather than os.environ so the suite reads .env exactly
+# like the app does. Reading the environment alone meant an edited
+# VDB_DATABASE_URL (or POSTGRES_PASSWORD) in .env gave you a working `make
+# dev` and a `make test` that failed against stale credentials, since make
+# exports nothing from that file.
+BASE_URL = settings().database_url
 TEST_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_test"
 
 # NiceGUI "main file" for user_simulation; see its docstring for why page module
