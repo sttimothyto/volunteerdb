@@ -123,17 +123,18 @@ one concession is the **nightly digest** (`jobs.proposal_digest`, run at
 03:30 parish time by the in-app scheduler, `volunteerdb.scheduler`): each
 voter gets at most one email per night covering everything that changed
 for them — added to a roll, or a proposal entering its voting phase — with
-both deadlines restated. Per-voter stamps on `proposal_voter`
-(`added_notified_at`, `voting_notified_at`) make each notice one-shot; a
-failed send retries the next night. There are no deadline-nearing
+both deadlines restated. A row in `notification` per (voter, stage) makes each
+notice one-shot; a failed send writes nothing and retries the next night. There are no deadline-nearing
 reminders beyond that, and nothing is emailed at appointment.
 
 ## What it replaced
 
-Revision `0007` shipped a lighter flow — one volunteer proposed per
-(team, role), accepted or declined directly by the manager. It solved
-double-entry but not the familiarity problem: the proposer still picked
-one name from memory and one manager decided alone. Revision `0008`
-replaced it (the table was rebuilt; the old flow's data model is kept
-only in that migration's `downgrade()`) rather than keeping both, so
-that *every* appointment passes through the same deliberate gate.
+The first version of this feature shipped a lighter flow — one volunteer
+proposed per (team, role), accepted or declined directly by the manager. It
+solved double-entry but not the familiarity problem: the proposer still picked
+one name from memory and one manager decided alone. The nomination-and-vote flow
+replaced it outright, rebuilding the table rather than keeping both paths, so
+that *every* appointment passes through the same deliberate gate. (The old
+shape survives nowhere in the repo now that the migration chain is squashed —
+which is the intended trade: the schema is easier to read, and one abandoned
+data model is no longer part of it.)

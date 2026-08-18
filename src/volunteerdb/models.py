@@ -30,9 +30,9 @@ ROLE_LABELS: dict[TeamRole, str] = {
 # the column typed as the Python enum so a typo is a failure at assignment
 # rather than at flush. Earlier revisions used varchar + CHECK for these,
 # reasoning that adding a value would need ALTER TYPE — but `ALTER TYPE … ADD
-# VALUE` has existed since 9.1, and rev 0018 showed the CHECK path is no
-# cheaper: it needed DROP + CREATE with the value list duplicated in the
-# migration and in this file. Every member is a StrEnum, so `event.status ==
+# VALUE` has existed since 9.1, and the one revision that did widen a set showed
+# the CHECK path is no cheaper: it needed DROP + CREATE with the value list
+# duplicated in the migration and in this file. Every member is a StrEnum, so `event.status ==
 # "cancelled"` still reads true and nothing had to change at the comparison
 # sites.
 team_role_enum = sa.Enum(TeamRole, name="team_role")
@@ -167,7 +167,7 @@ SYS_PERIOD_DEFAULT = sa.text("tstzrange(clock_timestamp(), NULL)")
 
 class Volunteer(Base):
     __tablename__ = "volunteer"
-    # serves every list's ORDER BY last_name, first_name (rev 0005)
+    # serves every list's ORDER BY last_name, first_name
     __table_args__ = (
         sa.Index("ix_volunteer_name", "last_name", "first_name"),
         # services.volunteers folds case on write; this is what stops a row
@@ -252,7 +252,7 @@ class Membership(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     # no index=: the (volunteer_id, team_id) unique above leads with this column,
     # so a separate btree on it was a strict prefix — same lookups, twice the
-    # write cost (rev 0001 created both)
+    # write cost, which is why only the unique remains
     volunteer_id: Mapped[int] = mapped_column(
         sa.ForeignKey("volunteer.id", ondelete="CASCADE")
     )
@@ -684,15 +684,19 @@ class EventAssignment(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
+    # manager-recorded exceptions to auto attendance; NULL = auto
+    attended_override: Mapped[bool | None]
+    hours_override: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2))
     # Reminder PREFERENCES, chosen at sign-up and pre-checked: an opted-out
     # stage simply never fires. These stay on the assignment because they are
     # settings, not records — what has already been *sent* lives in
     # models.Notification, keyed by (assignment, stage).
+    #
+    # Declared after the overrides because the revision that added them appended
+    # them there; see AppUser's docstring for why declaration order is kept
+    # honest against the deployed order.
     notify_7d: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
     notify_24h: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
-    # manager-recorded exceptions to auto attendance; NULL = auto
-    attended_override: Mapped[bool | None]
-    hours_override: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2))
 
 
 class EventTaskForceSource(Base):
@@ -810,9 +814,9 @@ class Notification(Base):
     Three hand-rolled versions of this used to sit as columns on the rows they
     described: `assigned_notified_at` / `reminded_7d_at` / `reminded_24h_at` on
     event_assignment, and `added_notified_at` / `voting_notified_at` on
-    proposal_voter. Every new notice meant two more columns and a migration
-    (rev 0021 added four), and the "who still needs telling" query had to OR
-    across all of them — a shape no plain index can serve.
+    proposal_voter. Every new notice meant two more columns and a migration —
+    one of them added four at once — and the "who still needs telling" query had
+    to OR across all of them — a shape no plain index can serve.
 
     Deliberately NOT polymorphic. A single `(entity_type, entity_id)` pair would
     have been shorter and would have thrown away the thing the old columns got
@@ -861,6 +865,14 @@ class AppUser(Base):
     allowed the other way round — a token with no expiry, or an expiry with no
     token, would have read as a live link or a dead one depending on which
     function looked.
+
+    The declaration order is the *deployed* order, not the logical one: the
+    invite expiry, the confidentiality stamp and the address-change trio were
+    each appended by a later revision, so that is where they physically sit in
+    every live database. Keeping the two in step is what lets a fresh
+    database and a migrated one be diffed against each other, which is how the
+    squashed 0001 was verified. Group members are noted in their comments
+    instead.
     """
 
     __tablename__ = "app_user"
@@ -890,35 +902,39 @@ class AppUser(Base):
     password_hash: Mapped[str | None] = mapped_column(sa.String(255))
     is_admin: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     api_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
+    # Only the SHA-256 digest of the invite link is stored, as for api_token, so
+    # a read of this table hands out nothing. Paired with invite_expires_at
+    # below — set and cleared together, and CHECKed.
     invite_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
-    # Set and cleared together with invite_token; a token whose expiry has
-    # passed (or was never recorded) is dead. See services/users.py.
-    invite_expires_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
-    # When the person accepted the confidentiality notice while redeeming
-    # their invite (agreeing not to disclose volunteers' personal information
-    # without consent). NULL: the account predates the notice.
-    confidentiality_agreed_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
-    # An address change waits here until the new address opens its link, so
-    # nothing on file moves before somebody proves they read mail there. Set
-    # and cleared as a triple, like the invite pair above (see
-    # services/users.py); the address itself is not unique until it lands.
-    pending_email: Mapped[str | None] = mapped_column(sa.String(255))
-    email_change_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
-    email_change_expires_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
-    otp_hash: Mapped[str | None] = mapped_column(sa.String(255))
-    otp_sent_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
-    otp_expires_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
-    otp_attempts: Mapped[int] = mapped_column(default=0, server_default=sa.text("0"))
     is_active: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
     last_login_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+    # an active email OTP: argon2 hash, because six digits is a small space
+    otp_hash: Mapped[str | None] = mapped_column(sa.String(255))
+    otp_sent_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    otp_expires_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    otp_attempts: Mapped[int] = mapped_column(default=0, server_default=sa.text("0"))
+    # The other half of invite_token. A token whose expiry has passed
+    # (or was never recorded) is dead — see services/users.invite_live.
+    invite_expires_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
+    # When the person accepted the confidentiality notice while
+    # redeeming their invite. NULL: the account predates the notice.
+    confidentiality_agreed_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
+    # An address change waits here until the new address opens its
+    # link, so nothing on file moves before somebody proves they read mail
+    # there. Set and cleared as a triple, and CHECKed as one; the address itself
+    # is deliberately not unique until it lands, because two people may ask and
+    # only the first to confirm gets it. The token is a digest, like the others.
+    pending_email: Mapped[str | None] = mapped_column(sa.String(255))
+    email_change_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
+    email_change_expires_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
     )
 
 
@@ -1093,9 +1109,9 @@ volunteer_history = _make_history_table(Volunteer.__table__)
 team_history = _make_history_table(Team.__table__)
 membership_history = _make_history_table(Membership.__table__)
 
-# the timeline view filters membership history by volunteer (rev 0005; the
-# trigram search indexes from that revision are expression-only and live
-# solely in the migration)
+# the timeline view filters membership history by volunteer. The one other
+# expression-only index, `ix_volunteer_email_lower`, cannot be declared on a
+# mapped column either and lives in the migration alone.
 sa.Index("ix_membership_history_volunteer_id", membership_history.c.volunteer_id)
 
 HISTORY_TABLES: dict[type[Base], sa.Table] = {

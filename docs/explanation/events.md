@@ -25,8 +25,10 @@ extra team is a small price for never re-implementing permissions.
 The app now *automates* that pattern (`services/task_force.py`): an event's
 manager adds a **collaborating team** from the event page, which creates
 the task-force team as a child of the owning team, copies in the union of
-both rosters (highest role per person — collaborating leaders co-manage,
-by design), and repoints the event at it. More teams can be added, and
+both rosters (highest role per person — collaborating leaders co-manage *the
+event*, by design; a task-force role grants nothing over the people in it, see
+[Roles and permissions](../reference/permissions.md)), and repoints the event at
+it. More teams can be added, and
 *Sync rosters* re-copies after source teams drift; nothing syncs in the
 background. Once the event ends (or is cancelled), an hourly job restores
 the owning team and deletes the task-force team — its memberships stay
@@ -127,9 +129,9 @@ reminders — "coming up this week" once the event is 7 parish days out, and
 chosen at sign-up (pre-checked; unticking one silences just that stage).
 Day-granularity is deliberate: reminders arrive with the one nightly
 digest, not at a computed instant. Idempotency is the proposal-digest
-pattern — nullable per-assignment stamps (`assigned_notified_at`,
-`reminded_7d_at`, `reminded_24h_at`) that a failed send leaves NULL to
-retry the next night. Self sign-ups and substitution claims are stamped at
+pattern, and now literally the same table: a row in `notification` per
+(assignment, stage), which a failed send never writes, so the next night
+retries. Self sign-ups and substitution claims are stamped at
 insert: the person acted themselves, so only manager assignments earn the
 "you have been scheduled" notice; an event pending several notices at once
 is listed once, under the strongest, stamping every stage it satisfied.

@@ -55,10 +55,10 @@ async def search(
     makes was not one search kept. Email is now scoped like the rest of the
     contact details, and query_lang classes it _PRIVATE to match.
 
-    (The rev-0005 trigram indexes cover only the name and email predicates;
-    since the private branches join the same OR, every non-blank search
-    seq-scans — sub-millisecond at parish scale, so the indexes are retained as
-    harmless until search is restructured.)
+    (No index serves this. Two GIN trigram indexes once covered the name and
+    email predicates, but the private branches join the same OR, so every
+    non-blank search seq-scanned anyway; they were dropped with pg_trgm rather
+    than kept as decoration. Sub-millisecond at parish scale.)
 
     `limit` caps the rows the database returns (for the search-box typeahead);
     since the order is by name, that is the alphabetically first N matches.
@@ -359,8 +359,8 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
     same instant), so a gap between versions of the same (volunteer, team)
     means leave-then-rejoin under a fresh membership id — a new spell. Both
     ends are system times: they trail the real-world join/leave by however
-    long the operator waited (rev 0011 dropped the operator-entered
-    joined_on). A delete recreated in the same instant (e.g. by an importer)
+    long the operator waited (the operator-entered `joined_on` was dropped
+    early: it was typed once and never maintained). A delete recreated in the same instant (e.g. by an importer)
     shows as two abutting spells.
     """
     mh = membership_history

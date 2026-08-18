@@ -24,9 +24,9 @@ async def assign(ctx: CtxDep, data: MembershipIn) -> MembershipOut:
 async def update(
     ctx: CtxDep, membership_id: int, data: MembershipPatch
 ) -> MembershipOut:
-    """Change the role. `role` is the only field: revision 0011 dropped
-    `joined_on` and `notes`, and a membership is otherwise identified by the
-    pair it joins."""
+    """Change the role. `role` is the only field: `joined_on` and `notes` were
+    dropped early, and a membership is otherwise identified by the pair it
+    joins."""
     fields = data.model_dump(exclude_unset=True)
     # get_managed authorizes the read, so a body with nothing in it cannot be
     # used to report who holds what on a team the caller has no rights over

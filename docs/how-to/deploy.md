@@ -106,6 +106,43 @@ note that it must carry `encode zstd gzip`, because the app serves no
 compressed responses itself. See
 [Production deployment architecture](../explanation/deployment.md).
 
+## One-time: a database that predates the migration squash
+
+Revisions `0001`–`0028` were collapsed into a single `0001`, so `alembic upgrade
+head` cannot move a database still stamped `0023` — that revision is no longer in
+the chain, and alembic stops rather than guessing. Any instance last deployed
+before the squash needs one hand-run catch-up, once, *before* the next deploy.
+Check where it stands, on the host:
+
+```sh
+podman exec -i volunteerdb-db psql -U volunteerdb -Atq volunteerdb \
+  -c "select version_num from alembic_version"
+```
+
+If that says `0001`, this section is already behind you. If it says `0023`, copy
+`deploy/catchup-0023.sql` to the host and run:
+
+```sh
+podman exec -i volunteerdb-db pg_dump -U volunteerdb volunteerdb \
+  | gzip > ~/before-catchup-$(date +%F).sql.gz          # first, always
+podman exec -i volunteerdb-db psql -U volunteerdb -v ON_ERROR_STOP=1 \
+  volunteerdb < catchup-0023.sql
+podman run --rm --network volunteerdb --env-file /etc/volunteerdb/env \
+  localhost/volunteerdb:latest alembic stamp 0001
+```
+
+The script runs as one transaction and refuses to start against any revision
+other than `0023`, so a second invocation is a loud no-op rather than a mess. It
+applies exactly what `0024`–`0028` did; the result was checked by diffing
+`pg_dump --schema-only` against a database built fresh from `0001`, which came
+out identical — including the two constraint names PostgreSQL would otherwise
+have derived differently, and the now-unused `pg_trgm` extension. Afterwards
+deploy normally: `alembic upgrade head` sees `0001` and has nothing to do.
+
+Stop the app first if you like, but you do not have to — the catch-up holds
+locks only for the length of one transaction, and a parish-sized database
+finishes it in well under a second.
+
 ## Verify
 
 - The deploy's smoke test passed (it fails loudly otherwise).
@@ -133,5 +170,7 @@ git checkout main
 
 Migrations are not automatically downgraded; if the bad release included
 one, restore the database from a [backup](backup-restore.md) or run a
-reviewed `alembic downgrade` as a one-shot container.
+reviewed `alembic downgrade` as a one-shot container. Note that `0001` is now
+the base revision: downgrading it drops every table, so for anything below the
+current head, restore from backup instead.
 

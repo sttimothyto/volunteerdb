@@ -251,7 +251,8 @@ logout.
 
 `POST /api/auth/login` returns a personal Bearer token whose SHA-256 digest
 is all the server keeps — a leaked database does not leak usable tokens
-(migration `0004` invalidated all pre-hashing tokens on this principle).
+(the migration that introduced hashing invalidated every pre-hashing token on
+this principle).
 Each login rotates the token, so revocation is "log in again" or
 deactivate the account. Forcing a reset (*re-invite*) revokes it too: it was
 issued against the password being invalidated, and that route is what an admin

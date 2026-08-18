@@ -44,13 +44,20 @@ promotions) are reconstructed from the archived versions.
 
 - **Granularity is the transaction**, not the calendar. `sys_period` records
   when the row was *written*, which for freshly imported historical data is
-  the import moment, not the real-world join date. (Rev 0011 dropped the
-  operator-entered `joined_on`, so timeline spells start at record creation.)
+  the import moment, not the real-world join date. (An early revision dropped
+  the operator-entered `joined_on`, so timeline spells start at record
+  creation.)
   The seed script backdates its demo history rows precisely because real
   deployments cannot.
-- **Not everything is versioned.** Accounts, custom-field *definitions*, and
-  settings (`app_user`, `custom_field_def`, `app_setting`) have no twins;
-  as-of pages show today's field definitions applied to yesterday's data.
+- **Not everything is versioned.** Only the roster is: `volunteer`, `team` and
+  `membership`. Accounts, custom-field *definitions*, settings, and everything
+  under events and elections have no twins, so as-of pages show today's field
+  definitions applied to yesterday's data. That is a deliberate boundary rather
+  than an omission — versioning costs a twin table, a rebuild on every column
+  change, and double the write volume, which is worth paying for the three
+  tables whose past anyone asks about and not for the rest. Events and
+  proposals keep their own record of what happened (the audit log, and the
+  decision columns on `proposal`).
   Likewise [workload](workload.md) as-of scores use historical memberships
   but *today's* multipliers and thresholds — the config isn't versioned.
 - **History is append-only in practice but not immutable in principle** — a

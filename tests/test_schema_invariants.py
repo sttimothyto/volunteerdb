@@ -9,7 +9,7 @@ the README all say so; these are the first checks that would actually notice.
 import sqlalchemy as sa
 
 from volunteerdb.audit import REDACTED_COLUMNS
-from volunteerdb.models import HISTORY_TABLES, AppUser, ProposalBallot
+from volunteerdb.models import HISTORY_TABLES, AppUser, Base, ProposalBallot
 
 _COLUMN_META = sa.text(
     """
@@ -100,3 +100,50 @@ def test_redacted_columns_cover_every_appuser_secret():
         "on app_user or proposal_ballot; prune them so the set keeps documenting what "
         "is actually secret"
     )
+
+
+async def test_the_migration_builds_the_schema_the_models_describe(database):
+    """models.py and the migration must agree, column for column and in order.
+
+    Nothing checked this before: the test database is built by a real
+    `alembic upgrade head` (conftest), never `create_all`, so ORM/DDL drift was
+    invisible — and there *was* drift, in event_assignment, because rev 0021
+    appended columns the model declared in the middle.
+
+    It matters more now. Revisions 0001-0028 were squashed into one file whose
+    statements are a frozen snapshot rather than generated from the metadata, so
+    this is what stops the snapshot and the models parting company. It is also
+    what makes `deploy/catchup-0023.sql` verifiable: the migration is the
+    yardstick both a fresh database and an upgraded one are measured against.
+    """
+    async with database.connect() as conn:
+        for table in Base.metadata.sorted_tables:
+            migrated = [
+                (r.column_name, r.udt_name)
+                for r in await conn.execute(_COLUMN_META, {"table": table.name})
+            ]
+            assert migrated, f"the migration creates no table {table.name!r}"
+            declared = [c.name for c in table.columns]
+            assert [name for name, _ in migrated] == declared, (
+                f"{table.name}: the migration's column order differs from "
+                f"models.py. Positional history archiving depends on this for "
+                f"versioned tables, and the squash's dump-diff verification "
+                f"depends on it for all of them.\n"
+                f"  migrated: {[name for name, _ in migrated]}\n"
+                f"  declared: {declared}"
+            )
+
+        # and no table exists that the models do not describe
+        rows = await conn.execute(
+            sa.text(
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+                " AND tablename <> 'alembic_version'"
+            )
+        )
+        in_database = {r.tablename for r in rows}
+        declared_tables = set(Base.metadata.tables)
+        assert in_database == declared_tables, (
+            "the migration and models.py disagree about which tables exist: "
+            f"only in the database {sorted(in_database - declared_tables)}, "
+            f"only in models.py {sorted(declared_tables - in_database)}"
+        )

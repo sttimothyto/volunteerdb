@@ -118,7 +118,7 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | Method & path | Permission | Notes |
 |---|---|---|
 | `POST /api/memberships` | manage the team | 201; upsert on (volunteer, team) |
-| `PATCH /api/memberships/{id}` | manage the team | `role` only (rev 0011 dropped `joined_on`/`notes`) |
+| `PATCH /api/memberships/{id}` | manage the team | `role` only — a membership is otherwise identified by the pair it joins |
 | `DELETE /api/memberships/{id}` | manage the team | 204 |
 
 ### Reports & graph — `api/reports.py`
