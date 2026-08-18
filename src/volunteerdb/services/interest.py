@@ -2,15 +2,19 @@
 
 An outsider (no account, no session) fills the "I'm interested" form on
 /ministries/<slug>.html; the submission lands here, leaders see it on the
-team page and resolve it once handled. Like every service, permission checks
-live in the callers via require() — except submit(), whose caller is the
-public route and has no actor at all.
+team page and resolve it once handled.
+
+Reading and resolving take manage rights on the team, checked here. submit()
+takes no actor at all and never will: its caller is the public form, and the
+submitter has no account — the abuse controls there are a honeypot and a
+throttle (ui/ministries_routes.py), not a permission.
 """
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Interest, Membership, TeamRole, Volunteer
+from ..permissions import Actor, require
 
 
 def _clip(value: str | None, limit: int) -> str | None:
@@ -57,7 +61,16 @@ async def submit(
     return interest
 
 
-async def unresolved(session: AsyncSession, team_id: int) -> list[Interest]:
+async def unresolved(
+    session: AsyncSession, actor: Actor | None, team_id: int
+) -> list[Interest]:
+    """Open submissions for the team. Manage rights: a submission carries a
+    stranger's name, address, phone and free text, sent to the ministry's
+    leadership rather than to the parish at large."""
+    require(
+        actor is None or actor.can_manage_team(team_id),
+        "see this team's interest submissions",
+    )
     rows = await session.scalars(
         sa.select(Interest)
         .where(Interest.team_id == team_id, Interest.resolved_at.is_(None))
@@ -71,11 +84,19 @@ async def get(session: AsyncSession, interest_id: int) -> Interest | None:
 
 
 async def resolve(
-    session: AsyncSession, interest_id: int, *, resolved_by: int | None
+    session: AsyncSession,
+    actor: Actor | None,
+    interest_id: int,
+    *,
+    resolved_by: int | None,
 ) -> Interest:
     interest = await session.get(Interest, interest_id)
     if interest is None:
         raise LookupError(f"interest {interest_id} not found")
+    require(
+        actor is None or actor.can_manage_team(interest.team_id),
+        "resolve this team's interest submissions",
+    )
     interest.resolved_at = sa.func.now()
     interest.resolved_by = resolved_by
     await session.flush()

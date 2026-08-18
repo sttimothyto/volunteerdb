@@ -7,7 +7,9 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
+from ..log import audit_log
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, Membership, Volunteer
+from ..permissions import Actor, require
 from ..services import custom_fields as custom_field_service
 from ..services import teams as team_service
 from .common import ROSTER_HEADERS, safe_cell
@@ -159,19 +161,49 @@ async def build_roster_rows(
 
 async def export_csv(
     session: AsyncSession,
+    actor: Actor | None,
     *,
     team_id: int | None = None,
     team_ids: set[int] | None = None,
     at: datetime | None = None,
     subtree: bool = True,
-    include_notes: bool = True,
 ) -> bytes:
     """Whole parish, one team's subtree (team_id), or a union of subtrees
     (team_ids); subtree=False restricts to direct memberships (Drive-sheet mode).
-    include_notes=False blanks the notes column — see build_roster_rows.
+
+    Authorization is here rather than at the two front doors, because this is
+    the widest read in the app and the rules are not obvious: a parish export
+    is admin-only, a team export needs full-roster rights on that team, and a
+    union needs them on every team in it. The notes column follows from the
+    same actor — blank unless they may read notes — so no caller has to work
+    that out, and the audit line is written once.
+
+    `actor=None` is a trusted internal caller: the nightly Drive sync, which
+    writes each team's own sheet.
     """
     if team_ids is None and team_id is not None:
         team_ids = {team_id}
+    include_notes = True
+    if actor is not None:
+        if team_ids is None:
+            require(actor.is_admin, "export the whole parish")
+        else:
+            for scope_id in team_ids:
+                require(actor.can_view_full_roster(scope_id), "export this team")
+            # Notes need edit rights everywhere else in the app, so a core
+            # member — who may read the roster but not the notes on it — gets
+            # the column blank. It stays in place because the file has to
+            # round-trip: a blank cell parses to None and the importer leaves a
+            # None field alone.
+            include_notes = actor.is_admin or all(
+                actor.can_manage_team(scope_id) for scope_id in team_ids
+            )
+        audit_log(
+            "export.roster",
+            scope="parish" if team_ids is None else sorted(team_ids),
+            as_of=at.isoformat() if at else None,
+            notes_included=include_notes,
+        )
     data = await build_roster_rows(
         session,
         team_ids=team_ids,

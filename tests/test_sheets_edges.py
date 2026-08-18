@@ -68,7 +68,7 @@ async def test_formula_injection_escape_roundtrips(database):
         await volunteers.create(
             session, None, "=Evil", "Person", "evil@example.org", notes="=SUM(A1:A9)"
         )
-        content = await exporter.export_csv(session)
+        content = await exporter.export_csv(session, None)
 
     row = next(r for r in _rows(content)[1:] if r[3] == "evil@example.org")
     assert row[1] == "'=Evil" and row[5] == "'=SUM(A1:A9)", (

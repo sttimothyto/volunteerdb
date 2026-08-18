@@ -131,18 +131,20 @@ async def test_set_home_doc_url_validates_and_clears(database):
     async with db_session() as session:
         team = await teams.create(session, None, "Choir")
         await pages.set_home_doc_url(
-            session, team.id, "https://docs.google.com/document/d/abc123/edit"
+            session, None, team.id, "https://docs.google.com/document/d/abc123/edit"
         )
         assert team.home_doc_url == "https://docs.google.com/document/d/abc123/edit"
 
         with pytest.raises(ValueError):
-            await pages.set_home_doc_url(session, team.id, "https://evil.test/doc")
+            await pages.set_home_doc_url(
+                session, None, team.id, "https://evil.test/doc"
+            )
 
-        await pages.set_home_doc_url(session, team.id, None)
+        await pages.set_home_doc_url(session, None, team.id, None)
         assert team.home_doc_url is None
 
         with pytest.raises(LookupError):
-            await pages.set_home_doc_url(session, 99999, None)
+            await pages.set_home_doc_url(session, None, 99999, None)
 
 
 # --- fetch_and_store -------------------------------------------------------
@@ -156,7 +158,7 @@ async def _team_with_doc(name="Choir", doc_id="abc123"):
     async with db_session() as session:
         team = await teams.create(session, None, name)
         await pages.set_home_doc_url(
-            session, team.id, f"https://docs.google.com/document/d/{doc_id}/edit"
+            session, None, team.id, f"https://docs.google.com/document/d/{doc_id}/edit"
         )
         return team.id
 
@@ -510,7 +512,10 @@ async def _publish(name: str, html: str = "<p>hello</p>", active=True) -> int:
     async with db_session() as session:
         team = await teams.create(session, None, name)
         await pages.set_home_doc_url(
-            session, team.id, "https://docs.google.com/document/d/x" + str(team.id)
+            session,
+            None,
+            team.id,
+            "https://docs.google.com/document/d/x" + str(team.id),
         )
         session.add(TeamPage(team_id=team.id, html=html, status="ok"))
         if not active:
@@ -568,7 +573,7 @@ async def test_published_page_and_teams_share_the_predicate(database):
     async with db_session() as session:
         no_html = await teams.create(session, None, "Pending Fetch")
         await pages.set_home_doc_url(
-            session, no_html.id, "https://docs.google.com/document/d/p1"
+            session, None, no_html.id, "https://docs.google.com/document/d/p1"
         )
         session.add(TeamPage(team_id=no_html.id, html=None, status="error"))
         no_doc = await teams.create(session, None, "Unlinked")
@@ -615,7 +620,7 @@ async def test_ministry_image_route_serves_published_teams_only(real_app_client)
 
     async with db_session() as session:
         await teams.update(session, None, team_id, is_active=True)
-        await pages.set_home_doc_url(session, team_id, None)
+        await pages.set_home_doc_url(session, None, team_id, None)
     r = await real_app_client.get(f"/ministries/img/{team_id}/1")
     assert r.status_code == 404, "unlinking the doc takes its images offline"
 

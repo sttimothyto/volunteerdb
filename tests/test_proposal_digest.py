@@ -53,6 +53,7 @@ async def _proposal(ids, role=TeamRole.second) -> int:
     async with db_session() as session:
         proposal = await elections.create_proposal(
             session,
+            None,
             team_id=ids["liturgy"],
             role=role,
             nomination_deadline=D1,
@@ -191,6 +192,7 @@ async def test_new_round_renotifies_its_fresh_roll(database, monkeypatch):
     async with db_session() as session:
         fresh = await elections.new_round(
             session,
+            None,
             pid,
             created_by=ids["admin_u"],
             nomination_deadline=date(2026, 9, 5),

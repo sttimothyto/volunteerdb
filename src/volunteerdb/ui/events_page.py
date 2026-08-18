@@ -23,7 +23,7 @@ from .. import query_lang
 from ..config import settings
 from ..log import audit_log
 from ..models import EventSlot, EventStatus, EventSubRequest, Volunteer
-from ..permissions import require
+from ..permissions import Forbidden, require
 from ..services import events as event_service
 from ..services import gcal, mail
 from ..services import interest as interest_service
@@ -139,20 +139,14 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
                 assignment = await event_service.get_assignment(session, assignment_id)
                 if assignment is None:
                     raise LookupError("assignment vanished")
-                require(
-                    assignment.volunteer_id == actor.volunteer_id
-                    or actor.can_manage_team(
-                        (await event_service.get(session, assignment.event_id)).team_id
-                    ),
-                    "ask for a substitute for someone else",
-                )
                 sub = await event_service.request_sub(
                     session,
+                    actor,
                     assignment_id=assignment_id,
                     requested_by=actor.user.id,
                     note=note.value,
                 )
-                view = await event_service.detail(session, assignment.event_id)
+                view = await event_service.detail(session, actor, assignment.event_id)
                 asker = next(
                     v
                     for sv in view.slots
@@ -223,13 +217,9 @@ async def _substitute_dialog(
                 event = await event_service.get(session, assignment.event_id)
                 if event is None:
                     raise LookupError("event vanished")
-                require(
-                    assignment.volunteer_id == actor.volunteer_id
-                    or actor.can_manage_team(event.team_id),
-                    "hand off someone else's slot",
-                )
                 assignment, outgoing, incoming = await event_service.substitute(
                     session,
+                    actor,
                     assignment_id=assignment_id,
                     new_volunteer_id=pick.value,
                     acted_by=actor.user.id,
@@ -287,6 +277,8 @@ async def _self_removal_dialog(assignment_id: int) -> None:
                 assignment = await event_service.get_assignment(session, assignment_id)
                 if assignment is None:
                     raise LookupError("assignment vanished")
+                # remove_assignment allows a manager too; taking YOURSELF off
+                # is the flow this dialog serves, and the reason it collects
                 require(
                     assignment.volunteer_id == actor.volunteer_id,
                     "take somebody else off their slot",
@@ -306,7 +298,7 @@ async def _self_removal_dialog(assignment_id: int) -> None:
                     me.full_name if me else "A volunteer",
                     text,
                 )
-                await event_service.remove_assignment(session, assignment_id)
+                await event_service.remove_assignment(session, actor, assignment_id)
                 audit_log(
                     "event.self_removal",
                     event_id=event.id,
@@ -332,7 +324,10 @@ async def _self_removal_dialog(assignment_id: int) -> None:
 async def _claim_sub(sub_request_id: int) -> None:
     async with action_session() as (session, actor):
         sub, assignment, asker = await event_service.claim_sub(
-            session, sub_request_id=sub_request_id, volunteer_id=actor.volunteer_id
+            session,
+            actor,
+            sub_request_id=sub_request_id,
+            volunteer_id=actor.volunteer_id,
         )
         event = await event_service.get(session, assignment.event_id)
         slot = await session.get(EventSlot, assignment.slot_id)
@@ -359,18 +354,7 @@ async def _withdraw_sub(sub_request_id: int) -> None:
         sub = await session.get(EventSubRequest, sub_request_id)
         if sub is None:
             raise LookupError("request vanished")
-        assignment = await event_service.get_assignment(session, sub.assignment_id)
-        event = (
-            await event_service.get(session, assignment.event_id)
-            if assignment
-            else None
-        )
-        require(
-            (assignment is not None and assignment.volunteer_id == actor.volunteer_id)
-            or (event is not None and actor.can_manage_team(event.team_id)),
-            "withdraw someone else's substitute request",
-        )
-        await event_service.cancel_sub(session, sub_request_id)
+        await event_service.cancel_sub(session, actor, sub_request_id)
     ui.notify("Request withdrawn", color="positive")
     ui.navigate.reload()
 
@@ -478,7 +462,6 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
                 if (n.value or "").strip()
             ]
             async with action_session() as (session, actor):
-                require(actor.can_manage_team(team.value), "manage this team's events")
                 hits = await event_service.similar_events(
                     session,
                     actor,
@@ -490,9 +473,9 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
             if hits and not await _confirm_similar(hits):
                 return  # back to the still-open form
             async with action_session() as (session, actor):
-                require(actor.can_manage_team(team.value), "manage this team's events")
                 created = await event_service.create_event(
                     session,
+                    actor,
                     team_id=team.value,
                     title=title.value or "",
                     starts_at=starts_at,
@@ -786,12 +769,9 @@ def _edit_event_dialog(event) -> None:
                 current = await event_service.get(session, event.id)
                 if current is None:
                     raise LookupError("event vanished")
-                require(
-                    actor.can_manage_team(current.team_id),
-                    "manage this team's events",
-                )
                 await event_service.update_event(
                     session,
+                    actor,
                     event.id,
                     title=title.value or "",
                     description=description.value,
@@ -824,12 +804,9 @@ def _add_slot_dialog(event_id: int) -> None:
                 current = await event_service.get(session, event_id)
                 if current is None:
                     raise LookupError("event vanished")
-                require(
-                    actor.can_manage_team(current.team_id),
-                    "manage this team's events",
-                )
                 await event_service.add_slot(
                     session,
+                    actor,
                     event_id,
                     name=name.value or "",
                     capacity=int(capacity.value) if capacity.value else None,
@@ -848,18 +825,20 @@ async def event_detail_page(request: Request, event_id: int):
     base_url = str(request.base_url).rstrip("/")
     async with page_session() as (session, actor):
         try:
-            view = await event_service.detail(session, event_id)
+            view = await event_service.detail(session, actor, event_id)
         except LookupError:
             with frame("Event not found", actor):
                 ui.label(f"No event with id {event_id}.")
             return
-        event = view.event
-        if not actor.can_view_roster_names(event.team_id):
+        except Forbidden:
+            # the service decides; the page only chooses how to say it, and a
+            # whole page reads better than a toast on an empty frame
             with frame("Events", actor):
                 ui.label("This event is visible to the members of its team.").classes(
                     "text-gray-500"
                 )
             return
+        event = view.event
         can_manage = actor.can_manage_team(event.team_id)
         am_member = actor.volunteer_id is not None and await event_service.is_member(
             session, actor.volunteer_id, event.team_id
@@ -875,7 +854,7 @@ async def event_detail_page(request: Request, event_id: int):
             else []
         )
         attendance = (
-            await event_service.attendance_rows(session, event_id)
+            await event_service.attendance_rows(session, actor, event_id)
             if can_manage
             and event_service.is_past(event)
             and event.status == EventStatus.scheduled.value
@@ -931,6 +910,7 @@ async def event_detail_page(request: Request, event_id: int):
         async with action_session() as (session, actor):
             await event_service.set_rsvp(
                 session,
+                actor,
                 event_id=event_id,
                 volunteer_id=actor.volunteer_id,
                 available=available,
@@ -960,6 +940,7 @@ async def event_detail_page(request: Request, event_id: int):
                     if repeat is not None and repeat.value:
                         _, result = await event_service.sign_up_series(
                             session,
+                            actor,
                             slot_id=slot_id,
                             volunteer_id=actor.volunteer_id,
                             notify_7d=bool(week.value),
@@ -968,6 +949,7 @@ async def event_detail_page(request: Request, event_id: int):
                     else:
                         await event_service.sign_up(
                             session,
+                            actor,
                             slot_id=slot_id,
                             volunteer_id=actor.volunteer_id,
                             notify_7d=bool(week.value),
@@ -1020,12 +1002,9 @@ async def event_detail_page(request: Request, event_id: int):
         if not await _confirm_add_collaborator(label):
             return
         async with action_session() as (session, actor):
-            current = await event_service.get(session, event_id)
-            if current is None:
-                raise LookupError("event vanished")
-            require(actor.can_manage_team(current.team_id), "manage this team's events")
             meta = await task_force_service.add_collaborating_team(
                 session,
+                actor,
                 event_id=event_id,
                 source_team_id=team_id_value,
                 created_by=actor.user.id,
@@ -1042,27 +1021,14 @@ async def event_detail_page(request: Request, event_id: int):
     @notify_errors
     async def _sync_rosters() -> None:
         async with action_session() as (session, actor):
-            current = await event_service.get(session, event_id)
-            if current is None:
-                raise LookupError("event vanished")
-            require(actor.can_manage_team(current.team_id), "manage this team's events")
-            added = await task_force_service.refresh_rosters(session, event_id)
+            added = await task_force_service.refresh_rosters(session, actor, event_id)
         ui.notify(f"Rosters synced — {added} member(s) added", color="positive")
         ui.navigate.reload()
 
     @notify_errors
     async def _withdraw(assignment_id: int) -> None:
         async with action_session() as (session, actor):
-            assignment = await event_service.get_assignment(session, assignment_id)
-            if assignment is None:
-                raise LookupError("assignment vanished")
-            current = await event_service.get(session, assignment.event_id)
-            require(
-                assignment.volunteer_id == actor.volunteer_id
-                or (current is not None and actor.can_manage_team(current.team_id)),
-                "change other people's assignments",
-            )
-            await event_service.remove_assignment(session, assignment_id)
+            await event_service.remove_assignment(session, actor, assignment_id)
         ui.navigate.reload()
 
     @notify_errors
@@ -1074,9 +1040,9 @@ async def event_detail_page(request: Request, event_id: int):
             current = await event_service.get(session, event_id)
             if current is None:
                 raise LookupError("event vanished")
-            require(actor.can_manage_team(current.team_id), "manage this team's events")
             await event_service.assign(
                 session,
+                actor,
                 slot_id=slot_id,
                 volunteer_id=volunteer_id,
                 assigned_by=actor.user.id,
@@ -1089,8 +1055,7 @@ async def event_detail_page(request: Request, event_id: int):
             current = await event_service.get(session, event_id)
             if current is None:
                 raise LookupError("event vanished")
-            require(actor.can_manage_team(current.team_id), "manage this team's events")
-            await event_service.delete_slot(session, slot_id)
+            await event_service.delete_slot(session, actor, slot_id)
         ui.navigate.reload()
 
     async def _cancel_event() -> None:
@@ -1116,10 +1081,9 @@ async def event_detail_page(request: Request, event_id: int):
             current = await event_service.get(session, event_id)
             if current is None:
                 raise LookupError("event vanished")
-            require(actor.can_manage_team(current.team_id), "manage this team's events")
             was_upcoming = not event_service.is_past(current)
             cancelled, emails = await event_service.cancel_event(
-                session, event_id, cancelled_by=actor.user.id
+                session, actor, event_id, cancelled_by=actor.user.id
             )
             paths = team_service.team_paths(await team_service.list_all(session))
             message = mail.event_cancelled_email(
@@ -1145,9 +1109,9 @@ async def event_detail_page(request: Request, event_id: int):
             current = await event_service.get(session, event_id)
             if current is None:
                 raise LookupError("event vanished")
-            require(actor.can_manage_team(current.team_id), "record attendance")
             await event_service.set_attendance(
                 session,
+                actor,
                 assignment_id=assignment_id,
                 attended=attended_value,
                 hours=hours,
@@ -1161,9 +1125,8 @@ async def event_detail_page(request: Request, event_id: int):
             current = await event_service.get(session, event_id)
             if current is None:
                 raise LookupError("event vanished")
-            require(actor.can_manage_team(current.team_id), "record attendance")
             await event_service.set_attendance(
-                session, assignment_id=assignment_id, attended=None, hours=None
+                session, actor, assignment_id=assignment_id, attended=None, hours=None
             )
         ui.navigate.reload()
 

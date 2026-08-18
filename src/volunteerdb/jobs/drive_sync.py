@@ -256,7 +256,9 @@ async def apply(workdir: Path) -> int:
         if status == "error":
             continue  # leave the leader's sheet on Drive untouched, to be fixed
         async with db_session() as session:
-            content = await exporter.export_csv(session, team_id=team_id, subtree=False)
+            content = await exporter.export_csv(
+                session, None, team_id=team_id, subtree=False
+            )
         in_path = in_dir / f"{entry.name}.csv" if entry else None
         if (
             in_path is not None

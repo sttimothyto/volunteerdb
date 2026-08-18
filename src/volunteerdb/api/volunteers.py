@@ -297,12 +297,9 @@ async def volunteer_hours(ctx: CtxDep, volunteer_id: int) -> VolunteerHoursOut:
     recorded an exception). Visible to whoever may view the full profile."""
     if await service.get(ctx.session, volunteer_id) is None:
         raise LookupError(f"volunteer {volunteer_id} not found")
-    team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
-    require(
-        ctx.actor.can_view_volunteer(volunteer_id, team_ids),
-        "view this volunteer's service record",
+    summary = await event_service.hours_for_volunteer(
+        ctx.session, ctx.actor, volunteer_id
     )
-    summary = await event_service.hours_for_volunteer(ctx.session, volunteer_id)
     return VolunteerHoursOut(
         volunteer_id=volunteer_id,
         total_hours=float(summary.total_hours),

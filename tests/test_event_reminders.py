@@ -56,6 +56,7 @@ async def _event(team_id: int, days_ahead: int, title: str = "Mass") -> int:
     async with db_session() as session:
         created = await event_service.create_event(
             session,
+            None,
             team_id=team_id,
             title=title,
             starts_at=_at(days_ahead, 10),
@@ -67,9 +68,10 @@ async def _event(team_id: int, days_ahead: int, title: str = "Mass") -> int:
 
 async def _assign(event_id: int, volunteer_id: int) -> int:
     async with db_session() as session:
-        view = await event_service.detail(session, event_id)
+        view = await event_service.detail(session, None, event_id)
         a = await event_service.assign(
             session,
+            None,
             slot_id=view.slots[0].slot.id,
             volunteer_id=volunteer_id,
             assigned_by=None,
@@ -136,9 +138,10 @@ async def test_opted_out_stages_stay_silent(database, sent_mail):
     team_id, vids = await _team(3)
     event_id = await _event(team_id, days_ahead=5)
     async with db_session() as session:
-        view = await event_service.detail(session, event_id)
+        view = await event_service.detail(session, None, event_id)
         await event_service.sign_up(
             session,
+            None,
             slot_id=view.slots[0].slot.id,
             volunteer_id=vids[1],
             notify_7d=False,
@@ -146,6 +149,7 @@ async def test_opted_out_stages_stay_silent(database, sent_mail):
         )
         await event_service.sign_up(
             session,
+            None,
             slot_id=view.slots[0].slot.id,
             volunteer_id=vids[2],
             notify_7d=True,
@@ -208,13 +212,13 @@ async def test_exclusions(database, sent_mail):
     cancelled_id = await _event(team_id, days_ahead=5, title="Cancelled Mass")
     await _assign(cancelled_id, vids[1])
     async with db_session() as session:
-        await event_service.cancel_event(session, cancelled_id, cancelled_by=None)
+        await event_service.cancel_event(session, None, cancelled_id, cancelled_by=None)
 
     signup_id = await _event(team_id, days_ahead=10, title="Signup Mass")
     async with db_session() as session:
-        view = await event_service.detail(session, signup_id)
+        view = await event_service.detail(session, None, signup_id)
         await event_service.sign_up(
-            session, slot_id=view.slots[0].slot.id, volunteer_id=vids[2]
+            session, None, slot_id=view.slots[0].slot.id, volunteer_id=vids[2]
         )
 
     await event_reminders.main(today=date.today())

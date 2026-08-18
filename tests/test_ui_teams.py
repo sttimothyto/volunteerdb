@@ -272,7 +272,7 @@ async def test_published_page_link_and_qr_use_the_path_slug(database):
     async with db_session() as session:
         ids = await _parish(session)
         await page_service.set_home_doc_url(
-            session, ids["music"], "https://docs.google.com/document/d/abc123"
+            session, None, ids["music"], "https://docs.google.com/document/d/abc123"
         )
         session.add(
             TeamPage(team_id=ids["music"], html="<p>rehearsals</p>", status="ok")

@@ -39,6 +39,25 @@ contains domain logic, which is why GUI and API cannot drift apart on
 permissions or validation — both pass an `Actor` into the same functions
 (see [The permission model](permissions.md)).
 
+Authorization is the part of that worth spelling out, because it is the part
+that used to be untrue. Every service function that mutates or reads scoped
+data takes `actor` and refuses for itself, through `permissions.require()` or
+one of the per-module gates around it (`_managed`, `_visible`,
+`_require_self`, …). A front door may still ask an actor-shaped question that
+has no single service behind it — "may this account use elections at all",
+"which teams does the export scope to" — and `tests/test_authorization_layer.py`
+keeps that list short by failing on any other `require()` under `api/` or
+`ui/`. Its companion sweep fails on a service that accepts an `Actor` and never
+checks it, which is the exact shape of the bug that let any ministry leader
+read another team's contact details through a task force.
+
+`actor=None` means a trusted internal caller: the nightly jobs, the seed and
+bench scripts, the roster sync, and the handful of services that act for a
+caller already authorized upstream. It is written out at every such call site
+rather than defaulted, so skipping a check is visible in the diff, and the
+parameter is required so a forgotten actor is a `TypeError` rather than a
+silent bypass.
+
 Because the GUI is server-side, a page interaction (say, changing a role on
 a roster) is: websocket event → page handler → service call in a
 transaction → widgets refresh from returned state. There is no client-side

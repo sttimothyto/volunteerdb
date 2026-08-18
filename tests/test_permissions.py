@@ -221,6 +221,7 @@ async def test_voting_roll_grants_elections_access(parish):
     async with db_session() as session:
         proposal = await elections.create_proposal(
             session,
+            None,
             team_id=ids["liturgy"],
             role=TeamRole.leader,
             nomination_deadline=date(2026, 8, 15),

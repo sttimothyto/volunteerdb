@@ -37,6 +37,7 @@ from ..models import (
     Team,
     TeamRole,
 )
+from ..permissions import Actor, require
 from . import mail, memberships
 from . import teams as team_service
 
@@ -108,14 +109,34 @@ async def _create_meta_team(
 
 
 async def add_collaborating_team(
-    session: AsyncSession, *, event_id: int, source_team_id: int, created_by: int | None
+    session: AsyncSession,
+    actor: Actor | None,
+    *,
+    event_id: int,
+    source_team_id: int,
+    created_by: int | None,
 ) -> Team:
     """First collaborator: create the meta team, seed sources with the owner
     and the newcomer, copy both rosters, repoint the event. Later ones: add
-    the source and copy its roster. Returns the meta team."""
+    the source and copy its roster. Returns the meta team.
+
+    Manage rights on the event's own team — and deliberately NOT on the source:
+    inviting another ministry to staff your event is a request you make of the
+    parish, not a power over that team. What keeps it safe is the other half,
+    in permissions.Actor: the meta team confers rights over the EVENT and never
+    over the people it borrowed, so a collaboration cannot hand you anybody's
+    contact details, notes, workload or invite link.
+
+    This function authorized nothing at all before, and the checks sat at the
+    two front doors — which is how the GUI came to check the wrong team.
+    """
     event = await session.get(Event, event_id)
     if event is None:
         raise LookupError(f"event {event_id} not found")
+    require(
+        actor is None or actor.can_manage_team(event.team_id),
+        "manage this event",
+    )
     _require_upcoming(event, "add a collaborating team")
     if await session.get(Team, source_team_id) is None:
         raise LookupError(f"team {source_team_id} not found")
@@ -151,11 +172,13 @@ async def add_collaborating_team(
             raise ValueError("that team already staffs this event")
         session.add(EventTaskForceSource(event_id=event_id, team_id=source_team_id))
         await session.flush()
-    await refresh_rosters(session, event_id)
+    await refresh_rosters(session, None, event_id)  # authorized above
     return await session.get(Team, tf.team_id)  # type: ignore[return-value]
 
 
-async def refresh_rosters(session: AsyncSession, event_id: int) -> int:
+async def refresh_rosters(
+    session: AsyncSession, actor: Actor | None, event_id: int
+) -> int:
     """Copy the union of the source rosters into the meta team, additively:
     highest role wins per person, an existing meta role is never downgraded,
     nobody is removed (leaving the task force is roster management on the
@@ -163,6 +186,10 @@ async def refresh_rosters(session: AsyncSession, event_id: int) -> int:
     tf = await session.get(EventTaskForce, event_id)
     if tf is None:
         raise LookupError(f"event {event_id} has no task force")
+    require(
+        actor is None or actor.can_manage_team(tf.team_id),
+        "manage this event",
+    )
     source_ids = list(
         await session.scalars(
             sa.select(EventTaskForceSource.team_id).where(

@@ -31,6 +31,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Team, TeamPage, TeamPageImage
+from ..permissions import Actor, require
 
 logger = structlog.get_logger(__name__)
 
@@ -71,9 +72,19 @@ def extract_doc_id(url: str) -> str:
 
 
 async def set_home_doc_url(
-    session: AsyncSession, team_id: int, url: str | None
+    session: AsyncSession, actor: Actor | None, team_id: int, url: str | None
 ) -> Team:
-    """Set or clear the team's home page doc; validates the link shape."""
+    """Set or clear the team's home page doc; validates the link shape.
+
+    Full-roster rights, so **core members included** — deliberately, and not an
+    oversight to be tightened: ministry leaders here are often elderly, and a
+    public page nobody can refresh goes stale. The content is nh3-sanitized and
+    the URL must live on docs.google.com, so what is at stake is what the page
+    says under a name the parish can correct."""
+    require(
+        actor is None or actor.can_view_full_roster(team_id),
+        "manage this team's home page",
+    )
     team = await session.get(Team, team_id)
     if team is None:
         raise LookupError(f"team {team_id} not found")
@@ -262,12 +273,21 @@ async def _localize_images(
 
 
 async def fetch_and_store(
-    session: AsyncSession, team: Team, client: httpx.AsyncClient, force: bool = False
+    session: AsyncSession,
+    team: Team,
+    client: httpx.AsyncClient,
+    force: bool = False,
+    *,
+    actor: Actor | None = None,
 ) -> TeamPage:
     """Fetch the team's doc and upsert its team_page row, downloading embedded
-    images into team_page_image (replaced wholesale). Failures set
-    status='error' but keep the previous good html, images and fetched_at, so
-    a Google hiccup never blanks a published page.
+    images into team_page_image (replaced wholesale). `actor` is keyword-only
+    and defaults to None because the nightly job is the ordinary caller; pass
+    one where a person asked for the refetch, and it takes the same rights as
+    setting the URL.
+
+    Failures set status='error' but keep the previous good html, images and
+    fetched_at, so a Google hiccup never blanks a published page.
 
     An unchanged doc skips the image delete+reinsert: the ?v= content hashes
     _localize_images bakes into the html mean equal html entails identical
@@ -275,6 +295,10 @@ async def fetch_and_store(
     pure WAL/vacuum churn. force=True rewrites regardless — the manual
     "Fetch now" button, and the repair path for image rows damaged
     out-of-band."""
+    require(
+        actor is None or actor.can_view_full_roster(team.id),
+        "refresh this team's home page",
+    )
     page = await session.get(TeamPage, team.id)
     if page is None:
         page = TeamPage(team_id=team.id)

@@ -2,7 +2,6 @@ from nicegui import events, ui
 from starlette.requests import Request
 
 from ..config import settings
-from ..log import audit_log
 from ..permissions import require
 from ..services import mail
 from ..sheets import exporter, importer
@@ -43,11 +42,8 @@ async def import_page(request: Request):
                     # force's borrowed roster (permissions.Actor)
                     require(bool(actor.people_team_ids), "export your teams")
                     scope, name = actor.people_team_ids, "my-teams"
-                audit_log(
-                    f"export.{'parish' if scope is None else 'my_teams'}",
-                    team_ids=None if scope is None else sorted(scope),
-                )
-                content = await exporter.export_csv(session, team_ids=scope)
+                # the exporter authorizes the scope and audit-logs the read
+                content = await exporter.export_csv(session, actor, team_ids=scope)
             ui.download(content, f"volunteerdb-{name}.csv")
 
         data_label = "Full parish export" if actor.is_admin else "My teams export"
@@ -151,8 +147,7 @@ async def import_page(request: Request):
             state["content"] = await e.file.read()
             state["filename"] = e.file.name
             async with action_session() as (_, actor):
-                require(actor.can_import_export, "import spreadsheets")
-                user_id = actor.user.id
+                user_id = actor.user.id  # run_import checks the right itself
             report = await importer.run_import(
                 state["content"], dry_run=True, user_id=user_id
             )
@@ -161,8 +156,7 @@ async def import_page(request: Request):
         @notify_errors
         async def apply_import() -> None:
             async with action_session() as (_, actor):
-                require(actor.can_import_export, "import spreadsheets")
-                user_id = actor.user.id
+                user_id = actor.user.id  # run_import checks the right itself
             report = await importer.run_import(
                 state["content"], dry_run=False, user_id=user_id
             )

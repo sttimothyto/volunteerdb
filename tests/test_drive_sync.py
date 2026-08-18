@@ -84,7 +84,7 @@ async def test_bootstrap_writes_out_csv_for_sheetless_team(choir, tmp_path):
     assert out.exists(), "a team without a sheet gets one bootstrapped"
     async with db_session() as session:
         fresh = await exporter.export_csv(
-            session, team_id=choir["choir"], subtree=False
+            session, None, team_id=choir["choir"], subtree=False
         )
     assert out.read_bytes() == fresh, "regenerated CSV is exactly a fresh export"
     sheet = await _sheet_row(choir["choir"])
@@ -164,7 +164,7 @@ async def test_identical_sheet_skips_the_upload(choir, tmp_path):
     workdir = _workdir(tmp_path)
     async with db_session() as session:
         current = await exporter.export_csv(
-            session, team_id=choir["choir"], subtree=False
+            session, None, team_id=choir["choir"], subtree=False
         )
     _listing(workdir, [(NAME, "f123", NOW - timedelta(days=2))])
     (workdir / "in" / f"{NAME}.csv").write_bytes(current)

@@ -70,7 +70,7 @@ async def _team_volunteer_ids(team_id: int) -> set[int]:
 async def test_sync_roundtrip_of_team_export_is_a_noop(choir):
     async with db_session() as session:
         content = await exporter.export_csv(
-            session, team_id=choir["choir"], subtree=False
+            session, None, team_id=choir["choir"], subtree=False
         )
     report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
     assert not report.has_errors, report.errors

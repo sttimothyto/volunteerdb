@@ -1,7 +1,6 @@
 from fastapi import Request
 from nicegui import ui
 
-from ..permissions import require
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from . import invites
@@ -17,7 +16,7 @@ async def users_page(request: Request):
             with frame("Accounts", actor):
                 ui.label("Admins only.").classes("text-gray-500")
             return
-        accounts = await user_service.list_all(session)
+        accounts = await user_service.list_all(session, actor)
         volunteer_names = await volunteer_service.name_map(
             session, include_inactive=True
         )
@@ -51,8 +50,7 @@ async def users_page(request: Request):
                 if not await confirm_dialog:
                     return
                 async with action_session() as (session, actor):
-                    require(actor.is_admin, "manage accounts")
-                    report = await user_service.bulk_provision(session)
+                    report = await user_service.bulk_provision(session, actor)
                     # the plaintext token rides in the report: the column
                     # holds only its digest (services.users._issue_invite)
                     created = [(u.email, token) for _, u, token in report.created]
@@ -109,10 +107,10 @@ async def users_page(request: Request):
                 @notify_errors
                 async def save() -> None:
                     async with action_session() as (session, actor):
-                        require(actor.is_admin, "manage accounts")
                         user, token = await user_service.create(
                             session,
                             email.value or "",
+                            actor=actor,
                             volunteer_id=link.value or None,
                             is_admin=admin_flag.value,
                         )
@@ -188,8 +186,9 @@ async def users_page(request: Request):
                     _, uid=account.id, current=account.is_admin
                 ) -> None:
                     async with action_session() as (session, actor):
-                        require(actor.is_admin, "manage accounts")
-                        await user_service.set_flags(session, uid, is_admin=not current)
+                        await user_service.set_flags(
+                            session, uid, actor=actor, is_admin=not current
+                        )
                     ui.navigate.reload()
 
                 @notify_errors
@@ -197,9 +196,8 @@ async def users_page(request: Request):
                     _, uid=account.id, current=account.is_active
                 ) -> None:
                     async with action_session() as (session, actor):
-                        require(actor.is_admin, "manage accounts")
                         await user_service.set_flags(
-                            session, uid, is_active=not current
+                            session, uid, actor=actor, is_active=not current
                         )
                     ui.navigate.reload()
 
@@ -222,9 +220,8 @@ async def users_page(request: Request):
                         @notify_errors
                         async def save_link() -> None:
                             async with action_session() as (session, actor):
-                                require(actor.is_admin, "manage accounts")
                                 await user_service.set_volunteer(
-                                    session, uid, pick.value or None
+                                    session, uid, pick.value or None, actor=actor
                                 )
                             dialog.close()
                             ui.notify(
@@ -241,8 +238,9 @@ async def users_page(request: Request):
                 @notify_errors
                 async def reinvite(_, uid=account.id, addr=account.email) -> None:
                     async with action_session() as (session, actor):
-                        require(actor.is_admin, "manage accounts")
-                        token = await user_service.reissue_invite(session, uid)
+                        token = await user_service.reissue_invite(
+                            session, uid, actor=actor
+                        )
                     sent = await email_invite(addr, token)
                     show_invite(token, addr, sent)
 

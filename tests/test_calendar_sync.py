@@ -28,6 +28,7 @@ async def _team_and_event(title: str = "Sunday Mass") -> tuple[int, int]:
         start = _at(date.today() + timedelta(days=7), 10)
         created = await event_service.create_event(
             session,
+            None,
             team_id=team.id,
             title=title,
             starts_at=start,
@@ -120,13 +121,15 @@ async def test_edit_patches_and_cancel_deletes(database, fake_gcal):
     await calendar_sync.main()
 
     async with db_session() as session:
-        await event_service.update_event(session, event_id, location="Parish Hall")
+        await event_service.update_event(
+            session, None, event_id, location="Parish Hall"
+        )
     await calendar_sync.main()
     assert [gid for gid, _ in fake_gcal.patched] == ["g1"]
     assert fake_gcal.patched[0][1]["location"] == "Parish Hall"
 
     async with db_session() as session:
-        await event_service.cancel_event(session, event_id, cancelled_by=None)
+        await event_service.cancel_event(session, None, event_id, cancelled_by=None)
     await calendar_sync.main()
     assert fake_gcal.deleted == ["g1"]
     assert await _stored(event_id) == (None, None)

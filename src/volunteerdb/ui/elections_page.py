@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from nicegui import ui
 
 from ..models import ROLE_LABELS, ProposalStatus, TeamRole
-from ..permissions import require, team_ids_map
+from ..permissions import Forbidden, team_ids_map
 from ..services import elections as elections_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
@@ -144,11 +144,9 @@ async def elections_page():
                 if (deadlines := _parse_deadlines(d1, d2)) is None:
                     return
                 async with action_session() as (session, actor):
-                    require(
-                        actor.can_manage_team(team_id), "open proposals for this team"
-                    )
                     proposal = await elections_service.create_proposal(
                         session,
+                        actor,
                         team_id=team_id,
                         role=TeamRole(role.value),
                         nomination_deadline=deadlines[0],
@@ -216,12 +214,14 @@ async def elections_page():
 async def proposal_detail(proposal_id: int):
     async with page_session() as (session, actor):
         try:
-            view = await elections_service.detail(session, proposal_id)
+            view = await elections_service.detail(session, actor, proposal_id)
         except LookupError:
             with frame("Proposal not found", actor):
                 ui.label(f"No proposal with id {proposal_id}.")
             return
-        if not actor.can_view_proposal(proposal_id, view.proposal.team_id):
+        except Forbidden:
+            # the service decides; the page only chooses how to say it, and a
+            # whole page reads better than a toast on an empty frame
             with frame("Elections", actor):
                 ui.label(
                     "This proposal is visible to its voting members and to the "
@@ -233,7 +233,9 @@ async def proposal_detail(proposal_id: int):
             actor.volunteer_id is not None and proposal_id in actor.voter_proposal_ids
         )
         my = (
-            await elections_service.my_scores(session, proposal_id, actor.volunteer_id)
+            await elections_service.my_scores(
+                session, actor, proposal_id, actor.volunteer_id
+            )
             if is_voter
             else {}
         )
@@ -253,11 +255,9 @@ async def proposal_detail(proposal_id: int):
 
     @notify_errors
     async def _managed_action(what: str, action) -> None:
+        """`what` survives only as the toast's subject when a service refuses;
+        the refusal itself comes from the service (services/elections.py)."""
         async with action_session() as (session, actor):
-            current = await elections_service.get(session, proposal_id)
-            if current is None:
-                raise LookupError("proposal vanished")
-            require(actor.can_manage_team(current.team_id), what)
             await action(session, actor)
         ui.navigate.reload()
 
@@ -274,6 +274,7 @@ async def proposal_detail(proposal_id: int):
                     "manage proposals for this team",
                     lambda session, actor: elections_service.update_proposal(
                         session,
+                        actor,
                         proposal_id,
                         nomination_deadline=deadlines[0],
                         voting_deadline=deadlines[1],
@@ -300,7 +301,7 @@ async def proposal_detail(proposal_id: int):
         await _managed_action(
             "manage proposals for this team",
             lambda session, actor: elections_service.cancel(
-                session, proposal_id, decided_by=actor.user.id
+                session, actor, proposal_id, decided_by=actor.user.id
             ),
         )
 
@@ -319,7 +320,7 @@ async def proposal_detail(proposal_id: int):
         await _managed_action(
             "appoint for this team",
             lambda session, actor: elections_service.appoint(
-                session, proposal_id, candidate_id, decided_by=actor.user.id
+                session, actor, proposal_id, candidate_id, decided_by=actor.user.id
             ),
         )
 
@@ -342,12 +343,9 @@ async def proposal_detail(proposal_id: int):
                     current = await elections_service.get(session, proposal_id)
                     if current is None:
                         raise LookupError("proposal vanished")
-                    require(
-                        actor.can_manage_team(current.team_id),
-                        "manage proposals for this team",
-                    )
                     fresh = await elections_service.new_round(
                         session,
+                        actor,
                         proposal_id,
                         created_by=actor.user.id,
                         nomination_deadline=deadlines[0],
@@ -459,16 +457,9 @@ async def proposal_detail(proposal_id: int):
                         ui.notify("Pick a volunteer", color="warning")
                         return
                     async with action_session() as (session, actor):
-                        current = await elections_service.get(session, proposal_id)
-                        if current is None:
-                            raise LookupError("proposal vanished")
-                        require(
-                            actor.can_manage_team(current.team_id)
-                            or proposal_id in actor.voter_proposal_ids,
-                            "nominate on this proposal",
-                        )
                         await elections_service.add_candidate(
                             session,
+                            actor,
                             proposal_id,
                             volunteer_id=who.value,
                             nominated_by=actor.user.id,
@@ -522,12 +513,9 @@ async def proposal_detail(proposal_id: int):
                             current = await elections_service.get(session, proposal_id)
                             if current is None:
                                 raise LookupError("proposal vanished")
-                            require(
-                                actor.can_manage_team(current.team_id),
-                                "manage proposals for this team",
-                            )
                             await elections_service.add_voter(
                                 session,
+                                actor,
                                 proposal_id,
                                 volunteer_id=extra.value,
                                 added_by=actor.user.id,
@@ -555,13 +543,10 @@ async def proposal_detail(proposal_id: int):
             async def submit_ballot() -> None:
                 scores = {c: t.value or 0 for c, t in toggles.items()}
                 async with action_session() as (session, actor):
-                    require(
-                        actor.volunteer_id is not None
-                        and proposal_id in actor.voter_proposal_ids,
-                        "vote on this proposal",
-                    )
+                    # cast_ballot checks the seat, and that the seat is *yours*
                     await elections_service.cast_ballot(
                         session,
+                        actor,
                         proposal_id,
                         voter_volunteer_id=actor.volunteer_id,
                         scores=scores,
@@ -624,8 +609,9 @@ async def _remove_candidate(proposal_id: int, candidate_id: int) -> None:
         proposal = await elections_service.get(session, proposal_id)
         if proposal is None:
             raise LookupError("proposal vanished")
-        require(actor.can_manage_team(proposal.team_id), "manage this proposal")
-        await elections_service.remove_candidate(session, proposal_id, candidate_id)
+        await elections_service.remove_candidate(
+            session, actor, proposal_id, candidate_id
+        )
     ui.navigate.reload()
 
 
@@ -634,6 +620,5 @@ async def _remove_voter(proposal_id: int, voter_id: int) -> None:
         proposal = await elections_service.get(session, proposal_id)
         if proposal is None:
             raise LookupError("proposal vanished")
-        require(actor.can_manage_team(proposal.team_id), "manage this proposal")
-        await elections_service.remove_voter(session, proposal_id, voter_id)
+        await elections_service.remove_voter(session, actor, proposal_id, voter_id)
     ui.navigate.reload()

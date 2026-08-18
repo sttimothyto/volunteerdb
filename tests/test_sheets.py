@@ -45,7 +45,7 @@ async def test_roundtrip_reimport_is_a_noop(database):
         await _setup(session)
         # an unassigned volunteer exercises the blank-Team parish rows too
         await volunteers.create(session, None, "Ursula", "Unassigned", "u@example.org")
-        content = await exporter.export_csv(session)
+        content = await exporter.export_csv(session, None)
 
     assert _rows(content)[0] == ROSTER_HEADERS
     report = await importer.run_import(content, dry_run=False, user_id=None)
@@ -60,7 +60,7 @@ async def test_roundtrip_reimport_is_a_noop(database):
 async def test_import_applies_edits_and_additions(database):
     async with db_session() as session:
         await _setup(session)
-        content = await exporter.export_csv(session)
+        content = await exporter.export_csv(session, None)
 
     rows = _rows(content)
     # promote Ben to Music leader (Role is the last column of his row)
@@ -102,7 +102,7 @@ async def test_parish_export_lists_unassigned_after_memberships(database):
     async with db_session() as session:
         await _setup(session)
         await volunteers.create(session, None, "Ursula", "Unassigned", "u@example.org")
-        content = await exporter.export_csv(session)
+        content = await exporter.export_csv(session, None)
 
     rows = _rows(content)[1:]
     assert rows[-1][1] == "Ursula" and rows[-1][6] == "", (
@@ -126,7 +126,7 @@ async def test_parish_export_omits_archived_unassigned_but_keeps_members(databas
         await volunteers.update(
             session, None, anna.id, is_active=False
         )  # keeps membership
-        content = await exporter.export_csv(session)
+        content = await exporter.export_csv(session, None)
 
     body = content.decode("utf-8-sig")
     assert "gone@example.org" not in body, "archived + membership-less: omitted"
@@ -234,7 +234,7 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
             anna.id,
             {"shirt_size": "M", "trained": True, "term": "P1DT2H"},
         )
-        content = await exporter.export_csv(session)
+        content = await exporter.export_csv(session, None)
 
     rows = _rows(content)
     assert rows[0][-3:] == ["Shirt size", "Term", "Trained"]

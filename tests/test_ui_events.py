@@ -68,6 +68,7 @@ async def _seed_event(team_id: int, *, slots=None, title="Sunday Mass") -> int:
     async with db_session() as session:
         created = await event_service.create_event(
             session,
+            None,
             team_id=team_id,
             title=title,
             starts_at=_next_week(10),
@@ -141,9 +142,9 @@ async def test_sub_request_claim_flow_with_mail(database, sent_mail):
         ids = await _parish(session)
     event_id = await _seed_event(ids["liturgy"])
     async with db_session() as session:
-        view = await event_service.detail(session, event_id)
+        view = await event_service.detail(session, None, event_id)
         a = await event_service.sign_up(
-            session, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
+            session, None, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
         )
         assert a.volunteer_id == ids["mia"]
 
@@ -350,7 +351,7 @@ async def test_signup_notification_prefs_persist(database):
         await user.should_see("You're on the list", retries=30)
 
     async with db_session() as session:
-        view = await event_service.detail(session, event_id)
+        view = await event_service.detail(session, None, event_id)
         assignment = view.slots[0].entries[0][0]
         assert (assignment.notify_7d, assignment.notify_24h) == (True, False)
 
@@ -362,6 +363,7 @@ async def test_series_signup_repeats_across_weeks(database):
     async with db_session() as session:
         weeks = await event_service.create_event(
             session,
+            None,
             team_id=ids["liturgy"],
             title="Sunday Mass",
             starts_at=start,
@@ -384,7 +386,7 @@ async def test_series_signup_repeats_across_weeks(database):
 
     async with db_session() as session:
         for week_id in week_ids:
-            d = await event_service.detail(session, week_id)
+            d = await event_service.detail(session, None, week_id)
             assert any(v.id == ids["mia"] for sv in d.slots for _, v in sv.entries)
 
 
@@ -395,9 +397,9 @@ async def test_handoff_and_self_removal_flows_with_mail(database, sent_mail):
         ids["liturgy"], slots=[event_service.SlotInput("Lector", 2)]
     )
     async with db_session() as session:
-        view = await event_service.detail(session, event_id)
+        view = await event_service.detail(session, None, event_id)
         await event_service.sign_up(
-            session, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
+            session, None, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
         )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -436,6 +438,7 @@ async def test_duplicate_location_warning_on_create(database):
     async with db_session() as session:
         await event_service.create_event(
             session,
+            None,
             team_id=ids["liturgy"],
             title="Sunday Mass",
             starts_at=_next_week(10),
@@ -474,13 +477,13 @@ async def test_attendance_section_on_past_event(database):
         ids = await _parish(session)
     event_id = await _seed_event(ids["liturgy"])
     async with db_session() as session:
-        view = await event_service.detail(session, event_id)
+        view = await event_service.detail(session, None, event_id)
         await event_service.sign_up(
-            session, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
+            session, None, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
         )
         past = datetime.combine(date.today() - timedelta(days=2), time(9), TZ)
         await event_service.update_event(
-            session, event_id, starts_at=past, ends_at=past + timedelta(hours=2)
+            session, None, event_id, starts_at=past, ends_at=past + timedelta(hours=2)
         )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -500,7 +503,7 @@ async def test_attendance_section_on_past_event(database):
         await user.should_see("Attendance saved", retries=50)
 
     async with db_session() as session:
-        summary = await event_service.hours_for_volunteer(session, ids["mia"])
+        summary = await event_service.hours_for_volunteer(session, None, ids["mia"])
         assert summary.events_attended == 0, "the no-show override took"
 
 
@@ -509,9 +512,9 @@ async def test_cancel_event_mails_assignees(database, sent_mail):
         ids = await _parish(session)
     event_id = await _seed_event(ids["liturgy"])
     async with db_session() as session:
-        view = await event_service.detail(session, event_id)
+        view = await event_service.detail(session, None, event_id)
         await event_service.sign_up(
-            session, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
+            session, None, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
         )
 
     async with user_simulation(main_file=SIM_MAIN) as user:

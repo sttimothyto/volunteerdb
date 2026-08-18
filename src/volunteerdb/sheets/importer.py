@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import db_session
 from ..log import audit_log
 from ..models import AppUser, Membership, Volunteer
-from ..permissions import Actor, load_actor
+from ..permissions import Actor, load_actor, require
 from ..services import memberships as membership_service
 from ..services import teams as team_service
 from .common import ROSTER_HEADERS, ROSTER_SHEET, clean_cell, parse_role
@@ -162,6 +162,10 @@ async def run_import(
                 user = await session.get(AppUser, user_id)
                 assert user is not None, f"unknown user {user_id}"
                 actor = await load_actor(session, user)
+                # The right to import at all, checked here rather than at the
+                # two front doors: rows are then scoped one by one below, and
+                # both surfaces reach this same function.
+                require(actor.can_import_export, "import spreadsheets")
             await apply_rows(session, rows, report, actor)
             if dry_run or report.has_errors:
                 raise _Abort()

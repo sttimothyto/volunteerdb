@@ -36,7 +36,10 @@ async def _publish(name: str, html: str = "<p>hello</p>") -> int:
     async with db_session() as session:
         team = await teams.create(session, None, name)
         await pages.set_home_doc_url(
-            session, team.id, "https://docs.google.com/document/d/x" + str(team.id)
+            session,
+            None,
+            team.id,
+            "https://docs.google.com/document/d/x" + str(team.id),
         )
         session.add(TeamPage(team_id=team.id, html=html, status="ok"))
         return team.id
@@ -66,7 +69,7 @@ async def test_submit_dedups_open_interest_per_team_and_email(database):
             is None
         ), "an open duplicate is dropped"
 
-        await interest.resolve(session, first.id, resolved_by=None)
+        await interest.resolve(session, None, first.id, resolved_by=None)
         again = await interest.submit(
             session, team_id=team_id, name="Ann", email="ann@example.org"
         )
@@ -87,11 +90,13 @@ async def test_unresolved_and_resolve(database):
         row = await interest.submit(
             session, team_id=team_id, name="Ann", email="ann@example.org"
         )
-        assert [i.id for i in await interest.unresolved(session, team_id)] == [row.id]
-        await interest.resolve(session, row.id, resolved_by=None)
-        assert await interest.unresolved(session, team_id) == []
+        assert [i.id for i in await interest.unresolved(session, None, team_id)] == [
+            row.id
+        ]
+        await interest.resolve(session, None, row.id, resolved_by=None)
+        assert await interest.unresolved(session, None, team_id) == []
         with pytest.raises(LookupError):
-            await interest.resolve(session, 99999, resolved_by=None)
+            await interest.resolve(session, None, 99999, resolved_by=None)
 
 
 async def test_leader_emails_covers_leader_and_second_only(database):
@@ -180,7 +185,7 @@ async def test_interest_post_stores_and_sends_both_emails(real_app_client, sent_
     assert r.headers["cache-control"] == "no-store"
 
     async with db_session() as session:
-        (row,) = await interest.unresolved(session, team_id)
+        (row,) = await interest.unresolved(session, None, team_id)
         assert row.name == "Ann Applicant" and row.email == "ann@example.org"
 
     by_recipient = {to: body for to, _, body in sent_mail}
@@ -219,7 +224,7 @@ async def test_duplicate_open_interest_sends_no_second_mail(real_app_client, sen
     assert r.status_code == 303, "same thank-you either way — no oracle"
     assert len(sent_mail) == first_count, "a repeat POST mails nobody again"
     async with db_session() as session:
-        assert len(await interest.unresolved(session, team_id)) == 1
+        assert len(await interest.unresolved(session, None, team_id)) == 1
 
 
 async def test_honeypot_pretends_success_and_stores_nothing(real_app_client, sent_mail):
@@ -232,7 +237,7 @@ async def test_honeypot_pretends_success_and_stores_nothing(real_app_client, sen
     assert r.status_code == 303
     assert sent_mail == []
     async with db_session() as session:
-        assert await interest.unresolved(session, team_id) == []
+        assert await interest.unresolved(session, None, team_id) == []
 
 
 async def test_per_ip_throttle_caps_submissions(real_app_client, sent_mail):
@@ -247,7 +252,7 @@ async def test_per_ip_throttle_caps_submissions(real_app_client, sent_mail):
     r = await _post(real_app_client, "choir", {"name": "P6", "email": "p6@example.org"})
     assert r.status_code == 303, "throttled looks exactly like accepted"
     async with db_session() as session:
-        rows = await interest.unresolved(session, team_id)
+        rows = await interest.unresolved(session, None, team_id)
         assert len(rows) == 5 and "p6@example.org" not in {r.email for r in rows}
 
 
@@ -260,13 +265,13 @@ async def test_per_email_throttle_caps_mail_to_one_address(real_app_client, sent
             real_app_client, "choir", {"name": "Ann", "email": "ann@example.org"}
         )
         async with db_session() as session:
-            for row in await interest.unresolved(session, team_id):
-                await interest.resolve(session, row.id, resolved_by=None)
+            for row in await interest.unresolved(session, None, team_id):
+                await interest.resolve(session, None, row.id, resolved_by=None)
     before = len(sent_mail)
     await _post(real_app_client, "choir", {"name": "Ann", "email": "ann@example.org"})
     assert len(sent_mail) == before, "4th submission for one address in a day"
     async with db_session() as session:
-        assert await interest.unresolved(session, team_id) == []
+        assert await interest.unresolved(session, None, team_id) == []
 
 
 async def test_interest_post_to_unpublished_slug_404s(real_app_client, sent_mail):

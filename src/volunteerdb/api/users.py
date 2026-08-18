@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ..permissions import require
 from ..services import users as service
 from .deps import CtxDep
 from .schemas import UserIn, UserOut, UserPatch
@@ -23,27 +22,26 @@ def _user_out(user, invite_token: str | None = None) -> UserOut:
 
 @router.get("")
 async def list_users(ctx: CtxDep) -> list[UserOut]:
-    require(ctx.actor.is_admin, "manage accounts")
-    return [_user_out(u) for u in await service.list_all(ctx.session)]
+    return [_user_out(u) for u in await service.list_all(ctx.session, ctx.actor)]
 
 
 @router.post("", status_code=201)
 async def create_user(ctx: CtxDep, data: UserIn) -> UserOut:
-    require(ctx.actor.is_admin, "manage accounts")
-    user, token = await service.create(ctx.session, **data.model_dump())
+    user, token = await service.create(
+        ctx.session, actor=ctx.actor, **data.model_dump()
+    )
     return _user_out(user, token)
 
 
 @router.patch("/{user_id}")
 async def update_user(ctx: CtxDep, user_id: int, data: UserPatch) -> UserOut:
-    require(ctx.actor.is_admin, "manage accounts")
     fields = data.model_dump(exclude_unset=True)
     # volunteer_id is a link, not a flag, and null means unlink — hence
     # exclude_unset above and a separate call rather than a None-means-skip arg
     link = fields.pop("volunteer_id", ...)
-    user = await service.set_flags(ctx.session, user_id, **fields)
+    user = await service.set_flags(ctx.session, user_id, actor=ctx.actor, **fields)
     if link is not ...:
-        user = await service.set_volunteer(ctx.session, user_id, link)
+        user = await service.set_volunteer(ctx.session, user_id, link, actor=ctx.actor)
     return _user_out(user)
 
 
@@ -54,8 +52,7 @@ async def reinvite(ctx: CtxDep, user_id: int) -> UserOut:
     Also revokes the account's API token: it was issued against the password
     being invalidated, and this route is how an admin acts on an account they
     believe is compromised."""
-    require(ctx.actor.is_admin, "manage accounts")
-    token = await service.reissue_invite(ctx.session, user_id)
+    token = await service.reissue_invite(ctx.session, user_id, actor=ctx.actor)
     return _user_out(await service.get(ctx.session, user_id), token)
 
 
@@ -70,8 +67,7 @@ async def provision(ctx: CtxDep) -> ProvisionOut:
     """Create invite-token accounts for all active volunteers with an email
     and no account yet, and link existing unlinked accounts to the volunteer
     at the same address."""
-    require(ctx.actor.is_admin, "manage accounts")
-    report = await service.bulk_provision(ctx.session)
+    report = await service.bulk_provision(ctx.session, ctx.actor)
     return ProvisionOut(
         created=[_user_out(u, token) for _, u, token in report.created],
         linked=[_user_out(u) for _, u in report.linked],

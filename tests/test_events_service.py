@@ -45,6 +45,7 @@ async def _one_event(
     async with db_session() as session:
         created = await event_service.create_event(
             session,
+            None,
             team_id=team_id,
             title="Sunday Mass",
             starts_at=start,
@@ -57,7 +58,7 @@ async def _one_event(
 
 async def _first_slot(event_id: int) -> int:
     async with db_session() as session:
-        d = await event_service.detail(session, event_id)
+        d = await event_service.detail(session, None, event_id)
         return d.slots[0].slot.id
 
 
@@ -70,13 +71,13 @@ async def _past_event(team_id: int, vid: int | None = None) -> tuple[int, int | 
     if vid is not None:
         async with db_session() as session:
             a = await event_service.sign_up(
-                session, slot_id=await _first_slot(event_id), volunteer_id=vid
+                session, None, slot_id=await _first_slot(event_id), volunteer_id=vid
             )
             assignment_id = a.id
     past = _at(date.today() - timedelta(days=3), 9)
     async with db_session() as session:
         await event_service.update_event(
-            session, event_id, starts_at=past, ends_at=past + timedelta(hours=2)
+            session, None, event_id, starts_at=past, ends_at=past + timedelta(hours=2)
         )
     return event_id, assignment_id
 
@@ -88,7 +89,7 @@ async def test_create_defaults_to_one_unlimited_volunteers_slot(database):
     team_id, _ = await _team_with_members()
     event_id = await _one_event(team_id)
     async with db_session() as session:
-        d = await event_service.detail(session, event_id)
+        d = await event_service.detail(session, None, event_id)
         assert [s.slot.name for s in d.slots] == ["Volunteers"]
         assert d.slots[0].slot.capacity is None
         assert d.slots[0].open_spots is None
@@ -102,7 +103,7 @@ async def test_create_with_explicit_slots_and_validation(database):
     ]
     event_id = await _one_event(team_id, slots=slots)
     async with db_session() as session:
-        d = await event_service.detail(session, event_id)
+        d = await event_service.detail(session, None, event_id)
         assert [(s.slot.name, s.slot.capacity) for s in d.slots] == [
             ("Lector", 2),
             ("Greeter", None),
@@ -115,6 +116,7 @@ async def test_create_with_explicit_slots_and_validation(database):
             with pytest.raises(ValueError):
                 await event_service.create_event(
                     session,
+                    None,
                     team_id=team_id,
                     title="X",
                     starts_at=_at(date.today() + timedelta(days=1), 10),
@@ -125,6 +127,7 @@ async def test_create_with_explicit_slots_and_validation(database):
         with pytest.raises(ValueError):  # end before start
             await event_service.create_event(
                 session,
+                None,
                 team_id=team_id,
                 title="X",
                 starts_at=_at(date.today() + timedelta(days=1), 11),
@@ -139,6 +142,7 @@ async def test_repeat_weekly_is_inclusive_and_copies_slots(database):
     async with db_session() as session:
         created = await event_service.create_event(
             session,
+            None,
             team_id=team_id,
             title="Sunday Mass",
             starts_at=start,
@@ -149,7 +153,7 @@ async def test_repeat_weekly_is_inclusive_and_copies_slots(database):
         )
         assert len(created) == 3, "day 0, 7 and 14 — until is inclusive"
         for e in created:
-            d = await event_service.detail(session, e.id)
+            d = await event_service.detail(session, None, e.id)
             assert [(s.slot.name, s.slot.capacity) for s in d.slots] == [("Lector", 2)]
 
 
@@ -161,6 +165,7 @@ async def test_repeat_keeps_wall_clock_time_across_dst(database):
     async with db_session() as session:
         created = await event_service.create_event(
             session,
+            None,
             team_id=team_id,
             title="Sunday Mass",
             starts_at=start,
@@ -188,6 +193,7 @@ async def test_repeat_is_capped_at_a_year(database):
         with pytest.raises(ValueError, match="one year"):
             await event_service.create_event(
                 session,
+                None,
                 team_id=team_id,
                 title="Forever Mass",
                 starts_at=start,
@@ -205,15 +211,21 @@ async def test_capacity_fills_and_unlimited_never_does(database):
     event_id = await _one_event(team_id, slots=[event_service.SlotInput("Lector", 1)])
     slot_id = await _first_slot(event_id)
     async with db_session() as session:
-        await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[1])
+        await event_service.sign_up(
+            session, None, slot_id=slot_id, volunteer_id=vids[1]
+        )
         with pytest.raises(ValueError, match="full"):
-            await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[2])
+            await event_service.sign_up(
+                session, None, slot_id=slot_id, volunteer_id=vids[2]
+            )
 
     open_id = await _one_event(team_id)  # default unlimited slot
     open_slot = await _first_slot(open_id)
     async with db_session() as session:
         for vid in vids:
-            await event_service.sign_up(session, slot_id=open_slot, volunteer_id=vid)
+            await event_service.sign_up(
+                session, None, slot_id=open_slot, volunteer_id=vid
+            )
 
 
 async def test_one_slot_per_person_per_event(database):
@@ -226,11 +238,13 @@ async def test_one_slot_per_person_per_event(database):
         ],
     )
     async with db_session() as session:
-        d = await event_service.detail(session, event_id)
+        d = await event_service.detail(session, None, event_id)
         lector, greeter = (s.slot.id for s in d.slots)
-        await event_service.sign_up(session, slot_id=lector, volunteer_id=vids[1])
+        await event_service.sign_up(session, None, slot_id=lector, volunteer_id=vids[1])
         with pytest.raises(ValueError, match="already serve"):
-            await event_service.sign_up(session, slot_id=greeter, volunteer_id=vids[1])
+            await event_service.sign_up(
+                session, None, slot_id=greeter, volunteer_id=vids[1]
+            )
 
 
 async def test_participation_requires_membership(database):
@@ -244,11 +258,15 @@ async def test_participation_requires_membership(database):
     async with db_session() as session:
         with pytest.raises(ValueError, match="members"):
             await event_service.sign_up(
-                session, slot_id=slot_id, volunteer_id=outsider.id
+                session, None, slot_id=slot_id, volunteer_id=outsider.id
             )
         with pytest.raises(ValueError, match="members"):
             await event_service.set_rsvp(
-                session, event_id=event_id, volunteer_id=outsider.id, available=True
+                session,
+                None,
+                event_id=event_id,
+                volunteer_id=outsider.id,
+                available=True,
             )
 
 
@@ -257,16 +275,17 @@ async def test_rsvp_upserts_and_flips(database):
     event_id = await _one_event(team_id)
     async with db_session() as session:
         await event_service.set_rsvp(
-            session, event_id=event_id, volunteer_id=vids[1], available=True
+            session, None, event_id=event_id, volunteer_id=vids[1], available=True
         )
         await event_service.set_rsvp(
             session,
+            None,
             event_id=event_id,
             volunteer_id=vids[1],
             available=False,
             note="away that week",
         )
-        d = await event_service.detail(session, event_id)
+        d = await event_service.detail(session, None, event_id)
         assert len(d.rsvps) == 1, "upsert, not a second row"
         rsvp, volunteer = d.rsvps[0]
         assert volunteer.id == vids[1]
@@ -282,20 +301,22 @@ async def test_roster_mutations_freeze_after_the_event(database):
     slot_id = await _first_slot(event_id)
     async with db_session() as session:
         with pytest.raises(ValueError, match="ended"):
-            await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[2])
-        with pytest.raises(ValueError, match="ended"):
-            await event_service.assign(
-                session, slot_id=slot_id, volunteer_id=vids[2], assigned_by=None
+            await event_service.sign_up(
+                session, None, slot_id=slot_id, volunteer_id=vids[2]
             )
         with pytest.raises(ValueError, match="ended"):
-            await event_service.remove_assignment(session, assignment_id)
+            await event_service.assign(
+                session, None, slot_id=slot_id, volunteer_id=vids[2], assigned_by=None
+            )
+        with pytest.raises(ValueError, match="ended"):
+            await event_service.remove_assignment(session, None, assignment_id)
         with pytest.raises(ValueError, match="ended"):
             await event_service.request_sub(
-                session, assignment_id=assignment_id, requested_by=None
+                session, None, assignment_id=assignment_id, requested_by=None
             )
         with pytest.raises(ValueError, match="ended"):
             await event_service.set_rsvp(
-                session, event_id=event_id, volunteer_id=vids[2], available=True
+                session, None, event_id=event_id, volunteer_id=vids[2], available=True
             )
 
 
@@ -307,14 +328,16 @@ async def test_cancel_resolves_open_subs_and_returns_assignee_emails(database):
     event_id = await _one_event(team_id)
     slot_id = await _first_slot(event_id)
     async with db_session() as session:
-        a = await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[1])
+        a = await event_service.sign_up(
+            session, None, slot_id=slot_id, volunteer_id=vids[1]
+        )
         sub = await event_service.request_sub(
-            session, assignment_id=a.id, requested_by=None
+            session, None, assignment_id=a.id, requested_by=None
         )
         sub_id = sub.id
     async with db_session() as session:
         event, emails = await event_service.cancel_event(
-            session, event_id, cancelled_by=None
+            session, None, event_id, cancelled_by=None
         )
         assert event.status == "cancelled" and event.cancelled_at is not None
         assert emails == ["vol1@example.org"]
@@ -322,9 +345,11 @@ async def test_cancel_resolves_open_subs_and_returns_assignee_emails(database):
         assert resolved.status == SubRequestStatus.cancelled.value
         assert resolved.resolved_at is not None
         with pytest.raises(ValueError, match="already cancelled"):
-            await event_service.cancel_event(session, event_id, cancelled_by=None)
+            await event_service.cancel_event(session, None, event_id, cancelled_by=None)
         with pytest.raises(ValueError, match="cancelled"):
-            await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[2])
+            await event_service.sign_up(
+                session, None, slot_id=slot_id, volunteer_id=vids[2]
+            )
 
 
 # --- substitutions ----------------------------------------------------------
@@ -335,17 +360,19 @@ async def test_claim_moves_the_assignment_and_records_who(database):
     event_id = await _one_event(team_id)
     slot_id = await _first_slot(event_id)
     async with db_session() as session:
-        a = await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[1])
+        a = await event_service.sign_up(
+            session, None, slot_id=slot_id, volunteer_id=vids[1]
+        )
         sub = await event_service.request_sub(
-            session, assignment_id=a.id, requested_by=None, note="out of town"
+            session, None, assignment_id=a.id, requested_by=None, note="out of town"
         )
         with pytest.raises(ValueError, match="already open"):
             await event_service.request_sub(
-                session, assignment_id=a.id, requested_by=None
+                session, None, assignment_id=a.id, requested_by=None
             )
     async with db_session() as session:
         claimed, assignment, asker = await event_service.claim_sub(
-            session, sub_request_id=sub.id, volunteer_id=vids[2]
+            session, None, sub_request_id=sub.id, volunteer_id=vids[2]
         )
         assert asker.id == vids[1], "the caller mails the person who asked"
         assert claimed.status == SubRequestStatus.claimed.value
@@ -360,7 +387,7 @@ async def test_claim_moves_the_assignment_and_records_who(database):
     async with db_session() as session:
         with pytest.raises(ValueError, match="already claimed"):
             await event_service.claim_sub(
-                session, sub_request_id=sub.id, volunteer_id=vids[0]
+                session, None, sub_request_id=sub.id, volunteer_id=vids[0]
             )
 
 
@@ -374,20 +401,24 @@ async def test_claim_rejects_own_slot_and_double_booking(database):
         ],
     )
     async with db_session() as session:
-        d = await event_service.detail(session, event_id)
+        d = await event_service.detail(session, None, event_id)
         lector, greeter = (s.slot.id for s in d.slots)
-        a1 = await event_service.sign_up(session, slot_id=lector, volunteer_id=vids[1])
-        await event_service.sign_up(session, slot_id=greeter, volunteer_id=vids[2])
+        a1 = await event_service.sign_up(
+            session, None, slot_id=lector, volunteer_id=vids[1]
+        )
+        await event_service.sign_up(
+            session, None, slot_id=greeter, volunteer_id=vids[2]
+        )
         sub = await event_service.request_sub(
-            session, assignment_id=a1.id, requested_by=None
+            session, None, assignment_id=a1.id, requested_by=None
         )
         with pytest.raises(ValueError, match="your own"):
             await event_service.claim_sub(
-                session, sub_request_id=sub.id, volunteer_id=vids[1]
+                session, None, sub_request_id=sub.id, volunteer_id=vids[1]
             )
         with pytest.raises(ValueError, match="already serve"):
             await event_service.claim_sub(
-                session, sub_request_id=sub.id, volunteer_id=vids[2]
+                session, None, sub_request_id=sub.id, volunteer_id=vids[2]
             )
 
 
@@ -396,9 +427,11 @@ async def test_cancel_sub_and_claimable_visibility(database):
     event_id = await _one_event(team_id)
     slot_id = await _first_slot(event_id)
     async with db_session() as session:
-        a = await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[1])
+        a = await event_service.sign_up(
+            session, None, slot_id=slot_id, volunteer_id=vids[1]
+        )
         sub = await event_service.request_sub(
-            session, assignment_id=a.id, requested_by=None
+            session, None, assignment_id=a.id, requested_by=None
         )
         user2, _ = await users.create(session, "vol2@example.org", volunteer_id=vids[2])
         actor2 = await load_actor(session, user2)
@@ -412,10 +445,10 @@ async def test_cancel_sub_and_claimable_visibility(database):
             "your own request is not claimable by you"
         )
 
-        await event_service.cancel_sub(session, sub.id)
+        await event_service.cancel_sub(session, None, sub.id)
         assert await event_service.claimable_subs(session, actor2) == []
         with pytest.raises(ValueError, match="already cancelled"):
-            await event_service.cancel_sub(session, sub.id)
+            await event_service.cancel_sub(session, None, sub.id)
         duties = await event_service.my_upcoming(session, vids[1])
         assert len(duties) == 1 and duties[0].open_sub is None
 
@@ -432,17 +465,21 @@ async def test_attendance_derives_and_overrides(database):
         assert event_service.effective(assignment, event) == (True, Decimal("2.00"))
 
         await event_service.set_attendance(
-            session, assignment_id=assignment_id, attended=False, hours=None
+            session, None, assignment_id=assignment_id, attended=False, hours=None
         )
         assert event_service.effective(assignment, event) == (False, Decimal("0.00"))
 
         await event_service.set_attendance(
-            session, assignment_id=assignment_id, attended=True, hours=Decimal("3.5")
+            session,
+            None,
+            assignment_id=assignment_id,
+            attended=True,
+            hours=Decimal("3.5"),
         )
         assert event_service.effective(assignment, event) == (True, Decimal("3.5"))
 
         await event_service.set_attendance(
-            session, assignment_id=assignment_id, attended=None, hours=None
+            session, None, assignment_id=assignment_id, attended=None, hours=None
         )
         assert event_service.effective(assignment, event) == (True, Decimal("2.00")), (
             "None clears the override back to auto"
@@ -450,6 +487,7 @@ async def test_attendance_derives_and_overrides(database):
         with pytest.raises(ValueError, match="negative"):
             await event_service.set_attendance(
                 session,
+                None,
                 assignment_id=assignment_id,
                 attended=True,
                 hours=Decimal("-1"),
@@ -461,10 +499,12 @@ async def test_attendance_needs_a_finished_uncancelled_event(database):
     future_id = await _one_event(team_id)
     slot_id = await _first_slot(future_id)
     async with db_session() as session:
-        a = await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[1])
+        a = await event_service.sign_up(
+            session, None, slot_id=slot_id, volunteer_id=vids[1]
+        )
         with pytest.raises(ValueError, match="after the event ends"):
             await event_service.set_attendance(
-                session, assignment_id=a.id, attended=False, hours=None
+                session, None, assignment_id=a.id, attended=False, hours=None
             )
 
 
@@ -476,15 +516,15 @@ async def test_hours_sum_past_uncancelled_events_only(database):
     future = await _one_event(team_id)  # upcoming: excluded
     async with db_session() as session:
         await event_service.set_attendance(
-            session, assignment_id=a2, attended=True, hours=Decimal("1.25")
+            session, None, assignment_id=a2, attended=True, hours=Decimal("1.25")
         )
         await event_service.sign_up(
-            session, slot_id=await _first_slot(future), volunteer_id=vids[1]
+            session, None, slot_id=await _first_slot(future), volunteer_id=vids[1]
         )
     async with db_session() as session:
-        await event_service.cancel_event(session, cancelled, cancelled_by=None)
+        await event_service.cancel_event(session, None, cancelled, cancelled_by=None)
     async with db_session() as session:
-        summary = await event_service.hours_for_volunteer(session, vids[1])
+        summary = await event_service.hours_for_volunteer(session, None, vids[1])
         assert summary.events_attended == 2
         assert summary.total_hours == Decimal("3.25")
 
@@ -506,6 +546,7 @@ async def test_list_events_scopes_to_the_actors_teams(database):
     async with db_session() as session:
         await event_service.create_event(
             session,
+            None,
             team_id=team_b.id,
             title="Choir practice",
             starts_at=b_start,
@@ -536,7 +577,7 @@ async def test_summary_counts_fill_and_capacity(database):
     )
     async with db_session() as session:
         await event_service.sign_up(
-            session, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
+            session, None, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
         )
         leader, _ = await users.create(
             session, "vol0@example.org", volunteer_id=vids[0]
@@ -610,6 +651,7 @@ async def test_similar_events_masks_titles_outside_the_actors_scope(database):
         other = await teams.create(session, None, "Garden Guild")
         await event_service.create_event(
             session,
+            None,
             team_id=other.id,
             title="Secret planning",
             starts_at=_at(day, 10),
@@ -660,15 +702,16 @@ async def test_substitute_hands_the_slot_over(database):
     event_id = await _one_event(team_id)
     async with db_session() as session:
         a = await event_service.sign_up(
-            session, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
+            session, None, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
         )
         sub = await event_service.request_sub(
-            session, assignment_id=a.id, requested_by=None
+            session, None, assignment_id=a.id, requested_by=None
         )
         assignment_id, sub_id = a.id, sub.id
     async with db_session() as session:
         assignment, outgoing, incoming = await event_service.substitute(
             session,
+            None,
             assignment_id=assignment_id,
             new_volunteer_id=vids[2],
             acted_by=None,
@@ -700,8 +743,12 @@ async def test_substitute_rejects_bad_targets(database):
     event_id = await _one_event(team_id, slots=[event_service.SlotInput("Lector", 3)])
     async with db_session() as session:
         slot_id = await _first_slot(event_id)
-        a = await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[1])
-        await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[2])
+        a = await event_service.sign_up(
+            session, None, slot_id=slot_id, volunteer_id=vids[1]
+        )
+        await event_service.sign_up(
+            session, None, slot_id=slot_id, volunteer_id=vids[2]
+        )
         outsider = await volunteers.create(
             session, None, "Out", "Sider", "out@example.org"
         )
@@ -710,6 +757,7 @@ async def test_substitute_rejects_bad_targets(database):
         with pytest.raises(ValueError, match="already hold"):
             await event_service.substitute(
                 session,
+                None,
                 assignment_id=assignment_id,
                 new_volunteer_id=vids[1],
                 acted_by=None,
@@ -717,6 +765,7 @@ async def test_substitute_rejects_bad_targets(database):
         with pytest.raises(ValueError, match="already serve"):
             await event_service.substitute(
                 session,
+                None,
                 assignment_id=assignment_id,
                 new_volunteer_id=vids[2],
                 acted_by=None,
@@ -724,6 +773,7 @@ async def test_substitute_rejects_bad_targets(database):
         with pytest.raises(ValueError, match="only members"):
             await event_service.substitute(
                 session,
+                None,
                 assignment_id=assignment_id,
                 new_volunteer_id=outsider_id,
                 acted_by=None,
@@ -737,6 +787,7 @@ async def test_substitute_refuses_once_the_event_ended(database):
         with pytest.raises(ValueError, match="already ended"):
             await event_service.substitute(
                 session,
+                None,
                 assignment_id=assignment_id,
                 new_volunteer_id=vids[2],
                 acted_by=None,
@@ -752,6 +803,7 @@ async def test_weekly_repeats_share_a_series_id_and_singles_do_not(database):
     async with db_session() as session:
         series = await event_service.create_event(
             session,
+            None,
             team_id=team_id,
             title="Sunday Mass",
             starts_at=start,
@@ -761,6 +813,7 @@ async def test_weekly_repeats_share_a_series_id_and_singles_do_not(database):
         )
         single = await event_service.create_event(
             session,
+            None,
             team_id=team_id,
             title="Bake sale",
             starts_at=start,
@@ -778,6 +831,7 @@ async def test_sign_up_series_copies_forward_and_skips_gracefully(database):
     async with db_session() as session:
         weeks = await event_service.create_event(
             session,
+            None,
             team_id=team_id,
             title="Sunday Mass",
             starts_at=start,
@@ -791,17 +845,19 @@ async def test_sign_up_series_copies_forward_and_skips_gracefully(database):
 
     async with db_session() as session:
         # week 3's Lector is taken; week 4's slot gets renamed
-        d3 = await event_service.detail(session, week_ids[2])
+        d3 = await event_service.detail(session, None, week_ids[2])
         await event_service.sign_up(
-            session, slot_id=d3.slots[0].slot.id, volunteer_id=vids[2]
+            session, None, slot_id=d3.slots[0].slot.id, volunteer_id=vids[2]
         )
-        d4 = await event_service.detail(session, week_ids[3])
-        await event_service.update_slot(session, d4.slots[0].slot.id, name="Cantor")
+        d4 = await event_service.detail(session, None, week_ids[3])
+        await event_service.update_slot(
+            session, None, d4.slots[0].slot.id, name="Cantor"
+        )
 
     async with db_session() as session:
-        d1 = await event_service.detail(session, week_ids[0])
+        d1 = await event_service.detail(session, None, week_ids[0])
         first, result = await event_service.sign_up_series(
-            session, slot_id=d1.slots[0].slot.id, volunteer_id=vids[1]
+            session, None, slot_id=d1.slots[0].slot.id, volunteer_id=vids[1]
         )
         assert first.volunteer_id == vids[1]
         assert (result.joined, result.skipped_full, result.skipped_conflict) == (
@@ -814,7 +870,7 @@ async def test_sign_up_series_copies_forward_and_skips_gracefully(database):
         for week_id, expect in zip(
             week_ids, [True, True, False, False, True], strict=True
         ):
-            d = await event_service.detail(session, week_id)
+            d = await event_service.detail(session, None, week_id)
             names = {v.id for sv in d.slots for _, v in sv.entries}
             assert (vids[1] in names) is expect, f"week {week_id}"
 
@@ -824,7 +880,7 @@ async def test_sign_up_series_on_a_standalone_event_is_just_a_sign_up(database):
     event_id = await _one_event(team_id)
     async with db_session() as session:
         first, result = await event_service.sign_up_series(
-            session, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
+            session, None, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
         )
         assert first.volunteer_id == vids[1]
         assert result == event_service.SeriesSignupResult(0, 0, 0)

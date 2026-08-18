@@ -10,8 +10,12 @@ of an open proposal derives from today's date in the parish timezone;
 nothing runs on a clock.
 
 Ballots are secret: individual scores leave this module only as their
-owner's my_scores() or as post-conclusion aggregates. Like every service,
-permission checks live in the callers via require().
+owner's my_scores() or as post-conclusion aggregates.
+
+Permission checks live HERE, not in the callers: managing a proposal is the
+same right as managing the seat's team (_managed), reading one is that or a
+seat on its roll (_viewable), nominating is either, and voting — or reading
+back your own ballot — is your own seat and nobody else's.
 """
 
 import enum
@@ -37,7 +41,7 @@ from ..models import (
     TeamRole,
     Volunteer,
 )
-from ..permissions import Actor
+from ..permissions import Actor, require
 from ..star import StarResult, star_tally
 from . import memberships as membership_service
 from . import reports as report_service
@@ -176,6 +180,35 @@ class ProposalDetail:
 
 async def get(session: AsyncSession, proposal_id: int) -> Proposal | None:
     return await session.get(Proposal, proposal_id)
+
+
+async def _managed(
+    session: AsyncSession, actor: Actor | None, proposal_id: int
+) -> Proposal:
+    """The proposal, for a caller who runs the seat's team.
+
+    Managing a proposal — deadlines, the roll, the candidate list, appointing,
+    cancelling, starting a round — is the same right as editing that team's
+    roster, because appointing *is* a roster write."""
+    proposal = await _get_or_raise(session, proposal_id)
+    require(
+        actor is None or actor.can_manage_team(proposal.team_id),
+        "manage proposals for this team",
+    )
+    return proposal
+
+
+async def _viewable(
+    session: AsyncSession, actor: Actor | None, proposal_id: int
+) -> Proposal:
+    """The proposal, for a manager of its team or somebody on its roll. Voters
+    keep access after the decision, to see the result they voted on."""
+    proposal = await _get_or_raise(session, proposal_id)
+    require(
+        actor is None or actor.can_view_proposal(proposal_id, proposal.team_id),
+        "view this proposal",
+    )
+    return proposal
 
 
 async def _get_or_raise(session: AsyncSession, proposal_id: int) -> Proposal:
@@ -349,8 +382,13 @@ async def involving(
 
 
 async def detail(
-    session: AsyncSession, proposal_id: int, *, today: date | None = None
+    session: AsyncSession,
+    actor: Actor | None,
+    proposal_id: int,
+    *,
+    today: date | None = None,
 ) -> ProposalDetail:
+    await _viewable(session, actor, proposal_id)
     today = today or local_today()
     proposal = await _get_or_raise(session, proposal_id)
     team = await session.get(Team, proposal.team_id)
@@ -466,6 +504,7 @@ async def _default_roll(session: AsyncSession, team_id: int) -> list[int]:
 
 async def create_proposal(
     session: AsyncSession,
+    actor: Actor | None,
     *,
     team_id: int,
     role: TeamRole,
@@ -479,6 +518,10 @@ async def create_proposal(
     """Open a proposal for the seat with its initial candidates and the
     template voting roll. A second OPEN proposal for the same (team, role)
     violates uq_proposal_open and surfaces as IntegrityError (409 / toast)."""
+    require(
+        actor is None or actor.can_manage_team(team_id),
+        "open proposals for this team",
+    )
     today = today or local_today()
     if not candidates:
         raise ValueError("at least one candidate is required")
@@ -520,6 +563,7 @@ async def create_proposal(
 
 async def update_proposal(
     session: AsyncSession,
+    actor: Actor | None,
     proposal_id: int,
     *,
     nomination_deadline: date | None = None,
@@ -532,7 +576,7 @@ async def update_proposal(
     extending it past today reopens it — but nominations cannot reopen once
     ballots exist (the candidate set is frozen under cast ballots)."""
     today = today or local_today()
-    proposal = await _get_or_raise(session, proposal_id)
+    proposal = await _managed(session, actor, proposal_id)
     if proposal.status != ProposalStatus.open.value:
         raise ValueError(f"proposal already {proposal.status}")
     new_d1 = nomination_deadline or proposal.nomination_deadline
@@ -561,6 +605,7 @@ async def _has_ballots(session: AsyncSession, proposal_id: int) -> bool:
 
 async def add_candidate(
     session: AsyncSession,
+    actor: Actor | None,
     proposal_id: int,
     *,
     volunteer_id: int,
@@ -569,9 +614,19 @@ async def add_candidate(
     today: date | None = None,
 ) -> ProposalCandidate:
     """Nominate during the nominating phase. A duplicate (proposal, volunteer)
-    violates uq_proposal_candidate and surfaces as IntegrityError."""
+    violates uq_proposal_candidate and surfaces as IntegrityError.
+
+    Wider than the other roll edits: a manager OR anybody on this proposal's
+    voting roll may nominate, because putting a name forward is what the roll
+    exists to do. Removing one stays with the managers."""
     today = today or local_today()
     proposal = await _get_or_raise(session, proposal_id)
+    require(
+        actor is None
+        or actor.can_manage_team(proposal.team_id)
+        or proposal_id in actor.voter_proposal_ids,
+        "nominate on this proposal",
+    )
     _require_phase(proposal, today, ProposalPhase.nominating, "nominate")
     candidate = ProposalCandidate(
         proposal_id=proposal_id,
@@ -586,13 +641,14 @@ async def add_candidate(
 
 async def remove_candidate(
     session: AsyncSession,
+    actor: Actor | None,
     proposal_id: int,
     candidate_id: int,
     *,
     today: date | None = None,
 ) -> None:
     today = today or local_today()
-    proposal = await _get_or_raise(session, proposal_id)
+    proposal = await _managed(session, actor, proposal_id)
     _require_phase(proposal, today, ProposalPhase.nominating, "remove a candidate")
     candidate = await session.get(ProposalCandidate, candidate_id)
     if candidate is None or candidate.proposal_id != proposal_id:
@@ -603,6 +659,7 @@ async def remove_candidate(
 
 async def add_voter(
     session: AsyncSession,
+    actor: Actor | None,
     proposal_id: int,
     *,
     volunteer_id: int,
@@ -612,7 +669,7 @@ async def add_voter(
     """Roll edits are allowed only while nominating: the roll freezes when
     voting begins. Duplicates violate uq_proposal_voter (IntegrityError)."""
     today = today or local_today()
-    proposal = await _get_or_raise(session, proposal_id)
+    proposal = await _managed(session, actor, proposal_id)
     _require_phase(proposal, today, ProposalPhase.nominating, "add a voter")
     voter = ProposalVoter(
         proposal_id=proposal_id, volunteer_id=volunteer_id, added_by=added_by
@@ -624,13 +681,14 @@ async def add_voter(
 
 async def remove_voter(
     session: AsyncSession,
+    actor: Actor | None,
     proposal_id: int,
     voter_id: int,
     *,
     today: date | None = None,
 ) -> None:
     today = today or local_today()
-    proposal = await _get_or_raise(session, proposal_id)
+    proposal = await _managed(session, actor, proposal_id)
     _require_phase(proposal, today, ProposalPhase.nominating, "remove a voter")
     voter = await session.get(ProposalVoter, voter_id)
     if voter is None or voter.proposal_id != proposal_id:
@@ -644,6 +702,7 @@ async def remove_voter(
 
 async def cast_ballot(
     session: AsyncSession,
+    actor: Actor | None,
     proposal_id: int,
     *,
     voter_volunteer_id: int,
@@ -651,7 +710,20 @@ async def cast_ballot(
     today: date | None = None,
 ) -> None:
     """Write the voter's whole ballot: one row per candidate, missing keys
-    scored 0, revisable until the voting deadline (upsert)."""
+    scored 0, revisable until the voting deadline (upsert).
+
+    Only for the caller's OWN seat on the roll: `voter_volunteer_id` is checked
+    against the actor rather than trusted, so no caller — however privileged —
+    can cast somebody else's ballot. Ballots are secret; a manager who could
+    write one could also read it back by writing it."""
+    require(
+        actor is None
+        or (
+            actor.volunteer_id == voter_volunteer_id
+            and proposal_id in actor.voter_proposal_ids
+        ),
+        "vote on this proposal",
+    )
     today = today or local_today()
     proposal = await _get_or_raise(session, proposal_id)
     _require_phase(proposal, today, ProposalPhase.voting, "vote")
@@ -699,10 +771,21 @@ async def cast_ballot(
 
 
 async def my_scores(
-    session: AsyncSession, proposal_id: int, voter_volunteer_id: int
+    session: AsyncSession,
+    actor: Actor | None,
+    proposal_id: int,
+    voter_volunteer_id: int,
 ) -> dict[int, int]:
     """The voter's own scores, candidate id -> 0-5 (a ballot is not secret
-    to its owner); empty if they have not voted."""
+    to its owner); empty if they have not voted.
+
+    Only your own, and the id is checked against the actor rather than trusted:
+    this is the one function that returns individual scores, so the whole
+    secrecy guarantee rests on it."""
+    require(
+        actor is None or actor.volunteer_id == voter_volunteer_id,
+        "read this ballot",
+    )
     rows = await session.execute(
         sa.select(ProposalBallot.candidate_id, ProposalBallot.score)
         .join(ProposalVoter, ProposalVoter.id == ProposalBallot.voter_id)
@@ -745,9 +828,14 @@ async def _tally(session: AsyncSession, proposal_id: int) -> StarResult:
 
 
 async def tally(
-    session: AsyncSession, proposal_id: int, *, today: date | None = None
+    session: AsyncSession,
+    actor: Actor | None,
+    proposal_id: int,
+    *,
+    today: date | None = None,
 ) -> StarResult:
     """The STAR result — refused (ValueError) while voting is still possible."""
+    await _viewable(session, actor, proposal_id)
     today = today or local_today()
     proposal = await _get_or_raise(session, proposal_id)
     if not _tally_visible(proposal, today):
@@ -760,6 +848,7 @@ async def tally(
 
 async def appoint(
     session: AsyncSession,
+    actor: Actor | None,
     proposal_id: int,
     candidate_id: int,
     *,
@@ -772,7 +861,7 @@ async def appoint(
     gets their role updated. The tally is advisory: any candidate may be
     appointed, not just the STAR winner."""
     today = today or local_today()
-    proposal = await _get_or_raise(session, proposal_id)
+    proposal = await _managed(session, actor, proposal_id)
     _require_phase(proposal, today, ProposalPhase.concluded, "appoint")
     candidate = await session.get(ProposalCandidate, candidate_id)
     if candidate is None or candidate.proposal_id != proposal_id:
@@ -795,9 +884,9 @@ async def appoint(
 
 
 async def cancel(
-    session: AsyncSession, proposal_id: int, *, decided_by: int
+    session: AsyncSession, actor: Actor | None, proposal_id: int, *, decided_by: int
 ) -> Proposal:
-    proposal = await _get_or_raise(session, proposal_id)
+    proposal = await _managed(session, actor, proposal_id)
     if proposal.status != ProposalStatus.open.value:
         raise ValueError(f"proposal already {proposal.status}")
     proposal.status = ProposalStatus.cancelled.value
@@ -809,6 +898,7 @@ async def cancel(
 
 async def new_round(
     session: AsyncSession,
+    actor: Actor | None,
     proposal_id: int,
     *,
     created_by: int,
@@ -820,7 +910,7 @@ async def new_round(
     and open a fresh one for the same seat, cloning candidates (notes and
     nominators travel) and the roll — never the ballots."""
     today = today or local_today()
-    source = await _get_or_raise(session, proposal_id)
+    source = await _managed(session, actor, proposal_id)
     _require_phase(source, today, ProposalPhase.concluded, "start a new round")
     _check_deadlines(nomination_deadline, voting_deadline, today)
 

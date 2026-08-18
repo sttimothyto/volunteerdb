@@ -27,7 +27,7 @@ async def _team(name: str, doc_id: str | None, active: bool = True) -> int:
         team = await teams.create(session, None, name)
         if doc_id is not None:
             await pages.set_home_doc_url(
-                session, team.id, f"https://docs.google.com/document/d/{doc_id}"
+                session, None, team.id, f"https://docs.google.com/document/d/{doc_id}"
             )
         if not active:
             await teams.update(session, None, team.id, is_active=False)

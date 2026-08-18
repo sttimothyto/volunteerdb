@@ -256,7 +256,7 @@ async def volunteer_detail(request: Request, volunteer_id: int):
         # scoped inside the service: only proposals this actor may see
         involvements = await elections_service.involving(session, actor, volunteer_id)
         hours = (
-            await event_service.hours_for_volunteer(session, volunteer_id)
+            await event_service.hours_for_volunteer(session, actor, volunteer_id)
             if can_view
             else None
         )

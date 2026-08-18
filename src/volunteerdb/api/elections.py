@@ -95,21 +95,6 @@ def _detail_out(view: service.ProposalDetail) -> ProposalDetailOut:
     )
 
 
-async def _get_or_404(ctx: CtxDep, proposal_id: int) -> Proposal:
-    proposal = await service.get(ctx.session, proposal_id)
-    if proposal is None:
-        raise LookupError(f"proposal {proposal_id} not found")
-    return proposal
-
-
-async def _managed(ctx: CtxDep, proposal_id: int) -> Proposal:
-    proposal = await _get_or_404(ctx, proposal_id)
-    require(
-        ctx.actor.can_manage_team(proposal.team_id), "manage proposals for this team"
-    )
-    return proposal
-
-
 @router.get("/proposals")
 async def list_proposals(
     ctx: CtxDep, team_id: int | None = None, status: str | None = None
@@ -125,9 +110,9 @@ async def list_proposals(
 
 @router.post("/proposals", status_code=201)
 async def create_proposal(ctx: CtxDep, data: ProposalCreateIn) -> ProposalOut:
-    require(ctx.actor.can_manage_team(data.team_id), "open proposals for this team")
     proposal = await service.create_proposal(
         ctx.session,
+        ctx.actor,
         team_id=data.team_id,
         role=data.role,
         nomination_deadline=data.nomination_deadline,
@@ -143,22 +128,17 @@ async def create_proposal(ctx: CtxDep, data: ProposalCreateIn) -> ProposalOut:
 
 @router.get("/proposals/{proposal_id}")
 async def get_proposal(ctx: CtxDep, proposal_id: int) -> ProposalDetailOut:
-    view = await service.detail(ctx.session, proposal_id)
-    require(
-        ctx.actor.can_view_proposal(proposal_id, view.proposal.team_id),
-        "view this proposal",
-    )
-    return _detail_out(view)
+    return _detail_out(await service.detail(ctx.session, ctx.actor, proposal_id))
 
 
 @router.patch("/proposals/{proposal_id}")
 async def update_proposal(
     ctx: CtxDep, proposal_id: int, data: ProposalPatch
 ) -> ProposalOut:
-    await _managed(ctx, proposal_id)
     extra = {} if data.notes is None else {"notes": data.notes}
     updated = await service.update_proposal(
         ctx.session,
+        ctx.actor,
         proposal_id,
         nomination_deadline=data.nomination_deadline,
         voting_deadline=data.voting_deadline,
@@ -173,14 +153,9 @@ async def add_candidate(
 ) -> CandidateOut:
     """Nominate: managers and the proposal's voting members, until the
     nomination deadline."""
-    proposal = await _get_or_404(ctx, proposal_id)
-    require(
-        ctx.actor.can_manage_team(proposal.team_id)
-        or proposal_id in ctx.actor.voter_proposal_ids,
-        "nominate on this proposal",
-    )
     candidate = await service.add_candidate(
         ctx.session,
+        ctx.actor,
         proposal_id,
         volunteer_id=data.volunteer_id,
         nominated_by=ctx.actor.user.id,
@@ -194,15 +169,14 @@ async def add_candidate(
 
 @router.delete("/proposals/{proposal_id}/candidates/{candidate_id}", status_code=204)
 async def remove_candidate(ctx: CtxDep, proposal_id: int, candidate_id: int) -> None:
-    await _managed(ctx, proposal_id)
-    await service.remove_candidate(ctx.session, proposal_id, candidate_id)
+    await service.remove_candidate(ctx.session, ctx.actor, proposal_id, candidate_id)
 
 
 @router.post("/proposals/{proposal_id}/voters", status_code=201)
 async def add_voter(ctx: CtxDep, proposal_id: int, data: VoterIn) -> VoterOut:
-    await _managed(ctx, proposal_id)
     voter = await service.add_voter(
         ctx.session,
+        ctx.actor,
         proposal_id,
         volunteer_id=data.volunteer_id,
         added_by=ctx.actor.user.id,
@@ -215,20 +189,16 @@ async def add_voter(ctx: CtxDep, proposal_id: int, data: VoterIn) -> VoterOut:
 
 @router.delete("/proposals/{proposal_id}/voters/{voter_id}", status_code=204)
 async def remove_voter(ctx: CtxDep, proposal_id: int, voter_id: int) -> None:
-    await _managed(ctx, proposal_id)
-    await service.remove_voter(ctx.session, proposal_id, voter_id)
+    await service.remove_voter(ctx.session, ctx.actor, proposal_id, voter_id)
 
 
 @router.put("/proposals/{proposal_id}/ballot", status_code=204)
 async def cast_ballot(ctx: CtxDep, proposal_id: int, data: BallotIn) -> None:
     """Cast or revise the caller's whole ballot (PUT: idempotent overwrite)."""
-    require(
-        ctx.actor.volunteer_id is not None
-        and proposal_id in ctx.actor.voter_proposal_ids,
-        "vote on this proposal",
-    )
+    require(ctx.actor.volunteer_id is not None, "vote on this proposal")
     await service.cast_ballot(
         ctx.session,
+        ctx.actor,
         proposal_id,
         voter_volunteer_id=ctx.actor.volunteer_id,
         scores=data.scores,
@@ -238,11 +208,7 @@ async def cast_ballot(ctx: CtxDep, proposal_id: int, data: BallotIn) -> None:
 @router.get("/proposals/{proposal_id}/tally")
 async def get_tally(ctx: CtxDep, proposal_id: int) -> TallyOut:
     """The STAR result — 422 while voting is still possible."""
-    view = await service.detail(ctx.session, proposal_id)
-    require(
-        ctx.actor.can_view_proposal(proposal_id, view.proposal.team_id),
-        "view this proposal",
-    )
+    view = await service.detail(ctx.session, ctx.actor, proposal_id)
     if view.tally is None:
         raise ValueError("voting has not concluded")
     names = {c.candidate.id: c.volunteer.full_name for c in view.candidates}
@@ -253,19 +219,23 @@ async def get_tally(ctx: CtxDep, proposal_id: int) -> TallyOut:
 async def appoint(ctx: CtxDep, proposal_id: int, data: AppointIn) -> ProposalOut:
     """Appoint: flips the status and creates/upgrades the membership together.
     The tally is advisory — any candidate may be appointed."""
-    await _managed(ctx, proposal_id)
     return proposal_out(
         await service.appoint(
-            ctx.session, proposal_id, data.candidate_id, decided_by=ctx.actor.user.id
+            ctx.session,
+            ctx.actor,
+            proposal_id,
+            data.candidate_id,
+            decided_by=ctx.actor.user.id,
         )
     )
 
 
 @router.post("/proposals/{proposal_id}/cancel")
 async def cancel(ctx: CtxDep, proposal_id: int) -> ProposalOut:
-    await _managed(ctx, proposal_id)
     return proposal_out(
-        await service.cancel(ctx.session, proposal_id, decided_by=ctx.actor.user.id)
+        await service.cancel(
+            ctx.session, ctx.actor, proposal_id, decided_by=ctx.actor.user.id
+        )
     )
 
 
@@ -273,10 +243,10 @@ async def cancel(ctx: CtxDep, proposal_id: int) -> ProposalOut:
 async def new_round(ctx: CtxDep, proposal_id: int, data: NewRoundIn) -> ProposalOut:
     """Close a concluded round and open a fresh one for the same seat with
     the same candidates and roll — the Ignatian repeat."""
-    await _managed(ctx, proposal_id)
     return proposal_out(
         await service.new_round(
             ctx.session,
+            ctx.actor,
             proposal_id,
             created_by=ctx.actor.user.id,
             nomination_deadline=data.nomination_deadline,

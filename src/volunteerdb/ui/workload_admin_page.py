@@ -5,7 +5,6 @@ from decimal import Decimal
 from nicegui import ui
 
 from ..models import ROLE_LABELS, TeamRole
-from ..permissions import require
 from ..services import teams as team_service
 from ..services import workload as workload_service
 from .context import action_session, notify_errors, page_session
@@ -92,7 +91,6 @@ async def workload_page():
                     ],
                 )
                 async with action_session() as (session, actor):
-                    require(actor.is_admin, "only admins configure workload")
                     await workload_service.set_config(session, actor, new_config)
                 ui.notify("Workload settings saved", color="positive")
 
@@ -126,7 +124,6 @@ async def workload_page():
             async def save_weights() -> None:
                 changed = 0
                 async with action_session() as (session, actor):
-                    require(actor.is_admin, "only admins set workload weights")
                     for team_id, inp in weight_inputs.items():
                         new = None if inp.value is None else Decimal(str(inp.value))
                         if new != originals[team_id]:

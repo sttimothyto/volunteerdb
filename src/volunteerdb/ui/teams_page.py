@@ -8,9 +8,7 @@ from fastapi import Request
 from nicegui import ui
 
 from .. import query_lang
-from ..log import audit_log
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
-from ..permissions import require
 from ..services import elections as elections_service
 from ..services import events as event_service
 from ..services import interest as interest_service
@@ -550,11 +548,9 @@ def _interests_section(interests) -> None:
 
 async def _resolve_interest(interest_id: int) -> None:
     async with action_session() as (session, actor):
-        interest = await interest_service.get(session, interest_id)
-        if interest is None:
-            raise LookupError("interest vanished")
-        require(actor.can_manage_team(interest.team_id), "manage this team's roster")
-        await interest_service.resolve(session, interest_id, resolved_by=actor.user.id)
+        await interest_service.resolve(
+            session, actor, interest_id, resolved_by=actor.user.id
+        )
     ui.navigate.reload()
 
 
@@ -577,11 +573,7 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
         @notify_errors
         async def save(new_value: str | None) -> None:
             async with action_session() as (session, actor):
-                require(
-                    actor.can_view_full_roster(team_id),
-                    "manage this team's home page",
-                )
-                await page_service.set_home_doc_url(session, team_id, new_value)
+                await page_service.set_home_doc_url(session, actor, team_id, new_value)
             dialog.close()
             ui.navigate.to(f"/teams/{team_id}")
 
@@ -598,14 +590,15 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
 @notify_errors
 async def _fetch_home_page(team_id: int) -> None:
     async with action_session() as (session, actor):
-        require(actor.can_view_full_roster(team_id), "manage this team's home page")
         team = await team_service.get(session, team_id)
         if team is None or not team.home_doc_url:
             raise LookupError("this team has no home page doc")
         async with httpx.AsyncClient() as client:
             # force: a human clicking "Fetch now" means really refetch — also
             # the repair path when image rows were damaged out-of-band
-            page = await page_service.fetch_and_store(session, team, client, force=True)
+            page = await page_service.fetch_and_store(
+                session, team, client, force=True, actor=actor
+            )
     if page.status == "ok":
         ui.notify("Home page updated", color="positive")
     else:
@@ -652,7 +645,9 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         )
         team_sheet = await session.get(TeamSheet, team_id) if can_manage else None
         interests = (
-            await interest_service.unresolved(session, team_id) if can_manage else []
+            await interest_service.unresolved(session, actor, team_id)
+            if can_manage
+            else []
         )
         anniversaries = (
             await volunteer_service.team_anniversaries(
@@ -696,26 +691,13 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
 
                 @notify_errors
                 async def export_roster() -> None:
-                    # Re-checked inside the session, not trusted from the render
-                    # pass: a tab stays open across a demotion, and this handler
-                    # was the one on this page taking the rendered gate as the
-                    # gate. Notes ride along only for someone who may read them
-                    # (api/io.py:export_team says why).
+                    # The actor is re-derived inside the session and the
+                    # exporter checks it, so a tab left open across a demotion
+                    # stops exporting — this handler used to take the rendered
+                    # gate as the gate, the only one on the page that did.
                     async with action_session() as (session, actor):
-                        require(actor.can_view_full_roster(team_id), "export this team")
                         content = await exporter.export_csv(
-                            session,
-                            team_id=team_id,
-                            at=at,
-                            include_notes=actor.is_admin
-                            or actor.can_manage_team(team_id),
-                        )
-                        audit_log(
-                            "export.team_roster",
-                            team_id=team_id,
-                            as_of=at.isoformat() if at else None,
-                            notes_included=actor.is_admin
-                            or actor.can_manage_team(team_id),
+                            session, actor, team_id=team_id, at=at
                         )
                     ui.download(content, f"{csv_stem}.csv")
 

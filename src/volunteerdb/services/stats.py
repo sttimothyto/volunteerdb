@@ -360,7 +360,8 @@ async def _personal(session: AsyncSession, actor: Actor) -> PersonalStats:
 
     duties = await event_service.my_upcoming(session, volunteer_id)
     subs = await event_service.claimable_subs(session, actor)
-    hours = await event_service.hours_for_volunteer(session, volunteer_id)
+    # None: _personal only ever reports the actor's OWN service record
+    hours = await event_service.hours_for_volunteer(session, None, volunteer_id)
 
     # ballots the actor still owes: proposals they sit on the roll for, in the
     # voting phase, with nothing cast yet. involving() already scopes to what

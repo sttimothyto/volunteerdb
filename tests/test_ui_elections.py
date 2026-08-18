@@ -55,6 +55,7 @@ async def _seed_proposal(ids, *, d1_offset: int, d2_offset: int, ballots=None):
     async with db_session() as session:
         proposal = await elections.create_proposal(
             session,
+            None,
             team_id=ids["liturgy"],
             role=TeamRole.second,
             nomination_deadline=today + timedelta(days=d1_offset),
@@ -64,10 +65,11 @@ async def _seed_proposal(ids, *, d1_offset: int, d2_offset: int, ballots=None):
             today=today + timedelta(days=min(d1_offset, 0)),
         )
         for voter_vol_id, score in (ballots or {}).items():
-            view = await elections.detail(session, proposal.id, today=today)
+            view = await elections.detail(session, None, proposal.id, today=today)
             cand_id = view.candidates[0].candidate.id
             await elections.cast_ballot(
                 session,
+                None,
                 proposal.id,
                 voter_volunteer_id=voter_vol_id,
                 scores={cand_id: score},
@@ -195,9 +197,10 @@ async def test_profile_lists_proposals_involving_the_volunteer(database):
     # and as the newly appointed second she sits on the fresh round's roll
     pid_done = await _seed_proposal(ids, d1_offset=-10, d2_offset=-5)
     async with db_session() as session:
-        view = await elections.detail(session, pid_done)
+        view = await elections.detail(session, None, pid_done)
         await elections.appoint(
             session,
+            None,
             pid_done,
             view.candidates[0].candidate.id,
             decided_by=ids["admin_u"],

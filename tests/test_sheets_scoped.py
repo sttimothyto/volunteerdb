@@ -7,6 +7,7 @@ import pytest
 
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import Forbidden
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
@@ -233,7 +234,7 @@ async def test_update_ok_when_same_row_adds_them_to_managed_team(parish):
 
 async def test_scoped_export_reimports_as_noop(parish):
     async with db_session() as session:
-        content = await exporter.export_csv(session, team_ids={parish["liturgy"]})
+        content = await exporter.export_csv(session, None, team_ids={parish["liturgy"]})
     report = await importer.run_import(
         content, dry_run=False, user_id=parish["leader_uid"]
     )
@@ -243,16 +244,20 @@ async def test_scoped_export_reimports_as_noop(parish):
     assert report.memberships_created == report.memberships_updated == 0
 
 
-async def test_user_without_managed_teams_gets_row_errors(parish):
-    # the API gate 403s such users; the importer still refuses row-by-row
+async def test_a_user_who_leads_nothing_cannot_import_at_all(parish):
+    """The right to import lives in run_import now, not at the two front doors,
+    so a plain member is refused before a single row is read — one message
+    instead of one per row, and the same answer on both surfaces.
+
+    Row-by-row scoping is still what bounds a caller who *does* hold the right:
+    every other test in this file exercises it."""
     content = _csv_bytes(
         [
             ["", "Nora", "New", "nora@example.org", "", "", "", ""],
             ["", "Mia", "Member", "mia@example.org", "", "", "Liturgy", "core"],
         ]
     )
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["member_uid"]
-    )
-    assert report.has_errors and not report.applied
-    assert len(report.errors) == 2
+    with pytest.raises(Forbidden, match="import spreadsheets"):
+        await importer.run_import(content, dry_run=False, user_id=parish["member_uid"])
+    async with db_session() as session:
+        assert await volunteers.find_by_email(session, "nora@example.org") == []

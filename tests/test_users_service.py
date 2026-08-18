@@ -30,7 +30,7 @@ async def test_bulk_provision_dedupes_and_skips(database):
         )
         await users.create(session, "eli-account@example.org", volunteer_id=linked.id)
 
-        report = await users.bulk_provision(session)
+        report = await users.bulk_provision(session, None)
 
         assert [v.id for v, _, _ in report.created] == [family1.id]
         created_user = report.created[0][1]
@@ -47,11 +47,11 @@ async def test_bulk_provision_dedupes_and_skips(database):
 async def test_bulk_provision_second_run_is_noop(database):
     async with db_session() as session:
         await volunteers.create(session, None, "Ana", "Solo", "ana@example.org")
-        first = await users.bulk_provision(session)
+        first = await users.bulk_provision(session, None)
         assert len(first.created) == 1
 
     async with db_session() as session:
-        second = await users.bulk_provision(session)
+        second = await users.bulk_provision(session, None)
         assert second.created == []
         assert [reason for _, reason in second.skipped] == ["already has an account"]
 
@@ -111,14 +111,14 @@ async def test_bulk_provision_adopts_an_unlinked_account(database):
             session, None, "Bruno", "Cordeiro", "bruno@example.org"
         )
 
-        report = await users.bulk_provision(session)
+        report = await users.bulk_provision(session, None)
 
         assert report.created == []
         assert [(vol.id, u.id) for vol, u in report.linked] == [(v.id, orphan.id)]
         assert orphan.volunteer_id == v.id
 
     async with db_session() as session:
-        again = await users.bulk_provision(session)
+        again = await users.bulk_provision(session, None)
         assert again.linked == []
         assert [reason for _, reason in again.skipped] == ["already has an account"]
 

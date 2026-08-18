@@ -17,6 +17,7 @@ from ..auth import (
 from ..config import settings
 from ..models import AppUser, Volunteer
 from ..passwords import check as check_password
+from ..permissions import Actor, require
 from . import volunteers as volunteer_service
 
 OTP_TTL = timedelta(minutes=10)
@@ -95,7 +96,23 @@ async def get_by_email(session: AsyncSession, email: str) -> AppUser | None:
     ).scalar_one_or_none()
 
 
-async def list_all(session: AsyncSession) -> list[AppUser]:
+def _require_admin(actor: Actor | None) -> None:
+    """Account management is admin-only, and this is where that is decided.
+
+    The one exception is invite_volunteer below, which a team's leaders,
+    seconds and core members may use for one of their own people — it carries
+    its own check and says why.
+
+    `actor=None` is a trusted internal caller: the deploy bootstrap, the seed
+    script, the Drive-sync bot creating its own login, and the self-service
+    paths on /account, which act on the signed-in account by construction.
+    """
+    require(actor is None or actor.is_admin, "manage accounts")
+
+
+async def list_all(session: AsyncSession, actor: Actor | None = None) -> list[AppUser]:
+    """Every account. Admin-only — the list is the parish's sign-in surface."""
+    _require_admin(actor)
     return list(
         (await session.execute(sa.select(AppUser).order_by(AppUser.email))).scalars()
     )
@@ -171,6 +188,7 @@ async def create(
     session: AsyncSession,
     email: str,
     *,
+    actor: Actor | None = None,
     volunteer_id: int | None = None,
     is_admin: bool = False,
     password: str | None = None,
@@ -195,6 +213,7 @@ async def create(
     volunteer's login, and an unlinked one sees an empty app. Pass
     link_by_email=False for accounts that are not a person (the sync bot).
     """
+    _require_admin(actor)
     addr = email.strip().lower()
     if password:
         check_password(password, email=addr)
@@ -240,7 +259,9 @@ async def clear_password(session: AsyncSession, user_id: int) -> None:
     await session.flush()
 
 
-async def reissue_invite(session: AsyncSession, user_id: int) -> str:
+async def reissue_invite(
+    session: AsyncSession, user_id: int, *, actor: Actor | None = None
+) -> str:
     """New invite link for a user who lost their password. Invalidates the old
     password — this is also how an admin forces a change on an account believed
     to be compromised (NIST SP 800-63B §3.1.1.2).
@@ -249,6 +270,7 @@ async def reissue_invite(session: AsyncSession, user_id: int) -> str:
     it was issued against the password being invalidated. Leaving it alive
     meant the one action an admin takes against a compromised account left the
     stolen credential working."""
+    _require_admin(actor)
     user = await get(session, user_id)
     if user is None:
         raise LookupError(f"user {user_id} not found")
@@ -300,6 +322,9 @@ async def invite_volunteer(
                 f"{addr} already signs in to another account — a shared address "
                 "can only hold one. Ask a parish admin to sort out the link."
             )
+        # actor=None: this function's own check (can_invite_volunteer, in the
+        # caller) is deliberately wider than account management, and the account
+        # it mints is always non-admin and linked to that one volunteer
         user, token = await create(session, addr, volunteer_id=volunteer_id)
         # create() arms an invite whenever no password is given, which is our
         # case; the fallback keeps the return type honest rather than asserting.
@@ -542,9 +567,13 @@ async def set_flags(
     session: AsyncSession,
     user_id: int,
     *,
+    actor: Actor | None = None,
     is_admin: bool | None = None,
     is_active: bool | None = None,
 ) -> AppUser:
+    """Promote/demote an admin, or switch an account off. Admin-only, and the
+    only way `is_admin` is ever written — no self-service path touches it."""
+    _require_admin(actor)
     user = await get(session, user_id)
     if user is None:
         raise LookupError(f"user {user_id} not found")
@@ -557,13 +586,18 @@ async def set_flags(
 
 
 async def set_volunteer(
-    session: AsyncSession, user_id: int, volunteer_id: int | None
+    session: AsyncSession,
+    user_id: int,
+    volunteer_id: int | None,
+    *,
+    actor: Actor | None = None,
 ) -> AppUser:
     """Point an account at a volunteer record, or at none.
 
     The way to correct a wrong auto-link, and the only way to link an account
     created before its volunteer existed. One account per volunteer, so
     claiming someone else's is refused rather than left to the constraint."""
+    _require_admin(actor)
     user = await get(session, user_id)
     if user is None:
         raise LookupError(f"user {user_id} not found")
@@ -598,7 +632,9 @@ class ProvisionReport:
     )  # (volunteer, reason)
 
 
-async def bulk_provision(session: AsyncSession) -> ProvisionReport:
+async def bulk_provision(
+    session: AsyncSession, actor: Actor | None = None
+) -> ProvisionReport:
     """Give every active volunteer with an email an account they can sign in to.
 
     A volunteer with no account gets a fresh invite-token one. A volunteer
@@ -607,6 +643,7 @@ async def bulk_provision(session: AsyncSession) -> ProvisionReport:
     picking them from the dropdown, and would otherwise sign in to an empty
     app forever. Volunteers sharing an email (families) get one account for
     the first and a skip report for the rest."""
+    _require_admin(actor)
     report = ProvisionReport()
     volunteers = list(
         (
@@ -632,7 +669,7 @@ async def bulk_provision(session: AsyncSession) -> ProvisionReport:
         if v.id in linked:
             report.skipped.append((v, "already has an account"))
         elif existing is None:
-            user, token = await create(session, email, volunteer_id=v.id)
+            user, token = await create(session, email, actor=actor, volunteer_id=v.id)
             by_email[email] = user
             linked.add(v.id)
             report.created.append((v, user, token or _issue_invite(user)))

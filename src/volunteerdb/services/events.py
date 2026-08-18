@@ -41,7 +41,7 @@ from ..models import (
     Team,
     Volunteer,
 )
-from ..permissions import Actor
+from ..permissions import Actor, require, volunteer_team_ids
 from . import teams as team_service
 
 _UNSET: object = object()
@@ -211,6 +211,7 @@ def _occurrences(
 
 async def create_event(
     session: AsyncSession,
+    actor: Actor | None,
     *,
     team_id: int,
     title: str,
@@ -225,6 +226,10 @@ async def create_event(
     """Create one event — or, with repeat_weekly_until, one per week through
     that date (inclusive), each with its own copy of the slots. No slots
     given means one unlimited "Volunteers" slot."""
+    require(
+        actor is None or actor.can_manage_team(team_id),
+        "manage this team's events",
+    )
     title = title.strip()
     if not title:
         raise ValueError("a title is required")
@@ -268,6 +273,7 @@ async def create_event(
 
 async def update_event(
     session: AsyncSession,
+    actor: Actor | None,
     event_id: int,
     *,
     title: str | object = _UNSET,
@@ -279,7 +285,7 @@ async def update_event(
     """Edit details/times. Allowed on past events (a manager correcting a
     wrong end time legitimately recomputes the auto hours) but not on
     cancelled ones."""
-    event = await _get_or_raise(session, event_id)
+    event = await _managed(session, actor, event_id)
     if event.status != EventStatus.scheduled.value:
         raise ValueError("cannot edit: event is cancelled")
     if title is not _UNSET:
@@ -301,12 +307,16 @@ async def update_event(
 
 
 async def cancel_event(
-    session: AsyncSession, event_id: int, *, cancelled_by: int | None
+    session: AsyncSession,
+    actor: Actor | None,
+    event_id: int,
+    *,
+    cancelled_by: int | None,
 ) -> tuple[Event, list[str]]:
     """Cancel the event and resolve its open substitution requests in the
     same transaction. Returns the assignees' emails so the caller can tell
     them AFTER the transaction commits (mail never rides a transaction)."""
-    event = await _get_or_raise(session, event_id)
+    event = await _managed(session, actor, event_id)
     if event.status != EventStatus.scheduled.value:
         raise ValueError("event is already cancelled")
     event.status = EventStatus.cancelled.value
@@ -348,15 +358,47 @@ async def _get_or_raise(session: AsyncSession, event_id: int) -> Event:
 # --- slots --------------------------------------------------------------------
 
 
+async def _managed(session: AsyncSession, actor: Actor | None, event_id: int) -> Event:
+    """The event, for a caller who runs its team.
+
+    Managing an event — its details, slots, cancellation, other people's
+    assignments, attendance — is can_manage_team on the owning team. For a
+    task-force event that is the meta team, which permissions.Actor keeps in
+    the managing scope precisely so collaboration works.
+    """
+    event = await _get_or_raise(session, event_id)
+    require(
+        actor is None or actor.can_manage_team(event.team_id),
+        "manage this team's events",
+    )
+    return event
+
+
+async def _visible(session: AsyncSession, actor: Actor | None, event_id: int) -> Event:
+    """The event, for a caller who may see the owning team's roster names —
+    the documented visibility domain for an event and its assignee list.
+
+    Taking PART is stricter and separate: _require_member enforces real
+    membership of the team as a domain invariant, admin or not.
+    """
+    event = await _get_or_raise(session, event_id)
+    require(
+        actor is None or actor.can_view_roster_names(event.team_id),
+        "view this team's events",
+    )
+    return event
+
+
 async def add_slot(
     session: AsyncSession,
+    actor: Actor | None,
     event_id: int,
     *,
     name: str,
     capacity: int | None = None,
     position: int = 0,
 ) -> EventSlot:
-    event = await _get_or_raise(session, event_id)
+    event = await _managed(session, actor, event_id)
     _require_open(event, "add a slot")
     _check_slots([SlotInput(name, capacity, position)])
     existing = await session.scalar(
@@ -376,6 +418,7 @@ async def add_slot(
 
 async def update_slot(
     session: AsyncSession,
+    actor: Actor | None,
     slot_id: int,
     *,
     name: str | object = _UNSET,
@@ -385,7 +428,7 @@ async def update_slot(
     slot = await session.get(EventSlot, slot_id)
     if slot is None:
         raise LookupError(f"slot {slot_id} not found")
-    event = await _get_or_raise(session, slot.event_id)
+    event = await _managed(session, actor, slot.event_id)
     _require_open(event, "edit a slot")
     if name is not _UNSET:
         if not str(name).strip():
@@ -409,11 +452,13 @@ async def update_slot(
     return slot
 
 
-async def delete_slot(session: AsyncSession, slot_id: int) -> Event:
+async def delete_slot(
+    session: AsyncSession, actor: Actor | None, slot_id: int
+) -> Event:
     slot = await session.get(EventSlot, slot_id)
     if slot is None:
         raise LookupError(f"slot {slot_id} not found")
-    event = await _get_or_raise(session, slot.event_id)
+    event = await _managed(session, actor, slot.event_id)
     _require_open(event, "remove a slot")
     occupied = await session.scalar(
         sa.select(sa.func.count()).where(EventAssignment.slot_id == slot.id)
@@ -616,8 +661,14 @@ async def similar_events(
     return out
 
 
-async def detail(session: AsyncSession, event_id: int) -> EventDetail:
-    event = await _get_or_raise(session, event_id)
+async def detail(
+    session: AsyncSession, actor: Actor | None, event_id: int
+) -> EventDetail:
+    """One event with its slots, entries, RSVPs and open substitution calls.
+
+    Roster-names rights on the owning team, which is the documented visibility
+    domain for an event and the names of who is staffing it."""
+    event = await _visible(session, actor, event_id)
     paths = team_service.team_paths(await team_service.list_all(session))
     slots = list(
         await session.scalars(
@@ -774,6 +825,37 @@ async def is_member(session: AsyncSession, volunteer_id: int, team_id: int) -> b
     )
 
 
+def _require_own_or_managed(
+    actor: Actor | None, assignment: EventAssignment, event: Event, what: str
+) -> None:
+    """Your own slot, or a slot on an event you manage.
+
+    Withdrawing, asking for a substitute and cancelling that request are all
+    things an assignee does for themselves and a manager may do for anyone on
+    their team's event."""
+    require(
+        actor is None
+        or actor.volunteer_id == assignment.volunteer_id
+        or actor.can_manage_team(event.team_id),
+        what,
+    )
+
+
+def _require_self(actor: Actor | None, volunteer_id: int | None, what: str) -> None:
+    """Taking part is something you do for yourself.
+
+    `volunteer_id` reaches these functions from the request, so it is checked
+    against the actor rather than trusted: nobody — however privileged — signs
+    somebody else up, RSVPs for them, or claims a substitution as them.
+    Scheduling another person is a different function (assign), with a
+    manager's check on it."""
+    require(
+        actor is None
+        or (volunteer_id is not None and actor.volunteer_id == volunteer_id),
+        what,
+    )
+
+
 async def _require_member(
     session: AsyncSession, volunteer_id: int | None, team_id: int
 ) -> int:
@@ -817,6 +899,7 @@ async def assigned_volunteer_ids(session: AsyncSession, event_id: int) -> set[in
 
 async def set_rsvp(
     session: AsyncSession,
+    actor: Actor | None,
     *,
     event_id: int,
     volunteer_id: int | None,
@@ -824,6 +907,7 @@ async def set_rsvp(
     note: str | None = None,
 ) -> None:
     """Upsert the volunteer's availability answer (ballot-PUT semantics)."""
+    _require_self(actor, volunteer_id, "answer availability for this volunteer")
     event = await _get_or_raise(session, event_id)
     _require_open(event, "answer availability")
     vid = await _require_member(session, volunteer_id, event.team_id)
@@ -896,6 +980,7 @@ async def _join_slot(
 
 async def sign_up(
     session: AsyncSession,
+    actor: Actor | None,
     *,
     slot_id: int,
     volunteer_id: int | None,
@@ -904,6 +989,7 @@ async def sign_up(
 ) -> EventAssignment:
     if volunteer_id is None:
         raise ValueError("your account is not linked to a volunteer record")
+    _require_self(actor, volunteer_id, "sign this volunteer up")
     return await _join_slot(
         session,
         slot_id=slot_id,
@@ -926,6 +1012,7 @@ class SeriesSignupResult:
 
 async def sign_up_series(
     session: AsyncSession,
+    actor: Actor | None,
     *,
     slot_id: int,
     volunteer_id: int | None,
@@ -939,6 +1026,7 @@ async def sign_up_series(
     skips that week instead of aborting the whole sign-up."""
     first = await sign_up(
         session,
+        actor,
         slot_id=slot_id,
         volunteer_id=volunteer_id,
         notify_7d=notify_7d,
@@ -991,8 +1079,18 @@ async def sign_up_series(
 
 
 async def assign(
-    session: AsyncSession, *, slot_id: int, volunteer_id: int, assigned_by: int | None
+    session: AsyncSession,
+    actor: Actor | None,
+    *,
+    slot_id: int,
+    volunteer_id: int,
+    assigned_by: int | None,
 ) -> EventAssignment:
+    """Schedule somebody else — a manager's act, unlike sign_up."""
+    slot = await session.get(EventSlot, slot_id)
+    if slot is None:
+        raise LookupError(f"slot {slot_id} not found")
+    await _managed(session, actor, slot.event_id)
     return await _join_slot(
         session,
         slot_id=slot_id,
@@ -1008,13 +1106,16 @@ async def get_assignment(
     return await session.get(EventAssignment, assignment_id)
 
 
-async def remove_assignment(session: AsyncSession, assignment_id: int) -> Event:
+async def remove_assignment(
+    session: AsyncSession, actor: Actor | None, assignment_id: int
+) -> Event:
     """Withdraw/remove a future assignment (its sub requests cascade away).
     Past rosters are frozen — they are the attendance record."""
     assignment = await session.get(EventAssignment, assignment_id)
     if assignment is None:
         raise LookupError(f"assignment {assignment_id} not found")
     event = await _get_or_raise(session, assignment.event_id)
+    _require_own_or_managed(actor, assignment, event, "remove this assignment")
     _require_open(event, "leave this event")
     await session.delete(assignment)
     await session.flush()
@@ -1026,6 +1127,7 @@ async def remove_assignment(session: AsyncSession, assignment_id: int) -> Event:
 
 async def request_sub(
     session: AsyncSession,
+    actor: Actor | None,
     *,
     assignment_id: int,
     requested_by: int | None,
@@ -1037,6 +1139,7 @@ async def request_sub(
     if assignment is None:
         raise LookupError(f"assignment {assignment_id} not found")
     event = await _get_or_raise(session, assignment.event_id)
+    _require_own_or_managed(actor, assignment, event, "ask for a substitute here")
     _require_open(event, "ask for a substitute")
     existing = await session.scalar(
         sa.select(EventSubRequest.id).where(
@@ -1057,7 +1160,11 @@ async def request_sub(
 
 
 async def claim_sub(
-    session: AsyncSession, *, sub_request_id: int, volunteer_id: int | None
+    session: AsyncSession,
+    actor: Actor | None,
+    *,
+    sub_request_id: int,
+    volunteer_id: int | None,
 ) -> tuple[EventSubRequest, EventAssignment, Volunteer]:
     """First-come claim: the guarded UPDATE ... WHERE status='open' decides
     the race (the loser's rowcount is 0), and the assignment moves to the
@@ -1071,6 +1178,7 @@ async def claim_sub(
     if assignment is None:  # pragma: no cover - CASCADE removes sub with it
         raise LookupError("the assignment no longer exists")
     event = await _get_or_raise(session, assignment.event_id)
+    _require_self(actor, volunteer_id, "claim this slot for this volunteer")
     _require_open(event, "claim this slot")
     vid = await _require_member(session, volunteer_id, event.team_id)
     if assignment.volunteer_id == vid:
@@ -1112,6 +1220,7 @@ async def claim_sub(
 
 async def substitute(
     session: AsyncSession,
+    actor: Actor | None,
     *,
     assignment_id: int,
     new_volunteer_id: int,
@@ -1125,6 +1234,7 @@ async def substitute(
     if assignment is None:
         raise LookupError(f"assignment {assignment_id} not found")
     event = await _get_or_raise(session, assignment.event_id)
+    _require_own_or_managed(actor, assignment, event, "hand over this slot")
     _require_open(event, "substitute on this event")
     vid = await _require_member(session, new_volunteer_id, event.team_id)
     if assignment.volunteer_id == vid:
@@ -1161,10 +1271,21 @@ async def substitute(
     return assignment, outgoing, incoming
 
 
-async def cancel_sub(session: AsyncSession, sub_request_id: int) -> EventSubRequest:
+async def cancel_sub(
+    session: AsyncSession, actor: Actor | None, sub_request_id: int
+) -> EventSubRequest:
+    """Withdraw an open substitution call — the assignee who opened it, or a
+    manager of the event's team."""
     sub = await session.get(EventSubRequest, sub_request_id)
     if sub is None:
         raise LookupError(f"substitute request {sub_request_id} not found")
+    assignment = await session.get(EventAssignment, sub.assignment_id)
+    if assignment is None:  # pragma: no cover - CASCADE removes sub with it
+        raise LookupError("the assignment no longer exists")
+    event = await _get_or_raise(session, assignment.event_id)
+    _require_own_or_managed(
+        actor, assignment, event, "withdraw someone else's substitute request"
+    )
     if sub.status != SubRequestStatus.open.value:
         raise ValueError(f"request is already {sub.status}")
     sub.status = SubRequestStatus.cancelled.value
@@ -1178,6 +1299,7 @@ async def cancel_sub(session: AsyncSession, sub_request_id: int) -> EventSubRequ
 
 async def set_attendance(
     session: AsyncSession,
+    actor: Actor | None,
     *,
     assignment_id: int,
     attended: bool | None,
@@ -1188,7 +1310,7 @@ async def set_attendance(
     assignment = await session.get(EventAssignment, assignment_id)
     if assignment is None:
         raise LookupError(f"assignment {assignment_id} not found")
-    event = await _get_or_raise(session, assignment.event_id)
+    event = await _managed(session, actor, assignment.event_id)
     if event.status != EventStatus.scheduled.value:
         raise ValueError("a cancelled event has no attendance")
     if not is_past(event):
@@ -1202,8 +1324,10 @@ async def set_attendance(
 
 
 async def attendance_rows(
-    session: AsyncSession, event_id: int
+    session: AsyncSession, actor: Actor | None, event_id: int
 ) -> list[tuple[EventAssignment, EventSlot, Volunteer]]:
+    """The attendance sheet — a manager's view of who turned up."""
+    await _managed(session, actor, event_id)
     rows = (
         await session.execute(
             sa.select(EventAssignment, EventSlot, Volunteer)
@@ -1221,8 +1345,17 @@ async def attendance_rows(
     return [(a, s, v) for a, s, v in rows]
 
 
-async def hours_for_volunteer(session: AsyncSession, volunteer_id: int) -> HoursSummary:
+async def hours_for_volunteer(
+    session: AsyncSession, actor: Actor | None, volunteer_id: int
+) -> HoursSummary:
     """Derived service record over past, non-cancelled events."""
+    require(
+        actor is None
+        or actor.can_view_volunteer(
+            volunteer_id, await volunteer_team_ids(session, volunteer_id)
+        ),
+        "view this volunteer's service record",
+    )
     rows = (
         await session.execute(
             sa.select(EventAssignment, Event)

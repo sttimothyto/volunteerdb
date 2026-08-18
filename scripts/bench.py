@@ -407,7 +407,7 @@ async def find_landmarks() -> dict[str, int]:
 async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
     asof_ts = datetime.now(UTC)
     async with db_session() as session:
-        parish_roster = await export_csv(session)  # for the re-import pattern
+        parish_roster = await export_csv(session, None)  # for the re-import pattern
         # landmark slug for the ministries_page pattern: lowest-id published team
         published_now = await page_service.published_teams(session)
         slug_teams = await team_service.list_all(session)
