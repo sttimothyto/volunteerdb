@@ -9,3 +9,6 @@ __pycache__/
 dist/
 docs/_build/
 bench-results/
+
+# Claude Code scratch worktrees (git worktree add --checkout, one venv each)
+.claude/worktrees/

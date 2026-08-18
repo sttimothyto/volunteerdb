@@ -44,13 +44,6 @@ class ProposalStatus(enum.StrEnum):
     cancelled = "cancelled"
 
 
-PROPOSAL_STATUS_LABELS: dict[ProposalStatus, str] = {
-    ProposalStatus.open: "Open",
-    ProposalStatus.appointed: "Appointed",
-    ProposalStatus.cancelled: "Cancelled",
-}
-
-
 class FieldType(enum.StrEnum):
     text = "text"
     number = "number"
@@ -118,12 +111,6 @@ class EventStatus(enum.StrEnum):
     cancelled = "cancelled"
 
 
-EVENT_STATUS_LABELS: dict[EventStatus, str] = {
-    EventStatus.scheduled: "Scheduled",
-    EventStatus.cancelled: "Cancelled",
-}
-
-
 class AssignmentKind(enum.StrEnum):
     """How an event assignment came to be — provenance only, no logic
     branches on it."""
@@ -133,24 +120,11 @@ class AssignmentKind(enum.StrEnum):
     sub = "sub"  # they claimed a substitution request
 
 
-ASSIGNMENT_KIND_LABELS: dict[AssignmentKind, str] = {
-    AssignmentKind.signup: "Signed up",
-    AssignmentKind.assigned: "Scheduled",
-    AssignmentKind.sub: "Substitute",
-}
-
-
 class SubRequestStatus(enum.StrEnum):
     open = "open"
     claimed = "claimed"
     cancelled = "cancelled"
 
-
-SUB_REQUEST_STATUS_LABELS: dict[SubRequestStatus, str] = {
-    SubRequestStatus.open: "Looking for a sub",
-    SubRequestStatus.claimed: "Claimed",
-    SubRequestStatus.cancelled: "Cancelled",
-}
 
 notification_stage_enum = sa.Enum(NotificationStage, name="notification_stage")
 proposal_status_enum = sa.Enum(ProposalStatus, name="proposal_status")

@@ -110,10 +110,6 @@ class LeadershipStats:
     understaffed_events: int | None = None
     open_elections: tuple[PhaseCount, ...] | None = None
 
-    @property
-    def has_gaps(self) -> bool:
-        return bool(self.teams_without_leader or self.teams_without_second)
-
 
 @dataclass(frozen=True)
 class PersonalStats:

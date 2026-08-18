@@ -827,22 +827,6 @@ async def _tally(session: AsyncSession, proposal_id: int) -> StarResult:
     return star_tally(candidate_ids, list(ballots.values()))
 
 
-async def tally(
-    session: AsyncSession,
-    actor: Actor | None,
-    proposal_id: int,
-    *,
-    today: date | None = None,
-) -> StarResult:
-    """The STAR result — refused (ValueError) while voting is still possible."""
-    await _viewable(session, actor, proposal_id)
-    today = today or local_today()
-    proposal = await _get_or_raise(session, proposal_id)
-    if not _tally_visible(proposal, today):
-        raise ValueError("voting has not concluded")
-    return await _tally(session, proposal_id)
-
-
 # --- decisions ---------------------------------------------------------------
 
 

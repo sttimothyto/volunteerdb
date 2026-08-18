@@ -63,6 +63,17 @@ a roster) is: websocket event → page handler → service call in a
 transaction → widgets refresh from returned state. There is no client-side
 data model to reconcile.
 
+Within a page file the shape is: the page function loads its data, computes what
+the page needs, and then reads as an outline — a header, a list, and one call per
+section. Sections and action handlers are module-level functions taking ids and
+the rows they draw, not closures over page state, so each can be read without
+the page around it. The rule earns its keep on the detail pages, where the
+alternative was a single six-hundred-line function whose sections could only be
+found by counting indentation. NiceGUI's slot stack is dynamic, so a section
+called inside `with frame(...)` builds into that frame exactly as inline code
+would; `tests/test_app_surface.py` checks that every page still answers a
+browser that types nothing but the URL.
+
 ## The domain model
 
 Three tables carry the parish; the rest is supporting cast:

@@ -113,8 +113,9 @@ async def set_application_form(
 
 @router.get("/{team_id}/roster")
 async def team_roster(ctx: CtxDep, team_id: int, as_of: AsOf) -> list[RosterEntry]:
-    team = await service.get(ctx.session, team_id, at=as_of)
-    if team is None:
+    # the fetch is only to 404 an id nobody has: an unknown team would
+    # otherwise answer with an empty roster, which reads as "nobody serves here"
+    if await service.get(ctx.session, team_id, at=as_of) is None:
         raise LookupError(f"team {team_id} not found")
     rows = await service.roster(ctx.session, ctx.actor, team_id, at=as_of)
     full = ctx.actor.can_view_full_roster(team_id)

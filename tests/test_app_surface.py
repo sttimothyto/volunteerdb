@@ -169,3 +169,54 @@ async def test_a_signed_in_browser_is_not_rotated_off_its_own_session(
     # and the session still works
     response = await real_app_client.get("/volunteers", follow_redirects=False)
     assert response.status_code == 200, "still signed in after visiting /login"
+
+
+async def test_every_page_opens_with_nothing_but_its_path(real_app_client):
+    """A browser types a URL; it cannot supply anything else.
+
+    So a page route may not carry a *required* parameter that is not in its own
+    path — FastAPI would read it as a mandatory query string and answer 422 to
+    every visitor. That is not a hypothetical: extracting a section out of a
+    long page function once left `@ui.page("/elections/{proposal_id}")` sitting
+    on the extracted helper, and the whole page answered 422 until this rule was
+    written down. The same check catches a path placeholder the handler forgot to
+    accept, and (via the name rule) a decorator that slid onto its neighbour.
+    """
+    from fastapi.routing import APIRoute
+    from nicegui import app
+
+    # /api is Bearer-authenticated JSON with its own contract test; the
+    # _nicegui/ and /static/ routes belong to the framework, not to us.
+    ours = [
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        and not route.path.startswith(("/api", "/_nicegui", "/static"))
+    ]
+    assert len(ours) > 15, "the page routes did not register — is the app up?"
+
+    for route in ours:
+        required = [
+            field.name
+            for field in route.dependant.query_params
+            if field.field_info.is_required()
+        ]
+        assert not required, (
+            f"{route.path} ({route.endpoint.__name__}) requires the query "
+            f"parameter(s) {required}: every visitor gets a 422. Give them a "
+            "default, or take the value from the path."
+        )
+        accepted = {field.name for field in route.dependant.path_params}
+        declared = set(re.findall(r"\{(\w+)", route.path))
+        assert declared <= accepted, (
+            f"{route.path} names {declared - accepted} in its path but "
+            f"{route.endpoint.__name__} does not accept it"
+        )
+        # page handlers are the module's public names; the section helpers they
+        # call are underscore-prefixed, so a decorator that came adrift lands on
+        # one of those and shows up here
+        assert not route.endpoint.__name__.startswith(
+            "_"
+        ) or route.endpoint.__name__ in {"_manual_not_built"}, (
+            f"{route.path} is served by {route.endpoint.__name__} — a helper, not a page"
+        )

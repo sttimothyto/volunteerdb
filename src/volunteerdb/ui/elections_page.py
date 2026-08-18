@@ -223,6 +223,136 @@ async def elections_page():
                     summary_row(s)
 
 
+def _nominate_row(proposal_id: int, volunteer_options: dict[int, str]) -> None:
+    """Put a name forward. Open to voters as well as managers: the roll is who
+    the parish trusts to weigh this seat, so it is also who may suggest for it."""
+    with ui.row().classes("w-full items-center gap-2"):
+        # label must not contain the button text "Nominate": the UI
+        # tests match elements by content substring
+        who = (
+            ui.select(volunteer_options, label="New candidate", with_input=True)
+            .props("outlined dense")
+            .classes("w-64")
+        )
+        why = ui.input("Why them?").props("outlined dense").classes("grow")
+
+        @notify_errors
+        async def nominate() -> None:
+            if not who.value:
+                ui.notify("Pick a volunteer", color="warning")
+                return
+            async with action_session() as (session, actor):
+                await elections_service.add_candidate(
+                    session,
+                    actor,
+                    proposal_id,
+                    volunteer_id=who.value,
+                    nominated_by=actor.user.id,
+                    note=why.value,
+                )
+            ui.navigate.reload()
+
+        ui.button("Nominate", icon="person_add", on_click=nominate).props("dense")
+
+
+def _voters_section(
+    proposal_id: int,
+    voters: list[elections_service.VoterView],
+    volunteer_options: dict[int, str],
+    *,
+    can_manage: bool,
+    nominating: bool,
+) -> None:
+    """The roll, with turnout. That somebody has voted is shown; what they voted
+    is not — ballots are secret, so only the flag and the count appear here."""
+    ui.label("Voting members").classes("text-lg font-medium mt-2")
+    voted = sum(1 for vv in voters if vv.has_voted)
+    ui.label(f"{voted} of {len(voters)} ballots cast").classes("text-sm text-gray-600")
+    with ui.column().classes("w-full gap-1"):
+        for vv in voters:
+            with ui.row().classes("w-full items-center gap-2"):
+                ui.label(vv.volunteer.full_name)
+                if vv.has_voted:
+                    ui.icon("how_to_vote", color="positive").tooltip("Ballot cast")
+                if not vv.has_account:
+                    ui.label("no account — cannot vote").classes("text-xs text-warning")
+                ui.space()
+                if can_manage and nominating:
+                    ui.button(
+                        "Remove",
+                        on_click=notify_errors(
+                            lambda _, v=vv.voter.id: _remove_voter(proposal_id, v)
+                        ),
+                    ).props("dense flat")
+        if can_manage and nominating:
+            with ui.row().classes("w-full items-center gap-2"):
+                extra = (
+                    ui.select(volunteer_options, label="Add a voter", with_input=True)
+                    .props("outlined dense")
+                    .classes("w-64")
+                )
+
+                @notify_errors
+                async def add_voter() -> None:
+                    if not extra.value:
+                        ui.notify("Pick a volunteer", color="warning")
+                        return
+                    async with action_session() as (session, actor):
+                        await elections_service.add_voter(
+                            session,
+                            actor,
+                            proposal_id,
+                            volunteer_id=extra.value,
+                            added_by=actor.user.id,
+                        )
+                    ui.navigate.reload()
+
+                ui.button("Add voter", icon="person_add", on_click=add_voter).props(
+                    "dense"
+                )
+
+
+def _ballot_section(
+    proposal_id: int,
+    candidates: list[elections_service.CandidateView],
+    mine: dict[int, int],
+    voting_deadline: date,
+) -> None:
+    """One 0-5 toggle per candidate, revisable until the deadline. A candidate
+    left alone is submitted as an explicit 0: STAR has no abstention."""
+    ui.label("Your ballot").classes("text-lg font-medium mt-2")
+    ui.label(STAR_NOTE).classes("text-sm text-gray-500")
+    toggles: dict[int, ui.toggle] = {}
+    with ui.column().classes("w-full gap-1"):
+        for cv in candidates:
+            with ui.row().classes("items-center gap-3"):
+                ui.label(cv.volunteer.full_name).classes("w-48")
+                toggles[cv.candidate.id] = ui.toggle(
+                    {n: str(n) for n in range(6)},
+                    value=mine.get(cv.candidate.id, 0),
+                ).props("dense")
+
+    @notify_errors
+    async def submit_ballot() -> None:
+        scores = {c: t.value or 0 for c, t in toggles.items()}
+        async with action_session() as (session, actor):
+            # cast_ballot checks the seat, and that the seat is *yours*
+            await elections_service.cast_ballot(
+                session,
+                actor,
+                proposal_id,
+                voter_volunteer_id=actor.volunteer_id,
+                scores=scores,
+            )
+        ui.notify(
+            f"Ballot recorded — you may revise it until {voting_deadline}",
+            color="positive",
+        )
+        ui.navigate.reload()
+
+    ui.button("Submit ballot", icon="how_to_vote", on_click=submit_ballot)
+
+
 @ui.page("/elections/{proposal_id}")
 async def proposal_detail(proposal_id: int):
     async with page_session() as (session, actor):
@@ -359,9 +489,6 @@ async def proposal_detail(proposal_id: int):
                 if (deadlines := _parse_deadlines(d1, d2)) is None:
                     return
                 async with action_session() as (session, actor):
-                    current = await elections_service.get(session, proposal_id)
-                    if current is None:
-                        raise LookupError("proposal vanished")
                     fresh = await elections_service.new_round(
                         session,
                         actor,
@@ -460,123 +587,18 @@ async def proposal_detail(proposal_id: int):
                         ui.badge(f"{t.name} · {ROLE_LABELS[m.role]}").props("outline")
 
         if nominating and (can_manage or is_voter):
-            with ui.row().classes("w-full items-center gap-2"):
-                # label must not contain the button text "Nominate": the UI
-                # tests match elements by content substring
-                who = (
-                    ui.select(volunteer_options, label="New candidate", with_input=True)
-                    .props("outlined dense")
-                    .classes("w-64")
-                )
-                why = ui.input("Why them?").props("outlined dense").classes("grow")
+            _nominate_row(proposal_id, volunteer_options)
 
-                @notify_errors
-                async def nominate() -> None:
-                    if not who.value:
-                        ui.notify("Pick a volunteer", color="warning")
-                        return
-                    async with action_session() as (session, actor):
-                        await elections_service.add_candidate(
-                            session,
-                            actor,
-                            proposal_id,
-                            volunteer_id=who.value,
-                            nominated_by=actor.user.id,
-                            note=why.value,
-                        )
-                    ui.navigate.reload()
-
-                ui.button("Nominate", icon="person_add", on_click=nominate).props(
-                    "dense"
-                )
-
-        ui.label("Voting members").classes("text-lg font-medium mt-2")
-        voted = sum(1 for vv in view.voters if vv.has_voted)
-        ui.label(f"{voted} of {len(view.voters)} ballots cast").classes(
-            "text-sm text-gray-600"
+        _voters_section(
+            proposal_id,
+            view.voters,
+            volunteer_options,
+            can_manage=can_manage,
+            nominating=nominating,
         )
-        with ui.column().classes("w-full gap-1"):
-            for vv in view.voters:
-                with ui.row().classes("w-full items-center gap-2"):
-                    ui.label(vv.volunteer.full_name)
-                    if vv.has_voted:
-                        ui.icon("how_to_vote", color="positive").tooltip("Ballot cast")
-                    if not vv.has_account:
-                        ui.label("no account — cannot vote").classes(
-                            "text-xs text-warning"
-                        )
-                    ui.space()
-                    if can_manage and nominating:
-                        ui.button(
-                            "Remove",
-                            on_click=notify_errors(
-                                lambda _, v=vv.voter.id: _remove_voter(proposal_id, v)
-                            ),
-                        ).props("dense flat")
-            if can_manage and nominating:
-                with ui.row().classes("w-full items-center gap-2"):
-                    extra = (
-                        ui.select(
-                            volunteer_options, label="Add a voter", with_input=True
-                        )
-                        .props("outlined dense")
-                        .classes("w-64")
-                    )
-
-                    @notify_errors
-                    async def add_voter() -> None:
-                        if not extra.value:
-                            ui.notify("Pick a volunteer", color="warning")
-                            return
-                        async with action_session() as (session, actor):
-                            current = await elections_service.get(session, proposal_id)
-                            if current is None:
-                                raise LookupError("proposal vanished")
-                            await elections_service.add_voter(
-                                session,
-                                actor,
-                                proposal_id,
-                                volunteer_id=extra.value,
-                                added_by=actor.user.id,
-                            )
-                        ui.navigate.reload()
-
-                    ui.button("Add voter", icon="person_add", on_click=add_voter).props(
-                        "dense"
-                    )
 
         if voting and is_voter:
-            ui.label("Your ballot").classes("text-lg font-medium mt-2")
-            ui.label(STAR_NOTE).classes("text-sm text-gray-500")
-            toggles: dict[int, ui.toggle] = {}
-            with ui.column().classes("w-full gap-1"):
-                for cv in view.candidates:
-                    with ui.row().classes("items-center gap-3"):
-                        ui.label(cv.volunteer.full_name).classes("w-48")
-                        toggles[cv.candidate.id] = ui.toggle(
-                            {n: str(n) for n in range(6)},
-                            value=my.get(cv.candidate.id, 0),
-                        ).props("dense")
-
-            @notify_errors
-            async def submit_ballot() -> None:
-                scores = {c: t.value or 0 for c, t in toggles.items()}
-                async with action_session() as (session, actor):
-                    # cast_ballot checks the seat, and that the seat is *yours*
-                    await elections_service.cast_ballot(
-                        session,
-                        actor,
-                        proposal_id,
-                        voter_volunteer_id=actor.volunteer_id,
-                        scores=scores,
-                    )
-                ui.notify(
-                    f"Ballot recorded — you may revise it until {p.voting_deadline}",
-                    color="positive",
-                )
-                ui.navigate.reload()
-
-            ui.button("Submit ballot", icon="how_to_vote", on_click=submit_ballot)
+            _ballot_section(proposal_id, view.candidates, my, p.voting_deadline)
         elif voting:
             ui.label(
                 "Voting is in progress. The tally appears once voting closes."
@@ -625,9 +647,6 @@ def _result_section(tally: StarResult, names: dict[int, str]) -> None:
 
 async def _remove_candidate(proposal_id: int, candidate_id: int) -> None:
     async with action_session() as (session, actor):
-        proposal = await elections_service.get(session, proposal_id)
-        if proposal is None:
-            raise LookupError("proposal vanished")
         await elections_service.remove_candidate(
             session, actor, proposal_id, candidate_id
         )
@@ -636,8 +655,5 @@ async def _remove_candidate(proposal_id: int, candidate_id: int) -> None:
 
 async def _remove_voter(proposal_id: int, voter_id: int) -> None:
     async with action_session() as (session, actor):
-        proposal = await elections_service.get(session, proposal_id)
-        if proposal is None:
-            raise LookupError("proposal vanished")
         await elections_service.remove_voter(session, actor, proposal_id, voter_id)
     ui.navigate.reload()

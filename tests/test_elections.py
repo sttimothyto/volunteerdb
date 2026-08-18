@@ -472,17 +472,17 @@ async def test_tally_gated_then_correct(database):
                 today=VOTING_DAY,
             )
 
-        with pytest.raises(ValueError, match="has not concluded"):
-            await elections.tally(session, None, proposal.id, today=VOTING_DAY)
+        # aggregates stay hidden while ballots may still change
+        during = await elections.detail(session, None, proposal.id, today=VOTING_DAY)
+        assert during.tally is None
 
-        result = await elections.tally(session, None, proposal.id, today=AFTER)
+        result = (await elections.detail(session, None, proposal.id, today=AFTER)).tally
+        assert result is not None
         assert result.ballot_count == 3
         assert result.totals == {vera_c: 6, victor_c: 9}
         assert result.finalist_ids == (victor_c, vera_c)
         assert result.runoff == {victor_c: 2, vera_c: 1}
         assert result.winner_id == victor_c
-        view = await elections.detail(session, None, proposal.id, today=AFTER)
-        assert view.tally == result
 
 
 # --- decisions ---------------------------------------------------------------
