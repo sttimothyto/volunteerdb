@@ -572,6 +572,12 @@ class UserOut(ORMModel):
     has_password: bool = False
     invite_token: str | None = None
     invite_expires_at: datetime | None = None  # when that link stops working
+    # An address waiting on its own confirmation link. Reported like the
+    # invite pair above — the value with the window it is good for, so a
+    # caller can tell a live change from a stale one. The token that would
+    # redeem it is never exposed.
+    pending_email: str | None = None
+    email_change_expires_at: datetime | None = None
     last_login_at: datetime | None
 
 

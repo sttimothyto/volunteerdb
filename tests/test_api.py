@@ -7,7 +7,7 @@ from volunteerdb.api.deps import as_of_param
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import custom_fields as custom_fields_service
-from volunteerdb.services import memberships, volunteers
+from volunteerdb.services import memberships, users, volunteers
 from volunteerdb.ui.context import parse_as_of
 
 from tests.conftest import _token
@@ -346,3 +346,61 @@ async def test_workload_flow(client, seeded):
     r = await client.get("/api/workload/scores", headers=admin)
     (row,) = [s for s in r.json() if s["volunteer_id"] == seeded["volunteer_id"]]
     assert row["score"] == 6.0 and row["band"] == "ok"
+
+
+async def test_the_api_will_not_change_your_own_address_behind_a_confirmation(
+    client, seeded
+):
+    """`member@example.org` is Maria's own account, so her address is also her
+    credential — and this API sends no email, so it cannot run the exchange
+    that proves the new one. It says so instead of half-doing it. Everyone
+    else's address stays an ordinary edit."""
+    member = await _token(client, "member@example.org", "member-pass-phrase")
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
+    vid = seeded["volunteer_id"]
+
+    r = await client.patch(
+        f"/api/volunteers/{vid}",
+        json={"email": "maria.new@example.org"},
+        headers=member,
+    )
+    assert r.status_code == 422
+    assert "/account" in r.json()["detail"], "and points at the page that can"
+
+    # the same value is not a change, so it is not refused
+    r = await client.patch(
+        f"/api/volunteers/{vid}",
+        json={"email": "Maria@Example.org", "phone": "555-0111"},
+        headers=member,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["phone"] == "555-0111"
+
+    async with db_session() as session:
+        assert (await volunteers.get(session, vid)).email == "maria@example.org"
+
+    # an admin correcting somebody else's address is untouched by any of this
+    r = await client.patch(
+        f"/api/volunteers/{vid}",
+        json={"email": "maria.fixed@example.org"},
+        headers=admin,
+    )
+    assert r.status_code == 200 and r.json()["email"] == "maria.fixed@example.org"
+
+
+async def test_a_pending_address_change_shows_on_your_own_account(client, seeded):
+    member = await _token(client, "member@example.org", "member-pass-phrase")
+    r = await client.get("/api/auth/me", headers=member)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pending_email"] is None
+    assert body["email_change_expires_at"] is None
+
+    async with db_session() as session:
+        account = await users.get_by_email(session, "member@example.org")
+        await users.start_email_change(session, account.id, "later@example.org")
+
+    r = await client.get("/api/auth/me", headers=member)
+    assert r.json()["pending_email"] == "later@example.org"
+    assert r.json()["email_change_expires_at"] is not None
+    assert "email_change_token" not in r.json(), "the token itself never leaves"

@@ -87,3 +87,14 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
     assert response.status_code == 404, (
         "an unknown ministry image is a 404, not a login redirect"
     )
+
+    # the address-confirmation link is opened from whatever browser reads the
+    # new mailbox, days later, signed out — bouncing it to /login would ask
+    # the reader to sign in at the address they are trying to replace
+    response = await real_app_client.get(
+        "/confirm-email/not-a-real-token", follow_redirects=False
+    )
+    assert response.status_code == 200, (
+        "/confirm-email/ must render for anonymous browsers "
+        "(main.UNRESTRICTED_PREFIXES); a dead token is a message, not a redirect"
+    )

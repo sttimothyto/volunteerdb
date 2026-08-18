@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
+from pydantic import validate_email
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import (
@@ -21,6 +22,13 @@ from . import volunteers as volunteer_service
 OTP_TTL = timedelta(minutes=10)
 OTP_RESEND_INTERVAL = timedelta(seconds=60)
 OTP_MAX_ATTEMPTS = 5
+# How long the link mailed to a *new* address stays usable. The 24 hours NIST
+# SP 800-63B §4.2.1.2 allows a code sent to an email address, taken straight
+# rather than stretched the way invite_ttl_hours is: the invite link is
+# stretched to a week because a volunteer who misses it is locked out until an
+# admin re-cuts it, whereas missing this one costs nothing — the account keeps
+# working at its old address and they can simply ask again.
+EMAIL_CHANGE_TTL = timedelta(hours=24)
 
 
 def invite_ttl() -> timedelta:
@@ -47,6 +55,21 @@ def invite_live(user: AppUser, now: datetime | None = None) -> bool:
         and user.invite_expires_at
         and user.invite_expires_at > (now or datetime.now(UTC))
     )
+
+
+def normalize_email(raw: str) -> str:
+    """Trim, lowercase, and refuse anything that is not an address.
+
+    The one place that decides what an address *is*. `users.create` and the
+    API's EmailStr each did half of this; a login address is compared as an
+    exact string (`get_by_email`), so folding case here is what stops
+    Maria@example.org and maria@example.org becoming two accounts."""
+    addr = (raw or "").strip().lower()
+    try:
+        validate_email(addr)
+    except ValueError as exc:  # PydanticCustomError, whose message is jargon
+        raise ValueError(f"{raw.strip()!r} is not an email address") from exc
+    return addr
 
 
 async def get(session: AsyncSession, user_id: int) -> AppUser | None:
@@ -364,6 +387,121 @@ async def verify_otp(session: AsyncSession, email: str, code: str) -> AppUser | 
     user.otp_attempts = 0
     _clear_invite(user)  # possession of the email proves the invite
     user.last_login_at = sa.func.now()
+    await session.flush()
+    return user
+
+
+def _clear_email_change(user: AppUser) -> None:
+    user.pending_email = None
+    user.email_change_token = None
+    user.email_change_expires_at = None
+
+
+def email_change_live(user: AppUser, now: datetime | None = None) -> bool:
+    """Whether a requested address change can still be confirmed."""
+    return bool(
+        user.pending_email
+        and user.email_change_token
+        and user.email_change_expires_at
+        and user.email_change_expires_at > (now or datetime.now(UTC))
+    )
+
+
+async def start_email_change(
+    session: AsyncSession, user_id: int, new_email: str
+) -> tuple[AppUser, str]:
+    """Stage an address change and arm the link that confirms it. Returns the
+    account and the token to mail *to the new address* — nothing on file moves
+    until confirm_email_change redeems it.
+
+    Asking again simply replaces the pending address and its token: the old
+    link dies with it, so a typo is corrected by retyping rather than by
+    waiting a day.
+
+    A clash with another account's login address is refused here rather than
+    left to the unique constraint, because the person can still fix it — but
+    confirm_email_change checks again, since the winner is whoever confirms
+    first and that is not decided yet."""
+    user = await get(session, user_id)
+    if user is None:
+        raise LookupError(f"user {user_id} not found")
+    addr = normalize_email(new_email)
+    if addr == user.email.strip().lower():
+        raise ValueError("that is already the address on this account")
+    other = await get_by_email(session, addr)
+    if other is not None and other.id != user.id:
+        raise ValueError("another account already signs in with that address")
+    user.pending_email = addr
+    user.email_change_token = new_token()
+    user.email_change_expires_at = datetime.now(UTC) + EMAIL_CHANGE_TTL
+    await session.flush()
+    return user, user.email_change_token
+
+
+async def cancel_email_change(session: AsyncSession, user_id: int) -> AppUser:
+    """Drop a pending change, killing its link."""
+    user = await get(session, user_id)
+    if user is None:
+        raise LookupError(f"user {user_id} not found")
+    _clear_email_change(user)
+    await session.flush()
+    return user
+
+
+async def pending_email_change(session: AsyncSession, token: str) -> AppUser | None:
+    """The account a live confirmation link belongs to, without redeeming it.
+
+    The link has to be *shown* before it is *spent*: mail scanners and link
+    prefetchers follow URLs on their own, and a single-use token that acts on
+    a GET is a token consumed by the recipient's antivirus before they ever
+    click. Same reason /invite/ asks for a button press."""
+    if not token:
+        return None
+    user = (
+        await session.execute(
+            sa.select(AppUser).where(AppUser.email_change_token == token)
+        )
+    ).scalar_one_or_none()
+    if user is None or not user.is_active or not email_change_live(user):
+        return None
+    return user
+
+
+async def confirm_email_change(session: AsyncSession, token: str) -> AppUser | None:
+    """Redeem the link: the address moves, and moves everywhere.
+
+    The account's login address and the volunteer record behind it are set
+    together — one person, one address. That is what carries the change into
+    every team they serve on: rosters, event notices, substitution calls, the
+    exported spreadsheet and the Drive share ACLs all read volunteer.email
+    live, so an address confirmed here is the address every one of their
+    memberships uses from the next send onwards.
+
+    An expired link is refused exactly like an unknown one — same None, same
+    message to the claimant, no hint about which it was."""
+    user = await pending_email_change(session, token)
+    if user is None:
+        return None
+    addr = user.pending_email
+    taken = await get_by_email(session, addr)
+    if taken is not None and taken.id != user.id:
+        # somebody else confirmed the same address inside the window
+        _clear_email_change(user)
+        await session.flush()
+        raise ValueError("another account has taken that address")
+    user.email = addr
+    # A code in flight was mailed to the *old* mailbox to prove control of it.
+    # The identifier it proved control of no longer exists, so it must not be
+    # spendable against the new one.
+    user.otp_hash = None
+    user.otp_sent_at = None
+    user.otp_expires_at = None
+    user.otp_attempts = 0
+    if user.volunteer_id is not None:
+        volunteer = await session.get(Volunteer, user.volunteer_id)
+        if volunteer is not None:
+            volunteer.email = addr
+    _clear_email_change(user)
     await session.flush()
     return user
 

@@ -686,6 +686,15 @@ class AppUser(Base):
     confidentiality_agreed_at: Mapped[datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True)
     )
+    # An address change waits here until the new address opens its link, so
+    # nothing on file moves before somebody proves they read mail there. Set
+    # and cleared as a triple, like the invite pair above (see
+    # services/users.py); the address itself is not unique until it lands.
+    pending_email: Mapped[str | None] = mapped_column(sa.String(255))
+    email_change_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
+    email_change_expires_at: Mapped[datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
     otp_hash: Mapped[str | None] = mapped_column(sa.String(255))
     otp_sent_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
     otp_expires_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))

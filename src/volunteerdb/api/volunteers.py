@@ -84,6 +84,19 @@ async def update_volunteer(
     fields = data.model_dump(exclude_unset=True)
     if "is_active" in fields:
         require(ctx.actor.is_admin, "only admins archive volunteers")
+    if "email" in fields and volunteer_id == ctx.actor.volunteer_id:
+        # Your own address is also what you sign in with, so it moves only
+        # after the new one has proved somebody reads mail there — and this
+        # API sends no email (the precedent api/events.py states), so it
+        # cannot run that exchange. Everyone else's address is a plain edit.
+        on_file = await service.get(ctx.session, volunteer_id)
+        typed = (fields["email"] or "").strip().lower()
+        if on_file is not None and typed != (on_file.email or "").strip().lower():
+            raise ValueError(
+                "your own address changes only once the new one confirms "
+                "itself; ask for it on the Password & sign-in page (/account) "
+                "and we will mail a confirmation link there"
+            )
     custom = fields.pop("custom", None)
     volunteer = await service.update(ctx.session, volunteer_id, **fields)
     if custom is not None:

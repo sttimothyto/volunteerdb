@@ -87,6 +87,11 @@ Additional rules:
   contact detail. The app bar carries your *own* headshot beside your address
   and opens the same upload dialog; an account with no volunteer record
   behind it shows nothing there, having no row a photo could hang off.
+- Your **own email address** is the one field you may not simply set: it is
+  also your login, so it changes only after a link mailed to the new address
+  is opened. Somebody else's address, edited by an admin or a leader with
+  edit rights, applies immediately. See
+  [Authentication design](../explanation/auth.md#changing-the-address).
 - **Sign-in status** is likewise not redacted. The profile page shows
   *Last login* for every volunteer, to every viewer, whether or not that
   viewer may read their contact details; the team roster adds a badge per

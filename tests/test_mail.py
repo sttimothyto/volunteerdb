@@ -198,3 +198,16 @@ def test_event_when_spans_days_when_needed():
         datetime(2026, 8, 24, 2, 0, tzinfo=tz),
     )
     assert "August 23" in overnight and "August 24" in overnight
+
+
+def test_the_address_confirmation_names_the_address_the_link_and_the_window():
+    subject, body = mail.email_change_email(
+        "https://vdb.example.org/confirm-email/tok3n", "new@example.org", 24
+    )
+    assert subject == "Confirm your new VolunteerDB address"
+    assert "https://vdb.example.org/confirm-email/tok3n" in body
+    assert "new@example.org" in body, "the reader must see which address this is"
+    assert "24 hours" in body
+    # it goes to an address nobody has verified yet, so it must read as
+    # declinable and must not leak who the account belongs to
+    assert "ignore this email" in body

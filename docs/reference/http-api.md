@@ -61,7 +61,7 @@ authenticated account.
 | Method & path | Permission | Notes |
 |---|---|---|
 | `POST /api/auth/login` | — | `{email, password}` → `{token}`; throttled |
-| `GET /api/auth/me` | signed in | Own account incl. `has_password` |
+| `GET /api/auth/me` | signed in | Own account incl. `has_password`, and `pending_email` + `email_change_expires_at` when an address change is waiting to be confirmed (never the token that would confirm it) |
 
 ### Volunteers — `api/volunteers.py`
 
@@ -70,7 +70,7 @@ authenticated account.
 | `GET /api/volunteers` | signed in | `q=` name/email search, `as_of=`; contact fields redacted per viewer. `include_inactive=true` is **admin only** (403 otherwise), matching the GUI |
 | `POST /api/volunteers` | admin | 201 |
 | `GET /api/volunteers/{id}` | signed in | `as_of=`; redacted per viewer |
-| `PATCH /api/volunteers/{id}` | edit rights on the volunteer | `is_active` admin-only; `custom` merges validated custom-field values |
+| `PATCH /api/volunteers/{id}` | edit rights on the volunteer | `is_active` admin-only; `custom` merges validated custom-field values. Changing **your own** `email` is refused with 422: your address is also your login, so it moves only once the new one confirms itself, and this API sends no mail to run that exchange — ask on **/account** instead. Somebody else's address is an ordinary edit |
 | `DELETE /api/volunteers/{id}` | admin | 204 |
 | `PUT /api/volunteers/{id}/photo` | signed in | Upload/replace the headshot (multipart `file`). Any image ≤ 10 MB (413 above); stored EXIF-stripped, center-cropped, 400×400 JPEG ≤ 24 KB. Unreadable file → 422. **Deliberately open to every signed-in account** — no `can_edit_volunteer` gating |
 | `GET /api/volunteers/{id}/photo` | signed in | The stored JPEG bytes; 404 when there is none |

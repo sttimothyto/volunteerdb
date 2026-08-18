@@ -84,6 +84,9 @@ team. This is the central relationship — who serves where, in what role.
 | `api_token` | varchar(64) | unique; SHA-256 digest of the Bearer token |
 | `invite_token` | varchar(64) | unique; pending invite/reset link |
 | `invite_expires_at` | timestamptz | set and cleared with `invite_token`; past (or NULL) = the link is dead |
+| `pending_email` | varchar(255) | an address waiting on its own confirmation link; deliberately **not** unique — two people may ask, only the first to confirm gets it |
+| `email_change_token` | varchar(64) | unique; the link that confirms `pending_email` |
+| `email_change_expires_at` | timestamptz | set and cleared with the two above; 24 h (`users.EMAIL_CHANGE_TTL`) |
 | `otp_hash`, `otp_sent_at`, `otp_expires_at`, `otp_attempts` | | active email OTP (argon2 hash) |
 | `is_active` | boolean | inactive accounts cannot sign in |
 | `last_login_at`, `created_at` | timestamptz | |
@@ -468,3 +471,4 @@ why adding a live column requires rebuilding the twin; see
 | `0020` | `event.series_id` + partial index — weekly repeats share an identity so sign-ups can copy forward |
 | `0021` | `event_assignment` reminder stages: `notify_7d`/`notify_24h` prefs + `reminded_7d_at`/`reminded_24h_at` stamps replace `reminder_sent_at` (old stamps migrate into the 7-day column) |
 | `0022` | `event_task_force` + `event_task_force_source` (not versioned) — provenance behind automated multi-team events |
+| `0023` | `app_user` email-change columns (not versioned — no twin rebuild) |

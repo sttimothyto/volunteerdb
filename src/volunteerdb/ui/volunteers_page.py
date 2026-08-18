@@ -4,11 +4,13 @@ from fastapi import Request
 from nicegui import app, ui
 
 from .. import query_lang
+from ..log import audit_log
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
 from ..services import events as event_service
+from ..services import mail
 from ..services import memberships as membership_service
 from ..services import photos as photo_service
 from ..services import teams as team_service
@@ -20,6 +22,7 @@ from .account_status import invitable, last_login_text
 from .context import action_session, notify_errors, page_session
 from .elections_page import phase_badge
 from .layout import frame
+from .login import confirm_email_url
 from .photo_dialog import photo_avatar
 from .search_box import search_box
 from .timeline_chart import timeline_chart
@@ -291,7 +294,11 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                         "Edit",
                         icon="edit",
                         on_click=lambda: _edit_dialog(
-                            volunteer, actor.is_admin, field_defs
+                            volunteer,
+                            actor.is_admin,
+                            field_defs,
+                            is_self=volunteer_id == actor.volunteer_id,
+                            base_url=base_url,
                         ),
                     ).props("dense outline")
                 if actor.is_admin:
@@ -524,8 +531,17 @@ def _custom_widget(defn: CustomFieldDef, value):
 
 
 def _edit_dialog(
-    volunteer, is_admin: bool, field_defs: list[CustomFieldDef] = ()
+    volunteer,
+    is_admin: bool,
+    field_defs: list[CustomFieldDef] = (),
+    *,
+    is_self: bool = False,
+    base_url: str = "",
 ) -> None:
+    """The contact-detail editor. `is_self` changes exactly one field's
+    behaviour: your own address is not written here but staged and mailed a
+    confirmation link, because it is also what you sign in with. Everything
+    else in the form saves immediately either way."""
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label(f"Edit {volunteer.full_name}").classes("text-lg font-medium")
         first = (
@@ -542,7 +558,13 @@ def _edit_dialog(
             ui.input("Email", value=volunteer.email or "")
             .props("outlined dense")
             .classes("w-full")
+            .mark("edit-email")
         )
+        if is_self:
+            ui.label(
+                "Changing your own address sends a confirmation link to the "
+                "new one; nothing moves until you open it."
+            ).classes("text-xs text-gray-500")
         phone = (
             ui.input("Phone", value=volunteer.phone or "")
             .props("outlined dense")
@@ -567,6 +589,19 @@ def _edit_dialog(
                 if isinstance(raw, str):
                     raw = raw.strip() or None  # blank clears the field
                 values[key] = raw
+            typed = (email.value or "").strip().lower()
+            on_file = (volunteer.email or "").strip().lower()
+            # your own address goes the long way round; everyone else's is a
+            # plain edit, as it has to be — a leader correcting a bounced
+            # address cannot wait on the person who cannot read their mail
+            staged = typed if is_self and typed != on_file else None
+            if is_self and not typed:
+                ui.notify(
+                    "Your own address cannot be blank — it is how you sign in.",
+                    color="warning",
+                )
+                return
+            fields = {} if staged else {"email": email.value or None}
             async with action_session() as (session, actor):
                 ids = await volunteer_team_ids(session, volunteer.id)
                 require(
@@ -577,13 +612,15 @@ def _edit_dialog(
                     volunteer.id,
                     first_name=first.value,
                     last_name=last.value,
-                    email=email.value or None,
                     phone=phone.value or None,
                     notes=notes.value or None,
                     is_active=active.value if active is not None else None,
+                    **fields,
                 )
                 if values:
                     await custom_field_service.set_values(session, volunteer.id, values)
+            if staged:
+                await _stage_own_email(staged, base_url)
             dialog.close()
             ui.navigate.reload()
 
@@ -591,6 +628,33 @@ def _edit_dialog(
             ui.button("Cancel", on_click=dialog.close).props("flat")
             ui.button("Save", on_click=save)
     dialog.open()
+
+
+async def _stage_own_email(address: str, base_url: str) -> None:
+    """Arm the confirmation link for the signed-in account and mail it to the
+    address being claimed. Same flow as the /account page: one service call,
+    one message, and it goes out after the commit."""
+    async with action_session() as (session, actor):
+        account, token = await user_service.start_email_change(
+            session, actor.user.id, address
+        )
+        target, user_id, was = account.pending_email, actor.user.id, actor.user.email
+    audit_log("auth.email_change_requested", user=f"{user_id}:{was}", to=target)
+    await mail.send_email(
+        target,
+        *mail.email_change_email(
+            confirm_email_url(base_url, token),
+            target,
+            int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600),
+        ),
+    )
+    ui.notify(
+        f"Confirmation sent to {target}. Your address changes when you open "
+        "the link in it.",
+        color="positive",
+        multi_line=True,
+        timeout=8000,
+    )
 
 
 async def _unassign(membership_id: int) -> None:

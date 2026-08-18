@@ -125,6 +125,72 @@ authenticator." Every account here has that second authenticator. So:
 
 Expiry is therefore never a lockout, which is what lets the window be short.
 
+## Changing the address
+
+For an account holder the email address is not contact data. It is the login
+identifier, and on the passwordless path it *is* the credential: anyone who
+reads that mailbox can sign in with a code. Repointing it is therefore closer
+to binding a new authenticator than to correcting a phone number, and until
+now the app had it both ways — the sign-in address could not be changed at
+all, while the address on the volunteer record was an ordinary edit that any
+leader, or the volunteer themself, could make to an address nobody had
+checked. A typo cost a volunteer every notice the app sends and the sign-in
+code with it, and handed the account to whoever owned the typo.
+
+So **your own** address moves only after the new one proves itself. Typing it —
+on **/account**, or in the edit dialog on your own profile — stages it and
+mails a single-use link *there*, to the address being claimed and to no other.
+Nothing on file changes until that link is opened; the account keeps working at
+the old address for the whole window, which is what makes expiry harmless.
+Asking again replaces the pending address and kills the previous link, so a
+typo is fixed by retyping rather than by waiting.
+
+The link lasts **24 hours** — the ceiling SP 800-63B §4.2.1.2 puts on a code
+sent to an email address, taken straight this time rather than stretched the
+way the invite link is. The invite's week-long deviation buys reachability for
+someone who would otherwise be locked out; here nothing is lost by missing the
+window, so there is nothing to trade the spec's number against. Hence a
+constant in `services/users.py`, not a setting: it is not a parish preference.
+
+Opening the link only *offers* the change; a button applies it. Mail scanners
+and corporate link-checkers follow URLs on their own, and a single-use token
+that acts on a GET is a token spent by the recipient's antivirus before they
+ever see it — the same reason the invite page asks for a press. And unlike the
+invite link, this one signs nobody in: it grants one address swap and nothing
+else, so a leaked link costs the address, not the account.
+
+Confirmation moves **both** addresses together — the login identifier and the
+volunteer record behind it. That is what carries the change to every team the
+volunteer serves on: memberships hold no address of their own, so rosters,
+event notices, substitution calls, the exported spreadsheet and the Drive share
+ACLs all read the volunteer record live and pick up the new address on the next
+send. A one-time code still in flight is discarded at the same moment: it was
+mailed to the old mailbox to prove control of an identifier that no longer
+exists, and must not be spendable against the new one.
+
+Two addresses may be *claimed* at once — `pending_email` is deliberately not
+unique, because uniqueness there would let anyone park an address and lock its
+real owner out. Only the first to confirm gets it; the second confirmation
+finds the address taken, is refused, and clears its own dead link.
+
+**Somebody else's** address stays an ordinary edit. A leader correcting a
+bounced address is usually doing it *because* the volunteer cannot read their
+mail, so waiting on them to confirm would make the correction impossible; the
+same goes for the roster spreadsheet import, where a staged change would leave
+the sheet and the database disagreeing and the next nightly sync "correcting"
+it back. Those edits touch the volunteer record only — never the login address
+— and every one of them is in `volunteer_history` with the actor who made it.
+The residual risk is honest and worth stating: a leader can still point a
+teammate's contact address somewhere else. What that does *not* do is move
+their sign-in address, and `invite_volunteer` refuses to mint an account at an
+address another account already holds.
+
+The JSON API declines to change your own address rather than half-doing it: it
+sends no email by design (see `api/events.py`), so it cannot run the exchange,
+and a `PATCH /api/volunteers/{id}` that quietly dropped the field would look
+like success. `GET /api/auth/me` reports `pending_email` and its expiry, never
+the token.
+
 ## Anti-enumeration throughout
 
 The login form will not confirm whether an email has an account: unknown

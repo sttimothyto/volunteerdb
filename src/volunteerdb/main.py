@@ -24,6 +24,9 @@ logger = structlog.get_logger(__name__)
 UNRESTRICTED_PREFIXES = (
     "/login",
     "/invite/",
+    # the link mailed to a new address: opened days later, from whatever
+    # browser reads that mailbox (ui/login.py: confirm_email_page)
+    "/confirm-email/",
     "/api/",
     "/_nicegui",
     "/static/",

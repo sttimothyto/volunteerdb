@@ -124,6 +124,39 @@ def password_changed_email(login_url: str, *, removed: bool = False) -> tuple[st
     )
 
 
+def email_change_email(
+    confirm_url: str, new_address: str, ttl_hours: int
+) -> tuple[str, str]:
+    """Sent to the address somebody wants to move an account to — never to the
+    one it is on today.
+
+    That direction is the whole point: the message is not a notice, it is the
+    proof. Until this link is opened the address is only a claim, and a
+    mistyped one lands in a stranger's mailbox, where all it offers is the
+    chance to decline. So it names the address it would set, says what it
+    would move, and gives an unmistakable "not you? ignore this"."""
+    where = org()
+    subject = "Confirm your new VolunteerDB address"
+    what = (
+        f"VolunteerDB, the volunteer database for {where}"
+        if where
+        else "VolunteerDB, the volunteer database"
+    )
+    return (
+        subject,
+        f"Somebody asked to change the address on an account in {what}, "
+        f"to this one ({new_address}).\n\n"
+        f"To confirm it, open this link: {confirm_url}\n\n"
+        "Until then nothing changes: the account still signs in at its old "
+        "address, and that is where the app still writes. Once confirmed, "
+        "this address becomes both the sign-in address and the contact "
+        "address on every ministry roster the volunteer serves on.\n\n"
+        f"The link works once, and only for the next {ttl_window(ttl_hours)}.\n\n"
+        "If you were not expecting this, ignore this email — without the link "
+        "nothing happens, and nobody learns whether this address exists.",
+    )
+
+
 def interest_leader_email(
     team_path: str,
     name: str,

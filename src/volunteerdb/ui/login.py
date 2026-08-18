@@ -253,3 +253,87 @@ def invite_page(token: str, request: Request):
             ).classes("text-xs text-gray-500")
             agree = ui.checkbox("I agree to keep personal information confidential")
             ui.button("Finish setup and sign in", on_click=redeem).classes("w-full")
+
+
+def confirm_email_url(base_url: str, token: str) -> str:
+    return f"{base_url}/confirm-email/{token}"
+
+
+@ui.page("/confirm-email/{token}")
+async def confirm_email_page(token: str, request: Request):
+    """The other end of a requested address change.
+
+    Signed out on purpose (``/confirm-email/`` is in UNRESTRICTED_PREFIXES):
+    the link goes to an address the person may only read on their phone, and
+    a day later, long after the session that asked for it has gone. What
+    authenticates them is possession of the token, which is exactly the claim
+    being tested — asking them to sign in first would prove the wrong thing
+    and, on a passwordless account, would mail a code to the address they are
+    still trying to replace.
+
+    Opening the link does not spend it: a mail scanner or a link prefetcher
+    would then burn a single-use token before the recipient ever saw it. The
+    button does. And unlike /invite/ this page signs nobody in — the link
+    grants one address swap, never a session.
+    """
+    apply_theme()
+    login_url = f"{str(request.base_url).rstrip('/')}/login"
+    async with db_session() as session:
+        account = await user_service.pending_email_change(session, token)
+        target = account.pending_email if account is not None else None
+
+    async def apply() -> None:
+        try:
+            async with db_session() as session:
+                user = await user_service.confirm_email_change(session, token)
+        except ValueError as exc:  # the address went to somebody else first
+            _show_dead_link(body, login_url, str(exc))
+            return
+        if user is None:
+            logger.warning("auth.email_change_invalid")
+            _show_dead_link(body, login_url)
+            return
+        audit_log("auth.email_changed", user=f"{user.id}:{user.email}")
+        settled = user.email
+        body.clear()
+        with body:
+            ui.label("Address confirmed").classes("text-2xl vdb-brand")
+            with ui.card().classes("w-80 gap-3"):
+                ui.label(settled).classes("font-medium")
+                ui.label(
+                    "This is now the address you sign in with, and the one "
+                    "your ministries reach you at."
+                ).classes("text-sm text-gray-500")
+                ui.button("Sign in").props(f'href="{login_url}"').classes("w-full")
+
+    body = ui.column().classes("absolute-center items-center gap-4")
+    if target is None:
+        logger.warning("auth.email_change_invalid")
+        _show_dead_link(body, login_url)
+    else:
+        with body:
+            ui.label("Confirm your new address").classes("text-2xl vdb-brand")
+            with ui.card().classes("w-80 gap-3"):
+                ui.label(target).classes("font-medium")
+                ui.label(
+                    "Confirming makes this the address you sign in with, and "
+                    "the one on every ministry roster you serve on."
+                ).classes("text-sm text-gray-500")
+                ui.button("Confirm this address", on_click=apply).classes("w-full")
+
+
+def _show_dead_link(body: ui.column, login_url: str, reason: str = "") -> None:
+    """One card for every way a link can fail — unknown, spent, expired, or
+    beaten to the address. No hint about which: the same no-oracle rule
+    redeem_invite follows."""
+    body.clear()
+    with body:
+        ui.label("That link did not work").classes("text-2xl vdb-brand")
+        with ui.card().classes("w-80 gap-3"):
+            ui.label(
+                reason
+                or "This link has expired or has already been used. Ask for "
+                "the change again from the Password & sign-in page and we'll "
+                "send a fresh one."
+            ).classes("text-sm text-gray-500")
+            ui.button("Sign in").props(f'href="{login_url}"').classes("w-full")

@@ -113,6 +113,24 @@ If the person cannot receive email at all, an OTP-only account will not work
 for them: re-invite and hand the link over in person, inside the window, so
 they can set a password.
 
+## Change the address on an account
+
+Volunteers do this themselves, and only they can: **header gear → Password &
+sign-in**, or the Edit dialog on their own profile. Typing a new address mails
+a confirmation link to *that* address; nothing changes until somebody opens the
+link and presses the button, and the account keeps working at the old address
+in the meantime. The link lasts 24 hours, works once, and asking again replaces
+it. When it is confirmed, the sign-in address and the address on every ministry
+roster move together.
+
+There is no admin button for this, on purpose — see
+[Authentication design](../explanation/auth.md#changing-the-address). What an
+admin (or a ministry leader) *can* change is somebody else's **contact**
+address on their profile, which applies at once and does not touch how they
+sign in. That is the path for a bounced address the volunteer cannot fix
+themselves. If an account is stuck at an address nobody reads, deactivate it
+and create a new one at the right address.
+
 ## Promote, demote, deactivate
 
 - **Admin toggle** — grants/revokes the global admin flag (see the
