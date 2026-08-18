@@ -119,8 +119,22 @@ podman exec -i volunteerdb-db psql -U volunteerdb -Atq volunteerdb \
   -c "select version_num from alembic_version"
 ```
 
-If that says `0001`, this section is already behind you. If it says `0023`, copy
-`deploy/catchup-0023.sql` to the host and run:
+If that says `0001`, this section is already behind you. Otherwise copy the
+catch-up scripts to the host — **both** of them if it says `0022`, which is where
+this instance actually sat: `0023` was committed but never deployed, so the live
+database was a revision behind the chain when the squash happened.
+
+At `0022`, start with the bridge; at `0023`, skip straight to the second command:
+
+```sh
+podman exec -i volunteerdb-db psql -U volunteerdb -v ON_ERROR_STOP=1 \
+  volunteerdb < catchup-0022.sql        # only if the revision is 0022
+```
+
+`catchup-0022.sql` is revision `0023` written out as SQL — three nullable columns
+on `app_user` and one unique constraint, no data migration — and it leaves the
+database stamped `0023`, which is what the next script expects. Then, in both
+cases:
 
 ```sh
 podman exec -i volunteerdb-db pg_dump -U volunteerdb volunteerdb \
@@ -131,17 +145,23 @@ podman run --rm --network volunteerdb --env-file /etc/volunteerdb/env \
   localhost/volunteerdb:latest alembic stamp 0001
 ```
 
-The script runs as one transaction and refuses to start against any revision
-other than `0023`, so a second invocation is a loud no-op rather than a mess. It
-applies exactly what `0024`–`0028` did; the result was checked by diffing
-`pg_dump --schema-only` against a database built fresh from `0001`, which came
-out identical — including the two constraint names PostgreSQL would otherwise
-have derived differently, and the now-unused `pg_trgm` extension. Afterwards
-deploy normally: `alembic upgrade head` sees `0001` and has nothing to do.
+Each script runs as one transaction and refuses to start against any revision
+but its own, so a second invocation is a loud no-op rather than a mess. Together
+they apply exactly what `0023`–`0028` did; the result was checked by building
+both paths on scratch databases and diffing `pg_dump --schema-only` to nothing —
+including the two constraint names PostgreSQL would otherwise have derived
+differently, and the now-unused `pg_trgm` extension. Afterwards deploy normally:
+`alembic upgrade head` sees `0001` and has nothing to do.
 
-Stop the app first if you like, but you do not have to — the catch-up holds
-locks only for the length of one transaction, and a parish-sized database
-finishes it in well under a second.
+:::{warning}
+**Deploy immediately after.** The catch-up drops columns the *running* image
+still maps (`volunteer.updated_at`, the notification stamps, the
+`event_task_force` table), so between the catch-up and the deploy the old
+container answers 500 on any page that touches a volunteer. Stop
+`volunteerdb-app.service` before the catch-up and let the deploy start it again,
+or run the two back to back and accept a window of a minute or so. Do not begin
+if you cannot finish.
+:::
 
 ## Verify
 

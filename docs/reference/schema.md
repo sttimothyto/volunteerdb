@@ -526,18 +526,20 @@ database and an upgraded one, which only means something if the two agree.
 
 ### Upgrading a database that predates the squash
 
-`0001` creates a schema; it cannot migrate one. A database carrying revision
-`0023` — the last released revision before the squash — is brought forward by
-`deploy/catchup-0023.sql`, which applies exactly what `0024`–`0028` did:
+`0001` creates a schema; it cannot migrate one. A database carrying one of the
+last two pre-squash revisions is brought forward by SQL instead:
 
 ```sh
 pg_dump "$VDB_DATABASE_URL" > backup-before-catchup.sql   # first, always
+psql "$VDB_DATABASE_URL" -f deploy/catchup-0022.sql   # only from 0022
 psql "$VDB_DATABASE_URL" -f deploy/catchup-0023.sql
 uv run alembic stamp 0001
 ```
 
-The script runs in one transaction and refuses to start against any revision
-other than `0023`. It was verified against `0001` by building both paths on
+`catchup-0022.sql` is revision `0023` restated as SQL, for a database that never
+received it — which the live deployment had not, so this is the path it actually
+took. `catchup-0023.sql` applies `0024`–`0028`. Each runs in one transaction and
+refuses to start against any revision but its own. It was verified against `0001` by building both paths on
 scratch databases and diffing their schema dumps to nothing, so an upgraded
 database and a fresh one are the same database — including the two constraint
 names and the now-unused `pg_trgm` extension, which the script normalises.

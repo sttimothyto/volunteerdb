@@ -18,9 +18,10 @@ was made, and `tests/test_schema_invariants.py` keeps them honest from here -- i
 compares the migrated database against the models on every run.
 
 **Upgrading an existing database.** This revision creates a schema; it cannot
-migrate one. A database already carrying revision 0023 -- the last released
-revision before the squash -- is brought forward by `deploy/catchup-0023.sql`,
-which applies exactly what 0024-0028 did, and is then stamped:
+migrate one. A database carrying one of the last two pre-squash revisions is
+brought forward in SQL instead: `deploy/catchup-0022.sql` restates 0023 for a
+database that never received it (the live deployment had not), and
+`deploy/catchup-0023.sql` applies 0024-0028. Then it is stamped:
 
     pg_dump ... > backup-before-catchup.sql
     psql "$VDB_DATABASE_URL" -f deploy/catchup-0023.sql
