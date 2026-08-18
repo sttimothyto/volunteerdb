@@ -35,8 +35,10 @@ def _payload(team_id: int, **overrides) -> dict:
 async def _second_member(client, seeded) -> tuple[int, dict]:
     """Another Liturgy member with an account; returns (volunteer_id, header)."""
     async with db_session() as session:
-        v = await volunteers.create(session, "Noor", "Reader", "noor@example.org")
-        await memberships.assign(session, v.id, seeded["team_id"], TeamRole.member)
+        v = await volunteers.create(session, None, "Noor", "Reader", "noor@example.org")
+        await memberships.assign(
+            session, None, v.id, seeded["team_id"], TeamRole.member
+        )
         await users.create(
             session, "noor@example.org", volunteer_id=v.id, password="noor-pass-phrase"
         )
@@ -66,7 +68,7 @@ async def test_listing_is_scoped_and_detail_is_gated(
         "/api/events", json=_payload(seeded["team_id"]), headers=token_leader
     )
     async with db_session() as session:
-        other = await teams.create(session, "Garden Guild")
+        other = await teams.create(session, None, "Garden Guild")
     r = await client.post(
         "/api/events",
         json=_payload(other.id, title="Weeding bee"),
@@ -114,8 +116,12 @@ async def test_rsvp_signup_capacity_and_withdraw(
 
     # capacity 1: the leader cannot add a second lector
     async with db_session() as session:
-        extra = await volunteers.create(session, "Iris", "Extra", "iris@example.org")
-        await memberships.assign(session, extra.id, seeded["team_id"], TeamRole.member)
+        extra = await volunteers.create(
+            session, None, "Iris", "Extra", "iris@example.org"
+        )
+        await memberships.assign(
+            session, None, extra.id, seeded["team_id"], TeamRole.member
+        )
     r = await client.post(
         f"/api/events/{event_id}/slots/{lector['slot']['id']}/assignments",
         json={"volunteer_id": extra.id},

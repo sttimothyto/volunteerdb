@@ -32,17 +32,25 @@ async def choir(database):
     """Choir with Lena (leader), Mia and Carl (members); Carl also serves on
     Hospitality. Dora is on Choir only."""
     async with db_session() as session:
-        choir = await teams.create(session, "Choir")
-        hospitality = await teams.create(session, "Hospitality")
-        lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-        mia = await volunteers.create(session, "Mia", "Member", "mia@example.org")
-        carl = await volunteers.create(session, "Carl", "Cross", "carl@example.org")
-        dora = await volunteers.create(session, "Dora", "Done", "dora@example.org")
-        await memberships.assign(session, lena.id, choir.id, TeamRole.leader)
-        await memberships.assign(session, mia.id, choir.id, TeamRole.member)
-        await memberships.assign(session, carl.id, choir.id, TeamRole.member)
-        await memberships.assign(session, carl.id, hospitality.id, TeamRole.member)
-        await memberships.assign(session, dora.id, choir.id, TeamRole.member)
+        choir = await teams.create(session, None, "Choir")
+        hospitality = await teams.create(session, None, "Hospitality")
+        lena = await volunteers.create(
+            session, None, "Lena", "Leader", "lena@example.org"
+        )
+        mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+        carl = await volunteers.create(
+            session, None, "Carl", "Cross", "carl@example.org"
+        )
+        dora = await volunteers.create(
+            session, None, "Dora", "Done", "dora@example.org"
+        )
+        await memberships.assign(session, None, lena.id, choir.id, TeamRole.leader)
+        await memberships.assign(session, None, mia.id, choir.id, TeamRole.member)
+        await memberships.assign(session, None, carl.id, choir.id, TeamRole.member)
+        await memberships.assign(
+            session, None, carl.id, hospitality.id, TeamRole.member
+        )
+        await memberships.assign(session, None, dora.id, choir.id, TeamRole.member)
         return {
             "choir": choir.id,
             "hospitality": hospitality.id,
@@ -55,7 +63,7 @@ async def choir(database):
 
 async def _team_volunteer_ids(team_id: int) -> set[int]:
     async with db_session() as session:
-        pairs = await teams.roster(session, team_id)
+        pairs = await teams.roster(session, None, team_id)
         return {volunteer.id for _, volunteer in pairs}
 
 
@@ -218,9 +226,11 @@ async def test_sync_empty_sheet_never_wipes_a_team(choir):
     # a 2-member team slips under SYNC_REMOVAL_MIN — the empty-sheet guard
     # still refuses the wipe
     async with db_session() as session:
-        duo = await teams.create(session, "Duo")
+        duo = await teams.create(session, None, "Duo")
         for volunteer_id in (choir["lena"], choir["mia"]):
-            await memberships.assign(session, volunteer_id, duo.id, TeamRole.member)
+            await memberships.assign(
+                session, None, volunteer_id, duo.id, TeamRole.member
+            )
         duo_id = duo.id
     report = await importer.run_team_sync(_csv_bytes([]), team_id=duo_id, user_id=None)
     assert report.has_errors and not report.applied
@@ -229,7 +239,7 @@ async def test_sync_empty_sheet_never_wipes_a_team(choir):
 
 async def test_sync_empty_sheet_for_an_empty_team_is_fine(choir):
     async with db_session() as session:
-        fresh = await teams.create(session, "Fresh")
+        fresh = await teams.create(session, None, "Fresh")
         fresh_id = fresh.id
     report = await importer.run_team_sync(
         _csv_bytes([]), team_id=fresh_id, user_id=None
@@ -299,10 +309,10 @@ async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir):
     still add people; it may only edit the ones already on the roster."""
     async with db_session() as session:
         outsider = await volunteers.create(
-            session, "Orla", "Outsider", "orla@example.org"
+            session, None, "Orla", "Outsider", "orla@example.org"
         )
-        other = await teams.create(session, "Altar Servers")
-        await memberships.assign(session, outsider.id, other.id, TeamRole.member)
+        other = await teams.create(session, None, "Altar Servers")
+        await memberships.assign(session, None, outsider.id, other.id, TeamRole.member)
         outsider_id = outsider.id
 
     poisoned = _csv_bytes(
@@ -335,8 +345,10 @@ async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(c
     already, so the sheet may move her — that is the licence working, not a
     hole; what it may not do is move somebody it merely lists."""
     async with db_session() as session:
-        blank = await volunteers.create(session, "Basil", "Blank")  # no address
-        await memberships.assign(session, blank.id, choir["choir"], TeamRole.member)
+        blank = await volunteers.create(session, None, "Basil", "Blank")  # no address
+        await memberships.assign(
+            session, None, blank.id, choir["choir"], TeamRole.member
+        )
         blank_id = blank.id
 
     moved = _csv_bytes(

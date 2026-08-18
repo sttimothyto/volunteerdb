@@ -43,21 +43,21 @@ class Parish:
 async def _parish(session) -> Parish:
     """Liturgy has a leader but no second; Garden has nobody; Clergy is the
     team the roll builder finds by name."""
-    liturgy = await teams.create(session, "Liturgy")
-    garden = await teams.create(session, "Garden")
-    clergy = await teams.create(session, "Clergy")
-    lena = await volunteers.create(session, "Lena", "Leader")
-    cora = await volunteers.create(session, "Cora", "Core")
-    mia = await volunteers.create(session, "Mia", "Member")
-    pete = await volunteers.create(session, "Pete", "Priest")
-    dan = await volunteers.create(session, "Dan", "Deacon")
-    vera = await volunteers.create(session, "Vera", "Volunteer")
-    victor = await volunteers.create(session, "Victor", "Volunteer")
-    await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, cora.id, liturgy.id, TeamRole.core)
-    await memberships.assign(session, mia.id, liturgy.id, TeamRole.member)
-    await memberships.assign(session, pete.id, clergy.id, TeamRole.member)
-    await memberships.assign(session, dan.id, clergy.id, TeamRole.member)
+    liturgy = await teams.create(session, None, "Liturgy")
+    garden = await teams.create(session, None, "Garden")
+    clergy = await teams.create(session, None, "Clergy")
+    lena = await volunteers.create(session, None, "Lena", "Leader")
+    cora = await volunteers.create(session, None, "Cora", "Core")
+    mia = await volunteers.create(session, None, "Mia", "Member")
+    pete = await volunteers.create(session, None, "Pete", "Priest")
+    dan = await volunteers.create(session, None, "Dan", "Deacon")
+    vera = await volunteers.create(session, None, "Vera", "Volunteer")
+    victor = await volunteers.create(session, None, "Victor", "Volunteer")
+    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
+    await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core)
+    await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member)
+    await memberships.assign(session, None, pete.id, clergy.id, TeamRole.member)
+    await memberships.assign(session, None, dan.id, clergy.id, TeamRole.member)
     lena_user, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
     await users.create(session, "cora@example.org", volunteer_id=cora.id)
     pete_user, _ = await users.create(session, "pete@example.org", volunteer_id=pete.id)
@@ -121,7 +121,7 @@ async def test_default_roll_without_a_clergy_team(database):
     team's own leadership and core members."""
     async with db_session() as session:
         p = await _parish(session)
-        await teams.delete(session, p.clergy_id)
+        await teams.delete(session, None, p.clergy_id)
         proposal = await _open_proposal(session, p)
         view = await elections.detail(session, proposal.id, today=TODAY)
         assert {v.volunteer.id for v in view.voters} == {p.lena_id, p.cora_id}
@@ -130,7 +130,7 @@ async def test_default_roll_without_a_clergy_team(database):
 async def test_roll_dedupes_clergy_who_also_lead(database):
     async with db_session() as session:
         p = await _parish(session)
-        await memberships.assign(session, p.pete_id, p.liturgy_id, TeamRole.core)
+        await memberships.assign(session, None, p.pete_id, p.liturgy_id, TeamRole.core)
         proposal = await _open_proposal(session, p)
         view = await elections.detail(session, proposal.id, today=TODAY)
         assert [v.volunteer.id for v in view.voters].count(p.pete_id) == 1
@@ -148,7 +148,7 @@ async def test_renaming_the_clergy_team_retires_the_standing(database):
     async with db_session() as session:
         p = await _parish(session)
         before = await _open_proposal(session, p)
-        await teams.update(session, p.clergy_id, name="Presbyterate")
+        await teams.update(session, None, p.clergy_id, name="Presbyterate")
         after = await _open_proposal(session, p, team_id=p.garden_id)
 
         rolls = {
@@ -170,8 +170,8 @@ async def test_a_team_renamed_to_clergy_takes_up_the_standing(database):
     """Nothing registers the clergy team, so the name alone confers it."""
     async with db_session() as session:
         p = await _parish(session)
-        await teams.delete(session, p.clergy_id)
-        await teams.update(session, p.liturgy_id, name="Clergy")
+        await teams.delete(session, None, p.clergy_id)
+        await teams.update(session, None, p.liturgy_id, name="Clergy")
         proposal = await _open_proposal(session, p, team_id=p.garden_id)
         view = await elections.detail(session, proposal.id, today=TODAY)
         assert {v.volunteer.id for v in view.voters} == {
@@ -469,7 +469,9 @@ async def test_appoint_concluded_only_and_creates_membership(database):
     async with db_session() as session:
         p = await _parish(session)
         # Vera is already a plain member: appointment upgrades her role
-        await memberships.assign(session, p.vera_id, p.liturgy_id, TeamRole.member)
+        await memberships.assign(
+            session, None, p.vera_id, p.liturgy_id, TeamRole.member
+        )
         proposal = await _open_proposal(session, p)
         cand = await _candidate_ids(session, proposal.id)
 

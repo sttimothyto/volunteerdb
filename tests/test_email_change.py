@@ -29,7 +29,7 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def _volunteer_with_account(session, first="Maria", addr="maria@example.org"):
-    volunteer = await volunteers.create(session, first, "Alvarez", email=addr)
+    volunteer = await volunteers.create(session, None, first, "Alvarez", email=addr)
     account, _ = await users.create(session, addr, volunteer_id=volunteer.id)
     return volunteer, account
 
@@ -75,8 +75,10 @@ async def test_the_address_reaches_every_active_membership(database):
     async with db_session() as session:
         volunteer, account = await _volunteer_with_account(session)
         for name in ("Liturgy", "Hospitality"):
-            team = await teams.create(session, name)
-            await memberships.assign(session, volunteer.id, team.id, TeamRole.member)
+            team = await teams.create(session, None, name)
+            await memberships.assign(
+                session, None, volunteer.id, team.id, TeamRole.member
+            )
         user_id = account.id
 
     async with db_session() as session:
@@ -342,13 +344,13 @@ async def test_a_leader_correcting_someone_elses_address_applies_at_once(
     monkeypatch.setattr(mail, "send_email", fake_ok)
 
     async with db_session() as session:
-        team = await teams.create(session, "Liturgy")
+        team = await teams.create(session, None, "Liturgy")
         member = await volunteers.create(
-            session, "Felix", "Garcia", email="typo@example.org"
+            session, None, "Felix", "Garcia", email="typo@example.org"
         )
-        await memberships.assign(session, member.id, team.id, TeamRole.member)
-        lena = await volunteers.create(session, "Lena", "Leader")
-        await memberships.assign(session, lena.id, team.id, TeamRole.leader)
+        await memberships.assign(session, None, member.id, team.id, TeamRole.member)
+        lena = await volunteers.create(session, None, "Lena", "Leader")
+        await memberships.assign(session, None, lena.id, team.id, TeamRole.leader)
         leader_account, _ = await users.create(
             session, "lena@example.org", volunteer_id=lena.id
         )

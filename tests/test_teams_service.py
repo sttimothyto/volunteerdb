@@ -65,54 +65,56 @@ async def test_create_rejects_a_negative_workload_weight(database):
     what PATCH refuses and the negative flows into every workload band."""
     async with db_session() as session:
         with pytest.raises(ValueError):
-            await teams.create(session, "Negative", workload_weight=Decimal("-2"))
+            await teams.create(session, None, "Negative", workload_weight=Decimal("-2"))
 
-        ok = await teams.create(session, "Fine", workload_weight=Decimal("2.5"))
+        ok = await teams.create(session, None, "Fine", workload_weight=Decimal("2.5"))
         assert ok.workload_weight == Decimal("2.5")
 
-        unweighted = await teams.create(session, "Unweighted")
+        unweighted = await teams.create(session, None, "Unweighted")
         assert unweighted.workload_weight is None, "no weight at all stays legal"
 
 
 async def test_update_reparent_cycle_rejected(database):
     async with db_session() as session:
-        a = await teams.create(session, "A")
-        b = await teams.create(session, "B", parent_team_id=a.id)
-        c = await teams.create(session, "C", parent_team_id=b.id)
+        a = await teams.create(session, None, "A")
+        b = await teams.create(session, None, "B", parent_team_id=a.id)
+        c = await teams.create(session, None, "C", parent_team_id=b.id)
 
         with pytest.raises(CycleError):
-            await teams.update(session, a.id, parent_team_id=c.id)
+            await teams.update(session, None, a.id, parent_team_id=c.id)
         with pytest.raises(CycleError):
-            await teams.update(session, a.id, parent_team_id=a.id)
+            await teams.update(session, None, a.id, parent_team_id=a.id)
 
         # a legal reparent within the same tree still works
-        moved = await teams.update(session, c.id, parent_team_id=a.id)
+        moved = await teams.update(session, None, c.id, parent_team_id=a.id)
         assert moved.parent_team_id == a.id
 
 
 async def test_update_unset_vs_explicit_none_parent(database):
     async with db_session() as session:
-        parent = await teams.create(session, "Parent")
-        child = await teams.create(session, "Child", parent_team_id=parent.id)
+        parent = await teams.create(session, None, "Parent")
+        child = await teams.create(session, None, "Child", parent_team_id=parent.id)
 
-        renamed = await teams.update(session, child.id, name="Renamed")
+        renamed = await teams.update(session, None, child.id, name="Renamed")
         assert renamed.parent_team_id == parent.id, "omitted parent stays untouched"
 
-        orphaned = await teams.update(session, child.id, parent_team_id=None)
+        orphaned = await teams.update(session, None, child.id, parent_team_id=None)
         assert orphaned.parent_team_id is None, "explicit None detaches"
 
 
 async def test_update_workload_weight_validation(database):
     async with db_session() as session:
-        team = await teams.create(session, "Weighted")
+        team = await teams.create(session, None, "Weighted")
 
         with pytest.raises(ValueError):
-            await teams.update(session, team.id, workload_weight=Decimal("-1"))
+            await teams.update(session, None, team.id, workload_weight=Decimal("-1"))
 
-        updated = await teams.update(session, team.id, workload_weight=Decimal("2.5"))
+        updated = await teams.update(
+            session, None, team.id, workload_weight=Decimal("2.5")
+        )
         assert updated.workload_weight == Decimal("2.5")
 
-        cleared = await teams.update(session, team.id, workload_weight=None)
+        cleared = await teams.update(session, None, team.id, workload_weight=None)
         assert cleared.workload_weight is None
 
 
@@ -121,16 +123,16 @@ async def test_two_top_level_teams_cannot_share_a_name(database):
     parentless teams cannot share a name. Without it a duplicate 'Music' would
     make the importer's team-path lookup ambiguous for every future import."""
     async with db_session() as session:
-        await teams.create(session, "Music")
+        await teams.create(session, None, "Music")
         with pytest.raises(IntegrityError):
-            await teams.create(session, "Music")
+            await teams.create(session, None, "Music")
 
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy")
-        youth = await teams.create(session, "Youth")
-        await teams.create(session, "Music", parent_team_id=liturgy.id)
+        liturgy = await teams.create(session, None, "Liturgy")
+        youth = await teams.create(session, None, "Youth")
+        await teams.create(session, None, "Music", parent_team_id=liturgy.id)
         await teams.create(
-            session, "Music", parent_team_id=youth.id
+            session, None, "Music", parent_team_id=youth.id
         )  # different parents: fine
 
 
@@ -138,22 +140,23 @@ async def test_missing_team_raises_lookup(database):
     async with db_session() as session:
         assert await teams.get(session, 424242) is None
         with pytest.raises(LookupError):
-            await teams.update(session, 424242, name="X")
+            await teams.update(session, None, 424242, name="X")
         with pytest.raises(LookupError):
-            await teams.delete(session, 424242)
+            await teams.delete(session, None, 424242)
 
 
 async def test_search_matches_name_description_and_path(database):
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy")
+        liturgy = await teams.create(session, None, "Liturgy")
         await teams.create(
             session,
+            None,
             "Altar Servers",
             parent_team_id=liturgy.id,
             description="robes and candles",
         )
-        retired = await teams.create(session, "Old Guild")
-        await teams.update(session, retired.id, is_active=False)
+        retired = await teams.create(session, None, "Old Guild")
+        await teams.update(session, None, retired.id, is_active=False)
 
         assert [t.name for t, _ in await teams.search(session, "altar")] == [
             "Altar Servers"

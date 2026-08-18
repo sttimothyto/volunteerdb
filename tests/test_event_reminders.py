@@ -35,14 +35,18 @@ def _at(days_ahead: int, hour: int) -> datetime:
 
 async def _team(n: int = 2) -> tuple[int, list[int]]:
     async with db_session() as session:
-        team = await teams.create(session, "Liturgy")
+        team = await teams.create(session, None, "Liturgy")
         vids = []
         for i in range(n):
             v = await volunteers.create(
-                session, f"Vol{i}", "Server", f"vol{i}@example.org"
+                session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
             )
             await memberships.assign(
-                session, v.id, team.id, TeamRole.leader if i == 0 else TeamRole.member
+                session,
+                None,
+                v.id,
+                team.id,
+                TeamRole.leader if i == 0 else TeamRole.member,
             )
             vids.append(v.id)
         return team.id, vids

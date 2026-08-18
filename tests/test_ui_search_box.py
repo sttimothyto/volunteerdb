@@ -22,15 +22,17 @@ LIST_BOX = "Search volunteers…"
 
 async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
     async with db_session() as session:
-        music = await teams.create(session, "Music")
-        choir = await teams.create(session, "Alvarado Choir", parent_team_id=music.id)
-        maria = await volunteers.create(
-            session, "Maria", "Alvarez", "maria@example.org", "555-1234"
+        music = await teams.create(session, None, "Music")
+        choir = await teams.create(
+            session, None, "Alvarado Choir", parent_team_id=music.id
         )
-        await memberships.assign(session, maria.id, choir.id, TeamRole.member)
-        retired = await volunteers.create(session, "Pedro", "Alvarez")
-        await volunteers.update(session, retired.id, is_active=False)
-        await volunteers.create(session, "Bruno", "Costa")
+        maria = await volunteers.create(
+            session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+        )
+        await memberships.assign(session, None, maria.id, choir.id, TeamRole.member)
+        retired = await volunteers.create(session, None, "Pedro", "Alvarez")
+        await volunteers.update(session, None, retired.id, is_active=False)
+        await volunteers.create(session, None, "Bruno", "Costa")
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
@@ -112,7 +114,7 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
 async def test_volunteers_page_search_box_also_suggests(database):
     async with db_session() as session:
         maria = await volunteers.create(
-            session, "Maria", "Alvarez", "maria@example.org"
+            session, None, "Maria", "Alvarez", "maria@example.org"
         )
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
@@ -138,15 +140,15 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
     from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
     async with db_session() as session:
-        music = await teams.create(session, "Music")
+        music = await teams.create(session, None, "Music")
         maria = await volunteers.create(
-            session, "Maria", "Alvarez", "maria@example.org", "555-1234"
+            session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
         )
         bruno = await volunteers.create(
-            session, "Bruno", "Costa", "bruno@example.org", "777-0000"
+            session, None, "Bruno", "Costa", "bruno@example.org", "777-0000"
         )
-        await memberships.assign(session, maria.id, music.id, TeamRole.member)
-        await memberships.assign(session, bruno.id, music.id, TeamRole.member)
+        await memberships.assign(session, None, maria.id, music.id, TeamRole.member)
+        await memberships.assign(session, None, bruno.id, music.id, TeamRole.member)
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )

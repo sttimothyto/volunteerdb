@@ -17,7 +17,7 @@ def _days(n: int) -> str:
 
 async def _walter_id() -> int:
     async with db_session() as session:
-        walter = await volunteers.create(session, "Walter", "Willing")
+        walter = await volunteers.create(session, None, "Walter", "Willing")
         return walter.id
 
 

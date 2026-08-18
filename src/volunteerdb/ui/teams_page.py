@@ -332,7 +332,6 @@ def _team_dialog(all_teams, team=None) -> None:
         @notify_errors
         async def save() -> None:
             async with action_session() as (session, actor):
-                require(actor.is_admin, "only admins manage teams")
                 parent_id = parent.value or None
                 weight_value = (
                     Decimal(str(weight.value)) if weight.value is not None else None
@@ -340,6 +339,7 @@ def _team_dialog(all_teams, team=None) -> None:
                 if team is None:
                     created = await team_service.create(
                         session,
+                        actor,
                         name.value,
                         parent_id,
                         description.value or None,
@@ -349,6 +349,7 @@ def _team_dialog(all_teams, team=None) -> None:
                 else:
                     await team_service.update(
                         session,
+                        actor,
                         team.id,
                         name=name.value,
                         parent_team_id=parent_id,
@@ -505,11 +506,9 @@ def _application_form_dialog(team_id: int, current: str | None) -> None:
         @notify_errors
         async def save(new_value: str | None) -> None:
             async with action_session() as (session, actor):
-                require(
-                    actor.can_view_full_roster(team_id),
-                    "manage this team's application form",
+                await team_service.set_application_form_url(
+                    session, actor, team_id, new_value
                 )
-                await team_service.set_application_form_url(session, team_id, new_value)
             dialog.close()
             ui.navigate.to(f"/teams/{team_id}")
 
@@ -634,7 +633,11 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         # leader/second/core of this team may invite its members; never off a
         # snapshot, where the roster is history and the addresses may be stale
         can_invite = can_full and at is None
-        roster = await team_service.roster(session, team_id, at=at) if can_names else []
+        roster = (
+            await team_service.roster(session, actor, team_id, at=at)
+            if can_names
+            else []
+        )
         # accounts are not system-versioned (like photos): an as-of roster still
         # reports who can sign in *now*
         accounts = await user_service.accounts_by_volunteer(
@@ -877,11 +880,8 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                         ui.notify("Pick a volunteer", color="warning")
                         return
                     async with action_session() as (session, actor):
-                        require(
-                            actor.can_manage_team(team_id), "manage this team's roster"
-                        )
                         await membership_service.assign(
-                            session, who.value, team_id, TeamRole(role.value)
+                            session, actor, who.value, team_id, TeamRole(role.value)
                         )
                     ui.navigate.reload()
 
@@ -890,28 +890,20 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
 
 async def _change_role(membership_id: int, role_value: str) -> None:
     async with action_session() as (session, actor):
-        membership = await membership_service.get(session, membership_id)
-        if membership is None:
-            raise LookupError("membership vanished")
-        require(actor.can_manage_team(membership.team_id), "manage this team's roster")
-        membership.role = TeamRole(role_value)
-        await session.flush()
+        await membership_service.set_role(
+            session, actor, membership_id, TeamRole(role_value)
+        )
     ui.notify("Role updated", color="positive")
 
 
 async def _remove_member(membership_id: int) -> None:
     async with action_session() as (session, actor):
-        membership = await membership_service.get(session, membership_id)
-        if membership is None:
-            raise LookupError("membership vanished")
-        require(actor.can_manage_team(membership.team_id), "manage this team's roster")
-        await membership_service.remove(session, membership_id)
+        await membership_service.remove(session, actor, membership_id)
     ui.navigate.reload()
 
 
 @notify_errors
 async def _delete_team(team_id: int) -> None:
     async with action_session() as (session, actor):
-        require(actor.is_admin, "only admins delete teams")
-        await team_service.delete(session, team_id)
+        await team_service.delete(session, actor, team_id)
     ui.navigate.to("/teams")

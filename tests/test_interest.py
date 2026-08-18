@@ -34,7 +34,7 @@ def sent_mail(monkeypatch):
 
 async def _publish(name: str, html: str = "<p>hello</p>") -> int:
     async with db_session() as session:
-        team = await teams.create(session, name)
+        team = await teams.create(session, None, name)
         await pages.set_home_doc_url(
             session, team.id, "https://docs.google.com/document/d/x" + str(team.id)
         )
@@ -44,8 +44,8 @@ async def _publish(name: str, html: str = "<p>hello</p>") -> int:
 
 async def _lead(team_id: int, email: str = "lena@example.org") -> int:
     async with db_session() as session:
-        lena = await volunteers.create(session, "Lena", "Leader", email)
-        await memberships.assign(session, lena.id, team_id, TeamRole.leader)
+        lena = await volunteers.create(session, None, "Lena", "Leader", email)
+        await memberships.assign(session, None, lena.id, team_id, TeamRole.leader)
         return lena.id
 
 
@@ -97,19 +97,23 @@ async def test_unresolved_and_resolve(database):
 async def test_leader_emails_covers_leader_and_second_only(database):
     team_id = await _publish("Choir")
     async with db_session() as session:
-        lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-        sam = await volunteers.create(session, "Sam", "Second", "sam@example.org")
-        cora = await volunteers.create(session, "Cora", "Core", "cora@example.org")
-        noel = await volunteers.create(session, "Noel", "NoEmail")
+        lena = await volunteers.create(
+            session, None, "Lena", "Leader", "lena@example.org"
+        )
+        sam = await volunteers.create(session, None, "Sam", "Second", "sam@example.org")
+        cora = await volunteers.create(
+            session, None, "Cora", "Core", "cora@example.org"
+        )
+        noel = await volunteers.create(session, None, "Noel", "NoEmail")
         # what an import of a roster with an empty Email cell can leave behind:
         # not NULL, but nothing a mailer or a Drive share can use either
-        blank = await volunteers.create(session, "Bea", "Blank")
+        blank = await volunteers.create(session, None, "Bea", "Blank")
         blank.email = "  "
-        await memberships.assign(session, lena.id, team_id, TeamRole.leader)
-        await memberships.assign(session, sam.id, team_id, TeamRole.second)
-        await memberships.assign(session, cora.id, team_id, TeamRole.core)
-        await memberships.assign(session, noel.id, team_id, TeamRole.second)
-        await memberships.assign(session, blank.id, team_id, TeamRole.leader)
+        await memberships.assign(session, None, lena.id, team_id, TeamRole.leader)
+        await memberships.assign(session, None, sam.id, team_id, TeamRole.second)
+        await memberships.assign(session, None, cora.id, team_id, TeamRole.core)
+        await memberships.assign(session, None, noel.id, team_id, TeamRole.second)
+        await memberships.assign(session, None, blank.id, team_id, TeamRole.leader)
         assert await interest.leader_emails(session, team_id) == [
             "lena@example.org",
             "sam@example.org",
@@ -118,9 +122,9 @@ async def test_leader_emails_covers_leader_and_second_only(database):
 
 async def test_set_application_form_url_accepts_google_forms_only(database):
     async with db_session() as session:
-        team = await teams.create(session, "Choir")
+        team = await teams.create(session, None, "Choir")
         for good in (FORM_URL, "https://forms.gle/AbC123"):
-            await teams.set_application_form_url(session, team.id, good)
+            await teams.set_application_form_url(session, None, team.id, good)
             assert team.application_form_url == good
         for bad in (
             "https://evil.test/form",
@@ -128,11 +132,11 @@ async def test_set_application_form_url_accepts_google_forms_only(database):
             "http://docs.google.com/forms/d/abc",  # https only
         ):
             with pytest.raises(ValueError):
-                await teams.set_application_form_url(session, team.id, bad)
-        await teams.set_application_form_url(session, team.id, None)
+                await teams.set_application_form_url(session, None, team.id, bad)
+        await teams.set_application_form_url(session, None, team.id, None)
         assert team.application_form_url is None
         with pytest.raises(LookupError):
-            await teams.set_application_form_url(session, 99999, FORM_URL)
+            await teams.set_application_form_url(session, None, 99999, FORM_URL)
 
 
 # --- the public routes -----------------------------------------------------
@@ -194,7 +198,7 @@ async def test_applicant_email_carries_the_application_form_when_set(
 ):
     team_id = await _publish("Choir")
     async with db_session() as session:
-        await teams.set_application_form_url(session, team_id, FORM_URL)
+        await teams.set_application_form_url(session, None, team_id, FORM_URL)
 
     await _post(real_app_client, "choir", {"name": "Ann", "email": "ann@example.org"})
     (applicant_body,) = [body for to, _, body in sent_mail if to == "ann@example.org"]
@@ -267,7 +271,7 @@ async def test_per_email_throttle_caps_mail_to_one_address(real_app_client, sent
 
 async def test_interest_post_to_unpublished_slug_404s(real_app_client, sent_mail):
     async with db_session() as session:
-        await teams.create(session, "Quiet Team")
+        await teams.create(session, None, "Quiet Team")
     r = await _post(
         real_app_client, "quiet-team", {"name": "Ann", "email": "a@example.org"}
     )
@@ -284,6 +288,6 @@ async def test_interest_rows_cascade_with_their_team(database):
             session, team_id=team_id, name="Ann", email="ann@example.org"
         )
     async with db_session() as session:
-        await teams.delete(session, team_id)
+        await teams.delete(session, None, team_id)
     async with db_session() as session:
         assert (await session.execute(sa.select(Interest))).all() == []

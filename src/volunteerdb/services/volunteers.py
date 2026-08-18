@@ -17,7 +17,7 @@ from ..models import (
     membership_history,
     team_history,
 )
-from ..permissions import Actor
+from ..permissions import Actor, require, volunteer_team_ids
 
 _UNSET: object = object()
 
@@ -184,12 +184,19 @@ async def find_by_email(session: AsyncSession, email: str) -> list[Volunteer]:
 
 async def create(
     session: AsyncSession,
+    actor: Actor | None,
     first_name: str,
     last_name: str,
     email: str | None = None,
     phone: str | None = None,
     notes: str | None = None,
 ) -> Volunteer:
+    """Add a person to the parish. Admin-only: a volunteer record is the thing
+    memberships and permissions hang off, and the roster paths that let a leader
+    bring somebody in go through the importer, which grants its own licence
+    row-by-row (sheets/importer.py). `actor=None` is a trusted internal caller
+    — the importer and the seed script."""
+    require(actor is None or actor.is_admin, "only admins create volunteers")
     volunteer = Volunteer(
         first_name=first_name.strip(),
         last_name=last_name.strip(),
@@ -204,6 +211,7 @@ async def create(
 
 async def update(
     session: AsyncSession,
+    actor: Actor | None,
     volunteer_id: int,
     *,
     first_name: str | None = None,
@@ -216,6 +224,15 @@ async def update(
     volunteer = await get(session, volunteer_id)
     if volunteer is None:
         raise LookupError(f"volunteer {volunteer_id} not found")
+    if actor is not None:
+        require(
+            actor.can_edit_volunteer(
+                volunteer_id, await volunteer_team_ids(session, volunteer_id)
+            ),
+            "edit this volunteer",
+        )
+        if is_active is not None:
+            require(actor.is_admin, "only admins archive volunteers")
     if first_name is not None:
         volunteer.first_name = first_name.strip()
     if last_name is not None:
@@ -232,7 +249,8 @@ async def update(
     return volunteer
 
 
-async def delete(session: AsyncSession, volunteer_id: int) -> None:
+async def delete(session: AsyncSession, actor: Actor | None, volunteer_id: int) -> None:
+    require(actor is None or actor.is_admin, "only admins delete volunteers")
     volunteer = await get(session, volunteer_id)
     if volunteer is None:
         raise LookupError(f"volunteer {volunteer_id} not found")
@@ -263,13 +281,26 @@ class ImpactRow:
 
 
 async def impact(
-    session: AsyncSession, volunteer_id: int, at: datetime | None = None
+    session: AsyncSession,
+    actor: Actor | None,
+    volunteer_id: int,
+    at: datetime | None = None,
 ) -> list[ImpactRow]:
     """The priest's question: if this volunteer leaves, what holes appear?
 
     For every team the volunteer serves on, how many leaders / leaders+seconds
     would remain. leaders_left == 0 on a team they lead means a leaderless team.
+
+    Needs full-profile view of the volunteer: it enumerates every team they
+    serve on, including ones the viewer has no rights over.
     """
+    if actor is not None:
+        require(
+            actor.can_view_volunteer(
+                volunteer_id, await volunteer_team_ids(session, volunteer_id)
+            ),
+            "view this volunteer's impact",
+        )
     rows = await assignments(session, volunteer_id, at)
     if not rows:
         return []

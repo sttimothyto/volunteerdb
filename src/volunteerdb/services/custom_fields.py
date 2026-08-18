@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import fieldcodec
 from ..models import CustomFieldDef, FieldType, Volunteer
+from ..permissions import Actor, require, volunteer_team_ids
 from . import volunteers as volunteer_service
 
 _UNSET: object = object()
@@ -51,12 +52,14 @@ async def get_def(session: AsyncSession, field_id: int) -> CustomFieldDef | None
 
 async def create_def(
     session: AsyncSession,
+    actor: Actor | None,
     label: str,
     field_type: FieldType | str,
     options: list | None = None,
     show_in_list: bool = False,
     position: int = 0,
 ) -> CustomFieldDef:
+    require(actor is None or actor.is_admin, "manage custom fields")
     label = (label or "").strip()
     if not label:
         raise ValueError("label is required")
@@ -79,6 +82,7 @@ async def create_def(
 
 async def update_def(
     session: AsyncSession,
+    actor: Actor | None,
     field_id: int,
     *,
     label: str | None = None,
@@ -88,6 +92,7 @@ async def update_def(
     is_active: bool | None = None,
 ) -> CustomFieldDef:
     """key and field_type are immutable — stored values are keyed/typed by them."""
+    require(actor is None or actor.is_admin, "manage custom fields")
     defn = await get_def(session, field_id)
     if defn is None:
         raise LookupError(f"custom field {field_id} not found")
@@ -113,8 +118,9 @@ async def update_def(
     return defn
 
 
-async def delete_def(session: AsyncSession, field_id: int) -> None:
+async def delete_def(session: AsyncSession, actor: Actor | None, field_id: int) -> None:
     """Hard delete; orphaned keys in Volunteer.custom simply stop being rendered."""
+    require(actor is None or actor.is_admin, "manage custom fields")
     defn = await get_def(session, field_id)
     if defn is None:
         raise LookupError(f"custom field {field_id} not found")
@@ -140,12 +146,26 @@ def validate_value(defn: CustomFieldDef, value: Any) -> Any:
 
 
 async def set_values(
-    session: AsyncSession, volunteer_id: int, values: dict[str, Any]
+    session: AsyncSession,
+    actor: Actor | None,
+    volunteer_id: int,
+    values: dict[str, Any],
 ) -> Volunteer:
-    """Validate and merge values into Volunteer.custom. A None value clears its key."""
+    """Validate and merge values into Volunteer.custom. A None value clears its key.
+
+    Custom values are contact-tier data (they are redacted alongside phone and
+    notes), so writing them asks for the same right as editing the volunteer —
+    not the admin right that defining the *fields* takes."""
     volunteer = await volunteer_service.get(session, volunteer_id)
     if volunteer is None:
         raise LookupError(f"volunteer {volunteer_id} not found")
+    if actor is not None:
+        require(
+            actor.can_edit_volunteer(
+                volunteer_id, await volunteer_team_ids(session, volunteer_id)
+            ),
+            "edit this volunteer",
+        )
     defs = {d.key: d for d in await list_defs(session)}
     # always build a fresh dict: plain JSONB columns don't track in-place mutation
     merged = dict(volunteer.custom or {})

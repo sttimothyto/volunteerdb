@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter
 
-from ..permissions import require, team_ids_map
+from ..permissions import team_ids_map
 from ..services import volunteers as volunteer_service
 from ..services import workload as service
 from .deps import AsOf, CtxDep
@@ -28,15 +28,11 @@ def _config_out(config: service.WorkloadConfig) -> WorkloadConfigOut:
 @router.get("/config")
 async def get_config(ctx: CtxDep) -> WorkloadConfigOut:
     """Multipliers and band colors/thresholds; leaders need them to render workload."""
-    require(
-        ctx.actor.is_admin or bool(ctx.actor.managed_team_ids), "view workload config"
-    )
-    return _config_out(await service.get_config(ctx.session))
+    return _config_out(await service.get_config(ctx.session, ctx.actor))
 
 
 @router.put("/config")
 async def put_config(ctx: CtxDep, data: WorkloadConfigIn) -> WorkloadConfigOut:
-    require(ctx.actor.is_admin, "only admins configure workload")
     config = service.WorkloadConfig(
         multipliers={role: Decimal(str(m)) for role, m in data.multipliers.items()},
         bands=[
@@ -46,7 +42,7 @@ async def put_config(ctx: CtxDep, data: WorkloadConfigIn) -> WorkloadConfigOut:
             for b in data.bands
         ],
     )
-    await service.set_config(ctx.session, config)
+    await service.set_config(ctx.session, ctx.actor, config)
     return _config_out(config)
 
 

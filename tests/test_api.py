@@ -190,9 +190,9 @@ async def test_volunteer_timeline(client, seeded):
     # leave and rejoin so the timeline has one closed and one open spell
     async with db_session() as session:
         m = await memberships.find(session, vid, seeded["team_id"])
-        await memberships.remove(session, m.id)
+        await memberships.remove(session, None, m.id)
     async with db_session() as session:
-        await memberships.assign(session, vid, seeded["team_id"], TeamRole.core)
+        await memberships.assign(session, None, vid, seeded["team_id"], TeamRole.core)
 
     r = await client.get(f"/api/volunteers/{vid}/timeline", headers=headers)
     assert r.status_code == 200
@@ -246,10 +246,12 @@ async def test_custom_fields_flow(client, seeded):
 
     # a plain member sees another volunteer's name but not their custom values
     async with db_session() as session:
-        other = await volunteers.create(session, "Other", "Person")
-        await memberships.assign(session, other.id, seeded["team_id"], TeamRole.member)
+        other = await volunteers.create(session, None, "Other", "Person")
+        await memberships.assign(
+            session, None, other.id, seeded["team_id"], TeamRole.member
+        )
         await custom_fields_service.set_values(
-            session, other.id, {"preferred_contact": "Phone"}
+            session, None, other.id, {"preferred_contact": "Phone"}
         )
     r = await client.get(f"/api/volunteers/{other.id}", headers=member)
     assert r.status_code == 200

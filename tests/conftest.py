@@ -197,9 +197,11 @@ def debug_logging(monkeypatch):
 @pytest.fixture
 async def seeded(database):
     async with db_session() as session:
-        team = await teams.create(session, "Liturgy")
-        v = await volunteers.create(session, "Maria", "Alvarez", "maria@example.org")
-        await memberships.assign(session, v.id, team.id, TeamRole.member)
+        team = await teams.create(session, None, "Liturgy")
+        v = await volunteers.create(
+            session, None, "Maria", "Alvarez", "maria@example.org"
+        )
+        await memberships.assign(session, None, v.id, team.id, TeamRole.member)
         await users.create(
             session, "admin@example.org", is_admin=True, password="secret-pass-phrase"
         )
@@ -235,8 +237,12 @@ async def token_member(client, seeded) -> dict:
 async def token_leader(client, seeded) -> dict:
     """A leader of the seeded Liturgy team (not an admin)."""
     async with db_session() as session:
-        lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-        await memberships.assign(session, lena.id, seeded["team_id"], TeamRole.leader)
+        lena = await volunteers.create(
+            session, None, "Lena", "Leader", "lena@example.org"
+        )
+        await memberships.assign(
+            session, None, lena.id, seeded["team_id"], TeamRole.leader
+        )
         await users.create(
             session,
             "lena@example.org",
@@ -251,8 +257,12 @@ async def token_core(client, seeded) -> dict:
     """A core member of the seeded Liturgy team: full-roster rights, no
     management rights — the boundary most permission tests care about."""
     async with db_session() as session:
-        cora = await volunteers.create(session, "Cora", "Core", "cora@example.org")
-        await memberships.assign(session, cora.id, seeded["team_id"], TeamRole.core)
+        cora = await volunteers.create(
+            session, None, "Cora", "Core", "cora@example.org"
+        )
+        await memberships.assign(
+            session, None, cora.id, seeded["team_id"], TeamRole.core
+        )
         await users.create(
             session,
             "cora@example.org",

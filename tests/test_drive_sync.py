@@ -59,11 +59,13 @@ def _sheet_csv(rows: list[list]) -> bytes:
 @pytest.fixture
 async def choir(database):
     async with db_session() as session:
-        choir = await teams.create(session, "Choir")
-        lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-        mia = await volunteers.create(session, "Mia", "Member", "mia@example.org")
-        await memberships.assign(session, lena.id, choir.id, TeamRole.leader)
-        await memberships.assign(session, mia.id, choir.id, TeamRole.member)
+        choir = await teams.create(session, None, "Choir")
+        lena = await volunteers.create(
+            session, None, "Lena", "Leader", "lena@example.org"
+        )
+        mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+        await memberships.assign(session, None, lena.id, choir.id, TeamRole.leader)
+        await memberships.assign(session, None, mia.id, choir.id, TeamRole.member)
         return {"choir": choir.id, "lena": lena.id, "mia": mia.id}
 
 
@@ -109,7 +111,8 @@ async def test_sheet_edits_apply_and_regenerate_mirrors_db(choir, tmp_path):
 
     async with db_session() as session:
         roster = {
-            v.email: m.role for m, v in await teams.roster(session, choir["choir"])
+            v.email: m.role
+            for m, v in await teams.roster(session, None, choir["choir"])
         }
     assert roster == {
         "lena@example.org": TeamRole.leader,
@@ -141,12 +144,12 @@ async def test_stale_modtime_skips_apply_but_mirrors_db_changes(choir, tmp_path)
             TeamSheet(team_id=choir["choir"], file_id="f123", last_synced_at=NOW)
         )
         membership = await memberships.find(session, choir["mia"], choir["choir"])
-        await memberships.remove(session, membership.id)
+        await memberships.remove(session, None, membership.id)
 
     assert await drive_sync.apply(workdir) == 0
 
     async with db_session() as session:
-        roster = [v.email for _, v in await teams.roster(session, choir["choir"])]
+        roster = [v.email for _, v in await teams.roster(session, None, choir["choir"])]
     assert roster == ["lena@example.org"], (
         "a sheet not edited since our last upload must never resurrect rows — "
         "the database wins"
@@ -180,9 +183,11 @@ async def test_failed_sheet_is_never_overwritten(choir, tmp_path):
     """A leader's broken edit stays on Drive to be fixed; and other teams
     still sync (per-team isolation)."""
     async with db_session() as session:
-        ushers = await teams.create(session, "Ushers")
-        otto = await volunteers.create(session, "Otto", "Usher", "otto@example.org")
-        await memberships.assign(session, otto.id, ushers.id, TeamRole.leader)
+        ushers = await teams.create(session, None, "Ushers")
+        otto = await volunteers.create(
+            session, None, "Otto", "Usher", "otto@example.org"
+        )
+        await memberships.assign(session, None, otto.id, ushers.id, TeamRole.leader)
 
     workdir = _workdir(tmp_path)
     _listing(
@@ -217,7 +222,7 @@ async def test_failed_sheet_is_never_overwritten(choir, tmp_path):
     assert "Choir" in alerts and "oui" in alerts
 
     async with db_session() as session:
-        roster = [v.email for _, v in await teams.roster(session, choir["choir"])]
+        roster = [v.email for _, v in await teams.roster(session, None, choir["choir"])]
         assert sorted(roster) == ["lena@example.org", "mia@example.org"], (
             "the failed team's roster is untouched"
         )
@@ -231,11 +236,11 @@ async def test_manifest_carries_team_paths_and_editors_to_the_host(choir, tmp_pa
     it the Team dropdown values and who may edit each sheet."""
     async with db_session() as session:
         sopranos = await teams.create(
-            session, "Sopranos", parent_team_id=choir["choir"]
+            session, None, "Sopranos", parent_team_id=choir["choir"]
         )
-        sam = await volunteers.create(session, "Sam", "Second", "sam@example.org")
-        await memberships.assign(session, sam.id, sopranos.id, TeamRole.second)
-        await teams.create(session, "Flowers")  # nobody in charge
+        sam = await volunteers.create(session, None, "Sam", "Second", "sam@example.org")
+        await memberships.assign(session, None, sam.id, sopranos.id, TeamRole.second)
+        await teams.create(session, None, "Flowers")  # nobody in charge
 
     workdir = _workdir(tmp_path)
     _listing(workdir, [(NAME, "f123", NOW)])
@@ -292,7 +297,7 @@ async def test_rename_manifest_when_team_slug_changed(choir, tmp_path):
     rename instruction for the host script, not a new file."""
     async with db_session() as session:
         session.add(TeamSheet(team_id=choir["choir"], file_id="f123"))
-        await teams.update(session, choir["choir"], name="Chancel Choir")
+        await teams.update(session, None, choir["choir"], name="Chancel Choir")
 
     workdir = _workdir(tmp_path)
     _listing(workdir, [(NAME, "f123", NOW)])  # Drive still has the old name

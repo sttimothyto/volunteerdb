@@ -26,7 +26,7 @@ def _png(width: int, height: int) -> bytes:
 
 async def test_settings_menu_carries_reading_preferences(database):
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy")
+        liturgy = await teams.create(session, None, "Liturgy")
         admin, _ = await users.create(session, "admin@example.org", is_admin=True)
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -47,7 +47,7 @@ async def test_settings_menu_carries_reading_preferences(database):
 
 async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
     async with db_session() as session:
-        maria = await volunteers.create(session, "Maria", "Alvarez")
+        maria = await volunteers.create(session, None, "Maria", "Alvarez")
         await photos.set_photo(session, maria.id, _png(60, 60), uploaded_by=None)
         account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
@@ -69,7 +69,7 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
 
 async def test_the_header_offers_an_upload_when_there_is_no_photo_yet(database):
     async with db_session() as session:
-        felix = await volunteers.create(session, "Felix", "Garcia")
+        felix = await volunteers.create(session, None, "Felix", "Garcia")
         account, _ = await users.create(
             session, "felix@example.org", volunteer_id=felix.id
         )
@@ -103,7 +103,7 @@ async def test_the_header_avatar_and_the_profile_avatar_are_addressed_apart(data
     be able to say so, and test_volunteer_panel's marker must keep finding
     exactly the one on the page."""
     async with db_session() as session:
-        maria = await volunteers.create(session, "Maria", "Alvarez")
+        maria = await volunteers.create(session, None, "Maria", "Alvarez")
         account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
         )

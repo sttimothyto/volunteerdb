@@ -33,16 +33,16 @@ def sent_mail(monkeypatch):
 
 async def _parish(session):
     """Liturgy (Lena leads, Mia + Noor members) and Choir (Oda member)."""
-    liturgy = await teams.create(session, "Liturgy")
-    choir = await teams.create(session, "Choir")
-    lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-    mia = await volunteers.create(session, "Mia", "Member", "mia@example.org")
-    noor = await volunteers.create(session, "Noor", "Member", "noor@example.org")
-    oda = await volunteers.create(session, "Oda", "Chorister", "oda@example.org")
-    await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, mia.id, liturgy.id, TeamRole.member)
-    await memberships.assign(session, noor.id, liturgy.id, TeamRole.member)
-    await memberships.assign(session, oda.id, choir.id, TeamRole.member)
+    liturgy = await teams.create(session, None, "Liturgy")
+    choir = await teams.create(session, None, "Choir")
+    lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+    mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+    noor = await volunteers.create(session, None, "Noor", "Member", "noor@example.org")
+    oda = await volunteers.create(session, None, "Oda", "Chorister", "oda@example.org")
+    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
+    await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member)
+    await memberships.assign(session, None, noor.id, liturgy.id, TeamRole.member)
+    await memberships.assign(session, None, oda.id, choir.id, TeamRole.member)
     lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
     mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
     noor_u, _ = await users.create(session, "noor@example.org", volunteer_id=noor.id)
@@ -117,7 +117,7 @@ async def test_signup_withdraw_and_leader_assign(database):
         user.find("Sign up", kind=ui.button).click()  # opens the dialog
         user.find(marker="signup-confirm").click()
         await user.should_see("Mia Member", retries=30)
-        await user.should_see("1/2")
+        await user.should_see("1/2", retries=30)
         # withdrawing asks for a reason (mailed to the leaders) since Phase 4
         user.find("Withdraw", kind=ui.button).click()
         await user.should_see("Why can you no longer serve?")
@@ -133,7 +133,7 @@ async def test_signup_withdraw_and_leader_assign(database):
         pick.value = ids["noor"]
         user.find("Assign", kind=ui.button).click()
         await user.should_see("Noor Member", retries=30)
-        await user.should_see("1/2")
+        await user.should_see("1/2", retries=30)
 
 
 async def test_sub_request_claim_flow_with_mail(database, sent_mail):

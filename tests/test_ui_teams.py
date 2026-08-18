@@ -24,18 +24,18 @@ SEARCH_BOX = "Search teams…"
 
 async def _parish(session) -> dict[str, int]:
     """Liturgy (Lena leads) > Music, plus Hospitality and a retired team."""
-    liturgy = await teams.create(session, "Liturgy")
-    music = await teams.create(session, "Music", parent_team_id=liturgy.id)
-    hospitality = await teams.create(session, "Hospitality")
-    retired = await teams.create(session, "Retired Guild")
-    await teams.update(session, retired.id, is_active=False)
+    liturgy = await teams.create(session, None, "Liturgy")
+    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+    hospitality = await teams.create(session, None, "Hospitality")
+    retired = await teams.create(session, None, "Retired Guild")
+    await teams.update(session, None, retired.id, is_active=False)
 
-    lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-    mia = await volunteers.create(session, "Mia", "Member", "mia@example.org")
-    hank = await volunteers.create(session, "Hank", "Host")
-    await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, mia.id, music.id, TeamRole.member)
-    await memberships.assign(session, hank.id, hospitality.id, TeamRole.member)
+    lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+    mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+    hank = await volunteers.create(session, None, "Hank", "Host")
+    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
+    await memberships.assign(session, None, mia.id, music.id, TeamRole.member)
+    await memberships.assign(session, None, hank.id, hospitality.id, TeamRole.member)
 
     admin, _ = await users.create(session, "admin@example.org", is_admin=True)
     lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)

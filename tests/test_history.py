@@ -26,12 +26,12 @@ async def _now() -> datetime:
 
 async def test_update_archives_old_version(database):
     async with db_session(user_id=42) as session:
-        v = await volunteers.create(session, "Old", "Name", "old@example.org")
+        v = await volunteers.create(session, None, "Old", "Name", "old@example.org")
         vid = v.id
     t_created = await _now()
 
     async with db_session(user_id=42) as session:
-        await volunteers.update(session, vid, first_name="New")
+        await volunteers.update(session, None, vid, first_name="New")
     t_updated = await _now()
 
     async with db_session() as session:
@@ -53,12 +53,12 @@ async def test_update_archives_old_version(database):
 
 async def test_delete_is_visible_in_the_past(database):
     async with db_session(user_id=7) as session:
-        v = await volunteers.create(session, "Gone", "Tomorrow")
+        v = await volunteers.create(session, None, "Gone", "Tomorrow")
         vid = v.id
     t_alive = await _now()
 
     async with db_session(user_id=7) as session:
-        await volunteers.delete(session, vid)
+        await volunteers.delete(session, None, vid)
 
     async with db_session() as session:
         assert await volunteers.get(session, vid) is None
@@ -70,12 +70,12 @@ async def test_delete_is_visible_in_the_past(database):
 
 async def test_rolled_back_changes_leave_no_history(database):
     async with db_session() as session:
-        v = await volunteers.create(session, "Keep", "Me")
+        v = await volunteers.create(session, None, "Keep", "Me")
         vid = v.id
 
     try:
         async with db_session() as session:
-            await volunteers.update(session, vid, first_name="Doomed")
+            await volunteers.update(session, None, vid, first_name="Doomed")
             raise RuntimeError("boom")
     except RuntimeError:
         pass
@@ -98,13 +98,13 @@ async def test_rolled_back_changes_leave_no_history(database):
 
 async def test_membership_role_changes_are_versioned(database):
     async with db_session(user_id=11) as session:
-        v = await volunteers.create(session, "Ada", "Archivist")
-        t = await teams.create(session, "Choir")
+        v = await volunteers.create(session, None, "Ada", "Archivist")
+        t = await teams.create(session, None, "Choir")
         vid, tid = v.id, t.id
-        await memberships.assign(session, vid, tid, TeamRole.member)
+        await memberships.assign(session, None, vid, tid, TeamRole.member)
 
     async with db_session(user_id=11) as session:
-        await memberships.assign(session, vid, tid, TeamRole.leader)
+        await memberships.assign(session, None, vid, tid, TeamRole.leader)
 
     async with db_session() as session:
         row = (await session.execute(sa.select(membership_history))).mappings().one()
@@ -115,7 +115,7 @@ async def test_membership_role_changes_are_versioned(database):
 
 async def test_custom_values_are_versioned(database):
     async with db_session(user_id=42) as session:
-        v = await volunteers.create(session, "Custom", "Carrier")
+        v = await volunteers.create(session, None, "Custom", "Carrier")
         vid = v.id
         v.custom = {"shirt_size": "M"}
     t_medium = await _now()
@@ -145,7 +145,7 @@ async def test_custom_values_are_versioned(database):
 
 async def test_workload_weight_is_versioned(database):
     async with db_session(user_id=9) as session:
-        t = await teams.create(session, "Liturgy")
+        t = await teams.create(session, None, "Liturgy")
         tid = t.id
     t_unweighted = await _now()
 

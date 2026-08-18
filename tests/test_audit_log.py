@@ -27,7 +27,7 @@ def _csv_bytes(header, rows) -> bytes:
 
 async def test_insert_logged_with_user_and_commit(database, log_records):
     async with db_session(user_id=42) as session:
-        v = await volunteers.create(session, "Ada", "Lovelace")
+        v = await volunteers.create(session, None, "Ada", "Lovelace")
     inserts = _by_event(log_records, "db.insert")
     assert len(inserts) == 1
     record = inserts[0]
@@ -43,9 +43,9 @@ async def test_insert_logged_with_user_and_commit(database, log_records):
 
 async def test_update_logs_old_to_new_diff(database, log_records):
     async with db_session() as session:
-        v = await volunteers.create(session, "Ada", "Lovelace")
+        v = await volunteers.create(session, None, "Ada", "Lovelace")
     async with db_session(user_id=7) as session:
-        await volunteers.update(session, v.id, phone="555-0100")
+        await volunteers.update(session, None, v.id, phone="555-0100")
     updates = _by_event(log_records, "db.update")
     assert len(updates) == 1
     record = updates[0]
@@ -58,9 +58,9 @@ async def test_update_logs_old_to_new_diff(database, log_records):
 
 async def test_delete_logs_full_row(database, log_records):
     async with db_session() as session:
-        v = await volunteers.create(session, "Ada", "Lovelace")
+        v = await volunteers.create(session, None, "Ada", "Lovelace")
     async with db_session(user_id=7) as session:
-        await volunteers.delete(session, v.id)
+        await volunteers.delete(session, None, v.id)
     deletes = _by_event(log_records, "db.delete")
     assert len(deletes) == 1
     assert deletes[0]["was"]["first_name"] == "'Ada'"
@@ -188,7 +188,7 @@ async def test_reads_skipped_below_info(database, log_records):
 
 async def test_core_upsert_logged(database, log_records):
     async with db_session(user_id=3) as session:
-        await workload.set_config(session, workload.DEFAULT_CONFIG)
+        await workload.set_config(session, None, workload.DEFAULT_CONFIG)
     core_writes = [r for r in _by_event(log_records, "db.insert") if r.get("core")]
     assert core_writes and core_writes[0]["table"] == "app_setting"
     assert core_writes[0]["user"] == "3"
@@ -196,7 +196,7 @@ async def test_core_upsert_logged(database, log_records):
 
 async def test_anonymous_write_shows_dash_user(database, log_records):
     async with db_session() as session:
-        await volunteers.create(session, "Anon", "Ymous")
+        await volunteers.create(session, None, "Anon", "Ymous")
     record = _by_event(log_records, "db.insert")[0]
     assert record["user"] == "-"
     assert record["via"] == "-"

@@ -3,7 +3,6 @@
 from nicegui import ui
 
 from ..models import FIELD_TYPE_LABELS, FieldType
-from ..permissions import require
 from ..services import custom_fields as custom_field_service
 from .context import action_session, notify_errors, page_session
 from .layout import frame
@@ -103,10 +102,10 @@ def _field_dialog(defn=None) -> None:
                 line for line in (options.value or "").splitlines() if line.strip()
             ]
             async with action_session() as (session, actor):
-                require(actor.is_admin, "only admins define custom fields")
                 if defn is None:
                     await custom_field_service.create_def(
                         session,
+                        actor,
                         label.value,
                         field_type.value,
                         options=option_list,
@@ -117,6 +116,7 @@ def _field_dialog(defn=None) -> None:
                     is_select = defn.field_type == FieldType.select.value
                     await custom_field_service.update_def(
                         session,
+                        actor,
                         defn.id,
                         label=label.value,
                         show_in_list=show_in_list.value,
@@ -144,8 +144,7 @@ def _delete_dialog(defn) -> None:
         @notify_errors
         async def confirm() -> None:
             async with action_session() as (session, actor):
-                require(actor.is_admin, "only admins delete custom fields")
-                await custom_field_service.delete_def(session, defn.id)
+                await custom_field_service.delete_def(session, actor, defn.id)
             dialog.close()
             ui.navigate.reload()
 

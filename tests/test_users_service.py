@@ -13,15 +13,21 @@ from volunteerdb.services.users import _token_digest
 async def test_bulk_provision_dedupes_and_skips(database):
     async with db_session() as session:
         family1 = await volunteers.create(
-            session, "Ana", "Family", "family@example.org"
+            session, None, "Ana", "Family", "family@example.org"
         )
         family2 = await volunteers.create(
-            session, "Bob", "Family", "family@example.org"
+            session, None, "Bob", "Family", "family@example.org"
         )
-        await volunteers.create(session, "Carl", "Nomail")  # no email: not considered
-        inactive = await volunteers.create(session, "Dora", "Gone", "dora@example.org")
-        await volunteers.update(session, inactive.id, is_active=False)
-        linked = await volunteers.create(session, "Eli", "Linked", "eli@example.org")
+        await volunteers.create(
+            session, None, "Carl", "Nomail"
+        )  # no email: not considered
+        inactive = await volunteers.create(
+            session, None, "Dora", "Gone", "dora@example.org"
+        )
+        await volunteers.update(session, None, inactive.id, is_active=False)
+        linked = await volunteers.create(
+            session, None, "Eli", "Linked", "eli@example.org"
+        )
         await users.create(session, "eli-account@example.org", volunteer_id=linked.id)
 
         report = await users.bulk_provision(session)
@@ -40,7 +46,7 @@ async def test_bulk_provision_dedupes_and_skips(database):
 
 async def test_bulk_provision_second_run_is_noop(database):
     async with db_session() as session:
-        await volunteers.create(session, "Ana", "Solo", "ana@example.org")
+        await volunteers.create(session, None, "Ana", "Solo", "ana@example.org")
         first = await users.bulk_provision(session)
         assert len(first.created) == 1
 
@@ -52,7 +58,9 @@ async def test_bulk_provision_second_run_is_noop(database):
 
 async def test_create_links_to_the_volunteer_at_the_same_address(database):
     async with db_session() as session:
-        v = await volunteers.create(session, "Bruno", "Cordeiro", "bruno@example.org")
+        v = await volunteers.create(
+            session, None, "Bruno", "Cordeiro", "bruno@example.org"
+        )
 
         user, _ = await users.create(session, "  Bruno@Example.ORG ")
 
@@ -61,12 +69,16 @@ async def test_create_links_to_the_volunteer_at_the_same_address(database):
 
 async def test_create_declines_ambiguous_or_unavailable_matches(database):
     async with db_session() as session:
-        await volunteers.create(session, "Ana", "Family", "family@example.org")
-        await volunteers.create(session, "Bob", "Family", "family@example.org")
-        taken = await volunteers.create(session, "Cara", "Taken", "cara@example.org")
+        await volunteers.create(session, None, "Ana", "Family", "family@example.org")
+        await volunteers.create(session, None, "Bob", "Family", "family@example.org")
+        taken = await volunteers.create(
+            session, None, "Cara", "Taken", "cara@example.org"
+        )
         await users.create(session, "cara-old@example.org", volunteer_id=taken.id)
-        gone = await volunteers.create(session, "Dora", "Gone", "dora@example.org")
-        await volunteers.update(session, gone.id, is_active=False)
+        gone = await volunteers.create(
+            session, None, "Dora", "Gone", "dora@example.org"
+        )
+        await volunteers.update(session, None, gone.id, is_active=False)
 
         family, _ = await users.create(session, "family@example.org")
         second, _ = await users.create(session, "cara@example.org")
@@ -83,7 +95,7 @@ async def test_create_declines_ambiguous_or_unavailable_matches(database):
 
 async def test_create_can_opt_out_of_linking(database):
     async with db_session() as session:
-        await volunteers.create(session, "Sync", "Bot", "bot@example.org")
+        await volunteers.create(session, None, "Sync", "Bot", "bot@example.org")
 
         user, _ = await users.create(session, "bot@example.org", link_by_email=False)
 
@@ -95,7 +107,9 @@ async def test_bulk_provision_adopts_an_unlinked_account(database):
     async with db_session() as session:
         orphan, _ = await users.create(session, "bruno@example.org")
         assert orphan.volunteer_id is None
-        v = await volunteers.create(session, "Bruno", "Cordeiro", "bruno@example.org")
+        v = await volunteers.create(
+            session, None, "Bruno", "Cordeiro", "bruno@example.org"
+        )
 
         report = await users.bulk_provision(session)
 
@@ -111,8 +125,12 @@ async def test_bulk_provision_adopts_an_unlinked_account(database):
 
 async def test_set_volunteer_relinks_unlinks_and_refuses_a_taken_volunteer(database):
     async with db_session() as session:
-        maria = await volunteers.create(session, "Maria", "Alvarez", "m@example.org")
-        pedro = await volunteers.create(session, "Pedro", "Sousa", "p@example.org")
+        maria = await volunteers.create(
+            session, None, "Maria", "Alvarez", "m@example.org"
+        )
+        pedro = await volunteers.create(
+            session, None, "Pedro", "Sousa", "p@example.org"
+        )
         user, _ = await users.create(session, "typo@example.org")
         assert user.volunteer_id is None
 
@@ -246,7 +264,9 @@ async def test_invite_links_expire(database):
 
 async def test_invite_volunteer_creates_a_linked_passwordless_account(database):
     async with db_session() as session:
-        nils = await volunteers.create(session, "Nils", "Nobody", "Nils@Example.org")
+        nils = await volunteers.create(
+            session, None, "Nils", "Nobody", "Nils@Example.org"
+        )
 
         account, token = await users.invite_volunteer(session, nils.id)
 
@@ -263,7 +283,9 @@ async def test_invite_volunteer_rearms_a_link_nobody_used(database):
     account with no password that has never been signed into holds no
     credential, so re-arming it destroys nothing."""
     async with db_session() as session:
-        nils = await volunteers.create(session, "Nils", "Nobody", "nils@example.org")
+        nils = await volunteers.create(
+            session, None, "Nils", "Nobody", "nils@example.org"
+        )
         account, first = await users.invite_volunteer(session, nils.id)
 
         # let it lapse unredeemed, as it does after a week of nobody reading email
@@ -281,7 +303,9 @@ async def test_invite_volunteer_never_touches_a_usable_credential(database):
     """reissue_invite clears the password on purpose — that is the admin's
     hammer for a compromised account. A leader must not be able to swing it."""
     async with db_session() as session:
-        settled = await volunteers.create(session, "Opal", "Online", "opal@example.org")
+        settled = await volunteers.create(
+            session, None, "Opal", "Online", "opal@example.org"
+        )
         account, _ = await users.create(
             session,
             "opal@example.org",
@@ -295,7 +319,9 @@ async def test_invite_volunteer_never_touches_a_usable_credential(database):
         assert account.password_hash == held, "the password survived"
 
         # same refusal for a passwordless account that has been signed into
-        otp_only = await volunteers.create(session, "Iris", "Code", "iris@example.org")
+        otp_only = await volunteers.create(
+            session, None, "Iris", "Code", "iris@example.org"
+        )
         used, _ = await users.create(
             session, "iris@example.org", volunteer_id=otp_only.id
         )
@@ -309,18 +335,22 @@ async def test_invite_volunteer_never_touches_a_usable_credential(database):
 async def test_invite_volunteer_refuses_what_only_an_admin_can_fix(database):
     async with db_session() as session:
         # archived volunteer
-        gone = await volunteers.create(session, "Dora", "Gone", "dora@example.org")
-        await volunteers.update(session, gone.id, is_active=False)
+        gone = await volunteers.create(
+            session, None, "Dora", "Gone", "dora@example.org"
+        )
+        await volunteers.update(session, None, gone.id, is_active=False)
         with pytest.raises(ValueError, match="archived"):
             await users.invite_volunteer(session, gone.id)
 
         # no address to send anything to
-        quiet = await volunteers.create(session, "Hank", "Host")
+        quiet = await volunteers.create(session, None, "Hank", "Host")
         with pytest.raises(ValueError, match="no email address"):
             await users.invite_volunteer(session, quiet.id)
 
         # switched-off account: an admin turned it off deliberately
-        off = await volunteers.create(session, "Quin", "Quiet", "quin@example.org")
+        off = await volunteers.create(
+            session, None, "Quin", "Quiet", "quin@example.org"
+        )
         account, _ = await users.create(
             session, "quin@example.org", volunteer_id=off.id
         )
@@ -339,8 +369,12 @@ async def test_invite_volunteer_will_not_adopt_a_stranger_at_the_same_address(da
     so adopting would hand a parent's login to their child, and that is an
     admin's judgement call, not a side effect of a leader's button."""
     async with db_session() as session:
-        parent = await volunteers.create(session, "Ana", "Family", "family@example.org")
-        child = await volunteers.create(session, "Bob", "Family", "family@example.org")
+        parent = await volunteers.create(
+            session, None, "Ana", "Family", "family@example.org"
+        )
+        child = await volunteers.create(
+            session, None, "Bob", "Family", "family@example.org"
+        )
         theirs, _ = await users.invite_volunteer(session, parent.id)
         before = theirs.volunteer_id
 
@@ -359,14 +393,20 @@ async def test_invitable_agrees_with_what_invite_volunteer_does(database):
     async with db_session() as session:
         cases: list[tuple[str, int]] = []
 
-        fresh = await volunteers.create(session, "New", "Person", "new@example.org")
+        fresh = await volunteers.create(
+            session, None, "New", "Person", "new@example.org"
+        )
         cases.append(("no account", fresh.id))
 
-        lapsed_v = await volunteers.create(session, "Lap", "Sed", "lap@example.org")
+        lapsed_v = await volunteers.create(
+            session, None, "Lap", "Sed", "lap@example.org"
+        )
         lapsed_a, _ = await users.invite_volunteer(session, lapsed_v.id)
         lapsed_a.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
 
-        settled_v = await volunteers.create(session, "Set", "Tled", "set@example.org")
+        settled_v = await volunteers.create(
+            session, None, "Set", "Tled", "set@example.org"
+        )
         await users.create(
             session,
             "set@example.org",
@@ -375,7 +415,7 @@ async def test_invitable_agrees_with_what_invite_volunteer_does(database):
         )
         cases.append(("has a password", settled_v.id))
 
-        off_v = await volunteers.create(session, "Off", "Line", "off@example.org")
+        off_v = await volunteers.create(session, None, "Off", "Line", "off@example.org")
         off_a, _ = await users.create(session, "off@example.org", volunteer_id=off_v.id)
         off_a.is_active = False
         cases.append(("switched off", off_v.id))
@@ -473,8 +513,10 @@ async def test_clear_password_drops_api_access_too(database):
 
 async def test_accounts_by_volunteer_maps_only_the_linked_ones(database):
     async with db_session() as session:
-        linked = await volunteers.create(session, "Lin", "Ked", "lin@example.org")
-        bare = await volunteers.create(session, "Bare", "Foot", "bare@example.org")
+        linked = await volunteers.create(session, None, "Lin", "Ked", "lin@example.org")
+        bare = await volunteers.create(
+            session, None, "Bare", "Foot", "bare@example.org"
+        )
         account, _ = await users.create(
             session, "lin@example.org", volunteer_id=linked.id
         )

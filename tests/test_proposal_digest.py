@@ -26,14 +26,18 @@ async def _parish():
     """Liturgy: Lena leads, Cora is core, Noel is core WITHOUT an email —
     create_proposal prefills its roll with exactly those three."""
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy")
-        lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-        cora = await volunteers.create(session, "Cora", "Core", "cora@example.org")
-        noel = await volunteers.create(session, "Noel", "NoEmail")
-        vera = await volunteers.create(session, "Vera", "Volunteer")
-        await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
-        await memberships.assign(session, cora.id, liturgy.id, TeamRole.core)
-        await memberships.assign(session, noel.id, liturgy.id, TeamRole.core)
+        liturgy = await teams.create(session, None, "Liturgy")
+        lena = await volunteers.create(
+            session, None, "Lena", "Leader", "lena@example.org"
+        )
+        cora = await volunteers.create(
+            session, None, "Cora", "Core", "cora@example.org"
+        )
+        noel = await volunteers.create(session, None, "Noel", "NoEmail")
+        vera = await volunteers.create(session, None, "Vera", "Volunteer")
+        await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
+        await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core)
+        await memberships.assign(session, None, noel.id, liturgy.id, TeamRole.core)
         admin, _ = await users.create(session, "admin@example.org", is_admin=True)
         return {
             "liturgy": liturgy.id,

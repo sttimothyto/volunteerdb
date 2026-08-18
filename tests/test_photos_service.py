@@ -59,7 +59,7 @@ def test_normalize_rejects_garbage_and_oversize():
 
 async def test_set_get_delete_and_versions(database):
     async with db_session() as session:
-        v = await volunteers.create(session, "Pia", "Photo", "pia@example.org")
+        v = await volunteers.create(session, None, "Pia", "Photo", "pia@example.org")
         volunteer_id = v.id
         stored = await photos.set_photo(
             session, volunteer_id, _png(500, 500), uploaded_by=None
@@ -97,11 +97,11 @@ async def test_unknown_volunteer_raises_lookup_error(database):
 
 async def test_deleting_the_volunteer_cascades_the_photo(database):
     async with db_session() as session:
-        v = await volunteers.create(session, "Gone", "Soon", "gone@example.org")
+        v = await volunteers.create(session, None, "Gone", "Soon", "gone@example.org")
         await photos.set_photo(session, v.id, _png(400, 400), uploaded_by=None)
         volunteer_id = v.id
     async with db_session() as session:
-        await volunteers.delete(session, volunteer_id)
+        await volunteers.delete(session, None, volunteer_id)
         remaining = (
             await session.execute(
                 sa.select(VolunteerPhoto).where(

@@ -97,7 +97,13 @@ async def _create_meta_team(
         "from the event page; removed automatically after the event ends."
     )
     return await team_service.create(
-        session, name, parent_team_id=owner_team_id, description=description
+        # None: the caller already holds manage rights on the event whose task
+        # force this is, and the meta team exists only to carry its roster
+        session,
+        None,
+        name,
+        parent_team_id=owner_team_id,
+        description=description,
     )
 
 
@@ -182,12 +188,12 @@ async def refresh_rosters(session: AsyncSession, event_id: int) -> int:
         current = existing.get(volunteer_id)
         if current is None:
             await memberships.assign(
-                session, volunteer_id, tf.team_id, role, existing=None
+                session, None, volunteer_id, tf.team_id, role, existing=None
             )
             added += 1
         elif ROLE_RANK[role] < ROLE_RANK[current.role]:
             await memberships.assign(
-                session, volunteer_id, tf.team_id, role, existing=current
+                session, None, volunteer_id, tf.team_id, role, existing=current
             )
     return added
 
@@ -225,4 +231,4 @@ async def teardown(session: AsyncSession, event_id: int) -> None:
         await session.flush()
     await session.delete(tf)  # sources cascade; frees the teams.delete guard
     await session.flush()
-    await team_service.delete(session, meta_team_id)
+    await team_service.delete(session, None, meta_team_id)  # teardown, not a user act

@@ -548,6 +548,7 @@ async def apply_rows(
         before = existing.role if existing else None
         membership = await membership_service.assign(
             session,
+            None,  # the row's licence was already checked above
             target.id,
             team_id,
             role,
@@ -602,7 +603,7 @@ async def apply_rows(
     removed_ids: list[int] = []
     for m in to_remove:
         removed_ids.append(m.volunteer_id)
-        await membership_service.remove(session, m.id)
+        await membership_service.remove(session, None, m.id)  # scope checked above
         report.memberships_removed += 1
     # archive volunteers left with no membership at all: one grouped query
     # over everyone just removed (remove() flushed the deletes, so this sees

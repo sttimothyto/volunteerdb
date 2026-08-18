@@ -26,14 +26,14 @@ def _at(day: date, hour: int, minute: int = 0) -> datetime:
 async def _team_with_members(n: int = 2) -> tuple[int, list[int]]:
     """A team with volunteer 0 as leader and the rest as members."""
     async with db_session() as session:
-        team = await teams.create(session, "Altar Servers")
+        team = await teams.create(session, None, "Altar Servers")
         vids = []
         for i in range(n):
             v = await volunteers.create(
-                session, f"Vol{i}", "Server", f"vol{i}@example.org"
+                session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
             )
             role = TeamRole.leader if i == 0 else TeamRole.member
-            await memberships.assign(session, v.id, team.id, role)
+            await memberships.assign(session, None, v.id, team.id, role)
             vids.append(v.id)
         return team.id, vids
 
@@ -236,7 +236,9 @@ async def test_one_slot_per_person_per_event(database):
 async def test_participation_requires_membership(database):
     team_id, _ = await _team_with_members(1)
     async with db_session() as session:
-        outsider = await volunteers.create(session, "Out", "Sider", "out@example.org")
+        outsider = await volunteers.create(
+            session, None, "Out", "Sider", "out@example.org"
+        )
     event_id = await _one_event(team_id)
     slot_id = await _first_slot(event_id)
     async with db_session() as session:
@@ -493,9 +495,11 @@ async def test_hours_sum_past_uncancelled_events_only(database):
 async def test_list_events_scopes_to_the_actors_teams(database):
     team_a, vids_a = await _team_with_members(2)
     async with db_session() as session:
-        team_b = await teams.create(session, "Choir")
-        other = await volunteers.create(session, "Oda", "Choir", "oda@example.org")
-        await memberships.assign(session, other.id, team_b.id, TeamRole.member)
+        team_b = await teams.create(session, None, "Choir")
+        other = await volunteers.create(
+            session, None, "Oda", "Choir", "oda@example.org"
+        )
+        await memberships.assign(session, None, other.id, team_b.id, TeamRole.member)
         admin, _ = await users.create(session, "admin@example.org", is_admin=True)
     await _one_event(team_a)
     b_start = _at(date.today() + timedelta(days=7), 18)
@@ -603,7 +607,7 @@ async def test_similar_events_masks_titles_outside_the_actors_scope(database):
     team_id, vids = await _team_with_members()
     day = date.today() + timedelta(days=7)
     async with db_session() as session:
-        other = await teams.create(session, "Garden Guild")
+        other = await teams.create(session, None, "Garden Guild")
         await event_service.create_event(
             session,
             team_id=other.id,
@@ -698,7 +702,9 @@ async def test_substitute_rejects_bad_targets(database):
         slot_id = await _first_slot(event_id)
         a = await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[1])
         await event_service.sign_up(session, slot_id=slot_id, volunteer_id=vids[2])
-        outsider = await volunteers.create(session, "Out", "Sider", "out@example.org")
+        outsider = await volunteers.create(
+            session, None, "Out", "Sider", "out@example.org"
+        )
         assignment_id, outsider_id = a.id, outsider.id
     async with db_session() as session:
         with pytest.raises(ValueError, match="already hold"):

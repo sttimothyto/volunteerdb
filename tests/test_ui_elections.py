@@ -20,17 +20,17 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 async def _parish(session):
     """Liturgy (Lena leads, Cora core, Mia member) + Clergy (Dan, no account)."""
-    liturgy = await teams.create(session, "Liturgy")
-    clergy = await teams.create(session, "Clergy")
-    lena = await volunteers.create(session, "Lena", "Leader")
-    cora = await volunteers.create(session, "Cora", "Core")
-    mia = await volunteers.create(session, "Mia", "Member")
-    dan = await volunteers.create(session, "Dan", "Deacon")
-    vera = await volunteers.create(session, "Vera", "Volunteer")
-    await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, cora.id, liturgy.id, TeamRole.core)
-    await memberships.assign(session, mia.id, liturgy.id, TeamRole.member)
-    await memberships.assign(session, dan.id, clergy.id, TeamRole.member)
+    liturgy = await teams.create(session, None, "Liturgy")
+    clergy = await teams.create(session, None, "Clergy")
+    lena = await volunteers.create(session, None, "Lena", "Leader")
+    cora = await volunteers.create(session, None, "Cora", "Core")
+    mia = await volunteers.create(session, None, "Mia", "Member")
+    dan = await volunteers.create(session, None, "Dan", "Deacon")
+    vera = await volunteers.create(session, None, "Vera", "Volunteer")
+    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
+    await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core)
+    await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member)
+    await memberships.assign(session, None, dan.id, clergy.id, TeamRole.member)
     lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
     cora_u, _ = await users.create(session, "cora@example.org", volunteer_id=cora.id)
     mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
@@ -106,7 +106,7 @@ async def test_leader_creates_proposal_from_vacancy(database):
 async def test_voter_access_and_nomination(database):
     async with db_session() as session:
         ids = await _parish(session)
-        victor = await volunteers.create(session, "Victor", "Volunteer")
+        victor = await volunteers.create(session, None, "Victor", "Volunteer")
         victor_id = victor.id
     pid = await _seed_proposal(ids, d1_offset=5, d2_offset=15)
 

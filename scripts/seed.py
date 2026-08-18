@@ -1339,6 +1339,7 @@ async def seed_teams(session: AsyncSession, parish: Parish) -> None:
     for spec, parent in _flatten(TEAMS):
         team = await teams.create(
             session,
+            None,
             spec.name,
             parent_team_id=parish.team_ids[parent] if parent else None,
             description=spec.description,
@@ -1354,6 +1355,7 @@ async def seed_people(
     for index, person in enumerate(people):
         volunteer = await volunteers.create(
             session,
+            None,
             person.first,
             person.last,
             person.email,
@@ -1362,17 +1364,17 @@ async def seed_people(
         )
         parish.volunteer_ids[person.name] = volunteer.id
         if not person.active:
-            await volunteers.update(session, volunteer.id, is_active=False)
+            await volunteers.update(session, None, volunteer.id, is_active=False)
 
     # historical churn BEFORE current memberships: assign is an upsert on
     # (volunteer, team), so an ended spell must be gone before the current one
     # exists (that is what makes Grace's rejoin a separate spell)
     for name, team_name, role, joined, left in PAST_SPELLS:
         spell = await memberships.assign(
-            session, parish.volunteer_ids[name], parish.team_ids[team_name], role
+            session, None, parish.volunteer_ids[name], parish.team_ids[team_name], role
         )
         spell_id = spell.id
-        await memberships.remove(session, spell_id)
+        await memberships.remove(session, None, spell_id)
         # demo-only backdating of the archived interval; real deployments
         # accumulate genuine history and never touch the twin tables
         await session.execute(
@@ -1396,10 +1398,10 @@ async def seed_people(
                 # served as a plain member before taking the seat: two-colour
                 # timeline bar, and an op='U' row in membership_history
                 await memberships.assign(
-                    session, volunteer_id, parish.team_ids[team_name], M
+                    session, None, volunteer_id, parish.team_ids[team_name], M
                 )
             await memberships.assign(
-                session, volunteer_id, parish.team_ids[team_name], role
+                session, None, volunteer_id, parish.team_ids[team_name], role
             )
             if person.active:
                 parish.rosters[team_name].append(volunteer_id)
@@ -1407,10 +1409,16 @@ async def seed_people(
     # admin-extensible volunteer properties, and enough values that the list
     # column and the filters have something to show
     safeguarding = await custom_fields.create_def(
-        session, "Safeguarding training", FieldType.date, show_in_list=True, position=1
+        session,
+        None,
+        "Safeguarding training",
+        FieldType.date,
+        show_in_list=True,
+        position=1,
     )
     contact = await custom_fields.create_def(
         session,
+        None,
         "Preferred contact",
         FieldType.select,
         options=["Email", "Phone", "Post"],
@@ -1418,6 +1426,7 @@ async def seed_people(
     )
     police = await custom_fields.create_def(
         session,
+        None,
         "Police check on file",
         FieldType.checkbox,
         show_in_list=True,
@@ -1425,13 +1434,14 @@ async def seed_people(
     )
     shirt = await custom_fields.create_def(
         session,
+        None,
         "T-shirt size",
         FieldType.select,
         options=["S", "M", "L", "XL", "XXL"],
         position=4,
     )
     years = await custom_fields.create_def(
-        session, "Years in the parish", FieldType.number, position=5
+        session, None, "Years in the parish", FieldType.number, position=5
     )
     for person in people:
         volunteer_id = parish.volunteer_ids[person.name]
@@ -1448,7 +1458,7 @@ async def seed_people(
         if rng.random() < 0.5:
             values[years.key] = rng.randint(1, 45)
         if values:
-            await custom_fields.set_values(session, volunteer_id, values)
+            await custom_fields.set_values(session, None, volunteer_id, values)
 
 
 async def seed_accounts(session: AsyncSession, parish: Parish) -> None:

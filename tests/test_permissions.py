@@ -14,9 +14,9 @@ from volunteerdb.services import elections, memberships, teams, users, volunteer
 async def parish(database):
     """Liturgy > Music; separate Hospitality. One volunteer per role on Liturgy."""
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy")
-        music = await teams.create(session, "Music", parent_team_id=liturgy.id)
-        hospitality = await teams.create(session, "Hospitality")
+        liturgy = await teams.create(session, None, "Liturgy")
+        music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+        hospitality = await teams.create(session, None, "Hospitality")
 
         people = {}
         for name, role in [
@@ -26,13 +26,17 @@ async def parish(database):
             ("member", TeamRole.member),
         ]:
             v = await volunteers.create(
-                session, name.title(), "Person", f"{name}@example.org"
+                session, None, name.title(), "Person", f"{name}@example.org"
             )
-            await memberships.assign(session, v.id, liturgy.id, role)
+            await memberships.assign(session, None, v.id, liturgy.id, role)
             people[name] = v
 
-        outsider = await volunteers.create(session, "Out", "Sider", "out@example.org")
-        await memberships.assign(session, outsider.id, hospitality.id, TeamRole.member)
+        outsider = await volunteers.create(
+            session, None, "Out", "Sider", "out@example.org"
+        )
+        await memberships.assign(
+            session, None, outsider.id, hospitality.id, TeamRole.member
+        )
         people["outsider"] = outsider
 
         accounts = {
@@ -154,9 +158,11 @@ async def test_invite_rights_reach_core_but_stop_at_plain_members(parish):
     # the case the parish actually has: Liturgy's people run its sub-teams
     async with db_session() as session:
         singer = await volunteers.create(
-            session, "Singer", "Person", "sing@example.org"
+            session, None, "Singer", "Person", "sing@example.org"
         )
-        await memberships.assign(session, singer.id, ids["music"], TeamRole.member)
+        await memberships.assign(
+            session, None, singer.id, ids["music"], TeamRole.member
+        )
         music_teams = await volunteer_team_ids(session, singer.id)
     for name in ("leader", "second", "core"):
         actor = await _actor(accounts, name)

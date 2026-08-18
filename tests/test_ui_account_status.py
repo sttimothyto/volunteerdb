@@ -29,17 +29,17 @@ async def _parish(session) -> dict[str, int]:
     Note that users.create with no password arms an invite link, so Mia — who
     has never used hers — reads as "invite sent" rather than "account". Opal is
     given a password to make her the plain settled case."""
-    liturgy = await teams.create(session, "Liturgy")
-    music = await teams.create(session, "Music", parent_team_id=liturgy.id)
+    liturgy = await teams.create(session, None, "Liturgy")
+    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
 
-    lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-    mia = await volunteers.create(session, "Mia", "Member", "mia@example.org")
-    nils = await volunteers.create(session, "Nils", "Nobody", "nils@example.org")
-    opal = await volunteers.create(session, "Opal", "Online", "opal@example.org")
-    quin = await volunteers.create(session, "Quin", "Quiet", "quin@example.org")
-    await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
+    lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+    mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+    nils = await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
+    opal = await volunteers.create(session, None, "Opal", "Online", "opal@example.org")
+    quin = await volunteers.create(session, None, "Quin", "Quiet", "quin@example.org")
+    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
     for v in (mia, nils, opal, quin):
-        await memberships.assign(session, v.id, music.id, TeamRole.member)
+        await memberships.assign(session, None, v.id, music.id, TeamRole.member)
 
     lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
     mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)

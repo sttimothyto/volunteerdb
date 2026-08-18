@@ -223,7 +223,7 @@ async def test_a_custom_field_added_since_the_drag_still_appears(database):
 
         async with db_session() as session:
             await custom_field_service.create_def(
-                session, "Diocese", FieldType.text, show_in_list=True
+                session, None, "Diocese", FieldType.text, show_in_list=True
             )
 
         await user.open("/volunteers")

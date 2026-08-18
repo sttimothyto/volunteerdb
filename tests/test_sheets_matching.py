@@ -32,7 +32,7 @@ async def test_unmatched_email_does_not_fall_back_to_name(database):
     supplies an address, yields two records. Intentional — see
     docs/reference/spreadsheets.md — but it is the July duplicate in miniature."""
     async with db_session() as session:
-        await volunteers.create(session, "Andrea", "Smart")
+        await volunteers.create(session, None, "Andrea", "Smart")
 
     content = _csv_bytes(
         [["", "Andrea", "Smart", "a.smart705@outlook.com", "", "", "", ""]]
@@ -51,7 +51,7 @@ async def test_a_blank_email_still_matches_by_name(database):
     """The contrast that makes the rule comprehensible: with no email in the
     cell, an exact full-name match updates the existing volunteer."""
     async with db_session() as session:
-        await volunteers.create(session, "Andrea", "Smart")
+        await volunteers.create(session, None, "Andrea", "Smart")
 
     content = _csv_bytes([["", "Andrea", "Smart", "", "555-0143", "", "", ""]])
     report = await importer.run_import(content, dry_run=False, user_id=None)
@@ -67,8 +67,8 @@ async def test_new_email_on_an_existing_name_warns_before_duplicating(database):
     """Creating the duplicate is the documented behaviour; doing it silently is
     what cost a day of cleanup. The report must say so."""
     async with db_session() as session:
-        await volunteers.create(session, "Andrea", "Smart")
-        await volunteers.create(session, "Bruno", "Newcomer")
+        await volunteers.create(session, None, "Andrea", "Smart")
+        await volunteers.create(session, None, "Bruno", "Newcomer")
 
     content = _csv_bytes(
         [
@@ -93,9 +93,9 @@ async def test_family_shared_email_is_disambiguated_by_name(database):
     """Two people on one address is normal in a parish. The name breaks the tie;
     without a usable name the row is an error rather than a coin flip."""
     async with db_session() as session:
-        await teams.create(session, "Liturgy")
-        await volunteers.create(session, "Maria", "Alvarez", "family@example.org")
-        await volunteers.create(session, "Jose", "Alvarez", "family@example.org")
+        await teams.create(session, None, "Liturgy")
+        await volunteers.create(session, None, "Maria", "Alvarez", "family@example.org")
+        await volunteers.create(session, None, "Jose", "Alvarez", "family@example.org")
 
     content = _csv_bytes(
         [["", "Maria", "Alvarez", "family@example.org", "555-0100", "", "", ""]]
@@ -114,7 +114,7 @@ async def test_family_shared_email_is_disambiguated_by_name(database):
     # tie for a row that names neither exactly — force the ambiguity with a
     # same-named third record
     async with db_session() as session:
-        await volunteers.create(session, "Maria", "Alvarez", "family@example.org")
+        await volunteers.create(session, None, "Maria", "Alvarez", "family@example.org")
     ambiguous = _csv_bytes(
         [["", "Maria", "Alvarez", "family@example.org", "", "", "Liturgy", "member"]]
     )
@@ -129,7 +129,7 @@ async def test_id_pins_the_row_and_makes_email_edits_safe(database):
     address must find the corrected record instead of duplicating it."""
     async with db_session() as session:
         maria = await volunteers.create(
-            session, "Maria", "Alvarez", "maria.old@example.org"
+            session, None, "Maria", "Alvarez", "maria.old@example.org"
         )
         maria_id = maria.id
 
@@ -162,9 +162,9 @@ async def test_id_pins_the_row_and_makes_email_edits_safe(database):
 async def test_id_takes_precedence_over_a_conflicting_email(database):
     async with db_session() as session:
         maria = await volunteers.create(
-            session, "Maria", "Alvarez", "maria@example.org"
+            session, None, "Maria", "Alvarez", "maria@example.org"
         )
-        await volunteers.create(session, "Jose", "Alvarez", "jose@example.org")
+        await volunteers.create(session, None, "Jose", "Alvarez", "jose@example.org")
         maria_id = maria.id
 
     # the email cell says Jose, the ID says Maria — the ID wins
@@ -207,7 +207,7 @@ async def test_stale_id_with_a_different_name_warns(database):
     (marriage) stays quiet."""
     async with db_session() as session:
         maria = await volunteers.create(
-            session, "Maria", "Alvarez", "maria@example.org"
+            session, None, "Maria", "Alvarez", "maria@example.org"
         )
         maria_id = maria.id
 

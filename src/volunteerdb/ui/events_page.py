@@ -870,7 +870,7 @@ async def event_detail_page(request: Request, event_id: int):
         # members holding a slot need the roster too: the hand-off picker
         # shows names, which everyone past can_view_roster_names may see
         roster = (
-            await team_service.roster(session, event.team_id)
+            await team_service.roster(session, actor, event.team_id)
             if can_manage or am_assigned
             else []
         )

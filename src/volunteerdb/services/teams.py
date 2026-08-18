@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
 from ..models import EventTaskForce, Membership, Team, TeamRole, Volunteer
+from ..permissions import Actor, require
 
 
 class CycleError(ValueError):
@@ -112,11 +113,19 @@ def _check_workload_weight(workload_weight: Decimal | None) -> None:
 
 async def create(
     session: AsyncSession,
+    actor: Actor | None,
     name: str,
     parent_team_id: int | None = None,
     description: str | None = None,
     workload_weight: Decimal | None = None,
 ) -> Team:
+    """Create a ministry. Admin-only — a team is the unit permissions hang off,
+    so minting one is not a roster operation.
+
+    `actor=None` is the trusted internal caller (the seed script, and
+    services.task_force, which creates the meta team on behalf of whoever was
+    already allowed to manage the event)."""
+    require(actor is None or actor.is_admin, "only admins create teams")
     _check_workload_weight(workload_weight)
     team = Team(
         name=name.strip(),
@@ -131,6 +140,7 @@ async def create(
 
 async def update(
     session: AsyncSession,
+    actor: Actor | None,
     team_id: int,
     *,
     name: str | None = None,
@@ -139,6 +149,7 @@ async def update(
     is_active: bool | None = None,
     workload_weight: Decimal | None | object = _UNSET,
 ) -> Team:
+    require(actor is None or actor.is_admin, "only admins edit teams")
     team = await get(session, team_id)
     if team is None:
         raise LookupError(f"team {team_id} not found")
@@ -174,9 +185,17 @@ GOOGLE_FORM_PREFIXES = ("https://docs.google.com/forms/", "https://forms.gle/")
 
 
 async def set_application_form_url(
-    session: AsyncSession, team_id: int, url: str | None
+    session: AsyncSession, actor: Actor | None, team_id: int, url: str | None
 ) -> Team:
-    """Set or clear the team's Google application form; validates the link shape."""
+    """Set or clear the team's Google application form; validates the link shape.
+
+    Full-roster rights, like the home-page doc it sits beside: core members are
+    included on purpose, because ministry leaders here are often elderly and a
+    public page nobody can refresh goes stale."""
+    require(
+        actor is None or actor.can_view_full_roster(team_id),
+        "manage this team's application form",
+    )
     team = await get(session, team_id)
     if team is None:
         raise LookupError(f"team {team_id} not found")
@@ -194,7 +213,8 @@ async def set_application_form_url(
     return team
 
 
-async def delete(session: AsyncSession, team_id: int) -> None:
+async def delete(session: AsyncSession, actor: Actor | None, team_id: int) -> None:
+    require(actor is None or actor.is_admin, "only admins delete teams")
     team = await get(session, team_id)
     if team is None:
         raise LookupError(f"team {team_id} not found")
@@ -214,9 +234,21 @@ async def delete(session: AsyncSession, team_id: int) -> None:
 
 
 async def roster(
-    session: AsyncSession, team_id: int, at: datetime | None = None
+    session: AsyncSession,
+    actor: Actor | None,
+    team_id: int,
+    at: datetime | None = None,
 ) -> list[tuple[Membership, Volunteer]]:
-    """Memberships with their volunteers, leaders first."""
+    """Memberships with their volunteers, leaders first.
+
+    Roster-NAMES rights: this returns whole Volunteer rows, and it is the
+    caller's job to redact the contact fields a viewer may not read
+    (api.volunteers.redacted, and the tiers the team page renders). The check
+    here is the one that decides whether the roster exists for you at all."""
+    require(
+        actor is None or actor.can_view_roster_names(team_id),
+        "view this team's roster",
+    )
     M, V = entity(Membership, at), entity(Volunteer, at)
     role_order = sa.case(
         {role.value: i for i, role in enumerate(TeamRole)},

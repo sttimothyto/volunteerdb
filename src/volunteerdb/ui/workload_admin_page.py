@@ -93,7 +93,7 @@ async def workload_page():
                 )
                 async with action_session() as (session, actor):
                     require(actor.is_admin, "only admins configure workload")
-                    await workload_service.set_config(session, new_config)
+                    await workload_service.set_config(session, actor, new_config)
                 ui.notify("Workload settings saved", color="positive")
 
             ui.button("Save settings", icon="save", on_click=save_config).props("dense")
@@ -131,7 +131,7 @@ async def workload_page():
                         new = None if inp.value is None else Decimal(str(inp.value))
                         if new != originals[team_id]:
                             await team_service.update(
-                                session, team_id, workload_weight=new
+                                session, actor, team_id, workload_weight=new
                             )
                             changed += 1
                 ui.notify(

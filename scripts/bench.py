@@ -188,13 +188,14 @@ async def seed(scale: int) -> None:
         for i, parent_name in enumerate(PARENT_TEAMS):
             weight = Decimal(rng.choice(["1", "1.5", "2", "3"])) if i % 2 == 0 else None
             parent = await team_service.create(
-                session, parent_name, workload_weight=weight
+                session, None, parent_name, workload_weight=weight
             )
             team_ids.append(parent.id)
             for k in range(4):
                 weight = Decimal(rng.choice(["1", "1.5", "2"])) if k % 2 == 0 else None
                 child = await team_service.create(
                     session,
+                    None,
                     f"{parent_name} Group {k + 1}",
                     parent_team_id=parent.id,
                     workload_weight=weight,
@@ -301,10 +302,11 @@ async def seed(scale: int) -> None:
         await session.flush()
 
         await custom_field_service.create_def(
-            session, "Safeguarding training", FieldType.date, show_in_list=True
+            session, None, "Safeguarding training", FieldType.date, show_in_list=True
         )
         await custom_field_service.create_def(
             session,
+            None,
             "Preferred contact",
             FieldType.select,
             options=["Email", "Phone", "Post"],
@@ -452,7 +454,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
     async def impact_busy():
         async with db_session() as session:
-            await volunteer_service.impact(session, marks["busy"])
+            await volunteer_service.impact(session, None, marks["busy"])
 
     async def timeline_churned():
         async with db_session() as session:

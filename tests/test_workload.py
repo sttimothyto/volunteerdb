@@ -31,11 +31,13 @@ async def test_config_default_and_roundtrip(database):
         ]
     )
     async with db_session() as session:
-        await workload.set_config(session, custom)
+        await workload.set_config(session, None, custom)
     async with db_session() as session:
         loaded = await workload.get_config(session)
         assert loaded == custom
-        await workload.set_config(session, workload.DEFAULT_CONFIG)  # upsert overwrites
+        await workload.set_config(
+            session, None, workload.DEFAULT_CONFIG
+        )  # upsert overwrites
     async with db_session() as session:
         assert await workload.get_config(session) == workload.DEFAULT_CONFIG
 
@@ -68,7 +70,7 @@ async def test_config_validation(database):
     for bad in bad_configs:
         with pytest.raises(ValueError):
             async with db_session() as session:
-                await workload.set_config(session, bad)
+                await workload.set_config(session, None, bad)
 
 
 def test_band_for_boundaries():
@@ -84,25 +86,29 @@ def test_band_for_boundaries():
 
 async def test_scores_role_multiplied_and_null_weights(database):
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy", workload_weight=Decimal("3"))
-        choir = await teams.create(session, "Choir", workload_weight=Decimal("2"))
-        social = await teams.create(session, "Social")  # unweighted -> contributes 0
+        liturgy = await teams.create(
+            session, None, "Liturgy", workload_weight=Decimal("3")
+        )
+        choir = await teams.create(session, None, "Choir", workload_weight=Decimal("2"))
+        social = await teams.create(
+            session, None, "Social"
+        )  # unweighted -> contributes 0
 
-        busy = await volunteers.create(session, "Busy", "Bee")
-        light = await volunteers.create(session, "Light", "Load")
-        idle = await volunteers.create(session, "Idle", "Hands")
+        busy = await volunteers.create(session, None, "Busy", "Bee")
+        light = await volunteers.create(session, None, "Light", "Load")
+        idle = await volunteers.create(session, None, "Idle", "Hands")
 
         await memberships.assign(
-            session, busy.id, liturgy.id, TeamRole.leader
+            session, None, busy.id, liturgy.id, TeamRole.leader
         )  # 3 × 3 = 9
         await memberships.assign(
-            session, busy.id, choir.id, TeamRole.core
+            session, None, busy.id, choir.id, TeamRole.core
         )  # 2 × 1.5 = 3
         await memberships.assign(
-            session, busy.id, social.id, TeamRole.leader
+            session, None, busy.id, social.id, TeamRole.leader
         )  # NULL -> 0
         await memberships.assign(
-            session, light.id, choir.id, TeamRole.member
+            session, None, light.id, choir.id, TeamRole.member
         )  # 2 × 1 = 2
         ids = {"busy": busy.id, "light": light.id, "idle": idle.id}
 
@@ -122,18 +128,24 @@ async def test_scores_role_multiplied_and_null_weights(database):
 
 async def test_visible_scores_respects_permissions(database):
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy", workload_weight=Decimal("2"))
-        garden = await teams.create(session, "Garden", workload_weight=Decimal("1"))
+        liturgy = await teams.create(
+            session, None, "Liturgy", workload_weight=Decimal("2")
+        )
+        garden = await teams.create(
+            session, None, "Garden", workload_weight=Decimal("1")
+        )
 
-        lead = await volunteers.create(session, "Lead", "Er")
-        follower = await volunteers.create(session, "Fol", "Lower")
-        outsider = await volunteers.create(session, "Out", "Sider")
-        await memberships.assign(session, lead.id, liturgy.id, TeamRole.leader)
-        await memberships.assign(session, follower.id, liturgy.id, TeamRole.member)
+        lead = await volunteers.create(session, None, "Lead", "Er")
+        follower = await volunteers.create(session, None, "Fol", "Lower")
+        outsider = await volunteers.create(session, None, "Out", "Sider")
+        await memberships.assign(session, None, lead.id, liturgy.id, TeamRole.leader)
+        await memberships.assign(
+            session, None, follower.id, liturgy.id, TeamRole.member
+        )
         # follower also serves elsewhere: global score must include the team
         # the leader cannot even see
-        await memberships.assign(session, follower.id, garden.id, TeamRole.leader)
-        await memberships.assign(session, outsider.id, garden.id, TeamRole.member)
+        await memberships.assign(session, None, follower.id, garden.id, TeamRole.leader)
+        await memberships.assign(session, None, outsider.id, garden.id, TeamRole.member)
 
         lead_actor = await load_actor(
             session,
@@ -164,16 +176,22 @@ async def test_visible_scores_respects_permissions(database):
 
 async def test_graph_colors_only_permitted_nodes(database):
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy", workload_weight=Decimal("2"))
-        garden = await teams.create(session, "Garden", workload_weight=Decimal("1"))
+        liturgy = await teams.create(
+            session, None, "Liturgy", workload_weight=Decimal("2")
+        )
+        garden = await teams.create(
+            session, None, "Garden", workload_weight=Decimal("1")
+        )
 
-        lead = await volunteers.create(session, "Lead", "Er")
-        follower = await volunteers.create(session, "Fol", "Lower")
-        watcher = await volunteers.create(session, "Core", "Watcher")
-        await memberships.assign(session, lead.id, liturgy.id, TeamRole.leader)
-        await memberships.assign(session, follower.id, liturgy.id, TeamRole.member)
-        await memberships.assign(session, follower.id, garden.id, TeamRole.leader)
-        await memberships.assign(session, watcher.id, liturgy.id, TeamRole.core)
+        lead = await volunteers.create(session, None, "Lead", "Er")
+        follower = await volunteers.create(session, None, "Fol", "Lower")
+        watcher = await volunteers.create(session, None, "Core", "Watcher")
+        await memberships.assign(session, None, lead.id, liturgy.id, TeamRole.leader)
+        await memberships.assign(
+            session, None, follower.id, liturgy.id, TeamRole.member
+        )
+        await memberships.assign(session, None, follower.id, garden.id, TeamRole.leader)
+        await memberships.assign(session, None, watcher.id, liturgy.id, TeamRole.core)
 
         lead_actor = await load_actor(
             session,

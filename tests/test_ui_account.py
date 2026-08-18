@@ -128,10 +128,10 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
 
     async with db_session() as session:
         maria = await volunteers.create(
-            session, "Maria", "Alvarez", email="maria@example.org"
+            session, None, "Maria", "Alvarez", email="maria@example.org"
         )
-        liturgy = await teams.create(session, "Liturgy")
-        await memberships.assign(session, maria.id, liturgy.id, TeamRole.leader)
+        liturgy = await teams.create(session, None, "Liturgy")
+        await memberships.assign(session, None, maria.id, liturgy.id, TeamRole.leader)
         account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
         )

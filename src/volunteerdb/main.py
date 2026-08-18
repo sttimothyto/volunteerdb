@@ -112,22 +112,36 @@ class AuthMiddleware(BaseHTTPMiddleware):
         AUTH_ENTRY_PREFIXES). Only anonymous ones: a signed-in reader who
         wanders onto /login must keep the session they already have.
 
+        Only browsers that turned up *holding* a session cookie: a first-time
+        visitor was handed a fresh id by NiceGUI on this very request, so there
+        is nothing to displace, and rotating anyway would mint a storage file
+        per anonymous hit — /login is exactly the path crawlers pound.
+
         The dark-mode preference rides along — that is how this browser likes
         to read, whoever is using it — and nothing else, because an id somebody
-        else chose should contribute no state at all. Reaches into
-        nicegui.storage for want of a public API; test_auth_primitives pins the
-        behaviour so a NiceGUI change fails loudly instead of quietly dropping
-        the protection."""
+        else chose should contribute no state at all. The bucket left behind is
+        discarded with it, so rotation moves a session rather than accumulating
+        one. Reaches into nicegui.storage for want of a public API;
+        test_app_surface pins the behaviour so a NiceGUI change fails loudly
+        instead of quietly dropping the protection."""
+        if "session" not in request.cookies:
+            return
         try:
             if session_user_id() is not None:
                 return
             dark_mode = app.storage.user.get("dark_mode")
         except Exception:  # no storage context yet: nothing to rotate
             return
+        stale_id = request.session.get("id")
         request.session["id"] = secrets.token_urlsafe(24)
         await app.storage._create_user_storage(request.session["id"])
         if dark_mode is not None:
             app.storage.user["dark_mode"] = dark_mode
+        if stale_id is not None:
+            stale = app.storage._users.pop(stale_id, None)
+            filepath = getattr(stale, "filepath", None)
+            if filepath is not None:
+                filepath.unlink(missing_ok=True)
 
 
 class RequestLogMiddleware(BaseHTTPMiddleware):

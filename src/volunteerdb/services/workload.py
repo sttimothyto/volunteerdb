@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity
 from ..models import AppSetting, Membership, Team, TeamRole
-from ..permissions import Actor
+from ..permissions import Actor, require
 
 SETTING_KEY = "workload"
 
@@ -104,12 +104,27 @@ def validate_config(config: WorkloadConfig) -> None:
         raise ValueError("band labels must be unique")
 
 
-async def get_config(session: AsyncSession) -> WorkloadConfig:
+async def get_config(
+    session: AsyncSession, actor: Actor | None = None
+) -> WorkloadConfig:
+    """The multipliers and bands. `actor` is optional because the config is read
+    on every page that renders a band — the legend, the volunteers table, the
+    scores themselves — and those already gate on who may see a band at all
+    (visible_scores). Pass an actor where the config is the *subject* of the
+    request rather than a lookup behind one, i.e. GET /api/workload/config and
+    the admin page."""
+    require(
+        actor is None or actor.is_admin or bool(actor.managed_team_ids),
+        "view the workload configuration",
+    )
     setting = await session.get(AppSetting, SETTING_KEY)
     return _from_json(setting.value) if setting else DEFAULT_CONFIG
 
 
-async def set_config(session: AsyncSession, config: WorkloadConfig) -> None:
+async def set_config(
+    session: AsyncSession, actor: Actor | None, config: WorkloadConfig
+) -> None:
+    require(actor is None or actor.is_admin, "set the workload configuration")
     validate_config(config)
     stmt = pg_insert(AppSetting).values(key=SETTING_KEY, value=_to_json(config))
     stmt = stmt.on_conflict_do_update(

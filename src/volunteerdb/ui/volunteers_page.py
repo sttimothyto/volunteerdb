@@ -6,7 +6,7 @@ from nicegui import app, ui
 from .. import query_lang
 from ..log import audit_log
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
-from ..permissions import require, team_ids_map, volunteer_team_ids
+from ..permissions import team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
 from ..services import events as event_service
@@ -213,9 +213,9 @@ def _new_volunteer_dialog() -> None:
                 ui.notify("First and last name are required", color="warning")
                 return
             async with action_session() as (session, actor):
-                require(actor.is_admin, "only admins create volunteers")
                 v = await volunteer_service.create(
                     session,
+                    actor,
                     first.value,
                     last.value,
                     email.value or None,
@@ -249,7 +249,9 @@ async def volunteer_detail(request: Request, volunteer_id: int):
         )
         assignments = await volunteer_service.assignments(session, volunteer_id)
         impact = (
-            await volunteer_service.impact(session, volunteer_id) if can_view else []
+            await volunteer_service.impact(session, actor, volunteer_id)
+            if can_view
+            else []
         )
         # scoped inside the service: only proposals this actor may see
         involvements = await elections_service.involving(session, actor, volunteer_id)
@@ -452,11 +454,9 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                         ui.notify("Pick a team", color="warning")
                         return
                     async with action_session() as (session, actor):
-                        require(
-                            actor.can_manage_team(team_select.value), "manage this team"
-                        )
                         await membership_service.assign(
                             session,
+                            actor,
                             volunteer_id,
                             team_select.value,
                             TeamRole(role_select.value),
@@ -607,12 +607,9 @@ def _edit_dialog(
             # moved away from; see _notify_replaced_address
             replaced = on_file if not is_self and on_file and typed != on_file else None
             async with action_session() as (session, actor):
-                ids = await volunteer_team_ids(session, volunteer.id)
-                require(
-                    actor.can_edit_volunteer(volunteer.id, ids), "edit this volunteer"
-                )
                 await volunteer_service.update(
                     session,
+                    actor,
                     volunteer.id,
                     first_name=first.value,
                     last_name=last.value,
@@ -622,7 +619,9 @@ def _edit_dialog(
                     **fields,
                 )
                 if values:
-                    await custom_field_service.set_values(session, volunteer.id, values)
+                    await custom_field_service.set_values(
+                        session, actor, volunteer.id, values
+                    )
             if staged:
                 await _stage_own_email(staged, base_url)
             elif replaced:
@@ -688,11 +687,7 @@ async def _stage_own_email(address: str, base_url: str) -> None:
 
 async def _unassign(membership_id: int) -> None:
     async with action_session() as (session, actor):
-        membership = await membership_service.get(session, membership_id)
-        if membership is None:
-            raise LookupError("membership vanished")
-        require(actor.can_manage_team(membership.team_id), "manage this team's roster")
-        await membership_service.remove(session, membership_id)
+        await membership_service.remove(session, actor, membership_id)
     ui.navigate.reload()
 
 
@@ -708,8 +703,7 @@ async def _delete_volunteer(volunteer_id: int) -> None:
 
         async def confirm() -> None:
             async with action_session() as (session, actor):
-                require(actor.is_admin, "only admins delete volunteers")
-                await volunteer_service.delete(session, volunteer_id)
+                await volunteer_service.delete(session, actor, volunteer_id)
             dialog.close()
             ui.navigate.to("/volunteers")
 

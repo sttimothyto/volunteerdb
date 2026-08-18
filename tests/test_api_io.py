@@ -53,13 +53,13 @@ async def test_team_export_permission_matrix(client, seeded, token_admin, token_
     async with db_session() as session:
         # promote the member's volunteer to core: full-roster rights incl. sub-teams
         await memberships.assign(
-            session, seeded["volunteer_id"], team_id, TeamRole.core
+            session, None, seeded["volunteer_id"], team_id, TeamRole.core
         )
-        music = await teams.create(session, "Music", parent_team_id=team_id)
+        music = await teams.create(session, None, "Music", parent_team_id=team_id)
         singer = await volunteers.create(
-            session, "Sally", "Singer", "sally@example.org"
+            session, None, "Sally", "Singer", "sally@example.org"
         )
-        await memberships.assign(session, singer.id, music.id, TeamRole.member)
+        await memberships.assign(session, None, singer.id, music.id, TeamRole.member)
 
     r = await client.get(f"/api/export/team/{team_id}.csv", headers=token_member)
     assert r.status_code == 200
@@ -95,7 +95,7 @@ async def test_leader_import_scoped_over_http(client, seeded, token_leader):
 
     # out of scope: a team the leader does not manage → row error, nothing applied
     async with db_session() as session:
-        await teams.create(session, "Hospitality")
+        await teams.create(session, None, "Hospitality")
     content = _csv_bytes(
         [["", "Maria", "Alvarez", "maria@example.org", "", "", "Hospitality", "member"]]
     )

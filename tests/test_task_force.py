@@ -26,8 +26,8 @@ async def _parish() -> dict:
     """Liturgy (Lena leads, Mia member) and Choir (Carl leads, Oda member;
     Mia sings in the choir too — the dedupe case)."""
     async with db_session() as session:
-        liturgy = await teams.create(session, "Liturgy")
-        choir = await teams.create(session, "Choir")
+        liturgy = await teams.create(session, None, "Liturgy")
+        choir = await teams.create(session, None, "Choir")
         ids = {"liturgy": liturgy.id, "choir": choir.id}
         for key, first, team_id, role in (
             ("lena", "Lena", liturgy.id, TeamRole.leader),
@@ -36,13 +36,13 @@ async def _parish() -> dict:
             ("oda", "Oda", choir.id, TeamRole.member),
         ):
             v = await volunteers.create(
-                session, first, "Volunteer", f"{key}@example.org"
+                session, None, first, "Volunteer", f"{key}@example.org"
             )
-            await memberships.assign(session, v.id, team_id, role)
+            await memberships.assign(session, None, v.id, team_id, role)
             ids[key] = v.id
         # Mia is also a Choir core member: the union must keep her ONE row
         # in the task force, at her strongest role
-        await memberships.assign(session, ids["mia"], choir.id, TeamRole.core)
+        await memberships.assign(session, None, ids["mia"], choir.id, TeamRole.core)
         return ids
 
 
@@ -78,7 +78,7 @@ async def test_collaboration_builds_the_task_force(database):
         view = await task_force.get_for_event(session, event_id)
         assert {t.id for t in view.sources} == {ids["liturgy"], ids["choir"]}
 
-        roster = await teams.roster(session, meta.id)
+        roster = await teams.roster(session, None, meta.id)
         by_vid = {v.id: m.role for m, v in roster}
         assert by_vid == {
             ids["lena"]: TeamRole.leader,
@@ -143,14 +143,18 @@ async def test_refresh_picks_up_source_drift_without_downgrades(database):
         meta_id = meta.id
         # a newcomer joins Choir after the copy; Oda gets promoted INSIDE
         # the task force (a per-event decision the refresh must not undo)
-        newbie = await volunteers.create(session, "Nina", "New", "nina@example.org")
-        await memberships.assign(session, newbie.id, ids["choir"], TeamRole.member)
-        await memberships.assign(session, ids["oda"], meta_id, TeamRole.core)
+        newbie = await volunteers.create(
+            session, None, "Nina", "New", "nina@example.org"
+        )
+        await memberships.assign(
+            session, None, newbie.id, ids["choir"], TeamRole.member
+        )
+        await memberships.assign(session, None, ids["oda"], meta_id, TeamRole.core)
         newbie_id = newbie.id
     async with db_session() as session:
         added = await task_force.refresh_rosters(session, event_id)
         assert added == 1
-        roster = await teams.roster(session, meta_id)
+        roster = await teams.roster(session, None, meta_id)
         by_vid = {v.id: m.role for m, v in roster}
         assert by_vid[newbie_id] == TeamRole.member
         assert by_vid[ids["oda"]] == TeamRole.core, "never downgraded"
@@ -215,7 +219,7 @@ async def test_live_task_force_team_cannot_be_deleted_directly(database):
             session, event_id=event_id, source_team_id=ids["choir"], created_by=None
         )
         with pytest.raises(ValueError, match="task force"):
-            await teams.delete(session, meta.id)
+            await teams.delete(session, None, meta.id)
 
 
 async def test_adding_to_a_finished_event_is_refused(database):

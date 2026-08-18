@@ -24,13 +24,13 @@ def _mock_transport(monkeypatch, handler) -> None:
 
 async def _team(name: str, doc_id: str | None, active: bool = True) -> int:
     async with db_session() as session:
-        team = await teams.create(session, name)
+        team = await teams.create(session, None, name)
         if doc_id is not None:
             await pages.set_home_doc_url(
                 session, team.id, f"https://docs.google.com/document/d/{doc_id}"
             )
         if not active:
-            await teams.update(session, team.id, is_active=False)
+            await teams.update(session, None, team.id, is_active=False)
         return team.id
 
 

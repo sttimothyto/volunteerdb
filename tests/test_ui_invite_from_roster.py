@@ -45,21 +45,23 @@ async def _parish(session) -> dict[str, int]:
     """Liturgy (Lena leads, Cora is core) > Music, whose members cover every
     state the control has to deal with: Nils has no account, Stale's invite ran
     out unused, Live's is still good, Void has no email address at all."""
-    liturgy = await teams.create(session, "Liturgy")
-    music = await teams.create(session, "Music", parent_team_id=liturgy.id)
+    liturgy = await teams.create(session, None, "Liturgy")
+    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
 
-    lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
-    cora = await volunteers.create(session, "Cora", "Core", "cora@example.org")
-    await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, cora.id, liturgy.id, TeamRole.core)
+    lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+    cora = await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
+    await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core)
 
-    nils = await volunteers.create(session, "Nils", "Nobody", "nils@example.org")
-    stale = await volunteers.create(session, "Stale", "Sender", "stale@example.org")
-    livev = await volunteers.create(session, "Live", "Link", "live@example.org")
-    void = await volunteers.create(session, "Void", "Nomail")  # no address
-    mia = await volunteers.create(session, "Mia", "Member", "mia@example.org")
+    nils = await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
+    stale = await volunteers.create(
+        session, None, "Stale", "Sender", "stale@example.org"
+    )
+    livev = await volunteers.create(session, None, "Live", "Link", "live@example.org")
+    void = await volunteers.create(session, None, "Void", "Nomail")  # no address
+    mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
     for v in (nils, stale, livev, void, mia):
-        await memberships.assign(session, v.id, music.id, TeamRole.member)
+        await memberships.assign(session, None, v.id, music.id, TeamRole.member)
 
     stale_u, _ = await users.invite_volunteer(session, stale.id)
     stale_u.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)

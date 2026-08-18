@@ -23,14 +23,14 @@ def _rows(content: bytes) -> list[list[str]]:
 
 
 async def _setup(session):
-    liturgy = await teams.create(session, "Liturgy")
-    music = await teams.create(session, "Music", parent_team_id=liturgy.id)
+    liturgy = await teams.create(session, None, "Liturgy")
+    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
     anna = await volunteers.create(
-        session, "Anna", "Smith", "anna@example.org", phone="555-1"
+        session, None, "Anna", "Smith", "anna@example.org", phone="555-1"
     )
-    ben = await volunteers.create(session, "Ben", "Jones", "ben@example.org")
-    await memberships.assign(session, anna.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, ben.id, music.id, TeamRole.member)
+    ben = await volunteers.create(session, None, "Ben", "Jones", "ben@example.org")
+    await memberships.assign(session, None, anna.id, liturgy.id, TeamRole.leader)
+    await memberships.assign(session, None, ben.id, music.id, TeamRole.member)
     return liturgy, music, anna, ben
 
 
@@ -44,7 +44,7 @@ async def test_roundtrip_reimport_is_a_noop(database):
     async with db_session() as session:
         await _setup(session)
         # an unassigned volunteer exercises the blank-Team parish rows too
-        await volunteers.create(session, "Ursula", "Unassigned", "u@example.org")
+        await volunteers.create(session, None, "Ursula", "Unassigned", "u@example.org")
         content = await exporter.export_csv(session)
 
     assert _rows(content)[0] == ROSTER_HEADERS
@@ -101,7 +101,7 @@ async def test_import_applies_edits_and_additions(database):
 async def test_parish_export_lists_unassigned_after_memberships(database):
     async with db_session() as session:
         await _setup(session)
-        await volunteers.create(session, "Ursula", "Unassigned", "u@example.org")
+        await volunteers.create(session, None, "Ursula", "Unassigned", "u@example.org")
         content = await exporter.export_csv(session)
 
     rows = _rows(content)[1:]
@@ -119,9 +119,13 @@ async def test_parish_export_omits_archived_unassigned_but_keeps_members(databas
     team-sheet round-trip from reading them as 'removed'."""
     async with db_session() as session:
         _, _, anna, _ = await _setup(session)
-        gone = await volunteers.create(session, "Gone", "Quietly", "gone@example.org")
-        await volunteers.update(session, gone.id, is_active=False)
-        await volunteers.update(session, anna.id, is_active=False)  # keeps membership
+        gone = await volunteers.create(
+            session, None, "Gone", "Quietly", "gone@example.org"
+        )
+        await volunteers.update(session, None, gone.id, is_active=False)
+        await volunteers.update(
+            session, None, anna.id, is_active=False
+        )  # keeps membership
         content = await exporter.export_csv(session)
 
     body = content.decode("utf-8-sig")
@@ -160,7 +164,7 @@ async def test_unknown_team_blocks_everything(database):
 
 async def test_dry_run_writes_nothing(database):
     async with db_session() as session:
-        await teams.create(session, "Liturgy")
+        await teams.create(session, None, "Liturgy")
 
     content = _csv_bytes(
         [
@@ -221,11 +225,14 @@ async def test_non_utf8_rejected(database):
 async def test_export_includes_custom_columns_and_reimport_ignores_them(database):
     async with db_session() as session:
         _, _, anna, _ = await _setup(session)
-        await custom_fields.create_def(session, "Shirt size", FieldType.text)
-        await custom_fields.create_def(session, "Trained", FieldType.checkbox)
-        await custom_fields.create_def(session, "Term", FieldType.interval)
+        await custom_fields.create_def(session, None, "Shirt size", FieldType.text)
+        await custom_fields.create_def(session, None, "Trained", FieldType.checkbox)
+        await custom_fields.create_def(session, None, "Term", FieldType.interval)
         await custom_fields.set_values(
-            session, anna.id, {"shirt_size": "M", "trained": True, "term": "P1DT2H"}
+            session,
+            None,
+            anna.id,
+            {"shirt_size": "M", "trained": True, "term": "P1DT2H"},
         )
         content = await exporter.export_csv(session)
 

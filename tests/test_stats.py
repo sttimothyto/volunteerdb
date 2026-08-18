@@ -22,22 +22,22 @@ from volunteerdb.services import (
 async def _parish(session):
     """Liturgy (leader + second + core + member) with a Music sub-team, plus
     an unrelated Hospitality team that has nobody leading it."""
-    liturgy = await teams.create(session, "Liturgy")
-    music = await teams.create(session, "Music", parent_team_id=liturgy.id)
-    hospitality = await teams.create(session, "Hospitality")
+    liturgy = await teams.create(session, None, "Liturgy")
+    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+    hospitality = await teams.create(session, None, "Hospitality")
 
-    lea = await volunteers.create(session, "Lea", "Der", "lea@example.org")
-    sam = await volunteers.create(session, "Sam", "Second", "sam@example.org")
-    cora = await volunteers.create(session, "Cora", "Core", "cora@example.org")
-    mel = await volunteers.create(session, "Mel", "Ember")  # no email on purpose
-    solo = await volunteers.create(session, "Solo", "Nobody", "solo@example.org")
+    lea = await volunteers.create(session, None, "Lea", "Der", "lea@example.org")
+    sam = await volunteers.create(session, None, "Sam", "Second", "sam@example.org")
+    cora = await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+    mel = await volunteers.create(session, None, "Mel", "Ember")  # no email on purpose
+    solo = await volunteers.create(session, None, "Solo", "Nobody", "solo@example.org")
 
-    await memberships.assign(session, lea.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, sam.id, liturgy.id, TeamRole.second)
-    await memberships.assign(session, cora.id, liturgy.id, TeamRole.core)
-    await memberships.assign(session, mel.id, music.id, TeamRole.member)
+    await memberships.assign(session, None, lea.id, liturgy.id, TeamRole.leader)
+    await memberships.assign(session, None, sam.id, liturgy.id, TeamRole.second)
+    await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core)
+    await memberships.assign(session, None, mel.id, music.id, TeamRole.member)
     # one person on two teams, so "assignments" and "people" differ
-    await memberships.assign(session, lea.id, hospitality.id, TeamRole.member)
+    await memberships.assign(session, None, lea.id, hospitality.id, TeamRole.member)
 
     return {
         "liturgy": liturgy,
@@ -59,7 +59,7 @@ async def _actor(session, email, **kwargs):
 async def test_parish_tier_counts(database):
     async with db_session() as session:
         p = await _parish(session)
-        await volunteers.update(session, p["solo"].id, is_active=False)
+        await volunteers.update(session, None, p["solo"].id, is_active=False)
         await users.create(
             session,
             "lea@example.org",

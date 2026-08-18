@@ -24,7 +24,7 @@ def _at(day: date, hour: int) -> datetime:
 
 async def _team_and_event(title: str = "Sunday Mass") -> tuple[int, int]:
     async with db_session() as session:
-        team = await teams.create(session, "Altar Servers")
+        team = await teams.create(session, None, "Altar Servers")
         start = _at(date.today() + timedelta(days=7), 10)
         created = await event_service.create_event(
             session,

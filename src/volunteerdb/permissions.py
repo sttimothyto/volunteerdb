@@ -30,7 +30,6 @@ from .models import (
     Volunteer,
     VolunteerPhoto,
 )
-from .services import teams as team_service
 
 
 @dataclass(frozen=True)
@@ -174,6 +173,14 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
     full_view: set[int] = set()
     names_view: set[int] = set()
     if roles_by_team:
+        # Imported here, not at module scope, and the cycle is the real reason:
+        # authorization needs the team tree to expand a role into a subtree,
+        # while every service — services.teams included — needs `Actor` and
+        # `require` to enforce its own rules. That mutual need is the point of
+        # the design (one check, in the one place both front doors pass
+        # through), so it is resolved at the single point of use.
+        from .services import teams as team_service
+
         all_teams = await team_service.list_all(session)
         for team_id, role in roles_by_team.items():
             subtree = team_service.descendant_ids(all_teams, team_id)

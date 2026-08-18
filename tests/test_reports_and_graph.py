@@ -20,19 +20,19 @@ from volunteerdb.services import (
 
 async def test_coverage_counts_and_hole_first_sorting(database):
     async with db_session() as session:
-        altar = await teams.create(session, "Altar")
-        bakers = await teams.create(session, "Bakers")
-        choir = await teams.create(session, "Choir")
-        await teams.create(session, "Drama")
-        await teams.update(session, choir.id, is_active=False)
+        altar = await teams.create(session, None, "Altar")
+        bakers = await teams.create(session, None, "Bakers")
+        choir = await teams.create(session, None, "Choir")
+        await teams.create(session, None, "Drama")
+        await teams.update(session, None, choir.id, is_active=False)
 
-        lead = await volunteers.create(session, "Lea", "Der")
-        second = await volunteers.create(session, "Sec", "Ond")
-        member = await volunteers.create(session, "Mem", "Ber")
-        await memberships.assign(session, lead.id, altar.id, TeamRole.leader)
-        await memberships.assign(session, second.id, altar.id, TeamRole.second)
-        await memberships.assign(session, member.id, altar.id, TeamRole.member)
-        await memberships.assign(session, member.id, bakers.id, TeamRole.member)
+        lead = await volunteers.create(session, None, "Lea", "Der")
+        second = await volunteers.create(session, None, "Sec", "Ond")
+        member = await volunteers.create(session, None, "Mem", "Ber")
+        await memberships.assign(session, None, lead.id, altar.id, TeamRole.leader)
+        await memberships.assign(session, None, second.id, altar.id, TeamRole.second)
+        await memberships.assign(session, None, member.id, altar.id, TeamRole.member)
+        await memberships.assign(session, None, member.id, bakers.id, TeamRole.member)
 
         rows = await reports.coverage(session)
 
@@ -55,16 +55,16 @@ async def test_coverage_counts_and_hole_first_sorting(database):
 
 async def _parish(session):
     """Parent team with a sub-team and an unrelated team, one volunteer each."""
-    parent = await teams.create(session, "Liturgy")
-    child = await teams.create(session, "Music", parent_team_id=parent.id)
-    other = await teams.create(session, "Hospitality")
+    parent = await teams.create(session, None, "Liturgy")
+    child = await teams.create(session, None, "Music", parent_team_id=parent.id)
+    other = await teams.create(session, None, "Hospitality")
 
-    on_parent = await volunteers.create(session, "Pat", "Parent")
-    on_child = await volunteers.create(session, "Chris", "Child")
-    on_other = await volunteers.create(session, "Ollie", "Other")
-    await memberships.assign(session, on_parent.id, parent.id, TeamRole.leader)
-    await memberships.assign(session, on_child.id, child.id, TeamRole.member)
-    await memberships.assign(session, on_other.id, other.id, TeamRole.leader)
+    on_parent = await volunteers.create(session, None, "Pat", "Parent")
+    on_child = await volunteers.create(session, None, "Chris", "Child")
+    on_other = await volunteers.create(session, None, "Ollie", "Other")
+    await memberships.assign(session, None, on_parent.id, parent.id, TeamRole.leader)
+    await memberships.assign(session, None, on_child.id, child.id, TeamRole.member)
+    await memberships.assign(session, None, on_other.id, other.id, TeamRole.leader)
     return parent, child, other, on_parent, on_child, on_other
 
 

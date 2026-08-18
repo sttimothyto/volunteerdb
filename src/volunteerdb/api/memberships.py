@@ -2,7 +2,6 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..models import TeamRole
-from ..permissions import require
 from ..services import memberships as service
 from .deps import CtxDep
 from .schemas import MembershipIn, MembershipOut
@@ -17,8 +16,7 @@ class MembershipPatch(BaseModel):
 @router.post("", status_code=201)
 async def assign(ctx: CtxDep, data: MembershipIn) -> MembershipOut:
     """Add a volunteer to a team, or change their role if already on it."""
-    require(ctx.actor.can_manage_team(data.team_id), "manage this team's roster")
-    membership = await service.assign(ctx.session, **data.model_dump())
+    membership = await service.assign(ctx.session, ctx.actor, **data.model_dump())
     return MembershipOut.model_validate(membership)
 
 
@@ -26,20 +24,20 @@ async def assign(ctx: CtxDep, data: MembershipIn) -> MembershipOut:
 async def update(
     ctx: CtxDep, membership_id: int, data: MembershipPatch
 ) -> MembershipOut:
-    membership = await service.get(ctx.session, membership_id)
-    if membership is None:
-        raise LookupError(f"membership {membership_id} not found")
-    require(ctx.actor.can_manage_team(membership.team_id), "manage this team's roster")
-    for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(membership, field, value)
-    await ctx.session.flush()
+    """Change the role. `role` is the only field: revision 0011 dropped
+    `joined_on` and `notes`, and a membership is otherwise identified by the
+    pair it joins."""
+    fields = data.model_dump(exclude_unset=True)
+    # get_managed authorizes the read, so a body with nothing in it cannot be
+    # used to report who holds what on a team the caller has no rights over
+    membership = await service.get_managed(ctx.session, ctx.actor, membership_id)
+    if fields.get("role") is not None:
+        membership = await service.set_role(
+            ctx.session, ctx.actor, membership_id, fields["role"]
+        )
     return MembershipOut.model_validate(membership)
 
 
 @router.delete("/{membership_id}", status_code=204)
 async def remove(ctx: CtxDep, membership_id: int) -> None:
-    membership = await service.get(ctx.session, membership_id)
-    if membership is None:
-        raise LookupError(f"membership {membership_id} not found")
-    require(ctx.actor.can_manage_team(membership.team_id), "manage this team's roster")
-    await service.remove(ctx.session, membership_id)
+    await service.remove(ctx.session, ctx.actor, membership_id)

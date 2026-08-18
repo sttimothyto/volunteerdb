@@ -61,8 +61,7 @@ async def list_volunteers(
 
 @router.post("", status_code=201)
 async def create_volunteer(ctx: CtxDep, data: VolunteerIn) -> VolunteerOut:
-    require(ctx.actor.is_admin, "only admins create volunteers")
-    volunteer = await service.create(ctx.session, **data.model_dump())
+    volunteer = await service.create(ctx.session, ctx.actor, **data.model_dump())
     return VolunteerOut.model_validate(volunteer)
 
 
@@ -86,10 +85,7 @@ async def update_volunteer(
     background: BackgroundTasks,
 ) -> VolunteerOut:
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
-    require(ctx.actor.can_edit_volunteer(volunteer_id, team_ids), "edit this volunteer")
     fields = data.model_dump(exclude_unset=True)
-    if "is_active" in fields:
-        require(ctx.actor.is_admin, "only admins archive volunteers")
     if "email" in fields and volunteer_id == ctx.actor.volunteer_id:
         # Your own address is also what you sign in with, so it moves only
         # after the new one has proved somebody reads mail there — and this
@@ -117,10 +113,10 @@ async def update_volunteer(
         replaced = (was, now) if was and was != now else None
 
     custom = fields.pop("custom", None)
-    volunteer = await service.update(ctx.session, volunteer_id, **fields)
+    volunteer = await service.update(ctx.session, ctx.actor, volunteer_id, **fields)
     if custom is not None:
         volunteer = await custom_field_service.set_values(
-            ctx.session, volunteer_id, custom
+            ctx.session, ctx.actor, volunteer_id, custom
         )
     if replaced is not None:
         was, now = replaced
@@ -142,8 +138,7 @@ async def update_volunteer(
 
 @router.delete("/{volunteer_id}", status_code=204)
 async def delete_volunteer(ctx: CtxDep, volunteer_id: int) -> None:
-    require(ctx.actor.is_admin, "only admins delete volunteers")
-    await service.delete(ctx.session, volunteer_id)
+    await service.delete(ctx.session, ctx.actor, volunteer_id)
 
 
 @router.put("/{volunteer_id}/photo")
@@ -320,12 +315,7 @@ async def volunteer_impact(
     ctx: CtxDep, volunteer_id: int, as_of: AsOf
 ) -> list[ImpactOut]:
     """If this volunteer leaves, what holes appear?"""
-    team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
-    require(
-        ctx.actor.can_view_volunteer(volunteer_id, team_ids),
-        "view this volunteer's impact",
-    )
-    rows = await service.impact(ctx.session, volunteer_id, at=as_of)
+    rows = await service.impact(ctx.session, ctx.actor, volunteer_id, at=as_of)
     return [
         ImpactOut(
             team=r.team,
