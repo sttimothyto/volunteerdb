@@ -37,6 +37,8 @@ from ..models import (
     EventStatus,
     EventSubRequest,
     Membership,
+    Notification,
+    NotificationStage,
     SubRequestStatus,
     Team,
     Volunteer,
@@ -925,6 +927,36 @@ async def set_rsvp(
 # --- assignments --------------------------------------------------------------
 
 
+async def _mark_notified(
+    session: AsyncSession, assignment_id: int, stage: NotificationStage
+) -> None:
+    """Record a notice as already delivered, so the nightly digest skips it.
+
+    Used where the person has just been told by the very action they took (a
+    self sign-up, a claimed substitution) or by a message the caller sends right
+    after commit (a hand-off). ON CONFLICT DO NOTHING because the point is
+    idempotence, not the row."""
+    await session.execute(
+        pg_insert(Notification)
+        .values(assignment_id=assignment_id, stage=stage)
+        .on_conflict_do_nothing(constraint="uq_notification_assignment")
+    )
+
+
+async def _reset_reminders(session: AsyncSession, assignment_id: int) -> None:
+    """Forget the reminders sent for this assignment: the slot changed hands, so
+    the incoming person has not had them. The "scheduled" notice is handled
+    separately by the caller — they are being told directly."""
+    await session.execute(
+        sa.delete(Notification).where(
+            Notification.assignment_id == assignment_id,
+            Notification.stage.in_(
+                (NotificationStage.event_week, NotificationStage.event_day)
+            ),
+        )
+    )
+
+
 async def _join_slot(
     session: AsyncSession,
     *,
@@ -967,14 +999,15 @@ async def _join_slot(
         volunteer_id=volunteer_id,
         kind=kind.value,
         assigned_by=assigned_by,
-        # the person acted themselves for signup/sub; only manager
-        # assignments leave this NULL for the digest's "scheduled" notice
-        assigned_notified_at=(None if kind is AssignmentKind.assigned else _now()),
         notify_7d=notify_7d,
         notify_24h=notify_24h,
     )
     session.add(assignment)
     await session.flush()
+    if kind is not AssignmentKind.assigned:
+        # the person acted themselves, so the digest's "you have been scheduled"
+        # notice would be telling them what they just did
+        await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
     return assignment
 
 
@@ -1209,11 +1242,11 @@ async def claim_sub(
         raise ValueError("someone else already claimed this slot")
     assignment.volunteer_id = vid
     assignment.kind = AssignmentKind.sub.value
-    assignment.assigned_notified_at = _now()  # the claimant acted themselves
     # the new person still needs the reminders, on default preferences
     assignment.notify_7d = assignment.notify_24h = True
-    assignment.reminded_7d_at = assignment.reminded_24h_at = None
     await session.flush()
+    await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
+    await _reset_reminders(session, assignment.id)  # the claimant has had none
     await session.refresh(sub)
     return sub, assignment, asker
 
@@ -1261,13 +1294,13 @@ async def substitute(
     assignment.volunteer_id = vid
     assignment.kind = AssignmentKind.sub.value
     assignment.assigned_by = acted_by
-    # the caller mails the incoming volunteer right after commit, so the
-    # digest's "scheduled" notice would only duplicate it
-    assignment.assigned_notified_at = _now()
     # the new person still needs the reminders, on default preferences
     assignment.notify_7d = assignment.notify_24h = True
-    assignment.reminded_7d_at = assignment.reminded_24h_at = None
     await session.flush()
+    # the caller mails the incoming volunteer right after commit, so the
+    # digest's "scheduled" notice would only duplicate it
+    await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
+    await _reset_reminders(session, assignment.id)
     return assignment, outgoing, incoming
 
 

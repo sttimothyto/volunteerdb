@@ -7,9 +7,16 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
+import sqlalchemy as sa
 
 from volunteerdb.db import db_session
-from volunteerdb.models import EventSubRequest, SubRequestStatus, TeamRole
+from volunteerdb.models import (
+    EventSubRequest,
+    Notification,
+    NotificationStage,
+    SubRequestStatus,
+    TeamRole,
+)
 from volunteerdb.permissions import load_actor
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
@@ -355,6 +362,22 @@ async def test_cancel_resolves_open_subs_and_returns_assignee_emails(database):
 # --- substitutions ----------------------------------------------------------
 
 
+async def _notices(assignment_id: int) -> set[str]:
+    """Which one-shot notices this assignment has already had.
+
+    models.Notification replaced the three stamp columns that used to sit on the
+    assignment row, so "already told them" is the presence of a row now."""
+    async with db_session() as session:
+        return {
+            row.stage
+            for row in await session.execute(
+                sa.select(Notification.stage).where(
+                    Notification.assignment_id == assignment_id
+                )
+            )
+        }
+
+
 async def test_claim_moves_the_assignment_and_records_who(database):
     team_id, vids = await _team_with_members(3)
     event_id = await _one_event(team_id)
@@ -379,11 +402,13 @@ async def test_claim_moves_the_assignment_and_records_who(database):
         assert claimed.claimed_by_volunteer_id == vids[2]
         assert assignment.volunteer_id == vids[2]
         assert assignment.kind == "sub"
-        assert assignment.assigned_notified_at is not None, "claimant acted themselves"
-        assert (assignment.reminded_7d_at, assignment.reminded_24h_at) == (
-            None,
-            None,
-        ), "new person still gets the reminders"
+        claimed_assignment_id = assignment.id
+    notices = await _notices(claimed_assignment_id)
+    assert NotificationStage.event_scheduled in notices, "claimant acted themselves"
+    assert not notices & {
+        NotificationStage.event_week,
+        NotificationStage.event_day,
+    }, "new person still gets the reminders"
     async with db_session() as session:
         with pytest.raises(ValueError, match="already claimed"):
             await event_service.claim_sub(
@@ -722,13 +747,7 @@ async def test_substitute_hands_the_slot_over(database):
             vids[2],
         )
         assert assignment.kind == "sub"
-        assert assignment.assigned_notified_at is not None, (
-            "the caller mails the incoming volunteer right away"
-        )
-        assert (assignment.reminded_7d_at, assignment.reminded_24h_at) == (
-            None,
-            None,
-        ), "the new person still needs the reminders"
+        handed_over_id = assignment.id
         assert assignment.notify_7d and assignment.notify_24h, (
             "prefs reset to defaults — the incoming volunteer never chose"
         )
@@ -736,6 +755,15 @@ async def test_substitute_hands_the_slot_over(database):
         assert open_call.status == SubRequestStatus.cancelled.value, (
             "the open call dies with the hand-off"
         )
+    notices = await _notices(handed_over_id)
+    assert NotificationStage.event_scheduled in notices, (
+        "the caller mails the incoming volunteer right away, so the digest's "
+        "own scheduling notice would duplicate it"
+    )
+    assert not notices & {
+        NotificationStage.event_week,
+        NotificationStage.event_day,
+    }, "the new person still needs the reminders"
 
 
 async def test_substitute_rejects_bad_targets(database):

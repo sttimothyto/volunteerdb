@@ -99,6 +99,20 @@ class SyncStatus(enum.StrEnum):
     error = "error"
 
 
+class NotificationStage(enum.StrEnum):
+    """A one-shot notice, recorded once it has gone out (models.Notification).
+
+    Named for what the reader is being told, not for when: `event_week` is "an
+    event you serve at is coming up", whatever window the job decided that means.
+    """
+
+    event_scheduled = "event_scheduled"  # a manager put you on an event
+    event_week = "event_week"  # an event you serve at is within the week
+    event_day = "event_day"  # it starts tomorrow
+    roll_added = "roll_added"  # you were added to a proposal's voting roll
+    voting_open = "voting_open"  # voting began on a proposal you may vote in
+
+
 class EventStatus(enum.StrEnum):
     scheduled = "scheduled"
     cancelled = "cancelled"
@@ -138,6 +152,7 @@ SUB_REQUEST_STATUS_LABELS: dict[SubRequestStatus, str] = {
     SubRequestStatus.cancelled: "Cancelled",
 }
 
+notification_stage_enum = sa.Enum(NotificationStage, name="notification_stage")
 proposal_status_enum = sa.Enum(ProposalStatus, name="proposal_status")
 field_type_enum = sa.Enum(FieldType, name="custom_field_type")
 event_status_enum = sa.Enum(EventStatus, name="event_status")
@@ -388,15 +403,9 @@ class ProposalVoter(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
-    # when the nightly digest (jobs/proposal_digest.py) told this voter they
-    # were added to the roll / that voting began; NULL = not told yet. Per
-    # voter, not per proposal, so a failed send retries just that person.
-    added_notified_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
-    voting_notified_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
+    # What this voter has already been told lives in models.Notification, keyed
+    # by (voter, stage) — it used to be two columns here, and a third notice
+    # would have meant a third.
 
 
 class ProposalBallot(Base):
@@ -657,18 +666,6 @@ class EventAssignment(Base):
         ),
         sa.Index("ix_event_assignment_slot_id", "slot_id"),
         sa.Index("ix_event_assignment_volunteer_id", "volunteer_id"),
-        # the nightly reminder job joins every assignment to its event looking
-        # for the ones still owed a notice; no plain index can serve that OR, but
-        # a partial one on exactly that predicate can
-        sa.Index(
-            "ix_event_assignment_owed_notice",
-            "event_id",
-            postgresql_where=sa.text(
-                "assigned_notified_at IS NULL "
-                "OR (notify_7d AND reminded_7d_at IS NULL) "
-                "OR (notify_24h AND reminded_24h_at IS NULL)"
-            ),
-        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -687,22 +684,12 @@ class EventAssignment(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
-    # nightly digest stamps (jobs/event_reminders.py), per assignment so a
-    # failed send retries just that row. assigned_notified_at is set at insert
-    # for self sign-ups and sub claims — the person acted themselves; only
-    # manager assignments need the "you have been scheduled" notice.
-    assigned_notified_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
-    # the two reminder stages, each an opt-outable preference (chosen at
-    # sign-up, pre-checked) with its own one-shot stamp: "this week" once the
-    # event is ≤7 parish days out, "tomorrow" the day before
+    # Reminder PREFERENCES, chosen at sign-up and pre-checked: an opted-out
+    # stage simply never fires. These stay on the assignment because they are
+    # settings, not records — what has already been *sent* lives in
+    # models.Notification, keyed by (assignment, stage).
     notify_7d: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
     notify_24h: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
-    reminded_7d_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
-    reminded_24h_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
     # manager-recorded exceptions to auto attendance; NULL = auto
     attended_override: Mapped[bool | None]
     hours_override: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2))
@@ -815,6 +802,53 @@ class EventSubRequest(Base):
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
     resolved_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+
+
+class Notification(Base):
+    """One notice already sent, so the nightly jobs never send it twice.
+
+    Three hand-rolled versions of this used to sit as columns on the rows they
+    described: `assigned_notified_at` / `reminded_7d_at` / `reminded_24h_at` on
+    event_assignment, and `added_notified_at` / `voting_notified_at` on
+    proposal_voter. Every new notice meant two more columns and a migration
+    (rev 0021 added four), and the "who still needs telling" query had to OR
+    across all of them — a shape no plain index can serve.
+
+    Deliberately NOT polymorphic. A single `(entity_type, entity_id)` pair would
+    have been shorter and would have thrown away the thing the old columns got
+    for free: deleting an assignment took its stamps with it. Two nullable
+    foreign keys keep that, keep referential integrity, and let the CHECK below
+    insist on exactly one subject per row.
+
+    Not system-versioned: bookkeeping, not parish data. A failed send simply
+    writes no row and the next night tries again.
+    """
+
+    __tablename__ = "notification"
+    __table_args__ = (
+        # one notice of each kind per thing, which is what makes a re-run safe
+        sa.UniqueConstraint(
+            "assignment_id", "stage", name="uq_notification_assignment"
+        ),
+        sa.UniqueConstraint("voter_id", "stage", name="uq_notification_voter"),
+        # exactly one subject: `<>` on two IS NULL tests is XOR
+        sa.CheckConstraint(
+            "(assignment_id IS NULL) <> (voter_id IS NULL)",
+            name="ck_notification_subject",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stage: Mapped[NotificationStage] = mapped_column(notification_stage_enum)
+    assignment_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("event_assignment.id", ondelete="CASCADE")
+    )
+    voter_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("proposal_voter.id", ondelete="CASCADE")
+    )
+    sent_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
 
 
 class AppUser(Base):

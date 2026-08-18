@@ -12,7 +12,13 @@ import sqlalchemy as sa
 
 from volunteerdb.db import db_session
 from volunteerdb.jobs import proposal_digest
-from volunteerdb.models import Proposal, ProposalVoter, TeamRole
+from volunteerdb.models import (
+    Notification,
+    NotificationStage,
+    Proposal,
+    ProposalVoter,
+    TeamRole,
+)
 from volunteerdb.services import elections, mail, memberships, teams, users, volunteers
 
 TODAY = date(2026, 8, 10)  # nominating
@@ -66,17 +72,30 @@ async def _proposal(ids, role=TeamRole.second) -> int:
 
 
 async def _stamps(proposal_id: int) -> dict[int, tuple[bool, bool]]:
-    """volunteer id -> (added stamped, voting stamped)."""
+    """volunteer id -> (told they were added, told voting began).
+
+    Reads models.Notification, which replaced the two columns that used to sit
+    on the voter row — one row per (voter, stage) once the notice has gone out."""
     async with db_session() as session:
-        rows = await session.execute(
-            sa.select(ProposalVoter).where(ProposalVoter.proposal_id == proposal_id)
+        voters = list(
+            await session.scalars(
+                sa.select(ProposalVoter).where(ProposalVoter.proposal_id == proposal_id)
+            )
         )
+        told = {
+            (row.voter_id, row.stage)
+            for row in await session.execute(
+                sa.select(Notification.voter_id, Notification.stage).where(
+                    Notification.voter_id.in_([v.id for v in voters])
+                )
+            )
+        }
         return {
             v.volunteer_id: (
-                v.added_notified_at is not None,
-                v.voting_notified_at is not None,
+                (v.id, NotificationStage.roll_added) in told,
+                (v.id, NotificationStage.voting_open) in told,
             )
-            for v in rows.scalars()
+            for v in voters
         }
 
 

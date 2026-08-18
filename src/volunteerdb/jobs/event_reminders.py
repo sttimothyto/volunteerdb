@@ -7,16 +7,17 @@ have been scheduled"), (b) an event you serve at is within 7 parish days
 ("coming up this week"), (c) it starts tomorrow. The week and day stages
 are per-assignment PREFERENCES chosen at sign-up (notify_7d / notify_24h,
 both pre-checked); an opted-out stage simply never fires. Self sign-ups
-and substitution claims never get notice (a) — their assigned_notified_at
-was stamped at insert, because the person acted themselves. A row pending
-several notices at once is listed once, under the strongest, and stamps
-every stage whose window it satisfied, so the next night cannot repeat it
-under a weaker one.
+and substitution claims never get notice (a) — that stage is recorded as
+already sent when the row is created, because the person acted themselves.
+A row pending several notices at once is listed once, under the strongest,
+and records every stage whose window it satisfied, so the next night cannot
+repeat it under a weaker one.
 
-The per-assignment stamps (assigned_notified_at / reminded_7d_at /
-reminded_24h_at) make each notice one-shot and per-person idempotent: a
-failed send leaves its stamps NULL and retries the next night; a crash
-mid-run re-sends at most the unstamped people. Windows use the event's
+Rows in `notification`, keyed by (assignment, stage), make each notice
+one-shot and per-person idempotent: a failed send writes nothing and retries
+the next night; a crash mid-run re-sends at most the people with no row yet.
+(These used to be three columns on the assignment itself, so a fourth notice
+would have meant a fourth column.) Windows use the event's
 parish-day date (settings().timezone), never the container's UTC clock —
 "tomorrow" means the digest sent the morning of the day before.
 
@@ -31,17 +32,37 @@ from datetime import date
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import settings
 from ..db import db_session
 from ..log import init_logging
-from ..models import Event, EventAssignment, EventSlot, EventStatus, Volunteer
+from ..models import (
+    Event,
+    EventAssignment,
+    EventSlot,
+    EventStatus,
+    Notification,
+    NotificationStage,
+    Volunteer,
+)
 from ..services import elections, mail
 from ..services import teams as team_service
 from . import job_lock
 
 WEEK_DAYS = 7
 DAY_DAYS = 1
+
+
+def _unsent(stage: NotificationStage):
+    """ "this assignment has had no `stage` notice yet", as a NOT EXISTS.
+
+    The uq_notification_assignment unique on (assignment_id, stage) is what
+    makes each of these an index lookup rather than a scan."""
+    return ~sa.exists().where(
+        Notification.assignment_id == EventAssignment.id,
+        Notification.stage == stage,
+    )
 
 
 async def main(today: date | None = None) -> int:
@@ -58,18 +79,20 @@ async def main(today: date | None = None) -> int:
                 .join(EventSlot, EventSlot.id == EventAssignment.slot_id)
                 .join(Volunteer, Volunteer.id == EventAssignment.volunteer_id)
                 .where(
-                    Event.status == EventStatus.scheduled.value,
+                    Event.status == EventStatus.scheduled,
                     Event.ends_at > sa.func.now(),
                     Volunteer.email.is_not(None),
+                    # anything still owed one of the three: an anti-join per
+                    # stage, where it used to be an OR over three columns
                     sa.or_(
-                        EventAssignment.assigned_notified_at.is_(None),
+                        _unsent(NotificationStage.event_scheduled),
                         sa.and_(
                             EventAssignment.notify_7d,
-                            EventAssignment.reminded_7d_at.is_(None),
+                            _unsent(NotificationStage.event_week),
                         ),
                         sa.and_(
                             EventAssignment.notify_24h,
-                            EventAssignment.reminded_24h_at.is_(None),
+                            _unsent(NotificationStage.event_day),
                         ),
                     ),
                 )
@@ -77,6 +100,20 @@ async def main(today: date | None = None) -> int:
             )
         ).all()
         paths = team_service.team_paths(await team_service.list_all(session))
+        # which stages these assignments have already had, in one query: the
+        # per-row decisions below are then plain set membership
+        already = (
+            {
+                (row.assignment_id, row.stage)
+                for row in await session.execute(
+                    sa.select(Notification.assignment_id, Notification.stage).where(
+                        Notification.assignment_id.in_([a.id for a, _e, _s, _v in rows])
+                    )
+                )
+            }
+            if rows
+            else set()
+        )
 
     # volunteer id -> (email, digest items, ids to stamp per stage)
     per_person: dict[
@@ -85,15 +122,19 @@ async def main(today: date | None = None) -> int:
     for assignment, event, slot, volunteer in rows:
         event_day = event.starts_at.astimezone(tz).date()
         days_out = (event_day - today).days
-        pending_scheduled = assignment.assigned_notified_at is None
+
+        def sent(stage: NotificationStage, _id: int = assignment.id) -> bool:
+            return (_id, stage) in already
+
+        pending_scheduled = not sent(NotificationStage.event_scheduled)
         pending_week = (
             assignment.notify_7d
-            and assignment.reminded_7d_at is None
+            and not sent(NotificationStage.event_week)
             and days_out <= WEEK_DAYS
         )
         pending_day = (
             assignment.notify_24h
-            and assignment.reminded_24h_at is None
+            and not sent(NotificationStage.event_day)
             and days_out <= DAY_DAYS
         )
         if not (pending_scheduled or pending_week or pending_day):
@@ -112,19 +153,19 @@ async def main(today: date | None = None) -> int:
                 location=event.location,
             )
         )
-        # every stage whose window is satisfied stamps now — the event was
+        # every stage whose window is satisfied is recorded now — the event was
         # communicated tonight, whatever heading it sat under
         if pending_scheduled:
             entry[2].append(assignment.id)
-        if assignment.reminded_7d_at is None and days_out <= WEEK_DAYS:
+        if not sent(NotificationStage.event_week) and days_out <= WEEK_DAYS:
             entry[3].append(assignment.id)
-        if assignment.reminded_24h_at is None and days_out <= DAY_DAYS:
+        if not sent(NotificationStage.event_day) and days_out <= DAY_DAYS:
             entry[4].append(assignment.id)
 
     base = settings().public_base_url.rstrip("/")
     events_url = f"{base}/events" if base else None
 
-    sent = failed = 0
+    sent_count = failed = 0
     for email, items, scheduled_ids, week_ids, day_ids in per_person.values():
         if not await mail.send_email(
             email, *mail.event_digest_email(items, events_url)
@@ -133,20 +174,22 @@ async def main(today: date | None = None) -> int:
             print(f"FAILED digest to {email}", file=sys.stderr)
             continue  # stamps stay NULL — retried the next night
         async with db_session() as session:
-            for ids, column in (
-                (scheduled_ids, "assigned_notified_at"),
-                (week_ids, "reminded_7d_at"),
-                (day_ids, "reminded_24h_at"),
+            for ids, stage in (
+                (scheduled_ids, NotificationStage.event_scheduled),
+                (week_ids, NotificationStage.event_week),
+                (day_ids, NotificationStage.event_day),
             ):
                 if ids:
                     await session.execute(
-                        sa.update(EventAssignment)
-                        .where(EventAssignment.id.in_(ids))
-                        .values(**{column: sa.func.now()})
+                        pg_insert(Notification)
+                        .values([{"assignment_id": i, "stage": stage} for i in ids])
+                        # a stage recorded between the read and here is fine:
+                        # the notice went out either way
+                        .on_conflict_do_nothing(constraint="uq_notification_assignment")
                     )
-        sent += 1
+        sent_count += 1
 
-    print(f"event reminders: {sent} person(s) emailed, {failed} failure(s)")
+    print(f"event reminders: {sent_count} person(s) emailed, {failed} failure(s)")
     return 0
 
 
