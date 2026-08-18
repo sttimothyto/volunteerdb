@@ -21,7 +21,14 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .history import entity
-from .models import AppUser, Membership, ProposalVoter, TeamRole
+from .models import (
+    AppUser,
+    Membership,
+    ProposalVoter,
+    TeamRole,
+    Volunteer,
+    VolunteerPhoto,
+)
 from .services import teams as team_service
 
 
@@ -33,6 +40,11 @@ class Actor:
     full_view_team_ids: set[int]  # + core teams incl. sub-teams
     names_view_team_ids: set[int]  # + member teams (direct only)
     voter_proposal_ids: frozenset[int] = frozenset()  # rolls the actor sits on
+    # Their own name and headshot timestamp, for the header avatar: the frame
+    # renders before any page has a session to look them up with, and every
+    # page already receives the actor.
+    volunteer_name: str | None = None
+    photo_at: datetime | None = None
 
     @property
     def is_admin(self) -> bool:
@@ -114,6 +126,8 @@ class Actor:
 async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
     roles_by_team: dict[int, TeamRole] = {}
     voter_proposal_ids: frozenset[int] = frozenset()
+    volunteer_name: str | None = None
+    photo_at: datetime | None = None
     if user.volunteer_id is not None:
         rows = await session.execute(
             sa.select(Membership.team_id, Membership.role).where(
@@ -127,6 +141,22 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
             )
         )
         voter_proposal_ids = frozenset(rolls.scalars())
+        # one indexed lookup, and never the image bytes: the header wants a
+        # name for the dialog title and a timestamp for the ?v= cache-buster
+        me = (
+            await session.execute(
+                sa.select(
+                    Volunteer.first_name,
+                    Volunteer.last_name,
+                    VolunteerPhoto.uploaded_at,
+                )
+                .outerjoin(VolunteerPhoto, VolunteerPhoto.volunteer_id == Volunteer.id)
+                .where(Volunteer.id == user.volunteer_id)
+            )
+        ).first()
+        if me is not None:
+            volunteer_name = f"{me.first_name} {me.last_name}"
+            photo_at = me.uploaded_at
 
     managed: set[int] = set()
     full_view: set[int] = set()
@@ -150,6 +180,8 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
         full_view_team_ids=full_view,
         names_view_team_ids=names_view,
         voter_proposal_ids=voter_proposal_ids,
+        volunteer_name=volunteer_name,
+        photo_at=photo_at,
     )
 
 

@@ -5,6 +5,7 @@ from nicegui import ui
 
 from ..permissions import Actor
 from .context import asof_banner, asof_picker, clear_session
+from .photo_dialog import photo_avatar
 from .theme import apply_theme
 
 
@@ -65,6 +66,7 @@ def frame(
                     ui.menu_item(label).props(f'href="{target}"')
         ui.space()
         ui.label(actor.user.email).classes("text-sm opacity-80 gt-sm")
+        _own_avatar(actor)
         _settings_menu(dark, as_of, asof_path)
         ui.button(icon="logout", on_click=_logout).props(
             "flat color=white dense"
@@ -76,6 +78,31 @@ def frame(
         if as_of is not None and asof_path is not None:
             asof_banner(as_of, asof_path)
         yield
+
+
+def _own_avatar(actor: Actor) -> None:
+    """Your own headshot beside your address, clickable to change it.
+
+    The same dialog the volunteer profile opens, so there is one upload
+    workflow and one legal declaration. Nothing renders for an account with no
+    volunteer record (the sync bot, an admin nobody linked): there is no row a
+    photo could hang off. Unlike the address to its left this shows at every
+    width — on a phone it is the only thing identifying who is signed in."""
+    if actor.volunteer_id is None:
+        return
+
+    async def changed() -> None:
+        ui.navigate.reload()
+
+    # a plain flex div, not ui.row(): row() would claim the header's width
+    with ui.element("div").classes("flex items-center mx-2"):
+        photo_avatar(
+            actor.volunteer_id,
+            actor.volunteer_name or actor.user.email,
+            actor.photo_at,
+            on_change=changed,
+            marker="header-avatar",
+        )
 
 
 def _settings_menu(

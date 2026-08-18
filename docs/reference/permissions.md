@@ -82,8 +82,11 @@ Additional rules:
   viewer may not see.
 - Headshots are a deliberate exception to the edit matrix: **any signed-in
   account** may view, upload, replace, or delete any volunteer's photo
-  (panel, detail page, graph, and the `/api/volunteers/{id}/photo`
-  endpoints). Photos are not treated as redacted contact detail.
+  (panel, detail page, graph, the app bar, and the
+  `/api/volunteers/{id}/photo` endpoints). Photos are not treated as redacted
+  contact detail. The app bar carries your *own* headshot beside your address
+  and opens the same upload dialog; an account with no volunteer record
+  behind it shows nothing there, having no row a photo could hang off.
 - **Sign-in status** is likewise not redacted. The profile page shows
   *Last login* for every volunteer, to every viewer, whether or not that
   viewer may read their contact details; the team roster adds a badge per

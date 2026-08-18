@@ -101,9 +101,14 @@ def photo_avatar(
     full_name: str,
     photo_at: datetime | None,
     on_change: Callable[[], Awaitable[None]] | None,
+    *,
+    marker: str = "photo-avatar",
 ) -> None:
     """Round headshot (or the person icon) for a header row; clickable to open
-    the dialog unless on_change is None (read-only as-of views)."""
+    the dialog unless on_change is None (read-only as-of views).
+
+    `marker` names the element for the user-simulation tests: the app bar and
+    the profile below it can both show one, and a test needs to say which."""
     if photo_at is not None:
         element = ui.image(photo_service.photo_url(volunteer_id, photo_at)).classes(
             "w-9 h-9 rounded-full object-cover"
@@ -112,7 +117,7 @@ def photo_avatar(
         element = ui.icon("person").classes("text-2xl")
     if on_change is not None:
         # ui.icon/ui.image have no on_click param; the generic .on() is the idiom
-        element.mark("photo-avatar").classes("cursor-pointer").tooltip(
+        element.mark(marker).classes("cursor-pointer").tooltip(
             "Add or change photo"
         ).on(
             "click",
