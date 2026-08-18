@@ -95,7 +95,9 @@ class TeamOut(ORMModel):
     parent_team_id: int | None
     description: str | None
     is_active: bool
-    workload_weight: float | None = None  # null = unweighted
+    # 0 = excluded from workload scores; there is no "unset" any more, because
+    # NULL and 0 always scored the same
+    workload_weight: float = 0
     home_doc_url: str | None = None  # public Google Doc behind /ministries/
     # the team's own Google Form, mailed to people who ask about the ministry
     # from its public page
@@ -134,7 +136,8 @@ class TeamPatch(BaseModel):
     description: str | None = None
     is_active: bool | None = None
     workload_weight: float | None = Field(default=None, ge=0)
-    clear_workload_weight: bool = False  # set true to unweight the team
+    # set true to put the weight back to 0 (which is what "unweighted" means)
+    clear_workload_weight: bool = False
 
 
 # --- memberships ---

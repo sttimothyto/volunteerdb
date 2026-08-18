@@ -64,7 +64,7 @@ async def update_team(ctx: CtxDep, team_id: int, data: TeamPatch) -> TeamOut:
     if fields.pop("clear_parent", False):
         fields["parent_team_id"] = None
     if fields.pop("clear_workload_weight", False):
-        fields["workload_weight"] = None
+        fields["workload_weight"] = Decimal(0)  # 0 IS unweighted
     else:
         _weight_to_decimal(fields)
     team = await service.update(ctx.session, ctx.actor, team_id, **fields)

@@ -144,9 +144,15 @@ async def test_custom_values_are_versioned(database):
 
 
 async def test_workload_weight_is_versioned(database):
+    """A weight change is a versioned change, like every other team edit.
+
+    A new team weighs 0 rather than NULL: NULL was documented as "counts as 0"
+    and coalesced to 0 at every read, so it was a third state with no distinct
+    behaviour (models.Team.workload_weight)."""
     async with db_session(user_id=9) as session:
         t = await teams.create(session, None, "Liturgy")
         tid = t.id
+        assert t.workload_weight == Decimal(0), "unweighted is 0, not NULL"
     t_unweighted = await _now()
 
     async with db_session(user_id=9) as session:
@@ -156,7 +162,7 @@ async def test_workload_weight_is_versioned(database):
     async with db_session() as session:
         assert (await teams.get(session, tid)).workload_weight == Decimal("2.50")
         old = await teams.get(session, tid, at=t_unweighted)
-        assert old.workload_weight is None
+        assert old.workload_weight == Decimal(0)
         row = (await session.execute(sa.select(team_history))).mappings().one()
-        assert row["workload_weight"] is None
+        assert row["workload_weight"] == Decimal(0)
         assert row["changed_by"] == 9 and row["op"] == "U"

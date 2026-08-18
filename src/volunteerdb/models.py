@@ -119,23 +119,33 @@ SYS_PERIOD_DEFAULT = sa.text("tstzrange(clock_timestamp(), NULL)")
 class Volunteer(Base):
     __tablename__ = "volunteer"
     # serves every list's ORDER BY last_name, first_name (rev 0005)
-    __table_args__ = (sa.Index("ix_volunteer_name", "last_name", "first_name"),)
+    __table_args__ = (
+        sa.Index("ix_volunteer_name", "last_name", "first_name"),
+        # services.volunteers folds case on write; this is what stops a row
+        # written any other way from hiding from every lookup, which all fold too
+        sa.CheckConstraint(
+            "email IS NULL OR email = lower(email)", name="ck_volunteer_email_lower"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     first_name: Mapped[str] = mapped_column(sa.String(100))
     last_name: Mapped[str] = mapped_column(sa.String(100))
-    email: Mapped[str | None] = mapped_column(sa.String(255), index=True)
+    # Indexed on lower(email), not the raw column: every lookup in the codebase
+    # folds case (services/volunteers.find_by_email), so a plain btree could
+    # never be used. The functional index lives in the migration — SQLAlchemy
+    # cannot express it on a mapped column.
+    email: Mapped[str | None] = mapped_column(sa.String(255))
     phone: Mapped[str | None] = mapped_column(sa.String(50))
     notes: Mapped[str | None] = mapped_column(sa.Text)
     is_active: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True),
-        server_default=sa.func.now(),
-        onupdate=sa.func.now(),
-    )
+    # No updated_at: lower(sys_period) IS the last-modified time, maintained by
+    # the versioning trigger on every write. A second column meant the same
+    # thing only as long as every write went through the ORM — a Core UPDATE
+    # left it stale — and nothing ever read it.
     sys_period: Mapped[Range[datetime]] = mapped_column(
         TSTZRANGE, server_default=SYS_PERIOD_DEFAULT
     )
@@ -156,6 +166,10 @@ class Team(Base):
         sa.UniqueConstraint(
             "parent_team_id", "name", postgresql_nulls_not_distinct=True
         ),
+        # the unique above leads with parent_team_id, so it cannot serve a
+        # lookup BY name — which is how the clergy voting roll is built
+        # (services/elections.py) and how every listing orders
+        sa.Index("ix_team_name", "name"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -168,8 +182,12 @@ class Team(Base):
     sys_period: Mapped[Range[datetime]] = mapped_column(
         TSTZRANGE, server_default=SYS_PERIOD_DEFAULT
     )
-    # optional workload weight ("how work-heavy is this ministry"); NULL counts as 0
-    workload_weight: Mapped[Decimal | None] = mapped_column(sa.Numeric(8, 2))
+    # How work-heavy this ministry is, for workload scores. NOT NULL: a weight
+    # of 0 already meant "excluded", so a NULL that also meant 0 was a third
+    # state with no distinct behaviour — and a coalesce at every read.
+    workload_weight: Mapped[Decimal] = mapped_column(
+        sa.Numeric(8, 2), default=Decimal(0), server_default=sa.text("0")
+    )
     # public Google Doc used as the team's volunteer home page (services/pages.py)
     home_doc_url: Mapped[str | None] = mapped_column(sa.String(500))
     # the team's own Google application form, mailed to people who express
@@ -183,8 +201,11 @@ class Membership(Base):
     __table_args__ = (sa.UniqueConstraint("volunteer_id", "team_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # no index=: the (volunteer_id, team_id) unique above leads with this column,
+    # so a separate btree on it was a strict prefix — same lookups, twice the
+    # write cost (rev 0001 created both)
     volunteer_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("volunteer.id", ondelete="CASCADE"), index=True
+        sa.ForeignKey("volunteer.id", ondelete="CASCADE")
     )
     team_id: Mapped[int] = mapped_column(
         sa.ForeignKey("team.id", ondelete="CASCADE"), index=True
@@ -223,6 +244,21 @@ class Proposal(Base):
             "role",
             unique=True,
             postgresql_where=sa.text("status = 'open'"),
+        ),
+        # the ORDER BY of both list_proposals queries
+        sa.Index("ix_proposal_created_at", "created_at"),
+        # withdrawing a nominee deletes a proposal_candidate row, and this FK is
+        # ON DELETE SET NULL — unindexed it made every withdrawal seq-scan
+        sa.Index("ix_proposal_appointed_candidate", "appointed_candidate_id"),
+        # an appointed proposal names its candidate and records the decision;
+        # an open one has done neither
+        # A decided proposal records WHEN. Not who, and not which candidate:
+        # decided_by and appointed_candidate_id are both ON DELETE SET NULL, so
+        # deleting an admin's account or withdrawing the appointee must not make
+        # the decision unstorable — it only makes it less well attributed.
+        sa.CheckConstraint(
+            "(status = 'open') = (decided_at IS NULL)",
+            name="ck_proposal_decision",
         ),
     )
 
@@ -268,6 +304,12 @@ class ProposalCandidate(Base):
         sa.UniqueConstraint(
             "proposal_id", "volunteer_id", name="uq_proposal_candidate"
         ),
+        # the target of proposal_ballot's composite FK: it is what makes
+        # "this ballot's candidate belongs to this ballot's proposal" a
+        # constraint rather than a comment. Costs nothing — id is already unique.
+        sa.UniqueConstraint("id", "proposal_id", name="uq_candidate_proposal"),
+        # deleting a volunteer cascades here, and the column was unindexed
+        sa.Index("ix_proposal_candidate_volunteer_id", "volunteer_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -294,6 +336,8 @@ class ProposalVoter(Base):
     __tablename__ = "proposal_voter"
     __table_args__ = (
         sa.UniqueConstraint("proposal_id", "volunteer_id", name="uq_proposal_voter"),
+        # as on proposal_candidate: the target of proposal_ballot's composite FK
+        sa.UniqueConstraint("id", "proposal_id", name="uq_voter_proposal"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -331,25 +375,36 @@ class ProposalBallot(Base):
     __table_args__ = (
         sa.UniqueConstraint("voter_id", "candidate_id", name="uq_proposal_ballot"),
         sa.CheckConstraint("score BETWEEN 0 AND 5", name="ck_proposal_ballot_score"),
+        # proposal_id is denormalized so tally/turnout are one query. These two
+        # composite FKs are what keep it honest: the voter and the candidate must
+        # belong to the SAME proposal this row claims. It used to be a comment
+        # saying the service guarantees it — and a ballot cast against another
+        # proposal's candidate would have counted in this one's tally.
+        sa.ForeignKeyConstraint(
+            ["voter_id", "proposal_id"],
+            ["proposal_voter.id", "proposal_voter.proposal_id"],
+            name="fk_ballot_voter_proposal",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["candidate_id", "proposal_id"],
+            ["proposal_candidate.id", "proposal_candidate.proposal_id"],
+            name="fk_ballot_candidate_proposal",
+            ondelete="CASCADE",
+        ),
+        sa.Index("ix_proposal_ballot_proposal_id", "proposal_id"),
+        sa.Index("ix_proposal_ballot_candidate_id", "candidate_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # denormalized so tally/turnout are one query; the service guarantees the
-    # voter and candidate rows belong to this proposal
-    proposal_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("proposal.id", ondelete="CASCADE"), index=True
-    )
-    voter_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("proposal_voter.id", ondelete="CASCADE")
-    )
-    candidate_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("proposal_candidate.id", ondelete="CASCADE"), index=True
-    )
+    proposal_id: Mapped[int] = mapped_column(sa.Integer)
+    voter_id: Mapped[int] = mapped_column(sa.Integer)
+    candidate_id: Mapped[int] = mapped_column(sa.Integer)
     score: Mapped[int] = mapped_column(sa.SmallInteger)
+    # no onupdate=: cast_ballot writes through a Core ON CONFLICT upsert that
+    # sets this explicitly, so the declarative hook never fired
     updated_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True),
-        server_default=sa.func.now(),
-        onupdate=sa.func.now(),
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
 
 
@@ -365,7 +420,9 @@ class Interest(Base):
     __tablename__ = "interest"
     __table_args__ = (
         # at most one OPEN interest per (team, lowercased email) — repeat
-        # submissions must not re-mail leaders and applicants
+        # submissions must not re-mail leaders and applicants. The CHECK below
+        # is what makes "lowercased" true: without it one mixed-case row written
+        # any other way would slip past this index entirely.
         sa.Index(
             "uq_interest_open",
             "team_id",
@@ -373,14 +430,23 @@ class Interest(Base):
             unique=True,
             postgresql_where=sa.text("resolved_at IS NULL"),
         ),
+        sa.CheckConstraint("email = lower(email)", name="ck_interest_email_lower"),
+        # One-directional, and the direction matters: resolved_by is ON DELETE
+        # SET NULL, so a resolved submission whose handler's account was later
+        # deleted legitimately keeps the time and loses the name. What cannot
+        # happen is a handler with no moment of handling.
+        sa.CheckConstraint(
+            "resolved_by IS NULL OR resolved_at IS NOT NULL",
+            name="ck_interest_resolution",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    team_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("team.id", ondelete="CASCADE"), index=True
-    )
+    # no index=: uq_interest_open leads with team_id, and both readers filter
+    # `resolved_at IS NULL` — which is exactly that index's predicate
+    team_id: Mapped[int] = mapped_column(sa.ForeignKey("team.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(sa.String(200))
-    email: Mapped[str] = mapped_column(sa.String(255))  # stored lowercased
+    email: Mapped[str] = mapped_column(sa.String(255))  # lowercased; CHECKed above
     phone: Mapped[str | None] = mapped_column(sa.String(50))
     note: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[datetime] = mapped_column(
@@ -420,6 +486,23 @@ class Event(Base):
             "ix_event_series",
             "series_id",
             postgresql_where=sa.text("series_id IS NOT NULL"),
+        ),
+        # ends_at is a WHERE predicate in five places (my_upcoming,
+        # claimable_subs, hours_for_volunteer, the reminder job, task-force
+        # teardown) and was unindexed
+        sa.Index("ix_event_ends_at", "ends_at"),
+        # jobs/calendar_sync.py scans "ends_at > horizon OR google_event_id IS
+        # NOT NULL" every 30 minutes; with this and the index above, that
+        # becomes a bitmap OR instead of a seq scan
+        sa.Index(
+            "ix_event_google_id",
+            "google_event_id",
+            postgresql_where=sa.text("google_event_id IS NOT NULL"),
+        ),
+        # cancelled is not a free-floating status: it has a moment
+        sa.CheckConstraint(
+            "(status = 'cancelled') = (cancelled_at IS NOT NULL)",
+            name="ck_event_cancelled_at",
         ),
     )
 
@@ -466,6 +549,8 @@ class EventSlot(Base):
     __table_args__ = (
         # also serves event-scoped slot reads (leads with event_id)
         sa.UniqueConstraint("event_id", "name", name="uq_event_slot_name"),
+        # the target of event_assignment's composite FK — see the note there
+        sa.UniqueConstraint("id", "event_id", name="uq_slot_event"),
         sa.CheckConstraint(
             "capacity IS NULL OR capacity >= 1", name="ck_event_slot_capacity"
         ),
@@ -498,19 +583,40 @@ class EventAssignment(Base):
             "hours_override IS NULL OR hours_override >= 0",
             name="ck_event_assignment_hours",
         ),
+        # event_id is denormalized (so the unique above and every per-event read
+        # are direct). This composite FK is what keeps it true: the slot must
+        # belong to the event the row claims. Otherwise somebody could hold slot
+        # A of event B while uq_event_assignment guarded the wrong pairing.
+        sa.ForeignKeyConstraint(
+            ["slot_id", "event_id"],
+            ["event_slot.id", "event_slot.event_id"],
+            name="fk_assignment_slot_event",
+            ondelete="CASCADE",
+        ),
+        sa.Index("ix_event_assignment_slot_id", "slot_id"),
+        sa.Index("ix_event_assignment_volunteer_id", "volunteer_id"),
+        # the nightly reminder job joins every assignment to its event looking
+        # for the ones still owed a notice; no plain index can serve that OR, but
+        # a partial one on exactly that predicate can
+        sa.Index(
+            "ix_event_assignment_owed_notice",
+            "event_id",
+            postgresql_where=sa.text(
+                "assigned_notified_at IS NULL "
+                "OR (notify_7d AND reminded_7d_at IS NULL) "
+                "OR (notify_24h AND reminded_24h_at IS NULL)"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # index serves the capacity count in sign_up/assign
-    slot_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("event_slot.id", ondelete="CASCADE"), index=True
-    )
-    # denormalized so per-event queries and the one-slot-per-person unique
-    # constraint are direct; the service guarantees slot_id belongs to event_id
+    # slot_id/event_id carry no single-column FK of their own: the composite
+    # one in __table_args__ covers both and constrains them together
+    slot_id: Mapped[int] = mapped_column(sa.Integer)
     event_id: Mapped[int] = mapped_column(sa.ForeignKey("event.id", ondelete="CASCADE"))
     # index serves "my upcoming assignments" and the hours summary
     volunteer_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("volunteer.id", ondelete="CASCADE"), index=True
+        sa.ForeignKey("volunteer.id", ondelete="CASCADE")
     )
     kind: Mapped[str] = mapped_column(sa.String(20))
     assigned_by: Mapped[int | None] = mapped_column(
@@ -552,6 +658,14 @@ class EventTaskForce(Base):
     what keeps a torn-down task force visible in as-of history."""
 
     __tablename__ = "event_task_force"
+    __table_args__ = (
+        # The meta team must never BE the owner: teardown restores
+        # event.team_id = owner_team_id and then deletes the meta team, so an
+        # equal pair would be a silent no-op that takes the event with it.
+        sa.CheckConstraint("team_id <> owner_team_id", name="ck_task_force_teams"),
+        # both are cascade-delete paths from team, and both were unindexed
+        sa.Index("ix_event_task_force_owner", "owner_team_id"),
+    )
 
     event_id: Mapped[int] = mapped_column(
         sa.ForeignKey("event.id", ondelete="CASCADE"), primary_key=True
@@ -576,15 +690,16 @@ class EventTaskForceSource(Base):
     always a source too)."""
 
     __tablename__ = "event_task_force_source"
-    __table_args__ = (
-        sa.UniqueConstraint("event_id", "team_id", name="uq_task_force_source"),
-    )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    # (event, team) is the row's identity, so it is the primary key — the
+    # surrogate id was a second one, and its only reader was an existence probe
     event_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("event_task_force.event_id", ondelete="CASCADE")
+        sa.ForeignKey("event_task_force.event_id", ondelete="CASCADE"),
+        primary_key=True,
     )
-    team_id: Mapped[int] = mapped_column(sa.ForeignKey("team.id", ondelete="CASCADE"))
+    team_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="CASCADE"), primary_key=True
+    )
 
 
 class EventRsvp(Base):
@@ -609,10 +724,9 @@ class EventRsvp(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
+    # no onupdate=: set_rsvp upserts through Core and sets this explicitly
     updated_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True),
-        server_default=sa.func.now(),
-        onupdate=sa.func.now(),
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
 
 
@@ -639,11 +753,28 @@ class EventSubRequest(Base):
             unique=True,
             postgresql_where=sa.text("status = 'open'"),
         ),
+        # open means unresolved; claimed means resolved AND by somebody
+        sa.CheckConstraint(
+            "(status = 'open') = (resolved_at IS NULL)",
+            name="ck_sub_request_resolution",
+        ),
+        # No "claimed implies a claimant": claimed_by_volunteer_id is ON DELETE
+        # SET NULL, so deleting the volunteer who took the slot must not make the
+        # historical request unstorable. The reverse direction is the real
+        # invariant — a claimant means it was claimed.
+        sa.CheckConstraint(
+            "claimed_by_volunteer_id IS NULL OR status = 'claimed'",
+            name="ck_sub_request_claimant",
+        ),
+        # deleting a volunteer sets this NULL, and the column was unindexed
+        sa.Index("ix_event_sub_request_claimant", "claimed_by_volunteer_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # no index=: uq_event_sub_request_open covers it, and every assignment_id
+    # predicate in the services carries `status = 'open'` alongside
     assignment_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("event_assignment.id", ondelete="CASCADE"), index=True
+        sa.ForeignKey("event_assignment.id", ondelete="CASCADE")
     )
     requested_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
@@ -663,7 +794,34 @@ class EventSubRequest(Base):
 
 
 class AppUser(Base):
+    """A sign-in account. Deliberately separate from the volunteer it belongs
+    to: most volunteers never sign in, and a login's team rights derive from its
+    linked volunteer's memberships.
+
+    The CHECKs below hold the three "set and cleared together" groups the
+    columns document. Each was a comment the services honoured and the schema
+    allowed the other way round — a token with no expiry, or an expiry with no
+    token, would have read as a live link or a dead one depending on which
+    function looked.
+    """
+
     __tablename__ = "app_user"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "(invite_token IS NULL) = (invite_expires_at IS NULL)",
+            name="ck_app_user_invite_pair",
+        ),
+        sa.CheckConstraint(
+            "(pending_email IS NULL) = (email_change_token IS NULL)"
+            " AND (pending_email IS NULL) = (email_change_expires_at IS NULL)",
+            name="ck_app_user_email_change_triple",
+        ),
+        sa.CheckConstraint(
+            "(otp_hash IS NULL) = (otp_expires_at IS NULL)",
+            name="ck_app_user_otp_pair",
+        ),
+        sa.CheckConstraint("email = lower(email)", name="ck_app_user_email_lower"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     volunteer_id: Mapped[int | None] = mapped_column(
@@ -742,10 +900,9 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(sa.String(100), primary_key=True)
     value: Mapped[dict] = mapped_column(JSONB)
+    # no onupdate=: workload.set_config upserts through Core and sets this
     updated_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True),
-        server_default=sa.func.now(),
-        onupdate=sa.func.now(),
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
     )
 
 
@@ -857,6 +1014,10 @@ class JobRun(Base):
     last_attempt_at: Mapped[datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True)
     )
+    # Written, never read by the app: it is for whoever is looking at a job that
+    # misbehaved, one SELECT away, after the alert mail has already gone out.
+    # Kept deliberately — a nightly job's last exit code costs one integer and
+    # is the first thing a postmortem wants.
     last_exit_code: Mapped[int | None] = mapped_column(sa.Integer)
 
 

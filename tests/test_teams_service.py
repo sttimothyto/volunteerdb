@@ -71,7 +71,10 @@ async def test_create_rejects_a_negative_workload_weight(database):
         assert ok.workload_weight == Decimal("2.5")
 
         unweighted = await teams.create(session, None, "Unweighted")
-        assert unweighted.workload_weight is None, "no weight at all stays legal"
+        assert unweighted.workload_weight == Decimal(0), (
+            "a team with no weight given weighs 0 — which is what excluding it "
+            "from the scores has always meant (models.Team.workload_weight)"
+        )
 
 
 async def test_update_reparent_cycle_rejected(database):
@@ -115,7 +118,7 @@ async def test_update_workload_weight_validation(database):
         assert updated.workload_weight == Decimal("2.5")
 
         cleared = await teams.update(session, None, team.id, workload_weight=None)
-        assert cleared.workload_weight is None
+        assert cleared.workload_weight == Decimal(0), "clearing means 0, not NULL"
 
 
 async def test_two_top_level_teams_cannot_share_a_name(database):

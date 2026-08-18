@@ -103,16 +103,14 @@ async def workload_page():
                 "Also editable on each team's edit dialog."
             ).classes("text-sm text-gray-500 vdb-prose")
             weight_inputs: dict[int, ui.number] = {}
-            originals: dict[int, Decimal | None] = {}
+            originals: dict[int, Decimal] = {}
             for team in sorted(all_teams, key=lambda t: paths[t.id].lower()):
                 with ui.row().classes("w-full items-center gap-3"):
                     ui.label(paths[team.id]).classes("w-96")
                     originals[team.id] = team.workload_weight
                     weight_inputs[team.id] = (
                         ui.number(
-                            value=None
-                            if team.workload_weight is None
-                            else float(team.workload_weight),
+                            value=float(team.workload_weight),
                             min=0,
                             step=0.5,
                         )
@@ -125,7 +123,9 @@ async def workload_page():
                 changed = 0
                 async with action_session() as (session, actor):
                     for team_id, inp in weight_inputs.items():
-                        new = None if inp.value is None else Decimal(str(inp.value))
+                        # a cleared box is weight 0, which is what excluding a
+                        # ministry from the scores has always meant
+                        new = Decimal(str(inp.value or 0))
                         if new != originals[team_id]:
                             await team_service.update(
                                 session, actor, team_id, workload_weight=new

@@ -5,6 +5,7 @@ covered at the bottom: it is scoped to one volunteer on the caller's own teams.
 """
 
 import hashlib
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -252,7 +253,9 @@ async def test_volunteer_invite_is_open_to_leaders_and_core(
         assert first_token, "the invite really is armed (as a digest)"
         # core members hold the same right; the account exists now, so this
         # exercises the re-arm path rather than creation
-        account.invite_expires_at = None
+        # a lapsed invite is a PAST expiry, not a missing one: the pair is
+        # set and cleared together, and ck_app_user_invite_pair now says so
+        account.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     again = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_core)
     assert again.status_code == 200, again.text
     async with db_session() as session:
@@ -332,7 +335,8 @@ async def test_only_an_admin_is_handed_the_invite_link(
 
     # a second, admin-issued invite: token back, and still no mail from the API
     async with db_session() as session:
-        (await users.account_for_volunteer(session, rostered)).invite_expires_at = None
+        lapsed = await users.account_for_volunteer(session, rostered)
+        lapsed.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     sent_api.clear()
     r = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_admin)
     assert r.status_code == 200, r.text

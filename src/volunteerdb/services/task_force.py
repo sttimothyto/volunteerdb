@@ -163,7 +163,9 @@ async def add_collaborating_team(
         if source_team_id == tf.team_id:
             raise ValueError("that is the task force itself")
         already = await session.scalar(
-            sa.select(EventTaskForceSource.id).where(
+            sa.select(sa.literal(1))
+            .select_from(EventTaskForceSource)
+            .where(
                 EventTaskForceSource.event_id == event_id,
                 EventTaskForceSource.team_id == source_team_id,
             )

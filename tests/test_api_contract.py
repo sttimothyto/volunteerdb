@@ -109,7 +109,9 @@ async def test_team_patch_clear_parent_and_clear_weight(client, seeded):
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["workload_weight"] is None
+    # clearing puts the weight back to 0, and 0 IS unweighted: the column has no
+    # NULL any more, because NULL and 0 always scored identically
+    assert body["workload_weight"] == 0
     assert body["name"] == "Sub", "omitted fields untouched"
 
 

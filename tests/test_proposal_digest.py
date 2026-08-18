@@ -153,10 +153,12 @@ async def test_decided_and_concluded_proposals_stay_silent(database, monkeypatch
     cancelled = await _proposal(ids, role=TeamRole.second)
     concluded = await _proposal(ids, role=TeamRole.leader)
     async with db_session() as session:
+        # decided_at goes with the status, as elections.cancel() sets it —
+        # ck_proposal_decision now says a decided proposal records when
         await session.execute(
             sa.update(Proposal)
             .where(Proposal.id == cancelled)
-            .values(status="cancelled")
+            .values(status="cancelled", decided_at=sa.func.now())
         )
     sent = _capture(monkeypatch)
 

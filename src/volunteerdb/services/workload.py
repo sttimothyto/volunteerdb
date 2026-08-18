@@ -163,9 +163,7 @@ async def scores(
         value=sa.cast(M.role, sa.String),
     )
     stmt = (
-        sa.select(
-            M.volunteer_id, sa.func.sum(sa.func.coalesce(T.workload_weight, 0) * mult)
-        )
+        sa.select(M.volunteer_id, sa.func.sum(T.workload_weight * mult))
         .join(T, T.id == M.team_id)
         .group_by(M.volunteer_id)
     )

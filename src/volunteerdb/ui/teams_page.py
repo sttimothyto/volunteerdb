@@ -446,7 +446,7 @@ def _sheet_section(team_sheet: TeamSheet | None) -> None:
         return
     with ui.row().classes("items-center gap-2"):
         ui.link(
-            "Google Sheet",
+            team_sheet.file_name or "Google Sheet",
             f"https://docs.google.com/spreadsheets/d/{team_sheet.file_id}",
             new_tab=True,
         )

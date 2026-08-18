@@ -131,7 +131,7 @@ async def create(
         name=name.strip(),
         parent_team_id=parent_team_id,
         description=description,
-        workload_weight=workload_weight,
+        workload_weight=Decimal(0) if workload_weight is None else workload_weight,
     )
     session.add(team)
     await session.flush()
@@ -164,7 +164,11 @@ async def update(
         team.is_active = is_active
     if workload_weight is not _UNSET:
         _check_workload_weight(workload_weight)  # type: ignore[arg-type]
-        team.workload_weight = workload_weight  # type: ignore[assignment]
+        # None from a caller means "no weight", which is 0 — the column has no
+        # third state any more (models.Team.workload_weight)
+        team.workload_weight = (
+            Decimal(0) if workload_weight is None else workload_weight
+        )  # type: ignore[assignment]
     await session.flush()
     return team
 
