@@ -353,6 +353,22 @@ def qr_png(url: str) -> bytes:
     return buffer.getvalue()
 
 
+async def page_status(
+    session: AsyncSession, actor: Actor | None, team_id: int
+) -> TeamPage | None:
+    """The cached page's publishing state, or None when the team has no doc set.
+
+    Same audience as setting the URL — core members included — because the
+    people who keep the page current are the people who need to know whether
+    the last fetch worked. The HTML itself is not the point here: that is served
+    to the world at /ministries/<slug>.html."""
+    require(
+        actor is None or actor.can_view_full_roster(team_id),
+        "see this team's page status",
+    )
+    return await session.get(TeamPage, team_id)
+
+
 async def published_teams(session: AsyncSession) -> list[Team]:
     """Active teams with a home doc and cached html — the public page set.
     An errored refetch still publishes its last good html. Team rows only:

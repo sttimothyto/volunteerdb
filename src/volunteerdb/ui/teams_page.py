@@ -326,6 +326,18 @@ def _team_dialog(all_teams, team=None) -> None:
         weight.tooltip(
             "How work-heavy this ministry is; leave empty to exclude it from workload scores"
         )
+        # Archiving was reachable over the API (PATCH /teams/{id} is_active) and
+        # nowhere in the GUI, which rendered the "inactive" badge it could not
+        # produce. A ministry that has wound down is archived rather than
+        # deleted: deleting takes its memberships with it, while archiving keeps
+        # the history and stops the team appearing where teams are chosen.
+        active = None
+        if team is not None:
+            active = ui.switch("Active", value=team.is_active)
+            active.tooltip(
+                "Archive a ministry that has wound down: it keeps its history "
+                "and stops appearing in pickers. Deleting removes it entirely."
+            )
 
         @notify_errors
         async def save() -> None:
@@ -353,6 +365,7 @@ def _team_dialog(all_teams, team=None) -> None:
                         parent_team_id=parent_id,
                         description=description.value or None,
                         workload_weight=weight_value,
+                        is_active=active.value if active is not None else None,
                     )
                     team_id = team.id
             dialog.close()

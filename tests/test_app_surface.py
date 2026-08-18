@@ -13,7 +13,15 @@ import re
 # describe the path itself.
 _METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
 
-_PUBLIC = {("POST", "/api/auth/login")}  # the only unauthenticated route
+# Routes that answer without a Bearer token, because the *body* carries the
+# credential and the caller has no session yet: signing in, spending an invite
+# link, and confirming an address change from whatever mailbox read the mail.
+# Everything else needs CtxDep.
+_PUBLIC = {
+    ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/redeem-invite"),
+    ("POST", "/api/auth/email-change/confirm"),
+}
 
 
 def _concrete(path: str) -> str:

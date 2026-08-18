@@ -28,7 +28,11 @@ def _rows(content: bytes) -> list[list[str]]:
 async def test_template_route_removed(client, seeded, token_member):
     """The CSV template endpoint gave way to the decorated Google Sheet on
     Drive (VDB_TEMPLATE_SHEET_URL); exporter.template_csv() lives on for the
-    dev fallback on /import and for authoring the Drive template."""
+    dev fallback on /import and for authoring the Drive template.
+
+    Deliberately NOT restored when the API/GUI parity gaps were closed: a
+    header-only CSV is the worse of the two answers now, and the column layout
+    it would document is in the spreadsheet reference either way."""
     r = await client.get("/api/export/template.csv", headers=token_member)
     assert r.status_code == 404
 

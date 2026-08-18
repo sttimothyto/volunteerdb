@@ -1,15 +1,20 @@
 from decimal import Decimal
 
+import httpx
 from fastapi import APIRouter
 
+from ..services import interest as interest_service
 from ..services import pages as page_service
 from ..services import teams as service
 from .deps import AsOf, CtxDep
 from .schemas import (
+    ApplicationFormPatch,
     HomeDocPatch,
+    InterestOut,
     RosterEntry,
     TeamIn,
     TeamOut,
+    TeamPageOut,
     TeamPatch,
     TeamWithPath,
     VolunteerOut,
@@ -89,6 +94,23 @@ async def set_home_doc(ctx: CtxDep, team_id: int, data: HomeDocPatch) -> TeamOut
     return TeamOut.model_validate(team)
 
 
+@router.patch("/{team_id}/application-form")
+async def set_application_form(
+    ctx: CtxDep, team_id: int, data: ApplicationFormPatch
+) -> TeamOut:
+    """Set (or clear, with url=null) the Google Form mailed to people who ask
+    about this ministry from its public page.
+
+    Same audience as the home-page doc, and the same reason: both are how the
+    team speaks to strangers. Only Google Forms links are accepted — the URL is
+    mailed verbatim to whatever address a public form submitter typed, so an
+    arbitrary one would make the parish a redirector."""
+    team = await service.set_application_form_url(
+        ctx.session, ctx.actor, team_id, data.url
+    )
+    return TeamOut.model_validate(team)
+
+
 @router.get("/{team_id}/roster")
 async def team_roster(ctx: CtxDep, team_id: int, as_of: AsOf) -> list[RosterEntry]:
     team = await service.get(ctx.session, team_id, at=as_of)
@@ -114,3 +136,66 @@ async def team_roster(ctx: CtxDep, team_id: int, as_of: AsOf) -> list[RosterEntr
             )
         )
     return entries
+
+
+# --- interest submissions and the public page ---------------------------------
+#
+# The public /ministries/ page has always had a form and the team page has
+# always listed what it collected; neither reached JSON. The form itself stays
+# GUI-only on purpose — its submitter has no account, and what bounds it is a
+# honeypot and a throttle rather than a permission.
+
+
+@router.get("/{team_id}/interest")
+async def list_interest(ctx: CtxDep, team_id: int) -> list[InterestOut]:
+    """Open "I'm interested" submissions from this team's public page.
+
+    Manage rights: each one carries a stranger's name, address, phone and free
+    text, addressed to this ministry's leadership. Resolved ones are not listed —
+    the list is a to-do, and `resolved_at` is how one leaves it."""
+    rows = await interest_service.unresolved(ctx.session, ctx.actor, team_id)
+    return [InterestOut.model_validate(r) for r in rows]
+
+
+@router.post("/{team_id}/interest/{interest_id}/resolve")
+async def resolve_interest(ctx: CtxDep, team_id: int, interest_id: int) -> InterestOut:
+    """Mark a submission handled — the person was contacted, the form sent, or
+    it was a bot. Resolving frees the (team, address) pair, so the same person
+    can express interest again later."""
+    interest = await interest_service.resolve(
+        ctx.session, ctx.actor, interest_id, resolved_by=ctx.actor.user.id
+    )
+    if interest.team_id != team_id:
+        raise LookupError(f"interest {interest_id} is not on team {team_id}")
+    return InterestOut.model_validate(interest)
+
+
+@router.get("/{team_id}/page")
+async def get_team_page(ctx: CtxDep, team_id: int) -> TeamPageOut | None:
+    """Whether the team's public page is publishing, and when it last fetched.
+
+    Null when the team has no home doc set. The page's HTML is not here: it is
+    served to the world at /ministries/<slug>.html, and what a caller needs from
+    JSON is whether the nightly fetch is working."""
+    page = await page_service.page_status(ctx.session, ctx.actor, team_id)
+    return None if page is None else TeamPageOut.model_validate(page)
+
+
+@router.post("/{team_id}/page/fetch")
+async def fetch_team_page(ctx: CtxDep, team_id: int) -> TeamPageOut:
+    """Refetch the team's doc now, instead of waiting for the nightly job.
+
+    Same rights as setting the URL — core members included, deliberately, so a
+    ministry is not blocked on one person to keep its public page current. A
+    failed fetch keeps the last good page and reports itself in `status`, rather
+    than blanking what the world can see."""
+    team = await service.get(ctx.session, team_id)
+    if team is None:
+        raise LookupError(f"team {team_id} not found")
+    if not team.home_doc_url:
+        raise ValueError("this team has no home page doc")
+    async with httpx.AsyncClient() as http:
+        page = await page_service.fetch_and_store(
+            ctx.session, team, http, force=True, actor=ctx.actor
+        )
+    return TeamPageOut.model_validate(page)

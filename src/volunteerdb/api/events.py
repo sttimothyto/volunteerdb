@@ -12,18 +12,23 @@ API-created assignment still reaches its volunteer through
 jobs.event_reminders' "you have been scheduled" notice.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Query
 
+from ..log import audit_log
 from ..models import Event, EventSlot, EventStatus, EventSubRequest, Volunteer
 from ..permissions import require
 from ..services import events as event_service
+from ..services import task_force as task_force_service
+from ..services import teams as team_service
 from .deps import CtxDep
 from .schemas import (
     AttendanceIn,
     AttendanceRowOut,
+    ClaimableSubOut,
+    CollaboratorIn,
     EventAssignIn,
     EventAssignmentOut,
     EventCreateIn,
@@ -36,9 +41,15 @@ from .schemas import (
     EventSlotOut,
     EventSlotPatch,
     EventSummaryOut,
+    MyDutyOut,
+    SimilarEventOut,
     SlotViewOut,
     SubRequestIn,
     SubRequestOut,
+    SubstituteIn,
+    TaskForceOut,
+    TeamOut,
+    TeamWithPath,
 )
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -110,6 +121,83 @@ async def list_events(
             my_rsvp_available=s.my_rsvp.available if s.my_rsvp else None,
         )
         for s in summaries
+    ]
+
+
+@router.get("/mine")
+async def my_duties(ctx: CtxDep) -> list[MyDutyOut]:
+    """The caller's upcoming commitments, soonest first — the GUI's "My duties"
+    list, which had no endpoint. `GET /reports/dashboard` counts them; this
+    names them."""
+    require(ctx.actor.volunteer_id is not None, "see your own duties")
+    duties = await event_service.my_upcoming(ctx.session, ctx.actor.volunteer_id)
+    return [
+        MyDutyOut(
+            assignment_id=d.assignment.id,
+            event=EventOut.model_validate(d.event),
+            slot_id=d.slot.id,
+            slot_name=d.slot.name,
+            open_sub_request_id=d.open_sub.id if d.open_sub else None,
+        )
+        for d in duties
+    ]
+
+
+@router.get("/claimable")
+async def claimable(ctx: CtxDep) -> list[ClaimableSubOut]:
+    """Open substitution calls the caller could take over: their own teams'
+    events, minus the ones they already serve at."""
+    require(ctx.actor.volunteer_id is not None, "claim a substitution")
+    subs = await event_service.claimable_subs(ctx.session, ctx.actor)
+    return [
+        ClaimableSubOut(
+            sub_request_id=c.sub.id,
+            assignment_id=c.assignment.id,
+            event=EventOut.model_validate(c.event),
+            slot_id=c.slot.id,
+            slot_name=c.slot.name,
+            asked_by_volunteer_id=c.volunteer.id,
+            asked_by_name=c.volunteer.full_name,
+            note=c.sub.note,
+            path=c.path,
+        )
+        for c in subs
+    ]
+
+
+@router.get("/similar")
+async def similar(
+    ctx: CtxDep,
+    starts_at: datetime,
+    ends_at: datetime,
+    location: str | None = None,
+    repeat_weekly_until: date | None = None,
+) -> list[SimilarEventOut]:
+    """The advisory double-booking check the GUI runs before creating an event.
+
+    Advisory on purpose: it never blocks, and a hit on a team outside the
+    caller's view comes back with `title` null — the when and where is the
+    warning, the details stay that team's. Call it before POST /events to give
+    the same warning the create dialog gives.
+    """
+    require(ctx.actor.can_create_events, "create events")
+    hits = await event_service.similar_events(
+        ctx.session,
+        ctx.actor,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        repeat_until=repeat_weekly_until,
+        location=location,
+    )
+    return [
+        SimilarEventOut(
+            starts_at=h.starts_at,
+            ends_at=h.ends_at,
+            location=h.location,
+            team_path=h.team_path,
+            title=h.title,
+        )
+        for h in hits
     ]
 
 
@@ -360,3 +448,94 @@ async def set_attendance(
         overridden=assignment.attended_override is not None
         or assignment.hours_override is not None,
     )
+
+
+# --- task forces --------------------------------------------------------------
+#
+# The automated multi-team event. The whole of services/task_force.py was
+# unreachable over JSON: an API caller could create an event for one team and
+# nothing else, while the GUI could invite other ministries to staff it.
+
+
+@router.get("/{event_id}/task-force")
+async def get_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
+    """The task force behind this event, or null if one team staffs it alone."""
+    await event_service.detail(ctx.session, ctx.actor, event_id)  # authorizes
+    view = await task_force_service.get_for_event(ctx.session, event_id)
+    if view is None:
+        return None
+    paths = team_service.team_paths(await team_service.list_all(ctx.session))
+    return TaskForceOut(
+        event_id=event_id,
+        team_id=view.task_force.team_id,
+        owner_team_id=view.task_force.owner_team_id,
+        sources=[
+            TeamWithPath(**TeamOut.model_validate(t).model_dump(), path=paths[t.id])
+            for t in view.sources
+        ],
+    )
+
+
+@router.post("/{event_id}/collaborators", status_code=201)
+async def add_collaborator(
+    ctx: CtxDep, event_id: int, data: CollaboratorIn
+) -> TaskForceOut:
+    """Invite another team to staff this event.
+
+    The first one creates the task-force team and repoints the event at it;
+    later ones add a source and copy its roster in. Takes manage rights on the
+    event, deliberately not on the team being invited — and gives none over that
+    team's people, which is what makes asking safe (permissions.Actor).
+    """
+    await task_force_service.add_collaborating_team(
+        ctx.session,
+        ctx.actor,
+        event_id=event_id,
+        source_team_id=data.team_id,
+        created_by=ctx.actor.user.id,
+    )
+    audit_log(
+        "event.collaboration_added",
+        event_id=event_id,
+        source_team_id=data.team_id,
+        via="api",
+    )
+    return await get_task_force(ctx, event_id)  # type: ignore[return-value]
+
+
+@router.post("/{event_id}/task-force/refresh")
+async def refresh_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut:
+    """Re-copy the source rosters, picking up anyone added to them since.
+
+    Additive: the strongest role a person holds across the sources wins, an
+    existing role is never downgraded, and nobody is removed — leaving a task
+    force is roster management on the meta team itself."""
+    await task_force_service.refresh_rosters(ctx.session, ctx.actor, event_id)
+    return await get_task_force(ctx, event_id)  # type: ignore[return-value]
+
+
+@router.post("/assignments/{assignment_id}/substitute")
+async def substitute(
+    ctx: CtxDep, assignment_id: int, data: SubstituteIn
+) -> EventAssignmentOut:
+    """Hand this slot straight to a named teammate — the claim flow without the
+    open call, for when the assignee has already found their own cover.
+
+    Their own slot, or any slot on an event the caller manages. The incoming
+    volunteer must really be a member of the event's team, admin or not. Any
+    open substitution request on the assignment is cancelled with it.
+    """
+    assignment, _outgoing, _incoming = await event_service.substitute(
+        ctx.session,
+        ctx.actor,
+        assignment_id=assignment_id,
+        new_volunteer_id=data.volunteer_id,
+        acted_by=ctx.actor.user.id,
+    )
+    audit_log(
+        "event.slot_handed_over",
+        assignment_id=assignment_id,
+        to_volunteer_id=data.volunteer_id,
+        via="api",
+    )
+    return EventAssignmentOut.model_validate(assignment)

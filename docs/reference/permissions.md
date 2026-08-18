@@ -149,13 +149,13 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/invite/{token}` | Redeem invite, optionally set password | public (valid, unexpired token) |
 | `/account` | Own sign-in settings: set, change or remove the password (header gear → *Password & sign-in*) | signed in |
 | `/teams` | Team hierarchy + coverage counts in one sortable table, search box, as-of picker | signed in (coverage columns: admin/leaders; "New team": admin) |
-| `/teams/{id}` | Team detail, roster, as-of picker, roster export, invite a member | signed in; roster per matrix; invite needs full-roster rights |
+| `/teams/{id}` | Team detail, roster, as-of picker, roster export, invite a member; archive/reactivate the ministry | signed in; roster per matrix; invite needs full-roster rights; archiving is admin-only, like every other team edit |
 | `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report, invite | signed in; contact details, notes and the impact report per matrix. The **service timeline** and sign-in status are shown to every viewer, like the roster's account badge — who served where, and when, is parish-wide the way the directory and graph already are |
-| `/events` | Duties, claimable substitutions, searchable event table | signed in; listings scoped per matrix ("New event": admin or leader/second) |
-| `/events/{id}` | One event: slots, sign-up, RSVP, substitutions, attendance | roster-names rights on the owning team |
+| `/events` | Duties, claimable substitutions, searchable event table; `?team=` narrows to one ministry, `?past=1` shows past and cancelled | signed in; listings scoped per matrix ("New event": admin or leader/second) |
+| `/events/{id}` | One event: slots (add, rename, re-capacity, remove), sign-up, RSVP, substitutions, attendance | roster-names rights on the owning team |
 | `/elections` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |
-| `/elections/{id}` | One proposal: candidates, roll, ballot form, tally, appoint | managers of that team or its voting members |
+| `/elections/{id}` | One proposal: candidates, roll, ballot form, tally, appoint; deadlines and notes are editable while it is open | managers of that team or its voting members |
 | `/import` | Spreadsheet import/export | admin or leader/second (scoped to their teams) |
 | `/manual` | This documentation (header settings gear → *Manual*) | signed in |
 | `/admin/users` | Accounts: create, invite, bulk provision | admin |

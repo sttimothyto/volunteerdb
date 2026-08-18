@@ -18,9 +18,11 @@ from .schemas import (
     AppointIn,
     AssignmentOut,
     BallotIn,
+    BallotOut,
     CandidateIn,
     CandidateOut,
     CandidateTallyOut,
+    CoverageOut,
     NewRoundIn,
     ProposalCreateIn,
     ProposalDetailOut,
@@ -190,6 +192,45 @@ async def add_voter(ctx: CtxDep, proposal_id: int, data: VoterIn) -> VoterOut:
 @router.delete("/proposals/{proposal_id}/voters/{voter_id}", status_code=204)
 async def remove_voter(ctx: CtxDep, proposal_id: int, voter_id: int) -> None:
     await service.remove_voter(ctx.session, ctx.actor, proposal_id, voter_id)
+
+
+@router.get("/vacancies")
+async def vacancies(ctx: CtxDep) -> list[CoverageOut]:
+    """Seats missing a leader or a second — where a proposal would go next.
+
+    The GUI's vacancy list, which had no endpoint: GET /reports/coverage is
+    close but returns every team with its counts, not the holes. Scoped like
+    the proposal list: admins see the parish, leaders/seconds their subtree.
+    """
+    require(ctx.actor.can_access_elections, "use the elections page")
+    rows = await service.vacancies(ctx.session, ctx.actor)
+    return [
+        CoverageOut(
+            team_id=r.team.id,
+            path=r.path,
+            leader=r.leader,
+            second=r.second,
+            core=r.core,
+            member=r.member,
+            total=r.total,
+            missing_leader=r.missing_leader,
+            missing_second=r.missing_second,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/proposals/{proposal_id}/ballot")
+async def get_own_ballot(ctx: CtxDep, proposal_id: int) -> BallotOut:
+    """The caller's own scores, so a ballot can be revised rather than
+    overwritten blind. A ballot is secret from everyone else — including the
+    team's managers — so this only ever answers for the caller themselves.
+    Empty until they vote."""
+    require(ctx.actor.volunteer_id is not None, "vote on this proposal")
+    scores = await service.my_scores(
+        ctx.session, ctx.actor, proposal_id, ctx.actor.volunteer_id
+    )
+    return BallotOut(scores=scores)
 
 
 @router.put("/proposals/{proposal_id}/ballot", status_code=204)

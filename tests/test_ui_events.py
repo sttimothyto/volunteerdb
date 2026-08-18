@@ -15,6 +15,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import mail, memberships, teams, users, volunteers
 
+from .conftest import SLOW
+
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 TZ = ZoneInfo("America/Toronto")
 
@@ -527,3 +529,84 @@ async def test_cancel_event_mails_assignees(database, sent_mail):
 
     assert [m[0] for m in sent_mail] == ["mia@example.org"]
     assert "Cancelled: Sunday Mass" == sent_mail[0][1]
+
+
+async def test_a_leader_can_rename_a_slot_and_change_its_capacity(database):
+    """Editing a slot was reachable over the API and nowhere in the GUI, so a
+    mistyped slot name could only be fixed by deleting the slot — which needs it
+    empty, and so meant taking the roster off it first."""
+    async with db_session() as session:
+        ids = await _parish(session)
+    event_id = await _seed_event(
+        ids["liturgy"], slots=[event_service.SlotInput("Lecter", 1, 0)]
+    )
+    async with db_session() as session:
+        slot_id = (await event_service.detail(session, None, event_id)).slots[0].slot.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/events/{event_id}")
+        await user.should_see("Lecter")
+        user.find(marker=f"slot-edit-{slot_id}").click()
+        await user.should_see("Edit slot", retries=SLOW)
+        # by marker, not by kind: ui.number is a ui.input subclass, so
+        # find(kind=ui.input).pop() returns the capacity box
+        user.find(marker="slot-edit-name").elements.pop().value = "Lector"
+        user.find(marker="slot-edit-capacity").elements.pop().value = 3
+        user.find(marker="slot-edit-save").click()
+        await user.should_see("Lector", retries=SLOW)
+        await user.should_see("0/3", retries=SLOW)
+
+    async with db_session() as session:
+        slot = (await event_service.detail(session, None, event_id)).slots[0].slot
+        assert (slot.name, slot.capacity) == ("Lector", 3)
+
+
+async def test_a_member_may_not_reach_the_slot_edit_control(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+    event_id = await _seed_event(
+        ids["liturgy"], slots=[event_service.SlotInput("Lector", 2, 0)]
+    )
+    async with db_session() as session:
+        slot_id = (await event_service.detail(session, None, event_id)).slots[0].slot.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/events/{event_id}")
+        await user.should_see("Lector")
+        await user.should_not_see(marker=f"slot-edit-{slot_id}")
+
+
+async def test_the_listing_can_be_narrowed_to_one_team(database):
+    """The GUI had two hardcoded modes, upcoming or past, while the API took a
+    free team_id. A leader of several ministries could not look at one."""
+    async with db_session() as session:
+        ids = await _parish(session)
+        # Lena leads Choir too, so both teams' events reach her listing
+        await memberships.assign(
+            session, None, ids["lena"], ids["choir"], TeamRole.leader
+        )
+    await _seed_event(ids["liturgy"], title="Sunday Mass")
+    await _seed_event(ids["choir"], title="Choir practice")
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open("/events")
+        table = user.find(kind=ui.table).elements.pop()
+        assert {r["title"] for r in table.rows} == {"Sunday Mass", "Choir practice"}
+        await user.should_see(marker="events-team-filter")
+
+        await user.open(f"/events?team={ids['choir']}")
+        table = user.find(kind=ui.table).elements.pop()
+        assert [r["title"] for r in table.rows] == ["Choir practice"]
+
+        # the two controls are independent: flipping to past keeps the team
+        await user.open(f"/events?past=1&team={ids['choir']}")
+        await user.should_see("Past events")
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        # one team to look at means nothing to choose between
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open("/events")
+        await user.should_not_see(marker="events-team-filter")

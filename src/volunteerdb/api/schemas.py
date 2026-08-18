@@ -97,6 +97,16 @@ class TeamOut(ORMModel):
     is_active: bool
     workload_weight: float | None = None  # null = unweighted
     home_doc_url: str | None = None  # public Google Doc behind /ministries/
+    # the team's own Google Form, mailed to people who ask about the ministry
+    # from its public page
+    application_form_url: str | None = None
+
+
+class ApplicationFormPatch(BaseModel):
+    """Body of PATCH /teams/{id}/application-form. Same audience as
+    HomeDocPatch, and the same reason: both are the team's public voice."""
+
+    url: str | None = Field(default=None, max_length=500)
 
 
 class HomeDocPatch(BaseModel):
@@ -610,3 +620,150 @@ class TokenOut(BaseModel):
 
 def role_label(role: TeamRole) -> str:
     return ROLE_LABELS[role]
+
+
+# --- personal event views (GET /api/events/mine, /api/events/claimable) ------
+
+
+class MyDutyOut(BaseModel):
+    """One upcoming commitment. The GUI's "My duties" list, over JSON."""
+
+    assignment_id: int
+    event: EventOut
+    slot_id: int
+    slot_name: str
+    open_sub_request_id: int | None  # a substitute call you already opened
+
+
+class ClaimableSubOut(BaseModel):
+    """A teammate's open substitution call that the caller could take over."""
+
+    sub_request_id: int
+    assignment_id: int
+    event: EventOut
+    slot_id: int
+    slot_name: str
+    asked_by_volunteer_id: int
+    asked_by_name: str
+    note: str | None
+    path: str
+
+
+class SimilarEventOut(BaseModel):
+    """An advisory double-booking hit. `title` is null when the colliding event
+    belongs to a team outside the caller's view: the when and where is the
+    warning, the details stay that team's."""
+
+    starts_at: datetime
+    ends_at: datetime
+    location: str
+    team_path: str
+    title: str | None
+
+
+class BallotOut(BaseModel):
+    """The caller's own scores on one proposal, candidate id -> 0..5. Empty
+    until they vote. Nobody else's ballot is readable anywhere."""
+
+    scores: dict[int, int]
+
+
+# --- account self-service (api/auth.py) --------------------------------------
+
+
+class PasswordIn(BaseModel):
+    """Set or change the caller's own password.
+
+    `current_password` is always required: an API token is only ever issued
+    against a password (POST /auth/login), so a caller holding one can always
+    produce it — unlike the GUI, where a session established by emailed code
+    may set a first password without one.
+    """
+
+    current_password: str
+    new_password: str = Field(min_length=1)
+
+
+class EmailChangeIn(BaseModel):
+    new_email: EmailStr
+
+
+class EmailChangeConfirmIn(BaseModel):
+    """The token from the link mailed to the new address."""
+
+    token: str = Field(min_length=1)
+
+
+class PendingEmailOut(BaseModel):
+    pending_email: str | None
+    email_change_expires_at: datetime | None
+
+
+class RedeemInviteIn(BaseModel):
+    """Spend an invite link. `password` is optional: without one the account
+    stays email-code-only, exactly as on the /invite page."""
+
+    token: str = Field(min_length=1)
+    password: str | None = None
+    agreed_to_confidentiality: bool = False
+
+
+# --- task forces (api/events.py) ---------------------------------------------
+
+
+class TaskForceOut(BaseModel):
+    """The meta team an event was repointed to so several teams can staff it,
+    and the teams whose rosters were copied into it (the owner is always one).
+
+    A task force confers rights over the EVENT, never over the people it
+    borrowed — see permissions.Actor and the permission matrix.
+    """
+
+    event_id: int
+    team_id: int  # the meta team; membership of it gates sign-up
+    owner_team_id: int  # restored at teardown
+    sources: list[TeamWithPath]
+
+
+class CollaboratorIn(BaseModel):
+    team_id: int
+
+
+class SubstituteIn(BaseModel):
+    """Hand a slot to a chosen teammate, rather than opening it to the team."""
+
+    volunteer_id: int
+
+
+# --- interest submissions (api/teams.py) -------------------------------------
+
+
+class InterestOut(ORMModel):
+    """One "I'm interested" submission from a team's public ministry page.
+
+    Manage rights on the team: it carries a stranger's name and contact details,
+    addressed to that ministry's leadership rather than to the parish at large.
+    """
+
+    id: int
+    team_id: int
+    name: str
+    email: str
+    phone: str | None
+    note: str | None
+    created_at: datetime
+    resolved_at: datetime | None
+
+
+# --- team home pages (api/teams.py) ------------------------------------------
+
+
+class TeamPageOut(ORMModel):
+    """The cached, sanitized state of a team's public page. `html` is omitted
+    here: it is served to the world at /ministries/<slug>.html, and what an API
+    caller needs is whether the last fetch worked."""
+
+    team_id: int
+    status: str
+    fetched_at: datetime | None
+    error: str | None

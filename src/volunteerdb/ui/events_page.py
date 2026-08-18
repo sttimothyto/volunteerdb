@@ -500,9 +500,14 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
 
 
 @ui.page("/events")
-async def events_page(request: Request, past: str = ""):
+async def events_page(request: Request, past: str = "", team: str = ""):
+    """The listing had two hardcoded modes — upcoming, or past-and-cancelled —
+    while the API took a free `team_id`. `?team=` narrows to one ministry (and
+    its sub-teams are separate rows, as they are separate teams), which is what
+    a leader of several wants when they are looking at one of them."""
     base_url = str(request.base_url).rstrip("/")
     show_past = past == "1"
+    team_filter = int(team) if team.isdigit() else None
     async with page_session() as (session, actor):
         duties = (
             await event_service.my_upcoming(session, actor.volunteer_id)
@@ -514,10 +519,12 @@ async def events_page(request: Request, past: str = ""):
         summaries = await event_service.list_events(
             session,
             actor,
+            team_id=team_filter,
             from_=None if show_past else now,
             to=now if show_past else None,
             include_cancelled=show_past,
         )
+        visible_teams = {s.event.team_id: s.path for s in summaries}
         managed_options: dict[int, str] = {}
         if actor.can_create_events:
             all_teams = await team_service.list_all(session)
@@ -638,10 +645,49 @@ async def events_page(request: Request, past: str = ""):
             )
             if search is None:
                 ui.space()
+            # one ministry at a time, for somebody who runs several. Offered only
+            # when there is more than one team to choose between, and built from
+            # the rows on screen rather than from every team the actor can see:
+            # a filter that leads to an empty list is a worse control than none.
+            if team_filter is not None or len(visible_teams) > 1:
+                options = {0: "All teams"} | dict(
+                    sorted(visible_teams.items(), key=lambda kv: kv[1])
+                )
+                if team_filter is not None and team_filter not in options:
+                    options[team_filter] = "(filtered)"
+
+                def _go(team_id: int | None) -> None:
+                    """Keep the past/upcoming mode while the team changes, and
+                    vice versa — the two controls are independent."""
+                    parts = [
+                        p
+                        for p in (
+                            "past=1" if show_past else "",
+                            f"team={team_id}" if team_id else "",
+                        )
+                        if p
+                    ]
+                    ui.navigate.to("/events?" + "&".join(parts) if parts else "/events")
+
+                ui.select(
+                    options,
+                    value=team_filter or 0,
+                    on_change=lambda e: _go(e.value),
+                ).props("outlined dense options-dense").classes("w-52").mark(
+                    "events-team-filter"
+                )
             ui.button(
                 "Show upcoming" if show_past else "Show past",
                 on_click=lambda: ui.navigate.to(
-                    "/events" if show_past else "/events?past=1"
+                    "/events?"
+                    + "&".join(
+                        p
+                        for p in (
+                            "" if show_past else "past=1",
+                            f"team={team_filter}" if team_filter else "",
+                        )
+                        if p
+                    )
                 ),
             ).props("dense flat no-caps")
             if managed_options:
@@ -817,6 +863,52 @@ def _add_slot_dialog(event_id: int) -> None:
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
             ui.button("Add slot", on_click=save)
+    dialog.open()
+
+
+def _edit_slot_dialog(slot_id: int, name_now: str, capacity_now: int | None) -> None:
+    """Rename a slot, or change how many it holds.
+
+    Reachable over the API (PATCH /events/{id}/slots/{sid}) and nowhere in the
+    GUI, so a mistyped slot name could only be fixed by deleting the slot —
+    which needs it empty, and so meant taking the roster off it first. Shrinking
+    below what is already filled is refused by the service."""
+    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+        ui.label("Edit slot").classes("text-lg font-medium")
+        name = (
+            ui.input("Slot name", value=name_now)
+            .props("outlined dense")
+            .classes("w-full")
+            .mark("slot-edit-name")
+        )
+        capacity = (
+            ui.number(
+                "Capacity (blank = unlimited)",
+                value=capacity_now,
+                min=1,
+                precision=0,
+            )
+            .props("outlined dense clearable")
+            .classes("w-full")
+            .mark("slot-edit-capacity")
+        )
+
+        @notify_errors
+        async def save() -> None:
+            async with action_session() as (session, actor):
+                await event_service.update_slot(
+                    session,
+                    actor,
+                    slot_id,
+                    name=name.value or "",
+                    capacity=int(capacity.value) if capacity.value else None,
+                )
+            dialog.close()
+            ui.navigate.reload()
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Save", on_click=save).mark("slot-edit-save")
     dialog.open()
 
 
@@ -1253,6 +1345,15 @@ async def event_detail_page(request: Request, event_id: int):
                                 _signup_dialog(sid, sn)
                             ),
                         ).props("dense outline")
+                    if can_manage and upcoming:
+                        ui.button(
+                            icon="edit",
+                            on_click=lambda _, sid=slot.id, sn=slot.name, sc=(slot.capacity): (
+                                _edit_slot_dialog(sid, sn, sc)
+                            ),
+                        ).props("dense flat").mark(f"slot-edit-{slot.id}").tooltip(
+                            "Rename this slot, or change how many it holds"
+                        )
                     if can_manage and upcoming and not sv.entries:
                         ui.button(
                             icon="delete",

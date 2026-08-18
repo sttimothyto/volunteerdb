@@ -80,6 +80,10 @@ EDGE_ALLOWLIST = {
     ("ui/events_page.py", "volunteer_id"),
     # a manager may schedule anyone, but only for their own team's event
     ("api/events.py", "volunteer_id"),
+    # the advisory double-booking check deliberately reaches ACROSS teams
+    # (masking titles it may not show), so there is no per-team right to check
+    # — only "do you create events at all"
+    ("api/events.py", "can_create_events"),
 }
 
 

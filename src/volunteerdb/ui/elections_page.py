@@ -130,6 +130,18 @@ async def elections_page():
             d1, d2 = _deadline_inputs(
                 today + timedelta(days=14), today + timedelta(days=28)
             )
+            # The API has always accepted notes on create and on patch; the GUI
+            # displayed them and could never write one, so the proposer's own
+            # framing of the seat could only be set over JSON.
+            notes = (
+                ui.textarea("Notes (what is this seat, and why now?)")
+                .props("outlined dense autogrow")
+                .classes("w-full")
+            )
+            notes.tooltip(
+                "Shown to the voting roll on the proposal page — the case for "
+                "the seat, not for a candidate"
+            )
             ui.label(
                 "The voting roll is prefilled: this team's leader, second and "
                 "core members, plus the clergy team. Voting members may add "
@@ -155,6 +167,7 @@ async def elections_page():
                         candidates=[
                             elections_service.CandidateInput(who.value, why.value)
                         ],
+                        notes=notes.value or None,
                     )
                 dialog.close()
                 ui.navigate.to(f"/elections/{proposal.id}")
@@ -262,9 +275,14 @@ async def proposal_detail(proposal_id: int):
         ui.navigate.reload()
 
     def edit_deadlines_dialog() -> None:
-        with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-            ui.label("Edit deadlines").classes("text-lg font-medium")
+        with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
+            ui.label("Edit proposal").classes("text-lg font-medium")
             d1, d2 = _deadline_inputs(p.nomination_deadline, p.voting_deadline)
+            notes = (
+                ui.textarea("Notes", value=p.notes or "")
+                .props("outlined dense autogrow")
+                .classes("w-full")
+            )
 
             async def save() -> None:
                 if (deadlines := _parse_deadlines(d1, d2)) is None:
@@ -278,6 +296,7 @@ async def proposal_detail(proposal_id: int):
                         proposal_id,
                         nomination_deadline=deadlines[0],
                         voting_deadline=deadlines[1],
+                        notes=notes.value or None,
                     ),
                 )
 
@@ -367,7 +386,7 @@ async def proposal_detail(proposal_id: int):
             ui.space()
             if can_manage and p.status == ProposalStatus.open.value:
                 ui.button(
-                    "Edit deadlines",
+                    "Edit deadlines & notes",
                     icon="edit_calendar",
                     on_click=edit_deadlines_dialog,
                 ).props("dense outline")

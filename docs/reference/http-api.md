@@ -62,6 +62,16 @@ authenticated account.
 |---|---|---|
 | `POST /api/auth/login` | — | `{email, password}` → `{token}`; throttled |
 | `GET /api/auth/me` | signed in | Own account incl. `has_password`, and `pending_email` + `email_change_expires_at` when an address change is waiting to be confirmed (never the token that would confirm it) |
+| `PUT /api/auth/password` | signed in | 204; `{current_password, new_password}`. The current one is **always** required here, unlike the GUI: a token is only ever issued against a password, so a caller holding one can produce it. Failures charge the same throttle bucket as failed sign-ins (429); a weak new password is a 422 with the reason; the account's address gets a notice |
+| `DELETE /api/auth/password` | signed in | 204; back to emailed-code sign-in. **Revokes the token making the call** — it was issued against the password being removed |
+| `POST /api/auth/email-change` | signed in | 202 (nothing has moved yet); `{new_email}` → `pending_email` + `email_change_expires_at`. Mails the link to the address being claimed and a warning to the one being replaced. Throttled 5 per 15 min per account |
+| `DELETE /api/auth/email-change` | signed in | 204; calls off a pending change, killing its link. Idempotent |
+| `POST /api/auth/email-change/confirm` | — | `{token}` → the moved account. **Unauthenticated**, like the login: the token is the proof, and it is opened from whatever browser reads the mailbox. The account's address and the volunteer record behind it move together. Unknown, expired and already-spent links all answer 404 |
+| `POST /api/auth/redeem-invite` | — | `{token, password?, agreed_to_confidentiality}` → the account. **Unauthenticated** for the same reason. Without a password the account stays email-code-only (and so cannot hold an API token). Refusing the confidentiality agreement is a 422; a spent or dead link is a 404 |
+
+**Deliberately absent: emailed-code sign-in.** An API token is issued against a
+password and revoked with it, so a mailbox round-trip must not produce one. An
+OTP-only account sets a password first if it wants API access.
 
 ### Volunteers — `api/volunteers.py`
 
@@ -97,6 +107,11 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | `PATCH /api/teams/{id}/home-doc` | full roster on the team (leader/second/core, admin) | `{"url": "https://docs.google.com/document/d/…"}`, or `null` to unpublish |
 | `DELETE /api/teams/{id}` | admin | 204; parent of sub-teams is protected |
 | `GET /api/teams/{id}/roster` | roster names on the team | Contact details/notes redacted per role, `as_of=` |
+| `PATCH /api/teams/{id}/application-form` | full roster on the team | `{"url": "https://docs.google.com/forms/…"}`, or `null` to clear. Prefix-validated to Google Forms — the URL is mailed verbatim to whoever typed an address into the public page. Also now on `TeamOut` |
+| `GET /api/teams/{id}/interest` | manage the team | Open "I'm interested" submissions from the public page. Resolved ones are not listed: the list is a to-do |
+| `POST /api/teams/{id}/interest/{interest_id}/resolve` | manage the team | Marks one handled, freeing the (team, address) pair so the same person may ask again later |
+| `GET /api/teams/{id}/page` | full roster on the team | Whether the public page is publishing, and when it last fetched; `null` when no doc is set. The HTML is not here — it is served to the world at `/ministries/<slug>.html` |
+| `POST /api/teams/{id}/page/fetch` | full roster on the team | Refetch now instead of waiting for the nightly job. A failed fetch keeps the last good page and reports itself in `status` |
 
 ### Memberships — `api/memberships.py`
 
@@ -187,6 +202,7 @@ only per-voter turnout flags and, once voting concludes, aggregates.
 
 | Method & path | Permission | Notes |
 |---|---|---|
+| `GET /api/elections/vacancies` | admin, leader/second, or voting member | Seats missing a leader or a second — where a proposal would go next. `GET /reports/coverage` is close but returns every team with its counts, not the holes |
 | `GET /api/elections/proposals` | admin, leader/second, or voting member | Managed subtree ∪ own rolls; `team_id=`, `status=` filters |
 | `POST /api/elections/proposals` | manage the team | 201; ≥1 candidate; duplicate open (team, role) → 409; bad deadlines → 422 |
 | `GET /api/elections/proposals/{id}` | manage the team or on its roll | Candidates (with current commitments), roll with `has_account`/`has_voted`, tally once concluded |
@@ -195,6 +211,7 @@ only per-voter turnout flags and, once voting concludes, aggregates.
 | `DELETE /api/elections/proposals/{id}/candidates/{cid}` | manage the team | 204; nominating phase only |
 | `POST /api/elections/proposals/{id}/voters` | manage the team | 201; roll freezes when voting begins |
 | `DELETE /api/elections/proposals/{id}/voters/{vid}` | manage the team | 204; nominating phase only |
+| `GET /api/elections/proposals/{id}/ballot` | on the roll | The caller's **own** scores, so a ballot can be revised rather than overwritten blind. Empty until they vote. Nobody else's is readable anywhere, by anyone |
 | `PUT /api/elections/proposals/{id}/ballot` | on the roll | 204; whole ballot `{scores: {candidate_id: 0..5}}`, omitted = 0, revisable until the voting deadline |
 | `GET /api/elections/proposals/{id}/tally` | manage the team or on its roll | STAR result; 422 while voting is still possible |
 | `POST /api/elections/proposals/{id}/appoint` | manage the team | Flips status *and* creates/upgrades the membership; concluded phase only |
@@ -213,6 +230,13 @@ still reaches its volunteer through `jobs.event_reminders`.
 | Method & path | Permission | Notes |
 |---|---|---|
 | `GET /api/events` | signed in | Scoped to teams with roster-name rights (admins: all); `team_id=`, `from=`, `to=`, `include_cancelled=` filters |
+| `GET /api/events/mine` | signed in, linked to a volunteer | The caller's upcoming commitments, soonest first — what the dashboard counts, named |
+| `GET /api/events/claimable` | signed in, linked to a volunteer | Open substitution calls the caller could take over |
+| `GET /api/events/similar` | create events | The advisory double-booking check the GUI runs before creating: `starts_at`, `ends_at`, `location?`, `repeat_weekly_until?`. Never blocks; a hit on a team outside the caller's view comes back with `title` null |
+| `GET /api/events/{id}/task-force` | roster-name rights | The task force behind the event, or `null` when one team staffs it alone |
+| `POST /api/events/{id}/collaborators` | manage the team | 201; `{team_id}` invites another ministry to staff the event, creating the task-force team on the first call. Manage rights on the **event**, deliberately not on the team invited — and it confers no rights over that team's people |
+| `POST /api/events/{id}/task-force/refresh` | manage the task force | Re-copies the source rosters, picking up anyone added since. Additive: strongest role wins, nobody is removed |
+| `POST /api/events/assignments/{aid}/substitute` | owner or manager | `{volunteer_id}` hands the slot straight to a named teammate — the claim flow without the open call. The incoming volunteer must really be a member of the team |
 | `POST /api/events` | manage the team | 201, returns a **list**: `repeat_weekly_until` materializes one event per week (inclusive, ≤ 1 year) sharing a `series_id`, slots copied; no slots ⇒ one unlimited `Volunteers` slot |
 | `GET /api/events/{id}` | roster-name rights | Slots with entries and RSVPs; managers additionally get derived `attendance` once the event ended |
 | `PATCH /api/events/{id}` | manage the team | Details/times; allowed on past events (corrected times recompute auto hours), cancelled → 422 |
