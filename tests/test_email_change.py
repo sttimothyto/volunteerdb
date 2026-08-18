@@ -315,7 +315,14 @@ async def test_editing_your_own_profile_defers_the_address_but_saves_the_rest(
         user.find(kind=ui.input, content="Phone").type("555-0100")
         user.find("Save", kind=ui.button).click()
         await user.should_see("Confirmation sent", retries=SLOW)
-        await mail_to(sent, "maria.moved@example.org")
+        # the same pair of messages the /account form sends: proof to the new
+        # address, warning to the one being replaced
+        await mail_to(sent, "maria@example.org")
+        assert {m[0] for m in sent} == {"maria@example.org", "maria.moved@example.org"}
+        proof = next(m for m in sent if m[0] == "maria.moved@example.org")
+        assert proof[1] == "Confirm your new VolunteerDB address"
+        warning = next(m for m in sent if m[0] == "maria@example.org")
+        assert warning[1] == "Your VolunteerDB address is being changed"
 
     async with db_session() as session:
         volunteer = await volunteers.get(session, volunteer_id)

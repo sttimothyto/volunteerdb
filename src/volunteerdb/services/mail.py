@@ -127,14 +127,14 @@ def password_changed_email(login_url: str, *, removed: bool = False) -> tuple[st
 def email_change_email(
     confirm_url: str, new_address: str, ttl_hours: int
 ) -> tuple[str, str]:
-    """Sent to the address somebody wants to move an account to — never to the
-    one it is on today.
+    """Sent to the address somebody wants to move an account to.
 
-    That direction is the whole point: the message is not a notice, it is the
-    proof. Until this link is opened the address is only a claim, and a
-    mistyped one lands in a stranger's mailbox, where all it offers is the
-    chance to decline. So it names the address it would set, says what it
-    would move, and gives an unmistakable "not you? ignore this"."""
+    The message is not a notice, it is the proof: until this link is opened
+    the address is only a claim, and a mistyped one lands in a stranger's
+    mailbox, where all it offers is the chance to decline. So it names the
+    address it would set, says what it would move, and gives an unmistakable
+    "not you? ignore this". The address being *replaced* hears separately —
+    see email_change_requested_email."""
     where = org()
     subject = "Confirm your new VolunteerDB address"
     what = (
@@ -154,6 +154,52 @@ def email_change_email(
         f"The link works once, and only for the next {ttl_window(ttl_hours)}.\n\n"
         "If you were not expecting this, ignore this email — without the link "
         "nothing happens, and nobody learns whether this address exists.",
+    )
+
+
+def email_change_requested_email(
+    new_address: str, account_url: str, ttl_hours: int
+) -> tuple[str, str]:
+    """Sent to the address an account is being moved *away* from, the moment
+    somebody asks — the counterpart to email_change_email above.
+
+    NIST SP 800-63B §4.1.2: "the CSP SHALL notify the subscriber via a
+    mechanism independent of the transaction". A session someone else is
+    driving cannot suppress what lands in the mailbox this account is
+    currently reachable at, and that is the only thing standing between a
+    hijacked session and a silent, permanent takeover — the address is the
+    credential on the emailed-code path, so moving it is moving the account.
+
+    It goes at *request* time, not at confirmation, because only then is it
+    still actionable: the old address still signs in, and the change can be
+    called off from /account before the link is ever opened."""
+    return (
+        "Your VolunteerDB address is being changed",
+        f"Somebody asked to change the address on your VolunteerDB account to "
+        f"{new_address}, and we have sent a confirmation link there.\n\n"
+        "Nothing has changed yet. You still sign in at this address, and the "
+        f"request expires by itself in {ttl_window(ttl_hours)} if the link is "
+        "never opened.\n\n"
+        f"If that was you, there is nothing to do.\n\n"
+        f"If it was not, sign in at {account_url} and cancel it — then tell "
+        "the parish office, because somebody else has access to this account.",
+    )
+
+
+def email_change_done_email(new_address: str, login_url: str) -> tuple[str, str]:
+    """Sent to the address an account has just moved away from: the last
+    message this mailbox gets from the app, and the receipt §4.1.2 asks for at
+    the moment the binding actually changes (the shape password_changed_email
+    already follows)."""
+    return (
+        "Your VolunteerDB address changed",
+        f"The address on your VolunteerDB account is now {new_address}. From "
+        "now on that is the address you sign in with, and the one on every "
+        "ministry roster you serve on.\n\n"
+        "This is the last message we will send to this address.\n\n"
+        f"If that was you, there is nothing to do — sign in at {login_url}.\n\n"
+        "If it was not, tell the parish office straight away: somebody else "
+        "has taken over this account.",
     )
 
 

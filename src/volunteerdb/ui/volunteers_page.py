@@ -631,22 +631,23 @@ def _edit_dialog(
 
 
 async def _stage_own_email(address: str, base_url: str) -> None:
-    """Arm the confirmation link for the signed-in account and mail it to the
-    address being claimed. Same flow as the /account page: one service call,
-    one message, and it goes out after the commit."""
+    """Arm the confirmation link for the signed-in account, mail it to the
+    address being claimed, and warn the one being replaced. Same flow as the
+    /account page; both messages go out after the commit."""
     async with action_session() as (session, actor):
         account, token = await user_service.start_email_change(
             session, actor.user.id, address
         )
         target, user_id, was = account.pending_email, actor.user.id, actor.user.email
     audit_log("auth.email_change_requested", user=f"{user_id}:{was}", to=target)
+    hours = int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600)
     await mail.send_email(
         target,
-        *mail.email_change_email(
-            confirm_email_url(base_url, token),
-            target,
-            int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600),
-        ),
+        *mail.email_change_email(confirm_email_url(base_url, token), target, hours),
+    )
+    # and the address being replaced hears about it while it can still say no
+    await mail.send_email(
+        was, *mail.email_change_requested_email(target, f"{base_url}/account", hours)
     )
     ui.notify(
         f"Confirmation sent to {target}. Your address changes when you open "

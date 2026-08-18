@@ -123,6 +123,12 @@ in the meantime. The link lasts 24 hours, works once, and asking again replaces
 it. When it is confirmed, the sign-in address and the address on every ministry
 roster move together.
 
+The **old** address is told twice: once when the change is asked for — naming
+the incoming address and pointing at /account to call it off — and once when it
+takes effect. If a volunteer reports one of those messages and did not ask for
+the change, somebody else is in their account: deactivate it (below), then
+re-invite them at an address they control.
+
 There is no admin button for this, on purpose — see
 [Authentication design](../explanation/auth.md#changing-the-address). What an
 admin (or a ministry leader) *can* change is somebody else's **contact**

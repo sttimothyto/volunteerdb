@@ -146,12 +146,20 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
         user.find("Send confirmation", kind=ui.button).click()
         await user.should_see("Confirmation sent", retries=SLOW)
 
-        to, subject, body = await mail_to(sent, "maria.new@example.org")
-        assert subject == "Confirm your new VolunteerDB address"
-        assert "/confirm-email/" in body, "the new address gets the link"
-        assert [m for m in sent if m[0] == "maria@example.org"] == [], (
-            "and it goes only there — the old address is not the one being proved"
+        to, subject, body = await mail_to(sent, "maria@example.org")
+        assert subject == "Your VolunteerDB address is being changed", (
+            "the address being replaced is warned while it can still say no "
+            "(SP 800-63B §4.1.2: a channel the browser cannot suppress)"
         )
+        assert "maria.new@example.org" in body and "/account" in body, (
+            "it names the incoming address and where to cancel"
+        )
+
+        proof = [m for m in sent if m[0] == "maria.new@example.org"]
+        assert len(proof) == 1
+        _to, subject, body = proof[0]
+        assert subject == "Confirm your new VolunteerDB address"
+        assert "/confirm-email/" in body, "the link goes only to the new address"
         link = re.search(r"/confirm-email/(\S+)", body).group(1)
 
         # nothing has moved yet
@@ -175,6 +183,12 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
 
         user.find("Confirm this address", kind=ui.button).click()
         await user.should_see("Address confirmed", retries=SLOW)
+
+        # the outgoing mailbox gets the receipt, and the last word
+        _to, subject, body = await mail_to(sent, "maria@example.org")
+        assert subject == "Your VolunteerDB address changed"
+        assert "maria.new@example.org" in body
+        assert "last message" in body
 
     async with db_session() as session:
         account = await users.get(session, user_id)

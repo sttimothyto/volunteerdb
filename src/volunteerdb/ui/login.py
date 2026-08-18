@@ -275,6 +275,9 @@ async def confirm_email_page(token: str, request: Request):
     would then burn a single-use token before the recipient ever saw it. The
     button does. And unlike /invite/ this page signs nobody in — the link
     grants one address swap, never a session.
+
+    Pressing it sends the outgoing address its last message: the address the
+    account was reachable at is owed the news that it no longer is.
     """
     apply_theme()
     login_url = f"{str(request.base_url).rstrip('/')}/login"
@@ -285,6 +288,11 @@ async def confirm_email_page(token: str, request: Request):
     async def apply() -> None:
         try:
             async with db_session() as session:
+                # snapshot the outgoing address first: confirm_email_change
+                # mutates the same instance, and this mailbox is owed the
+                # receipt (§4.1.2) for a binding that is about to change
+                before = await user_service.pending_email_change(session, token)
+                was = before.email if before is not None else None
                 user = await user_service.confirm_email_change(session, token)
         except ValueError as exc:  # the address went to somebody else first
             _show_dead_link(body, login_url, str(exc))
@@ -295,6 +303,10 @@ async def confirm_email_page(token: str, request: Request):
             return
         audit_log("auth.email_changed", user=f"{user.id}:{user.email}")
         settled = user.email
+        if was:
+            await mail.send_email(
+                was, *mail.email_change_done_email(settled, login_url)
+            )
         body.clear()
         with body:
             ui.label("Address confirmed").classes("text-2xl vdb-brand")

@@ -139,11 +139,24 @@ code with it, and handed the account to whoever owned the typo.
 
 So **your own** address moves only after the new one proves itself. Typing it —
 on **/account**, or in the edit dialog on your own profile — stages it and
-mails a single-use link *there*, to the address being claimed and to no other.
-Nothing on file changes until that link is opened; the account keeps working at
-the old address for the whole window, which is what makes expiry harmless.
-Asking again replaces the pending address and kills the previous link, so a
-typo is fixed by retyping rather than by waiting.
+mails a single-use link to the address being claimed. Nothing on file changes
+until that link is opened; the account keeps working at the old address for the
+whole window, which is what makes expiry harmless. Asking again replaces the
+pending address and kills the previous link, so a typo is fixed by retyping
+rather than by waiting.
+
+The address being *replaced* hears about it too, twice, and this is the part
+that matters most. §4.1.2 requires notification "via a mechanism independent of
+the transaction", and here that independence is the entire defence: a session
+someone else is driving can type a new address, but it cannot suppress what
+lands in the mailbox the account is currently reachable at. The first message
+goes out **at request time**, while it is still actionable — the old address
+still signs in, and the change can be called off from /account before the link
+is ever opened. The second is the receipt at confirmation, the moment the
+binding really changes (the same shape as the "your password changed" notice),
+and it says plainly that it is the last message that mailbox will get. Without
+the first, a hijacked session takes an account silently; without the second, a
+volunteer who missed the warning never learns why the app went quiet.
 
 The link lasts **24 hours** — the ceiling SP 800-63B §4.2.1.2 puts on a code
 sent to an email address, taken straight this time rather than stretched the

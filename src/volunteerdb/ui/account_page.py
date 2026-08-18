@@ -36,6 +36,7 @@ logger = structlog.get_logger(__name__)
 async def account_page(request: Request):
     base_url = str(request.base_url).rstrip("/")
     login_url = f"{base_url}/login"
+    account_url = f"{base_url}/account"
     async with page_session() as (session, actor):
         user = actor.user
         user_id = user.id
@@ -71,15 +72,17 @@ async def account_page(request: Request):
             target = account.pending_email
         throttle.hit(key)
         audit_log("auth.email_change_requested", user=f"{user_id}:{email}", to=target)
-        # after the commit, and to the new address alone: the address is a
-        # claim until somebody reads mail there
+        # Both after the commit. The new address gets the proof — it is only a
+        # claim until somebody reads mail there — and the old address gets a
+        # warning it can still act on (§4.1.2: the notice travels a channel the
+        # browser making the change cannot suppress).
+        hours = int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600)
         await mail.send_email(
             target,
-            *mail.email_change_email(
-                confirm_email_url(base_url, token),
-                target,
-                int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600),
-            ),
+            *mail.email_change_email(confirm_email_url(base_url, token), target, hours),
+        )
+        await mail.send_email(
+            email, *mail.email_change_requested_email(target, account_url, hours)
         )
         ui.notify(
             f"Confirmation sent to {target}. Nothing changes until the link "

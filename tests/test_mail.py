@@ -211,3 +211,27 @@ def test_the_address_confirmation_names_the_address_the_link_and_the_window():
     # it goes to an address nobody has verified yet, so it must read as
     # declinable and must not leak who the account belongs to
     assert "ignore this email" in body
+
+
+def test_the_old_address_is_warned_while_it_can_still_say_no():
+    """SP 800-63B §4.1.2 wants the notice on a channel the transaction cannot
+    suppress; sending it at *request* time is what makes it actionable."""
+    subject, body = mail.email_change_requested_email(
+        "new@example.org", "https://vdb.example.org/account", 24
+    )
+    assert subject == "Your VolunteerDB address is being changed"
+    assert "new@example.org" in body, "it names the address being moved to"
+    assert "https://vdb.example.org/account" in body, "and where to cancel it"
+    assert "24 hours" in body
+    assert "Nothing has changed yet" in body
+    assert "parish office" in body, "and what to do if it was not you"
+
+
+def test_the_old_address_gets_the_receipt_and_the_last_word():
+    subject, body = mail.email_change_done_email(
+        "new@example.org", "https://vdb.example.org/login"
+    )
+    assert subject == "Your VolunteerDB address changed"
+    assert "new@example.org" in body
+    assert "last message" in body, "this mailbox hears nothing from us again"
+    assert "https://vdb.example.org/login" in body
