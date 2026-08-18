@@ -39,7 +39,7 @@ async def main() -> int:
                 f"admin {existing.email} already exists (id={existing.id}); nothing to do"
             )
             return 0
-        user = await users.create(session, email, is_admin=True, password=password)
+        user, _ = await users.create(session, email, is_admin=True, password=password)
         print(f"created admin {user.email} (id={user.id})")
     return 0
 

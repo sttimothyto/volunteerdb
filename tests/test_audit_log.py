@@ -74,7 +74,7 @@ async def test_debug_level_reads_do_not_log_bound_parameters(
     authenticate_token binds the stored SHA-256 token digest, so an unredacted
     dump there turns a debug log into a full API-token compromise."""
     async with db_session() as session:
-        user = await users.create(
+        user, _ = await users.create(
             session, "dbg@example.org", password="test-pass-phrase"
         )
     async with db_session() as session:
@@ -97,7 +97,7 @@ async def test_debug_level_reads_do_not_log_bound_parameters(
 
 async def test_secrets_never_logged(database, log_records):
     async with db_session() as session:
-        user = await users.create(
+        user, _ = await users.create(
             session, "sec@example.org", password="hunter2-secret-phrase"
         )
     async with db_session() as session:

@@ -35,12 +35,12 @@ async def _parish(session):
     await memberships.assign(session, cora.id, liturgy.id, TeamRole.core)
     await memberships.assign(session, mel.id, music.id, TeamRole.member)
 
-    admin = await users.create(
+    admin, _ = await users.create(
         session, "admin@example.org", is_admin=True, password="test-pass-phrase"
     )
     accounts = {"admin": admin.id}
     for name, volunteer in (("lea", lea), ("cora", cora), ("mel", mel)):
-        user = await users.create(
+        user, _ = await users.create(
             session,
             f"{name}@example.org",
             volunteer_id=volunteer.id,

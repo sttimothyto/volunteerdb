@@ -41,16 +41,24 @@ async def search(
 ) -> list[Volunteer]:
     """Substring search over every volunteer column.
 
-    Name and email match for everyone. (The rev-0005 trigram indexes cover
-    only those two predicates; since the private branches below joined the
-    same OR, every non-blank search seq-scans — sub-millisecond at parish
-    scale, so the indexes are retained as harmless until search is
-    restructured.) Phone, notes, and custom-field values additionally match —
-    but, unless the actor is an admin (or None: trusted internal caller), only
-    among volunteers the actor can already view unredacted, mirroring
-    can_view_volunteer: self, plus anyone on a team in full_view_team_ids.
-    Matching a private field a viewer can't see would leak its content by the
-    row's mere presence.
+    Names match for everyone — they are shown to everyone. Email, phone, notes
+    and custom-field values match only among volunteers the actor can already
+    view unredacted, mirroring can_view_volunteer: self, plus anyone on a team
+    in full_view_team_ids (an admin, or a None actor meaning a trusted internal
+    caller, skips the wrap). Matching a field a viewer cannot see leaks its
+    content by the row's mere presence.
+
+    Email used to match for everyone, on the reasoning that you can only match
+    an address you already hold. But the list renders that same address as
+    `•••`, and the query language turned "does anybody match" into a prefix
+    walk that recovers it character by character — so the promise the redaction
+    makes was not one search kept. Email is now scoped like the rest of the
+    contact details, and query_lang classes it _PRIVATE to match.
+
+    (The rev-0005 trigram indexes cover only the name and email predicates;
+    since the private branches join the same OR, every non-blank search
+    seq-scans — sub-millisecond at parish scale, so the indexes are retained as
+    harmless until search is restructured.)
 
     `limit` caps the rows the database returns (for the search-box typeahead);
     since the order is by name, that is the alphabetically first N matches.
@@ -59,11 +67,9 @@ async def search(
     stmt = sa.select(V).order_by(V.last_name, V.first_name)
     if query.strip():
         pattern = f"%{query.strip()}%"
-        public_match = sa.or_(
-            (V.first_name + " " + V.last_name).ilike(pattern),
-            V.email.ilike(pattern),
-        )
+        public_match = (V.first_name + " " + V.last_name).ilike(pattern)
         private_match = sa.or_(
+            V.email.ilike(pattern),
             V.phone.ilike(pattern),
             V.notes.ilike(pattern),
             # serialized JSONB: matches values (and keys) as text

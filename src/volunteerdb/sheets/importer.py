@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import db_session
 from ..log import audit_log
 from ..models import AppUser, Membership, Volunteer
-from ..permissions import load_actor
+from ..permissions import Actor, load_actor
 from ..services import memberships as membership_service
 from ..services import teams as team_service
 from .common import ROSTER_HEADERS, ROSTER_SHEET, clean_cell, parse_role
@@ -54,6 +54,11 @@ class ImportReport:
     errors: list[Issue] = field(default_factory=list)
     warnings: list[Issue] = field(default_factory=list)
     applied: bool = False
+    # (was, now) for every existing address a row redirected — filling a blank
+    # one does not count. The caller mails the old address after the commit:
+    # a redirected address is the first step of an account takeover, and a
+    # sheet is the quietest place to do it. See services.mail.address_edited_email.
+    addresses_replaced: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def has_errors(self) -> bool:
@@ -187,14 +192,28 @@ async def run_team_sync(
 ) -> ImportReport:
     """Apply one team's Drive sheet as that team's complete roster (upserts
     plus removals). All-or-nothing: any error — including the removal safety
-    threshold — rolls the whole team back."""
+    threshold — rolls the whole team back.
+
+    Scoped to the one team, not unrestricted. A sheet is edited by whoever
+    holds its Drive share and applied overnight with nobody looking, so it runs
+    under an actor that owns exactly this team: rows for anywhere else are
+    already refused below, and the contact columns of anyone not already on the
+    roster are refused by apply_rows (see the granted_ids note there)."""
     report = ImportReport()
     rows = parse_roster_csv(content, report)
     if rows is None:
         return report
+    sheet_actor = Actor(
+        user=AppUser(is_admin=False),
+        volunteer_id=None,
+        managed_team_ids={team_id},
+        people_team_ids={team_id},
+        full_view_team_ids={team_id},
+        names_view_team_ids=set(),
+    )
     try:
         async with db_session(user_id) as session:
-            await apply_rows(session, rows, report, None, sync_team_id=team_id)
+            await apply_rows(session, rows, report, sheet_actor, sync_team_id=team_id)
             if dry_run or report.has_errors:
                 raise _Abort()
             report.applied = True
@@ -324,6 +343,15 @@ async def apply_rows(
     # volunteer's contact update (granted_ids, keyed by resolved id so a
     # family-shared email cannot license the other spouse), or a brand-new
     # volunteer's creation (granted_new_keys). Scope is pre-import state only.
+    #
+    # A SYNC sheet does not hand out granted_ids. In an interactive import the
+    # leader typed the file and the reviewer sees the diff; a team's Drive
+    # sheet is edited by whoever holds the share, unattended and overnight, so
+    # letting a pasted ID license that person's address would make the quietest
+    # surface in the app the best place to redirect somebody's mail (and then
+    # ask for their invite). A sync sheet may still add people — new rows and
+    # memberships — but it may only rewrite the contact details of people who
+    # were already on the team, which presync_members already knows.
     granted_ids: set[int] = set()
     granted_new_keys: set[str] = set()
     teams_by_volunteer: dict[int, set[int]] = {}
@@ -331,10 +359,15 @@ async def apply_rows(
         for volunteer_id, team_id in membership_by_pair:
             teams_by_volunteer.setdefault(volunteer_id, set()).add(team_id)
         for r in rows:
-            if not r.team:
+            if not r.team and sync_team_id is None:
                 continue
-            team_id = resolve_team(r.team)
-            if isinstance(team_id, str) or team_id not in actor.managed_team_ids:
+            # a team's own sheet may leave Team blank, exactly as the main loop
+            # below reads it
+            team_id = sync_team_id if not r.team else resolve_team(r.team)
+            # people_team_ids: this licence is what lets a row rewrite a
+            # volunteer's name, address and notes, so a task force must not
+            # grant it over the members it borrowed (permissions.Actor)
+            if isinstance(team_id, str) or team_id not in actor.people_team_ids:
                 continue
             found = resolve_row(r)
             if isinstance(found, str):
@@ -345,7 +378,13 @@ async def apply_rows(
                 name = f"{r.first} {r.last}" if r.first and r.last else None
                 if name:
                     granted_new_keys.add(name.lower())
-            else:
+            elif sync_team_id is None or not found.is_active:
+                # A sync sheet licenses nobody new (see above) with one
+                # exception: an ARCHIVED volunteer is one a previous run of
+                # this very sheet removed, and putting them back is the
+                # documented way to undo that. Archived people are also the
+                # uninteresting targets — they cannot be invited at all — so
+                # the exception costs nothing the rule was protecting.
                 granted_ids.add(found.id)
 
     kept_volunteer_ids: set[int] = set()
@@ -457,6 +496,8 @@ async def apply_rows(
                 # an ID row just corrected the email: a later blank-ID row
                 # carrying the new address must match this record, not create
                 by_email.setdefault(email, []).append(found)
+                if old_email:  # replaced, not filled in — tell the old mailbox
+                    report.addresses_replaced.append((old_email.lower(), email))
             target = found
 
         # --- membership columns ---

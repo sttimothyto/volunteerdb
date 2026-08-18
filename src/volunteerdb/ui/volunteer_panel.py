@@ -80,6 +80,8 @@ class VolunteerPanel:
                 and volunteer.is_active
                 and self.base_url != ""
             )
+            # only an admin is shown the link itself (ui/invites.py)
+            reveal_invite = actor.is_admin
 
         self.content.clear()
         with self.content:
@@ -142,6 +144,7 @@ class VolunteerPanel:
                         volunteer.email,
                         account,
                         self.base_url,
+                        reveal=reveal_invite,
                         where="detail",
                     )
 

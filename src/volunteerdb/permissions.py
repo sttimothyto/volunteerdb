@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .history import entity
 from .models import (
     AppUser,
+    EventTaskForce,
     Membership,
     ProposalVoter,
     TeamRole,
@@ -36,9 +37,16 @@ from .services import teams as team_service
 class Actor:
     user: AppUser
     volunteer_id: int | None
-    managed_team_ids: set[int]  # leader/second teams incl. sub-teams
-    full_view_team_ids: set[int]  # + core teams incl. sub-teams
-    names_view_team_ids: set[int]  # + member teams (direct only)
+    # Two managing scopes, and the difference is the whole point. A task-force
+    # team is a temporary roster copied from several real teams so they can
+    # staff one event (services/task_force.py) -- run its AFFAIRS, yes; own its
+    # PEOPLE, no. Otherwise adding any team as a collaborator would hand you
+    # their members' contact details, notes, workload and invite links, which
+    # is exactly the escalation this split closes.
+    managed_team_ids: set[int]  # affairs: roster, events, elections (incl. task forces)
+    people_team_ids: set[int]  # people: contact edits, workload, invites, exports
+    full_view_team_ids: set[int]  # + core teams incl. sub-teams; never a task force
+    names_view_team_ids: set[int]  # + member teams (direct) and task forces
     voter_proposal_ids: frozenset[int] = frozenset()  # rolls the actor sits on
     # Their own name and headshot timestamp, for the header avatar: the frame
     # renders before any page has a session to look them up with, and every
@@ -89,10 +97,13 @@ class Actor:
     def can_edit_volunteer(
         self, volunteer_id: int, volunteer_team_ids: set[int]
     ) -> bool:
-        """Contact-info edits: admin, self, or leader/second of one of their teams."""
+        """Contact-info edits: admin, self, or leader/second of one of their teams.
+
+        people_team_ids, not managed_team_ids: leading a task force is not
+        leading the people it borrowed."""
         if self.is_admin or volunteer_id == self.volunteer_id:
             return True
-        return bool(self.managed_team_ids & volunteer_team_ids)
+        return bool(self.people_team_ids & volunteer_team_ids)
 
     def can_view_volunteer(
         self, volunteer_id: int, volunteer_team_ids: set[int]
@@ -119,8 +130,9 @@ class Actor:
     def can_view_workload(self, volunteer_team_ids: set[int]) -> bool:
         """Workload band/score: admins, or leaders/seconds of one of the
         volunteer's teams. Deliberately excludes core members AND the
-        volunteer themself — workload is a leadership planning signal."""
-        return self.is_admin or bool(self.managed_team_ids & volunteer_team_ids)
+        volunteer themself — workload is a leadership planning signal.
+        people_team_ids, so a task force never reveals a borrowed member's."""
+        return self.is_admin or bool(self.people_team_ids & volunteer_team_ids)
 
 
 async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
@@ -173,10 +185,31 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
                 names_view.add(team_id)
     full_view |= managed
 
+    # Task-force teams are borrowed rosters, not ministries anyone owns (see
+    # the Actor field comments). They stay in `managed` so their event is still
+    # managed and in `names_view` so you can see who is staffing it, but they
+    # are cut out of `people` and `full_view` — no contact details through the
+    # meta roster, no edit rights over somebody else's members. One tiny query:
+    # the table holds a row per collaborative event and is torn down after.
+    meta_ids: set[int] = set()
+    scope = managed | full_view
+    if scope:
+        meta_ids = set(
+            await session.scalars(
+                sa.select(EventTaskForce.team_id).where(
+                    EventTaskForce.team_id.in_(scope)
+                )
+            )
+        )
+    people = managed - meta_ids
+    names_view |= full_view & meta_ids
+    full_view -= meta_ids
+
     return Actor(
         user=user,
         volunteer_id=user.volunteer_id,
         managed_team_ids=managed,
+        people_team_ids=people,
         full_view_team_ids=full_view,
         names_view_team_ids=names_view,
         voter_proposal_ids=voter_proposal_ids,

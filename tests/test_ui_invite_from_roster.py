@@ -10,10 +10,12 @@ volunteer drawer on one page, and NiceGUI's should_see finds text inside a close
 drawer, so asserting on labels alone would pass on things no human can reach.
 """
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
@@ -66,7 +68,7 @@ async def _parish(session) -> dict[str, int]:
     # actor accounts: password written straight in, so no argon2 pass is spent
     accounts = {}
     for name, v in (("lena", lena), ("cora", cora), ("mia", mia)):
-        u = await users.create(session, f"{name}@example.org", volunteer_id=v.id)
+        u, _ = await users.create(session, f"{name}@example.org", volunteer_id=v.id)
         u.password_hash = "x"  # never verified; /login-dev establishes the session
         accounts[name] = u
     await session.flush()
@@ -109,7 +111,12 @@ async def test_leader_invites_a_member_and_the_row_catches_up(database, sent):
         assert account.password_hash is None, "they choose their own"
         assert not account.is_admin
         assert users.invite_live(account)
-        assert body.count(account.invite_token) == 1, "and it is *their* token"
+        # the mailed link is the only readable copy — the column holds a digest
+        # (services.users._issue_invite), and it is a digest OF the mailed token
+        mailed = body.split("/invite/", 1)[1].split()[0].rstrip(".,)")
+        assert account.invite_token == hashlib.sha256(mailed.encode()).hexdigest(), (
+            "and it is *their* token"
+        )
 
 
 async def test_cancelling_the_confirmation_creates_nothing(database, sent):
@@ -159,11 +166,16 @@ async def test_a_lapsed_invite_may_be_resent_but_a_live_one_is_not_reoffered(
         await user.should_see("invite expired")  # Stale
         # a link nobody used may be replaced — there is no password to lose
         await user.should_see(marker=f"invite-roster-{ids['stale']}")
-        # a live invite reports itself and offers the link, not a blind resend
+        # A live invite reports itself and offers to REPLACE the link, never to
+        # show it: only its digest is stored, so no reader can recover one
+        # already sent (services.users._issue_invite).
         await user.should_see("invite sent")  # Live
         user.find(marker=f"invite-roster-{ids['live']}").click()
-        await user.should_see("Invite link for live@example.org", retries=SLOW)
-        assert sent == [], "reopening the dialog sends nothing on its own"
+        await user.should_see(
+            "An invite is already out to live@example.org", retries=SLOW
+        )
+        await user.should_not_see("/invite/")
+        assert sent == [], "opening the dialog sends nothing on its own"
 
 
 async def test_a_volunteer_with_no_email_gets_no_control(database, sent):
@@ -206,3 +218,59 @@ async def test_the_profile_page_offers_the_same_control(database, sent):
         user.find(marker="invite-confirm").click()
         await user.should_see("Invite link for nils@example.org", retries=SLOW)
         await mail_to(sent, "nils@example.org")
+
+
+async def test_only_an_admin_is_shown_the_link_itself(database, sent):
+    """The link is a bearer credential: whoever holds it signs in as that
+    volunteer. A leader may add anybody to their own team and then edit their
+    address, so showing them the link turned "invite my team member" into
+    "take over any account that has never signed in". Non-admins get delivery,
+    not the token; admins keep the copy they hand over in person."""
+    async with db_session() as session:
+        ids = await _parish(session)
+        admin, _ = await users.create(session, "boss@example.org", is_admin=True)
+        admin.password_hash = "x"
+        await session.flush()
+        admin_id = admin.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        await user.should_see("Send an invite to Nils Nobody?", retries=SLOW)
+        user.find(marker="invite-confirm").click()
+        await user.should_see("Invite link for nils@example.org", retries=SLOW)
+
+    mailed = [b for _, _, b in sent if "/invite/" in b]
+    assert len(mailed) == 1, "the leader's invite went out by mail"
+    leader_token = mailed[0].split("/invite/", 1)[1].split()[0].rstrip(".,)")
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        # the live invite reopens as a resend dialog, carrying no link at all
+        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        await user.should_see(
+            "An invite is already out to nils@example.org", retries=SLOW
+        )
+        await user.should_not_see(leader_token)
+
+    # An admin sending a fresh one DOES see it — that is the hand-over path.
+    sent.clear()
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{admin_id}")
+        await user.open(f"/teams/{ids['music']}")
+        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        await user.should_see(
+            "An invite is already out to nils@example.org", retries=SLOW
+        )
+        user.find("Send again", kind=ui.button).click()
+        # send_invite always confirms first: the mail cannot be recalled
+        await user.should_see("Send another invite to Nils Nobody?", retries=SLOW)
+        user.find(marker="invite-confirm").click()
+        await user.should_see("Invite link for nils@example.org", retries=SLOW)
+        fresh = [b for _, _, b in sent if "/invite/" in b]
+        assert fresh, "sending again mails a new link"
+        await user.should_see(
+            fresh[-1].split("/invite/", 1)[1].split()[0].rstrip(".,)"), retries=SLOW
+        )

@@ -66,7 +66,13 @@ Additional rules:
   **collaborating team**, the auto-created task-force team carries copied
   roles: the collaborating team's leaders/seconds become leaders of the
   task force and so co-manage the event, while the owning team's leaders
-  keep control through the team hierarchy.
+  keep control through the team hierarchy. A task force confers rights over
+  the **event only, never over the people it borrowed**: its members do not
+  become yours to read or edit, so contact details, notes, workload scores,
+  invites and roster exports all stay with the teams they came from. You see
+  who is staffing, and you manage the staffing; that is all. Adding a
+  collaborator is a unilateral act — the picker offers every active team —
+  which is exactly why it cannot carry a right over anybody's data.
 - Volunteers may always view and edit their **own** contact info, whatever
   their roles.
 - Workload is deliberately hidden from core members *and from the volunteer
@@ -79,7 +85,15 @@ Additional rules:
 - Ballots are secret. Individual scores are never exposed to anyone —
   only per-voter turnout flags and, once voting concludes, aggregates.
 - Redaction, not denial: lists and rosters show `•••` for contact fields the
-  viewer may not see.
+  viewer may not see — and **search honours the same line**. The search box and
+  the [query language](query-language.md) match names for everyone, but email,
+  phone, notes and custom values only among volunteers the viewer may see
+  unredacted. Otherwise `email LIKE 'j%'` walks an address out of a column the
+  page renders as `•••`.
+- The same rule reaches the **spreadsheet export**: a core member may export
+  their team's roster, but the *Volunteer notes* column comes through blank,
+  because notes need edit rights everywhere else. Exports are recorded in the
+  [audit log](../how-to/audit-logs.md) on both surfaces.
 - Headshots are a deliberate exception to the edit matrix: **any signed-in
   account** may view, upload, replace, or delete any volunteer's photo
   (panel, detail page, graph, the app bar, and the
@@ -112,6 +126,16 @@ Additional rules:
   No control appears on an as-of snapshot, or for a volunteer with no email
   address on file. Same rule over the API:
   `POST /api/volunteers/{id}/invite`.
+- **The invite link itself is shown only to admins.** Whoever holds it signs in
+  as that volunteer, and a leader may add anybody to their own team and then
+  correct their address — so a visible link turned "invite my team member" into
+  "take over any account that has never signed in". For everyone else the link
+  is mailed to the address on the volunteer's own record and never displayed or
+  returned. Nobody, admin included, can recover a link already sent: only its
+  digest is stored, so an outstanding invite is **replaced** rather than
+  re-shown, and the previous one stops working. Redirecting somebody else's
+  address also mails the address being replaced, on a channel the person doing
+  the edit does not control.
 
 ## GUI page index
 
@@ -127,7 +151,7 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/teams` | Team hierarchy + coverage counts in one sortable table, search box, as-of picker | signed in (coverage columns: admin/leaders; "New team": admin) |
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export, invite a member | signed in; roster per matrix; invite needs full-roster rights |
 | `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
-| `/volunteers/{id}` | Profile, timeline, impact report, invite | signed in; detail per matrix |
+| `/volunteers/{id}` | Profile, timeline, impact report, invite | signed in; contact details, notes and the impact report per matrix. The **service timeline** and sign-in status are shown to every viewer, like the roster's account badge — who served where, and when, is parish-wide the way the directory and graph already are |
 | `/events` | Duties, claimable substitutions, searchable event table | signed in; listings scoped per matrix ("New event": admin or leader/second) |
 | `/events/{id}` | One event: slots, sign-up, RSVP, substitutions, attendance | roster-names rights on the owning team |
 | `/elections` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |

@@ -67,19 +67,19 @@ authenticated account.
 
 | Method & path | Permission | Notes |
 |---|---|---|
-| `GET /api/volunteers` | signed in | `q=` name/email search, `as_of=`; contact fields redacted per viewer. `include_inactive=true` is **admin only** (403 otherwise), matching the GUI |
+| `GET /api/volunteers` | signed in | `q=` substring search, `as_of=`; contact fields redacted per viewer. `q` matches **names** for everyone, and email/phone/notes/custom values only among volunteers the caller may see unredacted — a field rendered `•••` must not confirm itself by the row's presence. `include_inactive=true` is **admin only** (403 otherwise), matching the GUI |
 | `POST /api/volunteers` | admin | 201 |
 | `GET /api/volunteers/{id}` | signed in | `as_of=`; redacted per viewer |
-| `PATCH /api/volunteers/{id}` | edit rights on the volunteer | `is_active` admin-only; `custom` merges validated custom-field values. Changing **your own** `email` is refused with 422: your address is also your login, so it moves only once the new one confirms itself, and this API sends no mail to run that exchange — ask on **/account** instead. Somebody else's address is an ordinary edit |
+| `PATCH /api/volunteers/{id}` | edit rights on the volunteer | `is_active` admin-only; `custom` merges validated custom-field values. Changing somebody **else's** `email` applies at once, as it must — a leader fixing a bounced address cannot wait on the person who cannot read their mail — and mails the address being replaced, so a redirect is never silent. Changing **your own** `email` is refused with 422: your address is also your login, so it moves only once the new one confirms itself, and this API sends no mail to run that exchange — ask on **/account** instead. Somebody else's address is an ordinary edit |
 | `DELETE /api/volunteers/{id}` | admin | 204 |
 | `PUT /api/volunteers/{id}/photo` | signed in | Upload/replace the headshot (multipart `file`). Any image ≤ 10 MB (413 above); stored EXIF-stripped, center-cropped, 400×400 JPEG ≤ 24 KB. Unreadable file → 422. **Deliberately open to every signed-in account** — no `can_edit_volunteer` gating |
 | `GET /api/volunteers/{id}/photo` | signed in | The stored JPEG bytes; 404 when there is none |
 | `DELETE /api/volunteers/{id}/photo` | signed in | 204; idempotent |
 | `GET /api/volunteers/{id}/assignments` | signed in | Team/role list, `as_of=` |
-| `GET /api/volunteers/{id}/timeline` | full profile view | All-time service spells |
+| `GET /api/volunteers/{id}/timeline` | signed in | All-time service spells. Not gated on full profile view: who serves where is already parish-wide (the directory, the graph, the volunteer list), and service history is the same kind of fact — the GUI's profile page shows the timeline to every viewer too |
 | `GET /api/volunteers/{id}/impact` | full profile view | "If they leave" hole report, `as_of=` |
 | `GET /api/volunteers/{id}/proposals` | admin, leader/second, or voting member | Proposals involving them, with `as_candidate`/`as_voter`/`appointed` flags; scoped like `GET /api/elections/proposals` |
-| `POST /api/volunteers/{id}/invite` | admin, or full-roster rights on one of their teams | Create (or re-arm) their account and return it with `invite_token` + `invite_expires_at`. The one account-creating route that is not admin-only — see the [permission matrix](permissions.md#permission-matrix). Mints only: **it does not email**, so deliver the link yourself. 422 when the volunteer is archived, has no address on file, the address belongs to another account, or the account already carries a password or has been signed into; 409 if two callers race |
+| `POST /api/volunteers/{id}/invite` | admin, or full-roster rights on one of their teams | Create (or re-arm) their account and return it with `invite_expires_at`. The one account-creating route that is not admin-only — see the [permission matrix](permissions.md#permission-matrix). **`invite_token` comes back only to an admin.** The link signs its holder in as that volunteer, and a leader may add anybody to their own team and then edit their address, so for a non-admin caller the link is instead **mailed** to the address on the volunteer's own record — the one place this API sends email, because the alternative is minting a credential that reaches nobody. 422 when the volunteer is archived, has no address on file, the address belongs to another account, or the account already carries a password or has been signed into; 409 if two callers race |
 
 The volunteer list and detail responses carry `has_photo` (null on embedded
 volunteer objects elsewhere). Browsers load images from the cookie-
@@ -154,9 +154,9 @@ leaders, seconds and core members create an account for one of their own people.
 | Method & path | Permission | Notes |
 |---|---|---|
 | `GET /api/export/parish.csv` | admin | Full roster export, `as_of=` |
-| `GET /api/export/team/{team_id}.csv` | full roster on the team | Roster export (sub-teams included), `as_of=` |
+| `GET /api/export/team/{team_id}.csv` | full roster on the team | Roster export (sub-teams included), `as_of=`. The **Volunteer notes** column comes through blank unless the caller may read notes (admin or leader/second of the team) — everywhere else `notes` needs `can_edit_volunteer`, and the column stays in place so the file still round-trips |
 | `GET /api/export/my-teams.csv` | leads/seconds any team | Union of managed teams, `as_of=` |
-| `POST /api/import` | admin or leader/second (rows scoped) | Multipart `file=` (roster `.csv`); `dry_run=`; all-or-nothing; 10 MB cap |
+| `POST /api/import` | admin or leader/second (rows scoped) | Multipart `file=` (roster `.csv`); `dry_run=`; all-or-nothing; 10 MB cap. A row that **redirects** an existing address mails the mailbox it moved away from |
 
 Column layout: see the [spreadsheet format](spreadsheets.md).
 

@@ -34,7 +34,7 @@ async def _parish():
         await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
         await memberships.assign(session, cora.id, liturgy.id, TeamRole.core)
         await memberships.assign(session, noel.id, liturgy.id, TeamRole.core)
-        admin = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
         return {
             "liturgy": liturgy.id,
             "lena": lena.id,

@@ -9,9 +9,15 @@ from .schemas import UserIn, UserOut, UserPatch
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-def _user_out(user) -> UserOut:
+def _user_out(user, invite_token: str | None = None) -> UserOut:
+    """`invite_token` is passed in, never read off the row: only the digest is
+    stored (services.users._issue_invite), so a freshly minted link is the only
+    one that exists in readable form and the column itself must never be
+    serialized. `invite_expires_at` still comes off the row — a caller may
+    always learn that a link is outstanding, just not what it is."""
     out = UserOut.model_validate(user)
     out.has_password = user.password_hash is not None
+    out.invite_token = invite_token
     return out
 
 
@@ -24,8 +30,8 @@ async def list_users(ctx: CtxDep) -> list[UserOut]:
 @router.post("", status_code=201)
 async def create_user(ctx: CtxDep, data: UserIn) -> UserOut:
     require(ctx.actor.is_admin, "manage accounts")
-    user = await service.create(ctx.session, **data.model_dump())
-    return _user_out(user)
+    user, token = await service.create(ctx.session, **data.model_dump())
+    return _user_out(user, token)
 
 
 @router.patch("/{user_id}")
@@ -43,10 +49,14 @@ async def update_user(ctx: CtxDep, user_id: int, data: UserPatch) -> UserOut:
 
 @router.post("/{user_id}/reinvite")
 async def reinvite(ctx: CtxDep, user_id: int) -> UserOut:
-    """Invalidate the password and issue a fresh invite link."""
+    """Invalidate the password and issue a fresh invite link.
+
+    Also revokes the account's API token: it was issued against the password
+    being invalidated, and this route is how an admin acts on an account they
+    believe is compromised."""
     require(ctx.actor.is_admin, "manage accounts")
-    await service.reissue_invite(ctx.session, user_id)
-    return _user_out(await service.get(ctx.session, user_id))
+    token = await service.reissue_invite(ctx.session, user_id)
+    return _user_out(await service.get(ctx.session, user_id), token)
 
 
 class ProvisionOut(BaseModel):
@@ -63,7 +73,7 @@ async def provision(ctx: CtxDep) -> ProvisionOut:
     require(ctx.actor.is_admin, "manage accounts")
     report = await service.bulk_provision(ctx.session)
     return ProvisionOut(
-        created=[_user_out(u) for _, u in report.created],
+        created=[_user_out(u, token) for _, u, token in report.created],
         linked=[_user_out(u) for _, u in report.linked],
         skipped=[
             {"volunteer_id": v.id, "name": v.full_name, "reason": reason}

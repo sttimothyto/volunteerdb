@@ -53,7 +53,9 @@ async def users_page(request: Request):
                 async with action_session() as (session, actor):
                     require(actor.is_admin, "manage accounts")
                     report = await user_service.bulk_provision(session)
-                    created = [(u.email, u.invite_token) for _, u in report.created]
+                    # the plaintext token rides in the report: the column
+                    # holds only its digest (services.users._issue_invite)
+                    created = [(u.email, token) for _, u, token in report.created]
                     relinked, skipped = len(report.linked), len(report.skipped)
                 emailed = sum(
                     [await email_invite(addr, token) for addr, token in created]
@@ -108,13 +110,13 @@ async def users_page(request: Request):
                 async def save() -> None:
                     async with action_session() as (session, actor):
                         require(actor.is_admin, "manage accounts")
-                        user = await user_service.create(
+                        user, token = await user_service.create(
                             session,
                             email.value or "",
                             volunteer_id=link.value or None,
                             is_admin=admin_flag.value,
                         )
-                        token, addr = user.invite_token, user.email
+                        addr = user.email
                         matched = user.volunteer_id if not link.value else None
                     dialog.close()
                     if matched is not None:
@@ -154,12 +156,15 @@ async def users_page(request: Request):
                 if not account.is_active:
                     ui.badge("disabled", color="grey")
                 elif user_service.invite_live(account):
+                    # No link on offer: only its digest is stored
+                    # (services.users._issue_invite), so handing one over again
+                    # means minting a fresh one — which is what Reinvite does.
                     ui.badge("invite pending", color="warning").classes(
                         "cursor-pointer"
                     ).on(
                         "click",
-                        lambda _, t=account.invite_token, m=account.email: show_invite(
-                            t, m
+                        lambda _, m=account.email, u=account.invite_expires_at: (
+                            invites.show_outstanding_invite(m, u)
                         ),
                     ).tooltip(
                         f"Invite link, usable until {account.invite_expires_at:%Y-%m-%d %H:%M}"

@@ -98,3 +98,66 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
         "/confirm-email/ must render for anonymous browsers "
         "(main.UNRESTRICTED_PREFIXES); a dead token is a message, not a redirect"
     )
+
+
+async def test_the_login_page_hands_out_a_fresh_session_id(real_app_client):
+    """Session fixation. NiceGUI assigns a session id on the first request and
+    never changes it, and app.storage.user is keyed by it — so an id planted on
+    a browser (shared kiosk, sibling-subdomain XSS, an active network attacker
+    where VDB_COOKIE_SECURE is off) would otherwise become the *authenticated*
+    id the moment the victim signed in. Loading an auth entry point while
+    anonymous discards it, which is the one place a Set-Cookie can still be
+    sent: sign-in itself happens over the websocket.
+
+    Pins the reach into nicegui.storage in main.AuthMiddleware. If NiceGUI
+    changes how the session id is stored, this fails rather than quietly
+    dropping the protection."""
+    cookie_name = "session"
+    first = await real_app_client.get("/login", follow_redirects=False)
+    assert first.status_code == 200
+    planted = real_app_client.cookies.get(cookie_name)
+    assert planted, "the login page issues a session cookie"
+
+    second = await real_app_client.get("/login", follow_redirects=False)
+    assert second.status_code == 200
+    assert real_app_client.cookies.get(cookie_name) != planted, (
+        "an anonymous visit to /login must mint a new session id, not reuse the "
+        "one the browser turned up holding"
+    )
+
+    for entry in ("/invite/nope", "/confirm-email/nope"):
+        before = real_app_client.cookies.get(cookie_name)
+        await real_app_client.get(entry, follow_redirects=False)
+        assert real_app_client.cookies.get(cookie_name) != before, (
+            f"{entry} authenticates a browser too, so it rotates as well"
+        )
+
+
+async def test_a_signed_in_browser_is_not_rotated_off_its_own_session(
+    real_app_client, database
+):
+    """The other half of the rotation rule, and the one that would hurt: only
+    ANONYMOUS browsers are given a new id. A signed-in reader who follows a
+    stale /login link, or lands on a dead invite link, must come away still
+    signed in — rotating there would carry nothing over and read as a random
+    logout."""
+    from volunteerdb.db import db_session
+    from volunteerdb.services import users
+
+    async with db_session() as session:
+        user, _ = await users.create(session, "stays@example.org")
+        user_id = user.id
+
+    await real_app_client.get(f"/login-dev/{user_id}", follow_redirects=False)
+    signed_in = real_app_client.cookies.get("session")
+    assert signed_in
+
+    for entry in ("/login", "/invite/nope", "/confirm-email/nope"):
+        await real_app_client.get(entry, follow_redirects=False)
+        assert real_app_client.cookies.get("session") == signed_in, (
+            f"{entry} rotated a signed-in browser's session id"
+        )
+
+    # and the session still works
+    response = await real_app_client.get("/volunteers", follow_redirects=False)
+    assert response.status_code == 200, "still signed in after visiting /login"

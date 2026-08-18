@@ -27,7 +27,7 @@ def _png(width: int, height: int) -> bytes:
 async def test_settings_menu_carries_reading_preferences(database):
     async with db_session() as session:
         liturgy = await teams.create(session, "Liturgy")
-        admin = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin.id}")
@@ -49,7 +49,7 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
     async with db_session() as session:
         maria = await volunteers.create(session, "Maria", "Alvarez")
         await photos.set_photo(session, maria.id, _png(60, 60), uploaded_by=None)
-        account = await users.create(
+        account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
         )
         maria_id, account_id = maria.id, account.id
@@ -70,7 +70,7 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
 async def test_the_header_offers_an_upload_when_there_is_no_photo_yet(database):
     async with db_session() as session:
         felix = await volunteers.create(session, "Felix", "Garcia")
-        account = await users.create(
+        account, _ = await users.create(
             session, "felix@example.org", volunteer_id=felix.id
         )
         account_id = account.id
@@ -88,7 +88,7 @@ async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(databas
     """The sync bot, and any admin nobody linked: there is no volunteer row a
     photo could hang off, so nothing renders rather than something broken."""
     async with db_session() as session:
-        admin = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
         admin_id = admin.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -104,7 +104,7 @@ async def test_the_header_avatar_and_the_profile_avatar_are_addressed_apart(data
     exactly the one on the page."""
     async with db_session() as session:
         maria = await volunteers.create(session, "Maria", "Alvarez")
-        account = await users.create(
+        account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
         )
         maria_id, account_id = maria.id, account.id

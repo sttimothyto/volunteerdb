@@ -52,7 +52,7 @@ async def _parish(session):
 
 
 async def _actor(session, email, **kwargs):
-    user = await users.create(session, email, password="test-pass-phrase", **kwargs)
+    user, _ = await users.create(session, email, password="test-pass-phrase", **kwargs)
     return await load_actor(session, user)
 
 

@@ -15,10 +15,10 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 async def test_admin_pages_render(database):
     async with db_session() as session:
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
-        member = await users.create(
+        member, _ = await users.create(
             session, "felix@example.org", password="test-pass-phrase"
         )
         admin_id, member_id = admin.id, member.id
@@ -66,7 +66,7 @@ async def test_leader_import_page_scoped(database):
         liturgy = await teams.create(session, "Liturgy")
         lena = await volunteers.create(session, "Lena", "Leader", "lena@example.org")
         await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
-        leader = await users.create(
+        leader, _ = await users.create(
             session,
             "lena@example.org",
             volunteer_id=lena.id,
@@ -91,7 +91,7 @@ async def test_admin_users_provision_button(database, monkeypatch):
     monkeypatch.setattr(mail, "send_email", fake_send)
 
     async with db_session() as session:
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         await volunteers.create(session, "Vera", "Volunteer", "vera@example.org")
@@ -113,10 +113,10 @@ async def test_admin_users_provision_button(database, monkeypatch):
 
 async def test_admin_users_relink_dialog(database):
     async with db_session() as session:
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
-        orphan = await users.create(
+        orphan, _ = await users.create(
             session, "orphan@example.org", password="test-pass-phrase"
         )
         vera = await volunteers.create(session, "Vera", "Volunteer", "vera@example.org")
@@ -141,11 +141,11 @@ async def test_admin_users_shows_invite_state(database):
     """The account row distinguishes a live invite link from a spent window —
     an admin should not hand out a link that has already stopped working."""
     async with db_session() as session:
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
-        pending = await users.create(session, "pending@example.org")
-        stale = await users.create(session, "stale@example.org")
+        pending, _ = await users.create(session, "pending@example.org")
+        stale, _ = await users.create(session, "stale@example.org")
         stale.invite_expires_at = datetime.now(UTC) - timedelta(hours=1)
         await session.flush()
         admin_id = admin.id

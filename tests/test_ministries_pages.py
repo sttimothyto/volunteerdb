@@ -653,6 +653,9 @@ async def test_home_doc_patch_permissions(client, seeded, token_leader, token_me
 
 
 async def test_core_member_may_set_home_doc(client, seeded, token_member):
+    """Deliberate, and not to be tightened: ministry leaders here are often
+    elderly, so the group that may keep a public page current is widened on
+    purpose (api/teams.py:set_home_doc)."""
     from volunteerdb.models import TeamRole
     from volunteerdb.services import memberships
 

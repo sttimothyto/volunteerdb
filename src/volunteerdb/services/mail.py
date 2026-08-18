@@ -24,7 +24,24 @@ async def send_email(to: str, subject: str, text_body: str) -> bool:
     """Send one message; True on success. Never raises."""
     s = settings()
     if not s.smtp2go_api_key:
-        print(f"[MAIL] to={to} subject={subject!r}\n{text_body}", flush=True)
+        # No key: log instead of sending, which is what keeps development and
+        # the test suite offline. The BODY only goes out under VDB_DEBUG_MAIL,
+        # because these bodies carry sign-in codes, invite links and
+        # address-change links — a production instance that simply forgot the
+        # key would otherwise write every credential it ever issued into
+        # journald, where the app's own log redaction cannot reach it.
+        # VDB_RELOAD means `make dev`, which is a development server by
+        # definition — no separate flag to remember there.
+        if s.debug_mail or s.reload:
+            print(f"[MAIL] to={to} subject={subject!r}\n{text_body}", flush=True)
+        else:
+            log.warning(
+                "mail.not_configured",
+                to=to,
+                subject=subject,
+                hint="set VDB_SMTP2GO_API_KEY to send, or VDB_DEBUG_MAIL=true to "
+                "print the body (it may contain a sign-in link)",
+            )
         return True
     payload = {
         "sender": f"{s.mail_from_name} <{s.mail_from}>",
@@ -200,6 +217,42 @@ def email_change_done_email(new_address: str, login_url: str) -> tuple[str, str]
         f"If that was you, there is nothing to do — sign in at {login_url}.\n\n"
         "If it was not, tell the parish office straight away: somebody else "
         "has taken over this account.",
+    )
+
+
+async def notify_replaced_addresses(
+    pairs: list[tuple[str, str]], login_url: str
+) -> None:
+    """Mail every address a bulk edit moved a volunteer away from.
+
+    For the importer and the Drive sync, which redirect addresses in bulk and
+    are the quietest place in the app to do it. Call it *after* the commit —
+    a dead mail provider must not roll an import back."""
+    for was, now in pairs:
+        if was and now and was != now:
+            await send_email(was, *address_edited_email(now, login_url))
+
+
+def address_edited_email(new_address: str, login_url: str) -> tuple[str, str]:
+    """Sent to the address a *leader or admin* has just moved a volunteer away
+    from — the third-party counterpart to email_change_done_email.
+
+    Changing somebody else's address applies immediately, deliberately: leaders
+    fix bounced addresses precisely because the volunteer cannot read the mail
+    at the old one. That same immediacy is what makes it a takeover step —
+    point a volunteer's address at your own, ask for their invite, redeem it.
+    The independent-channel notice of SP 800-63B §4.1.2 is what turns a silent
+    redirect into one the volunteer can see and report, so it goes out even
+    though the old address is often the broken one; a bounce costs nothing."""
+    return (
+        "Your VolunteerDB address was changed",
+        f"Somebody who helps run one of your ministries changed the address on "
+        f"your VolunteerDB record to {new_address}. That is now the address "
+        "used for rosters, event notices, and signing in.\n\n"
+        "This is the last message we will send to this address.\n\n"
+        "If you asked for that, or you knew about it, there is nothing to "
+        f"do — sign in at {login_url}.\n\n"
+        "If it is news to you, tell the parish office straight away.",
     )
 
 

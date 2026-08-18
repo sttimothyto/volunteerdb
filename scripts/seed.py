@@ -1465,7 +1465,7 @@ async def seed_accounts(session: AsyncSession, parish: Parish) -> None:
         else await async_hash_password(ADMIN_PASSWORD)
     )
     for account in ACCOUNTS:
-        user = await users.create(
+        user, _ = await users.create(
             session,
             account.email,
             volunteer_id=parish.volunteer_ids[account.person]

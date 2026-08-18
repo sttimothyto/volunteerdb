@@ -60,9 +60,18 @@ ignored. Copy `.env.example` as a starting point.
 
 `VDB_SMTP2GO_API_KEY`
 : API key for outbound email via SMTP2GO. Default: empty, in which case
-  every email (invites, OTP codes, welcome messages) is printed to the log
-  instead of sent — useful in development, where the printed OTP code is how
-  you complete a passwordless login.
+  nothing is sent and each message is logged instead. Pair it with
+  `VDB_DEBUG_MAIL` in development to read the printed OTP code and complete a
+  passwordless login.
+
+`VDB_DEBUG_MAIL`
+: With no API key, print the whole message body rather than a one-line
+  warning. Default: `false`, and **implied by `VDB_RELOAD`** — so `make dev`
+  shows you the OTP code without setting anything. For development only: the
+  bodies carry one-time sign-in codes, invite links and address-change links,
+  so an instance that merely forgot `VDB_SMTP2GO_API_KEY` would otherwise
+  write every credential it issues into the process log, where the app's own
+  redaction cannot reach it.
 
 `VDB_ORG_NAME`
 : The organisation this instance serves, e.g. `St. Timothy's`. It appears in

@@ -137,10 +137,11 @@ async def test_visible_scores_respects_permissions(database):
 
         lead_actor = await load_actor(
             session,
-            await users.create(session, "lead@example.org", volunteer_id=lead.id),
+            (await users.create(session, "lead@example.org", volunteer_id=lead.id))[0],
         )
         admin_actor = await load_actor(
-            session, await users.create(session, "admin@example.org", is_admin=True)
+            session,
+            (await users.create(session, "admin@example.org", is_admin=True))[0],
         )
 
         team_sets = {
@@ -176,14 +177,17 @@ async def test_graph_colors_only_permitted_nodes(database):
 
         lead_actor = await load_actor(
             session,
-            await users.create(session, "lead@example.org", volunteer_id=lead.id),
+            (await users.create(session, "lead@example.org", volunteer_id=lead.id))[0],
         )
         core_actor = await load_actor(
             session,
-            await users.create(session, "core@example.org", volunteer_id=watcher.id),
+            (await users.create(session, "core@example.org", volunteer_id=watcher.id))[
+                0
+            ],
         )
         admin_actor = await load_actor(
-            session, await users.create(session, "admin@example.org", is_admin=True)
+            session,
+            (await users.create(session, "admin@example.org", is_admin=True))[0],
         )
 
         def volunteer_nodes(elements):

@@ -79,7 +79,14 @@ async def delete_team(ctx: CtxDep, team_id: int) -> None:
 async def set_home_doc(ctx: CtxDep, team_id: int, data: HomeDocPatch) -> TeamOut:
     """Set (or clear, with url=null) the public Google Doc behind the team's
     /ministries/ page. Unlike PATCH /teams/{id}, this is open to the team's
-    leaders, seconds and core members."""
+    leaders, seconds and core members.
+
+    Core members are included **deliberately**, and it is not an oversight to
+    be tightened: ministry leaders here are often elderly, and a public page
+    nobody can refresh goes stale. Widening the group that may keep it current
+    is worth more than narrowing who may speak for the ministry — the content
+    is nh3-sanitized and the URL must live on docs.google.com, so the exposure
+    is what the page says, under a name the parish can correct."""
     require(ctx.actor.can_view_full_roster(team_id), "manage this team's home page")
     team = await page_service.set_home_doc_url(ctx.session, team_id, data.url)
     return TeamOut.model_validate(team)

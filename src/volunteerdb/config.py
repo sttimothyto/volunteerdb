@@ -42,7 +42,13 @@ class Settings(BaseSettings):
     # unset, where a default of "VolunteerDB" would produce "Your VolunteerDB
     # account at VolunteerDB" on every instance that forgot to set it.
     org_name: str = ""
-    smtp2go_api_key: str = ""  # empty: emails are printed to the log, not sent
+    smtp2go_api_key: str = ""  # empty: emails are logged, not sent
+    # With no API key, print the whole message body (sign-in codes, invite and
+    # address-change links included) instead of just a warning. Implied by
+    # VDB_RELOAD, so `make dev` needs nothing set. Leave it off anywhere real,
+    # or a forgotten API key writes every credential the app issues into the
+    # process log.
+    debug_mail: bool = False
     # RFC 2606 reserved, so an instance that never set this is obvious in the
     # logs and cannot deliver anywhere real. Production sets it from the site
     # file; the address must be on a domain the mail provider is authorised

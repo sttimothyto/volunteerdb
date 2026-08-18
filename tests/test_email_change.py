@@ -30,7 +30,7 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 async def _volunteer_with_account(session, first="Maria", addr="maria@example.org"):
     volunteer = await volunteers.create(session, first, "Alvarez", email=addr)
-    account = await users.create(session, addr, volunteer_id=volunteer.id)
+    account, _ = await users.create(session, addr, volunteer_id=volunteer.id)
     return volunteer, account
 
 
@@ -274,7 +274,7 @@ async def test_looking_at_a_link_does_not_spend_it(database):
 
 async def test_an_account_with_no_volunteer_record_still_changes_its_login(database):
     async with db_session() as session:
-        account = await users.create(session, "admin@example.org", is_admin=True)
+        account, _ = await users.create(session, "admin@example.org", is_admin=True)
         user_id = account.id
     async with db_session() as session:
         _user, token = await users.start_email_change(
@@ -349,7 +349,7 @@ async def test_a_leader_correcting_someone_elses_address_applies_at_once(
         await memberships.assign(session, member.id, team.id, TeamRole.member)
         lena = await volunteers.create(session, "Lena", "Leader")
         await memberships.assign(session, lena.id, team.id, TeamRole.leader)
-        leader_account = await users.create(
+        leader_account, _ = await users.create(
             session, "lena@example.org", volunteer_id=lena.id
         )
         member_id, leader_user_id = member.id, leader_account.id

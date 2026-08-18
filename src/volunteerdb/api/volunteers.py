@@ -1,11 +1,13 @@
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFile
 from starlette.responses import Response
 
+from ..audit import audit_log
 from ..models import Volunteer
 from ..permissions import Actor, require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
 from ..services import events as event_service
+from ..services import mail as mail_service
 from ..services import photos as photo_service
 from ..services import users as user_service
 from ..services import volunteers as service
@@ -77,7 +79,11 @@ async def get_volunteer(ctx: CtxDep, volunteer_id: int, as_of: AsOf) -> Voluntee
 
 @router.patch("/{volunteer_id}")
 async def update_volunteer(
-    ctx: CtxDep, volunteer_id: int, data: VolunteerPatch
+    ctx: CtxDep,
+    volunteer_id: int,
+    data: VolunteerPatch,
+    request: Request,
+    background: BackgroundTasks,
 ) -> VolunteerOut:
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
     require(ctx.actor.can_edit_volunteer(volunteer_id, team_ids), "edit this volunteer")
@@ -97,12 +103,40 @@ async def update_volunteer(
                 "itself; ask for it on the Password & sign-in page (/account) "
                 "and we will mail a confirmation link there"
             )
+    # somebody else's address moving is worth a word to the address it moved
+    # away from: the edit is immediate by design (a leader fixing a bounced
+    # address cannot wait on the person who cannot read their mail), and that
+    # same immediacy is a takeover step — redirect the address, ask for their
+    # invite, redeem it. The notice rides a background task, so it goes out
+    # after the commit, and the acting session cannot suppress it.
+    replaced = None
+    if "email" in fields and volunteer_id != ctx.actor.volunteer_id:
+        on_file = await service.get(ctx.session, volunteer_id)
+        was = (on_file.email or "").strip().lower() if on_file else ""
+        now = (fields["email"] or "").strip().lower()
+        replaced = (was, now) if was and was != now else None
+
     custom = fields.pop("custom", None)
     volunteer = await service.update(ctx.session, volunteer_id, **fields)
     if custom is not None:
         volunteer = await custom_field_service.set_values(
             ctx.session, volunteer_id, custom
         )
+    if replaced is not None:
+        was, now = replaced
+        audit_log(
+            "volunteer.address_replaced_by_other",
+            volunteer_id=volunteer_id,
+            was=was,
+            now=now or "(none)",
+        )
+        if now:
+            base_url = str(request.base_url).rstrip("/")
+            background.add_task(
+                mail_service.send_email,
+                was,
+                *mail_service.address_edited_email(now, f"{base_url}/login"),
+            )
     return redacted(ctx.actor, volunteer, team_ids)
 
 
@@ -192,7 +226,9 @@ async def volunteer_timeline(ctx: CtxDep, volunteer_id: int) -> list[TimelineSpe
 
 
 @router.post("/{volunteer_id}/invite")
-async def invite_volunteer(ctx: CtxDep, volunteer_id: int) -> UserOut:
+async def invite_volunteer(
+    ctx: CtxDep, volunteer_id: int, request: Request, background: BackgroundTasks
+) -> UserOut:
     """Create the sign-in account this volunteer does not have yet, with its
     invite link armed, and return it.
 
@@ -201,15 +237,41 @@ async def invite_volunteer(ctx: CtxDep, volunteer_id: int) -> UserOut:
     endpoints under /api/users this is scoped to one volunteer and only ever
     mints a non-admin account linked to them.
 
-    Like every other users endpoint it does **not** email: the caller gets
-    `invite_token` back and decides how to deliver it. 422 when the volunteer is
-    archived, has no email, or already has a working account.
+    **Only an admin is given `invite_token` back.** The link is a bearer
+    credential — whoever holds it signs in as that volunteer — and a leader may
+    add anybody to their own team and then edit their address, which turned
+    "invite my team member" into "take over any account that has never signed
+    in". For a non-admin caller the link is instead mailed to the address on
+    the volunteer's own record, and the response carries the account without
+    the token. This is the one place the API sends mail (the rule stated in
+    api/events.py): the alternative is minting a credential that reaches
+    nobody. It rides a background task, so it goes out after the commit.
+
+    422 when the volunteer is archived, has no email, or already has a working
+    account.
     """
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
     require(ctx.actor.can_invite_volunteer(team_ids), "invite this volunteer")
-    account, _token = await user_service.invite_volunteer(ctx.session, volunteer_id)
+    account, token = await user_service.invite_volunteer(ctx.session, volunteer_id)
     out = UserOut.model_validate(account)
     out.has_password = account.password_hash is not None
+    # never off the row — the column holds only a digest (services.users)
+    out.invite_token = token
+    audit_log(
+        "auth.invite_minted",
+        volunteer_id=volunteer_id,
+        account_id=account.id,
+        address=account.email,
+        revealed=ctx.actor.is_admin,
+    )
+    if not ctx.actor.is_admin:
+        out.invite_token = None  # mailed instead, see the docstring
+        base_url = str(request.base_url).rstrip("/")
+        background.add_task(
+            mail_service.send_email,
+            account.email,
+            *mail_service.invite_email(f"{base_url}/invite/{token}"),
+        )
     return out
 
 

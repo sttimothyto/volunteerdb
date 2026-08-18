@@ -31,10 +31,10 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
         retired = await volunteers.create(session, "Pedro", "Alvarez")
         await volunteers.update(session, retired.id, is_active=False)
         await volunteers.create(session, "Bruno", "Costa")
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
-        member = await users.create(
+        member, _ = await users.create(
             session, "member@example.org", password="test-pass-phrase"
         )
         maria_id, choir_id = maria.id, choir.id
@@ -114,7 +114,7 @@ async def test_volunteers_page_search_box_also_suggests(database):
         maria = await volunteers.create(
             session, "Maria", "Alvarez", "maria@example.org"
         )
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         maria_id, admin_id = maria.id, admin.id
@@ -147,10 +147,10 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
         )
         await memberships.assign(session, maria.id, music.id, TeamRole.member)
         await memberships.assign(session, bruno.id, music.id, TeamRole.member)
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
-        bruno_u = await users.create(
+        bruno_u, _ = await users.create(
             session, "bruno@example.org", volunteer_id=bruno.id
         )
         maria_id, bruno_id = maria.id, bruno.id

@@ -44,6 +44,7 @@ from ..db import db_session
 from ..log import init_logging
 from ..models import TeamSheet
 from ..services import interest as interest_service
+from ..services import mail
 from ..services import pages as page_service
 from ..services import teams as team_service
 from ..services import users as user_service
@@ -105,7 +106,7 @@ async def _ensure_sync_user() -> int:
     async with db_session() as session:
         user = await user_service.get_by_email(session, email)
         if user is None:
-            user = await user_service.create(
+            user, _ = await user_service.create(
                 session,
                 email,
                 password=secrets.token_urlsafe(32),
@@ -216,6 +217,14 @@ async def apply(workdir: Path) -> int:
                 )
                 if report.applied:
                     status = "applied"
+                    # a sheet that redirected somebody's address tells the
+                    # mailbox it moved away from — unattended overnight edits
+                    # are exactly the ones nobody would otherwise see
+                    # (services.mail.address_edited_email)
+                    await mail.notify_replaced_addresses(
+                        report.addresses_replaced,
+                        f"{settings().public_base_url.rstrip('/')}/login",
+                    )
                     print(
                         f"{path}: +{report.volunteers_created} volunteers, "
                         f"+{report.memberships_created}/~{report.memberships_updated}"

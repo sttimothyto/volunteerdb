@@ -4,6 +4,8 @@ The one account-creating route that is not is POST /api/volunteers/{id}/invite,
 covered at the bottom: it is scoped to one volunteer on the caller's own teams.
 """
 
+import hashlib
+
 import pytest
 
 from volunteerdb.db import db_session
@@ -228,19 +230,22 @@ async def test_volunteer_invite_is_open_to_leaders_and_core(
     body = r.json()
     assert body["email"] == "nils@example.org"
     assert body["volunteer_id"] == rostered, "linked to the person invited"
-    assert body["invite_token"], "the caller gets the link to hand over"
-    assert body["invite_expires_at"]
+    assert body["invite_expires_at"], "the caller learns a link is out, and until when"
     assert body["has_password"] is False
     assert body["is_admin"] is False, "a leader can never mint an admin"
 
-    # core members hold the same right; here the account already exists, so this
-    # exercises the re-arm path rather than creation
     async with db_session() as session:
         account = await users.account_for_volunteer(session, rostered)
+        first_token = account.invite_token
+        assert first_token, "the invite really is armed (as a digest)"
+        # core members hold the same right; the account exists now, so this
+        # exercises the re-arm path rather than creation
         account.invite_expires_at = None
     again = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_core)
     assert again.status_code == 200, again.text
-    assert again.json()["invite_token"] != body["invite_token"], "a fresh token"
+    async with db_session() as session:
+        account = await users.account_for_volunteer(session, rostered)
+        assert account.invite_token != first_token, "a fresh token"
 
 
 async def test_volunteer_invite_refuses_a_plain_member(
@@ -272,20 +277,52 @@ async def test_volunteer_invite_maps_service_refusals(client, seeded, token_admi
     assert "already has a working account" in r.json()["detail"]
 
 
-async def test_volunteer_invite_does_not_email(
-    client, seeded, rostered, token_leader, monkeypatch
-):
-    """Like every other users endpoint this mints only — the GUI is where mail
-    gets sent. The caller decides how to deliver the link it gets back."""
+@pytest.fixture
+def sent_api(monkeypatch) -> list[tuple[str, str, str]]:
     from volunteerdb.services import mail
 
-    sent: list[tuple[str, str, str]] = []
+    captured: list[tuple[str, str, str]] = []
 
     async def fake_send(to: str, subject: str, body: str) -> bool:
-        sent.append((to, subject, body))
+        captured.append((to, subject, body))
         return True
 
     monkeypatch.setattr(mail, "send_email", fake_send)
+    return captured
+
+
+async def test_only_an_admin_is_handed_the_invite_link(
+    client, seeded, rostered, token_leader, token_admin, sent_api
+):
+    """The link signs you in as that volunteer, and a leader may add anybody to
+    their own team and then edit their address — so handing them the token made
+    every never-signed-in account takeable. Non-admins get delivery to the
+    address on file instead; this is the one route that mails, because the
+    alternative is minting a credential that reaches nobody.
+
+    Admins keep both the token and the no-mail rule: they hand it over
+    themselves, which is what the GUI's visible link has always been for."""
     r = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_leader)
-    assert r.status_code == 200
-    assert sent == [], "no mail from the API"
+    assert r.status_code == 200, r.text
+    assert r.json()["invite_token"] is None, "never to a non-admin"
+
+    assert len(sent_api) == 1, "mailed instead, so the invite still arrives"
+    to, _subject, body = sent_api[0]
+    assert to == "nils@example.org", "to the address on the volunteer's own record"
+    mailed = body.split("/invite/", 1)[1].split()[0].rstrip(".,)")
+
+    async with db_session() as session:
+        account = await users.account_for_volunteer(session, rostered)
+        # the stored value is a DIGEST of the mailed link, never the link
+        # (services.users._issue_invite): a read of this table hands out nothing
+        assert account.invite_token == hashlib.sha256(mailed.encode()).hexdigest()
+        assert account.invite_token != mailed
+
+    # a second, admin-issued invite: token back, and still no mail from the API
+    async with db_session() as session:
+        (await users.account_for_volunteer(session, rostered)).invite_expires_at = None
+    sent_api.clear()
+    r = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_admin)
+    assert r.status_code == 200, r.text
+    assert r.json()["invite_token"], "an admin hands the link over in person"
+    assert sent_api == [], "and no mail from the API, as everywhere else"

@@ -37,7 +37,25 @@ Events to know: `db.insert` / `db.update` / `db.delete` (row writes, with
 full values or old → new diffs), `db.read` (at `INFO` and below),
 `db.commit` / `db.rollback`, `http.request`, `auth.login`,
 `auth.login_failed`, `auth.otp_requested`, `auth.invite_redeemed`,
-`auth.api_token_issued`, and `import.finished`.
+`auth.invite_minted`, `auth.api_token_issued`, `import.finished`,
+`volunteer.address_replaced_by_other`, and the export events below.
+
+**Who read what.** Writes are recorded in full, but reads are not: `db.read`
+sits at `INFO`, below the `AUDIT` default, so ordinary browsing leaves no
+row-level trail. Bulk reads do, because those are the ones that carry the
+parish off the premises — `export.parish`, `export.team_roster` (with
+`notes_included`, since the notes column is withheld from a viewer who may not
+read notes) and `export.my_teams` are logged at `AUDIT` on both the GUI and the
+API, whatever the verbosity. `import.finished` has always been. So "who
+downloaded the roster, and when" is answerable at the default level; "who
+looked at one volunteer's page" is not, deliberately — that would be a line
+per page view.
+
+`auth.invite_minted` carries `revealed`, which says whether the caller was
+shown the link or it was only mailed to the volunteer (see
+[Manage user accounts](manage-users.md)). `volunteer.address_replaced_by_other`
+records a leader or admin redirecting somebody else's address, which also mails
+the address being replaced.
 
 Verbosity is controlled by `VDB_LOG_LEVEL` — see
 [Configuration](../reference/configuration.md).

@@ -32,7 +32,7 @@ async def test_otp_session_sets_a_password_without_the_old_one(database, monkeyp
     monkeypatch.setattr(mail, "send_email", fake_send)
 
     async with db_session() as session:
-        user = await users.create(
+        user, _ = await users.create(
             session, "forgetful@example.org", password="cedar lamp figs"
         )
         user_id = user.id
@@ -79,7 +79,7 @@ async def test_password_session_must_retype_the_current_password(database, monke
     monkeypatch.setattr(mail, "send_email", lambda *a, **k: _ok())
 
     async with db_session() as session:
-        user = await users.create(
+        user, _ = await users.create(
             session, "careful@example.org", password="cedar lamp figs"
         )
         user_id = user.id
@@ -132,7 +132,7 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
         )
         liturgy = await teams.create(session, "Liturgy")
         await memberships.assign(session, maria.id, liturgy.id, TeamRole.leader)
-        account = await users.create(
+        account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
         )
         volunteer_id, user_id = maria.id, account.id
@@ -204,7 +204,7 @@ async def test_a_pending_address_change_can_be_called_off(database, monkeypatch)
     monkeypatch.setattr(mail, "send_email", lambda *a, **k: _ok())
 
     async with db_session() as session:
-        user = await users.create(session, "unsure@example.org")
+        user, _ = await users.create(session, "unsure@example.org")
         user_id = user.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -228,7 +228,7 @@ async def test_the_address_change_form_refuses_a_typo_and_a_taken_address(
     monkeypatch.setattr(mail, "send_email", lambda *a, **k: _ok())
 
     async with db_session() as session:
-        user = await users.create(session, "hopeful@example.org")
+        user, _ = await users.create(session, "hopeful@example.org")
         await users.create(session, "spoken.for@example.org")
         user_id = user.id
 

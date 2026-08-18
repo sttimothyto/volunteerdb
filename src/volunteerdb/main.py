@@ -47,10 +47,43 @@ ASSET_PREFIXES = (
 # at INFO — API calls are exactly the traffic worth seeing).
 QUIET_PREFIXES = ("/_nicegui", "/static/", "/favicon", "/photos/", "/ministries/img/")
 
+# Paths whose LAST segment is a bearer credential. The request line records the
+# path, so at INFO these would write live invite and address-change links into
+# the log — and into any reverse-proxy access log in front of it. The prefix is
+# kept (it is the useful half: which flow was exercised) and the token is
+# replaced. Redaction rather than QUIET_PREFIXES: a redemption attempt is
+# exactly the traffic worth seeing, it is just the token that must not be in it.
+SECRET_PATH_PREFIXES = ("/invite/", "/confirm-email/")
+
+
+def redact_path(path: str) -> str:
+    for prefix in SECRET_PATH_PREFIXES:
+        if path.startswith(prefix):
+            return f"{prefix}<redacted>"
+    return path
+
+
 # Cookie inactivity bound. Real session lifetime is enforced app-side via
 # session_expires_at (see ui/context.py); 92 days covers every case where the
 # 90-day "keep me signed in" window could still be valid.
 SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 92
+
+
+# The paths a browser authenticates *through*. Loading one of these while
+# anonymous mints a fresh session id, which is the fixation defence: NiceGUI
+# assigns the session id on the first request and never changes it, and
+# app.storage.user is keyed by it — so an attacker who can plant the cookie (a
+# shared kiosk, a sibling-subdomain XSS, an active network attacker where
+# VDB_COOKIE_SECURE is off) could otherwise fix a known id and inherit whatever
+# the victim signs into it.
+#
+# Rotating HERE rather than in establish_session is not a detail: sign-in
+# happens over the websocket, where there is no HTTP response left to carry a
+# Set-Cookie, so a new id assigned at that moment would only ever move the
+# server's bucket out from under the browser. On the way IN there is a real
+# response, and the id the victim then authenticates into is one the server
+# minted after the planted cookie was discarded.
+AUTH_ENTRY_PREFIXES = ("/login", "/invite/", "/confirm-email/")
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -59,6 +92,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+        if any(path.startswith(p) for p in AUTH_ENTRY_PREFIXES):
+            await self._rotate_anonymous_session(request)
         if "id" in request.session and not any(
             path.startswith(p) for p in ASSET_PREFIXES
         ):
@@ -71,6 +106,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return RedirectResponse(f"/login?redirect_to={quote(path)}")
         return await call_next(request)
 
+    @staticmethod
+    async def _rotate_anonymous_session(request: Request) -> None:
+        """Give an anonymous browser a fresh session id (see
+        AUTH_ENTRY_PREFIXES). Only anonymous ones: a signed-in reader who
+        wanders onto /login must keep the session they already have.
+
+        The dark-mode preference rides along — that is how this browser likes
+        to read, whoever is using it — and nothing else, because an id somebody
+        else chose should contribute no state at all. Reaches into
+        nicegui.storage for want of a public API; test_auth_primitives pins the
+        behaviour so a NiceGUI change fails loudly instead of quietly dropping
+        the protection."""
+        try:
+            if session_user_id() is not None:
+                return
+            dark_mode = app.storage.user.get("dark_mode")
+        except Exception:  # no storage context yet: nothing to rotate
+            return
+        request.session["id"] = secrets.token_urlsafe(24)
+        await app.storage._create_user_storage(request.session["id"])
+        if dark_mode is not None:
+            app.storage.user["dark_mode"] = dark_mode
+
 
 class RequestLogMiddleware(BaseHTTPMiddleware):
     """One line per request: method, path, status, duration — with the cookie
@@ -79,6 +137,7 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+        logged_path = redact_path(path)
         ip = request.client.host if request.client else "-"
         via = "api" if path.startswith("/api/") else "gui"
         try:
@@ -91,7 +150,7 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
                 response = await call_next(request)
             except Exception:
                 logger.exception(
-                    "http.request_failed", method=request.method, path=path
+                    "http.request_failed", method=request.method, path=logged_path
                 )
                 raise
             line = (
@@ -102,7 +161,7 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             line(
                 "http.request",
                 method=request.method,
-                path=path,
+                path=logged_path,
                 status=response.status_code,
                 ms=round((time.perf_counter() - start) * 1000),
             )
@@ -120,8 +179,12 @@ def create_app() -> None:
         str(Path(__file__).parent / "ui" / "static"),
         max_cache_age=30 * 24 * 3600,
     )
-    # Built Sphinx manual. Deliberately NOT in UNRESTRICTED_PREFIXES: the
-    # ops pages (secrets, backups) are for signed-in eyes only.
+    # Built Sphinx manual. Deliberately NOT in UNRESTRICTED_PREFIXES — but
+    # "signed in" here means every account, volunteers included, not just
+    # admins: the manual is the app's own help and splitting it would make
+    # ordinary pages cross-link into 403s. The ops pages (secret rotation,
+    # backups, deploy) therefore reach every signed-in reader. That is
+    # accepted: they describe procedure, never credentials.
     docs_dir = Path(settings().docs_dir)
     if docs_dir.is_dir():
         app.mount("/manual", StaticFiles(directory=docs_dir, html=True), name="manual")

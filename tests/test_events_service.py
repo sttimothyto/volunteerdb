@@ -398,13 +398,13 @@ async def test_cancel_sub_and_claimable_visibility(database):
         sub = await event_service.request_sub(
             session, assignment_id=a.id, requested_by=None
         )
-        user2 = await users.create(session, "vol2@example.org", volunteer_id=vids[2])
+        user2, _ = await users.create(session, "vol2@example.org", volunteer_id=vids[2])
         actor2 = await load_actor(session, user2)
         claimable = await event_service.claimable_subs(session, actor2)
         assert [c.sub.id for c in claimable] == [sub.id]
         assert claimable[0].volunteer.id == vids[1]
 
-        user1 = await users.create(session, "vol1@example.org", volunteer_id=vids[1])
+        user1, _ = await users.create(session, "vol1@example.org", volunteer_id=vids[1])
         actor1 = await load_actor(session, user1)
         assert await event_service.claimable_subs(session, actor1) == [], (
             "your own request is not claimable by you"
@@ -496,7 +496,7 @@ async def test_list_events_scopes_to_the_actors_teams(database):
         team_b = await teams.create(session, "Choir")
         other = await volunteers.create(session, "Oda", "Choir", "oda@example.org")
         await memberships.assign(session, other.id, team_b.id, TeamRole.member)
-        admin = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
     await _one_event(team_a)
     b_start = _at(date.today() + timedelta(days=7), 18)
     async with db_session() as session:
@@ -509,7 +509,9 @@ async def test_list_events_scopes_to_the_actors_teams(database):
             created_by=None,
         )
     async with db_session() as session:
-        member = await users.create(session, "vol1@example.org", volunteer_id=vids_a[1])
+        member, _ = await users.create(
+            session, "vol1@example.org", volunteer_id=vids_a[1]
+        )
         member_actor = await load_actor(session, member)
         admin_actor = await load_actor(session, admin)
         mine = await event_service.list_events(session, member_actor)
@@ -532,7 +534,9 @@ async def test_summary_counts_fill_and_capacity(database):
         await event_service.sign_up(
             session, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
         )
-        leader = await users.create(session, "vol0@example.org", volunteer_id=vids[0])
+        leader, _ = await users.create(
+            session, "vol0@example.org", volunteer_id=vids[0]
+        )
         actor = await load_actor(session, leader)
         summary = (await event_service.list_events(session, actor))[0]
         assert (summary.filled, summary.capacity) == (1, 5)
@@ -547,7 +551,7 @@ async def test_summary_counts_fill_and_capacity(database):
 
 
 async def _admin_actor(session):
-    admin = await users.create(session, "checker@example.org", is_admin=True)
+    admin, _ = await users.create(session, "checker@example.org", is_admin=True)
     return await load_actor(session, admin)
 
 
@@ -610,7 +614,9 @@ async def test_similar_events_masks_titles_outside_the_actors_scope(database):
             created_by=None,
         )
     async with db_session() as session:
-        member = await users.create(session, "vol1@example.org", volunteer_id=vids[1])
+        member, _ = await users.create(
+            session, "vol1@example.org", volunteer_id=vids[1]
+        )
         actor = await load_actor(session, member)
         hits = await event_service.similar_events(
             session,

@@ -61,21 +61,34 @@ def burn_password_check(password: str) -> None:
 
 # Async handlers call the wrappers below: one argon2 pass is 100-400 ms of
 # GIL-held CPU, and the app runs a single uvicorn worker, so a sync call
-# stalls every other request and websocket for that window. Should concurrent
-# 64 MiB hashes ever need bounding, an anyio.CapacityLimiter passed as
-# `limiter=` here is the knob.
+# stalls every other request and websocket for that window.
+#
+# Every pass also holds 64 MiB while it runs, and anyio's default thread pool
+# is 40 wide — so forty concurrent sign-in attempts would ask for ~2.5 GB on a
+# box provisioned with 4. The per-IP login throttle does not bound this: it
+# counts failures per address and per IP, and a burst from many IPs (or of
+# *correct* passwords) never trips it. Six at a time keeps the memory ceiling
+# at ~400 MB and still saturates the cores this runs on; the rest queue, which
+# for a sign-in is the right failure mode.
+_PASSWORD_LIMITER = anyio.CapacityLimiter(6)
 
 
 async def async_hash_password(password: str) -> str:
-    return await anyio.to_thread.run_sync(hash_password, password)
+    return await anyio.to_thread.run_sync(
+        hash_password, password, limiter=_PASSWORD_LIMITER
+    )
 
 
 async def async_verify_password(password_hash: str, password: str) -> bool:
-    return await anyio.to_thread.run_sync(verify_password, password_hash, password)
+    return await anyio.to_thread.run_sync(
+        verify_password, password_hash, password, limiter=_PASSWORD_LIMITER
+    )
 
 
 async def async_burn_password_check(password: str) -> None:
-    await anyio.to_thread.run_sync(burn_password_check, password)
+    await anyio.to_thread.run_sync(
+        burn_password_check, password, limiter=_PASSWORD_LIMITER
+    )
 
 
 def new_token() -> str:

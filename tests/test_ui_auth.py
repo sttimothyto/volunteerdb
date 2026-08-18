@@ -59,8 +59,7 @@ async def test_invite_redemption_flow(database, monkeypatch):
     monkeypatch.setattr(mail, "send_email", fake_send)
 
     async with db_session() as session:
-        invitee = await users.create(session, "new@example.org")
-        token = invitee.invite_token
+        invitee, token = await users.create(session, "new@example.org")
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/invite/{token}")

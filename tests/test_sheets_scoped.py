@@ -30,13 +30,13 @@ async def parish(database):
         await memberships.assign(session, lena.id, liturgy.id, TeamRole.leader)
         await memberships.assign(session, mia.id, liturgy.id, TeamRole.member)
         await memberships.assign(session, otto.id, hospitality.id, TeamRole.member)
-        leader = await users.create(
+        leader, _ = await users.create(
             session,
             "lena@example.org",
             volunteer_id=lena.id,
             password="test-pass-phrase",
         )
-        member = await users.create(
+        member, _ = await users.create(
             session, "mia@example.org", volunteer_id=mia.id, password="test-pass-phrase"
         )
         return {

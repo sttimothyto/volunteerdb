@@ -27,7 +27,10 @@ def establish_session(
     "password", "otp" or "invite" — because /account needs to know: someone who
     got here with an emailed code has proved possession of the mailbox and may
     set a password without knowing the old one, which is what makes "I forgot
-    it" self-serviceable (NIST SP 800-63B §4.1.2.1)."""
+    it" self-serviceable (NIST SP 800-63B §4.1.2.1).
+
+    The session id this lands in was already rotated on the way in — see
+    main.AuthMiddleware, which does it where a Set-Cookie can still be sent."""
     app.storage.user["user_id"] = user_id
     app.storage.user["auth_method"] = method
     app.storage.user["session_expires_at"] = (

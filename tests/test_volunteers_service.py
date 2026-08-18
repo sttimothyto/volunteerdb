@@ -107,14 +107,19 @@ async def test_search_private_fields_are_scope_aware(database):
         await memberships.assign(session, leader_v.id, liturgy.id, TeamRole.leader)
         leader = await load_actor(
             session,
-            await users.create(session, "lena@example.org", volunteer_id=leader_v.id),
+            (await users.create(session, "lena@example.org", volunteer_id=leader_v.id))[
+                0
+            ],
         )
         admin = await load_actor(
-            session, await users.create(session, "admin@example.org", is_admin=True)
+            session,
+            (await users.create(session, "admin@example.org", is_admin=True))[0],
         )
         member = await load_actor(
             session,
-            await users.create(session, "plain@example.org", volunteer_id=plain.id),
+            (await users.create(session, "plain@example.org", volunteer_id=plain.id))[
+                0
+            ],
         )
 
         # admins (and trusted internal callers, actor=None) match every column
@@ -150,6 +155,25 @@ async def test_search_private_fields_are_scope_aware(database):
         assert await volunteers.search(session, "555-0100", actor=member) == [], (
             "member role grants names, not private-field search, even on their own team"
         )
+
+        # email is scoped with the rest of the contact details, not public.
+        # The list renders it as `•••` to these viewers, and a bare match let
+        # the query language walk it out a character at a time.
+        await volunteers.update(session, outsider.id, email="outt@example.org")
+        assert await volunteers.search(session, "outt@example", actor=member) == [], (
+            "an address a member may not read must not confirm by row presence"
+        )
+        assert await volunteers.search(session, "outt@example", actor=leader) == [], (
+            "nor for a leader of another ministry"
+        )
+        assert [
+            v.id for v in await volunteers.search(session, "outt@example", actor=admin)
+        ] == [outsider.id], "admins still match every column"
+        await volunteers.update(session, plain.id, email="plain.v@example.org")
+        assert [
+            v.id
+            for v in await volunteers.search(session, "plain.v@example", actor=member)
+        ] == [plain.id], "your own address is still yours to search"
 
 
 async def test_missing_volunteer_raises_lookup(database):
@@ -210,18 +234,25 @@ async def test_search_or_query_scopes_rows_per_role(database):
         await memberships.assign(session, leader_v.id, liturgy.id, TeamRole.leader)
         leader = await load_actor(
             session,
-            await users.create(session, "lena@example.org", volunteer_id=leader_v.id),
+            (await users.create(session, "lena@example.org", volunteer_id=leader_v.id))[
+                0
+            ],
         )
         admin = await load_actor(
-            session, await users.create(session, "admin@example.org", is_admin=True)
+            session,
+            (await users.create(session, "admin@example.org", is_admin=True))[0],
         )
         member = await load_actor(
             session,
-            await users.create(session, "plain@example.org", volunteer_id=plain.id),
+            (await users.create(session, "plain@example.org", volunteer_id=plain.id))[
+                0
+            ],
         )
         gard = await load_actor(
             session,
-            await users.create(session, "gard@example.org", volunteer_id=gardener.id),
+            (await users.create(session, "gard@example.org", volunteer_id=gardener.id))[
+                0
+            ],
         )
 
         async def ids(text, actor):

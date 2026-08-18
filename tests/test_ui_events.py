@@ -43,10 +43,10 @@ async def _parish(session):
     await memberships.assign(session, mia.id, liturgy.id, TeamRole.member)
     await memberships.assign(session, noor.id, liturgy.id, TeamRole.member)
     await memberships.assign(session, oda.id, choir.id, TeamRole.member)
-    lena_u = await users.create(session, "lena@example.org", volunteer_id=lena.id)
-    mia_u = await users.create(session, "mia@example.org", volunteer_id=mia.id)
-    noor_u = await users.create(session, "noor@example.org", volunteer_id=noor.id)
-    oda_u = await users.create(session, "oda@example.org", volunteer_id=oda.id)
+    lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
+    mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
+    noor_u, _ = await users.create(session, "noor@example.org", volunteer_id=noor.id)
+    oda_u, _ = await users.create(session, "oda@example.org", volunteer_id=oda.id)
     return {
         "liturgy": liturgy.id,
         "choir": choir.id,
@@ -203,7 +203,7 @@ async def test_leader_creates_event_via_dialog(database):
         await user.should_see("0/∞", retries=50)
 
     async with db_session() as session:
-        admin = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
         from volunteerdb.permissions import load_actor
 
         actor = await load_actor(session, admin)

@@ -3,9 +3,16 @@
 Two callers with different rights share this: the admin accounts page, which
 mints invites for anybody, and the team roster / volunteer profile, where a
 ministry leader, second, or core member invites somebody on their own team.
-Both end in the same place — an armed ``/invite/<token>`` link, emailed if
-outbound mail is configured, and shown on screen either way so it can be handed
-over in person when the email does not arrive.
+Both end in the same place — an armed ``/invite/<token>`` link, emailed to
+the address on the volunteer's own record.
+
+Only an **admin** is shown the link itself. Anyone holding it can redeem it and
+sign in as that volunteer, and a leader may add any volunteer to their own team
+and then edit their address — so displaying it to non-admins turned "invite
+somebody on my team" into "take over any account that has never signed in".
+Mailing it to the address on file keeps the workflow and puts the link where
+only the volunteer can read it. Admins keep the visible copy: hand-delivery is
+the answer when the mail bounces, and they can already do everything anyway.
 
 ``base_url`` is threaded in rather than read from a global: it comes off the live
 request (``str(request.base_url)``), which is what makes the link work behind the
@@ -14,9 +21,11 @@ events_page.
 """
 
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 
 from nicegui import ui
 
+from ..audit import audit_log
 from ..config import settings
 from ..models import AppUser
 from ..permissions import require, volunteer_team_ids
@@ -43,12 +52,17 @@ def show_invite(
     email: str,
     sent: bool | None = None,
     *,
+    reveal: bool = True,
     on_resend: Callable[[], Awaitable[None]] | None = None,
     reload_on_close: bool = False,
 ) -> None:
     """The link, its window, and how delivery went. `sent` None means nothing
     was emailed and the link is being handed out. `on_resend`, when given, adds
     a button to arm and mail a fresh one.
+
+    `reveal` False keeps the token off the screen (see the module docstring):
+    the reader learns that an invite is out and can send another, but the link
+    itself only reaches the volunteer's mailbox.
 
     `reload_on_close` refreshes the page once the reader is done with the link —
     the row behind this dialog still says "no account" and wants redrawing, but
@@ -60,7 +74,8 @@ def show_invite(
     with ui.dialog() as dialog, ui.card().classes("gap-2 w-[34rem]"):
         ui.label(f"Invite link for {email}").classes("font-medium")
         url = invite_url(base_url, token)
-        ui.input(value=url).props("readonly outlined dense").classes("w-full")
+        if reveal:
+            ui.input(value=url).props("readonly outlined dense").classes("w-full")
         window = mail.ttl_window(settings().invite_ttl_hours)
         ui.label(
             f"Usable once, and only for the next {window}. After that "
@@ -74,20 +89,28 @@ def show_invite(
             )
         elif sent:
             note, color = (
-                f"Invite email sent to {email}. Backup link above.",
+                f"Invite email sent to {email}."
+                + (" Backup link above." if reveal else ""),
                 "text-gray-500",
             )
-        else:
+        elif reveal:
             note, color = (
                 "Couldn't send the invite email — hand this link out instead.",
                 "text-negative",
             )
+        else:
+            note, color = (
+                f"Couldn't send the invite email to {email}. Check the address, "
+                "then send again — or ask an admin for the link.",
+                "text-negative",
+            )
         ui.label(note).classes(f"text-sm {color}")
         with ui.row().classes("justify-end w-full gap-2"):
-            ui.button(
-                "Copy",
-                on_click=lambda: (ui.clipboard.write(url), ui.notify("Copied")),
-            ).props("dense")
+            if reveal:
+                ui.button(
+                    "Copy",
+                    on_click=lambda: (ui.clipboard.write(url), ui.notify("Copied")),
+                ).props("dense")
             if on_resend is not None:
 
                 async def resend() -> None:
@@ -102,6 +125,44 @@ def show_invite(
 
     if reload_on_close:
         dialog.on("hide", lambda _: None if resent["yes"] else ui.navigate.reload())
+    dialog.open()
+
+
+def show_outstanding_invite(
+    email: str,
+    until: datetime | None,
+    *,
+    on_resend: Callable[[], Awaitable[None]] | None = None,
+) -> None:
+    """An invite is already out — say so, and offer to replace it.
+
+    Deliberately shows no link: only the digest is stored, so nobody (not even
+    an admin) can recover one already sent. "Send again" mints a fresh link,
+    mails it, and kills the previous one — which is the same trade every
+    password-reset flow makes, and the reason this dialog exists at all."""
+    with ui.dialog() as dialog, ui.card().classes("gap-2 w-[30rem]"):
+        ui.label(f"An invite is already out to {email}").classes("font-medium")
+        ui.label(
+            f"It can be used until {until:%Y-%m-%d %H:%M}."
+            if until
+            else "It is still outstanding."
+        ).classes("text-sm text-gray-500")
+        ui.label(
+            "The link itself is not kept — only a fingerprint of it, so a copy "
+            "of the database is not a set of keys. To hand one over now, send a "
+            "fresh link: the one already mailed stops working."
+        ).classes("text-sm text-gray-500")
+        with ui.row().classes("justify-end w-full gap-2"):
+            if on_resend is not None:
+
+                async def resend() -> None:
+                    dialog.close()
+                    await on_resend()
+
+                ui.button("Send again", icon="mail", on_click=resend).props(
+                    "dense outline"
+                )
+            ui.button("Close", on_click=dialog.close).props("flat dense")
     dialog.open()
 
 
@@ -142,14 +203,23 @@ async def send_invite(
         require(actor.can_invite_volunteer(team_ids), "invite this volunteer")
         account, token = await user_service.invite_volunteer(session, volunteer_id)
         addr = account.email
+        reveal = actor.is_admin
+        audit_log(
+            "auth.invite_minted",
+            volunteer_id=volunteer_id,
+            account_id=account.id,
+            address=addr,
+            revealed=reveal,
+        )
     # Mail goes out after the commit: a send that fails must not roll the
-    # account back, since the link on screen is still usable by hand.
+    # account back, since the link is still re-sendable (and, for an admin,
+    # still on screen).
     sent = await email_invite(base_url, addr, token)
     ui.notify(
         f"Invite emailed to {addr}" if sent else f"Invite created for {addr}",
         color="positive" if sent else "warning",
     )
-    show_invite(base_url, token, addr, sent, reload_on_close=True)
+    show_invite(base_url, token, addr, sent, reveal=reveal, reload_on_close=True)
 
 
 def invite_control(
@@ -159,6 +229,7 @@ def invite_control(
     account: AppUser | None,
     base_url: str,
     *,
+    reveal: bool = False,
     where: str = "roster",
 ) -> None:
     """The roster/profile cell for somebody who could be invited.
@@ -189,21 +260,21 @@ def invite_control(
         await send_invite(volunteer_id, name, address, base_url, again=pending)
 
     if pending and account is not None:
-        # Same affordance as the admin page's clickable "invite pending" badge:
-        # reopening the dialog is how the link gets handed over in person.
-        token = account.invite_token or ""
+        # Same affordance as the admin page's clickable "invite pending" badge,
+        # but it can only ever SEND — never re-display. Only the digest of the
+        # link is stored (services.users._issue_invite), so an outstanding one
+        # no longer exists in readable form anywhere; handing it over again
+        # means minting a fresh one, which is what "Send again" does.
         until = account.invite_expires_at
-
-        def reopen() -> None:
-            show_invite(base_url, token, address, True, on_resend=go)
 
         ui.badge("invite sent", color="warning").classes("cursor-pointer").mark(
             mark
-        ).on("click", lambda _: reopen()).tooltip(
-            f"Invite link usable until {until:%Y-%m-%d %H:%M} — "
-            "click for the link, or to send it again"
+        ).on(
+            "click", lambda _: show_outstanding_invite(address, until, on_resend=go)
+        ).tooltip(
+            f"Invite link usable until {until:%Y-%m-%d %H:%M} — click to send it again"
             if until
-            else "Invite link outstanding — click for the link"
+            else "Invite link outstanding — click to send it again"
         )
         return
 

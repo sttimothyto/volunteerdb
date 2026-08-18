@@ -11,7 +11,7 @@ from volunteerdb.ui.context import session_expired
 async def test_start_otp_login_unknown_or_inactive(database):
     async with db_session() as session:
         assert await users.start_otp_login(session, "nobody@example.org") is None
-        u = await users.create(session, "off@example.org")
+        u, _ = await users.create(session, "off@example.org")
         await users.set_flags(session, u.id, is_active=False)
         assert await users.start_otp_login(session, "off@example.org") is None
 
@@ -77,11 +77,11 @@ async def test_otp_expired_code_rejected(database):
 
 async def test_redeem_invite_password_optional(database):
     async with db_session() as session:
-        a = await users.create(session, "nopw@example.org")
-        b = await users.create(session, "withpw@example.org")
+        a, a_token = await users.create(session, "nopw@example.org")
+        b, b_token = await users.create(session, "withpw@example.org")
 
         ra = await users.redeem_invite(
-            session, a.invite_token, None, agreed_to_confidentiality=True
+            session, a_token, None, agreed_to_confidentiality=True
         )
         assert ra is not None
         assert ra.password_hash is None and ra.invite_token is None  # OTP-only account
@@ -89,7 +89,7 @@ async def test_redeem_invite_password_optional(database):
 
         rb = await users.redeem_invite(
             session,
-            b.invite_token,
+            b_token,
             "long-enough-phrase",
             agreed_to_confidentiality=True,
         )
@@ -103,10 +103,27 @@ async def test_redeem_invite_password_optional(database):
 
 
 async def test_mail_dev_mode_and_builders(monkeypatch, capsys):
+    """With no API key nothing is sent — but the BODY only reaches the log
+    under VDB_DEBUG_MAIL (or VDB_RELOAD, which means `make dev`). These bodies
+    carry sign-in codes and invite links, so an instance that merely forgot the
+    API key must not write every credential it issues into journald."""
     monkeypatch.setattr(mail, "settings", lambda: Settings(smtp2go_api_key=""))
     assert await mail.send_email("x@example.org", "Subj", "Body")  # no network
     out = capsys.readouterr().out
+    assert "Body" not in out, "no credentials on stdout without opting in"
+
+    monkeypatch.setattr(
+        mail, "settings", lambda: Settings(smtp2go_api_key="", debug_mail=True)
+    )
+    assert await mail.send_email("x@example.org", "Subj", "Body")
+    out = capsys.readouterr().out
     assert "[MAIL]" in out and "x@example.org" in out and "Body" in out
+
+    monkeypatch.setattr(
+        mail, "settings", lambda: Settings(smtp2go_api_key="", reload=True)
+    )
+    assert await mail.send_email("x@example.org", "Subj", "Body")
+    assert "Body" in capsys.readouterr().out, "`make dev` needs nothing set"
 
     subject, body = mail.otp_email("123456")
     assert "123456" in subject and "10 minutes" in body

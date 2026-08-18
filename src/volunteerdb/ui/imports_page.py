@@ -1,14 +1,20 @@
 from nicegui import events, ui
+from starlette.requests import Request
 
 from ..config import settings
+from ..log import audit_log
 from ..permissions import require
+from ..services import mail
 from ..sheets import exporter, importer
 from .context import action_session, notify_errors, page_session
 from .layout import frame
 
 
 @ui.page("/import")
-async def import_page():
+async def import_page(request: Request):
+    # off the live request, so the link in an address-change notice works
+    # behind the reverse proxy (the idiom ui/invites.py documents)
+    base_url = str(request.base_url).rstrip("/")
     async with page_session() as (session, actor):
         if not actor.can_import_export:
             with frame("Import/Export", actor):
@@ -33,8 +39,14 @@ async def import_page():
                 if actor.is_admin:
                     scope, name = None, "parish"
                 else:
-                    require(bool(actor.managed_team_ids), "export your teams")
-                    scope, name = actor.managed_team_ids, "my-teams"
+                    # people_team_ids: contact details, so never a task
+                    # force's borrowed roster (permissions.Actor)
+                    require(bool(actor.people_team_ids), "export your teams")
+                    scope, name = actor.people_team_ids, "my-teams"
+                audit_log(
+                    f"export.{'parish' if scope is None else 'my_teams'}",
+                    team_ids=None if scope is None else sorted(scope),
+                )
                 content = await exporter.export_csv(session, team_ids=scope)
             ui.download(content, f"volunteerdb-{name}.csv")
 
@@ -157,6 +169,11 @@ async def import_page():
             await render_report(report)
             if report.applied:
                 ui.notify(f"Imported {state['filename']}", color="positive")
+                # after the commit: a row that redirected somebody's address
+                # tells the mailbox it moved away from (services/mail.py)
+                await mail.notify_replaced_addresses(
+                    report.addresses_replaced, f"{base_url}/login"
+                )
 
         ui.upload(
             label="Drop a .csv file here (validated before anything is written)",

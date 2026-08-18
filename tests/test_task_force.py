@@ -11,8 +11,9 @@ import pytest
 from volunteerdb.db import db_session
 from volunteerdb.jobs import task_force_cleanup
 from volunteerdb.models import Event, TeamRole
+from volunteerdb.permissions import load_actor, volunteer_team_ids
 from volunteerdb.services import events as event_service
-from volunteerdb.services import memberships, task_force, teams, volunteers
+from volunteerdb.services import memberships, task_force, teams, users, volunteers
 
 TZ = ZoneInfo("America/Toronto")
 
@@ -232,3 +233,45 @@ async def test_adding_to_a_finished_event_is_refused(database):
                 source_team_id=ids["choir"],
                 created_by=None,
             )
+
+
+async def test_a_task_force_lends_a_roster_it_does_not_hand_over_its_people(database):
+    """A collaborating team's members must not become the host's to read and edit.
+
+    The meta team is a child of the owner, so before the people/affairs split
+    it landed in `managed_team_ids` and every borrowed member suddenly shared a
+    managed team with whoever set the collaboration up — contact details,
+    notes, workload and invite links included. Adding a collaborator is a
+    unilateral act (the picker offers every active team), so that was a
+    parish-wide read of anyone's private data for any team leader.
+    """
+    ids = await _parish()
+    event_id = await _event(ids["liturgy"])
+    async with db_session() as session:
+        meta = await task_force.add_collaborating_team(
+            session, event_id=event_id, source_team_id=ids["choir"], created_by=None
+        )
+        lena, _ = await users.create(
+            session, "lena@example.org", volunteer_id=ids["lena"]
+        )
+        actor = await load_actor(session, lena)
+        oda_teams = await volunteer_team_ids(session, ids["oda"])
+
+        # affairs: unchanged, or the event stops being manageable
+        assert actor.can_manage_team(meta.id), "the host still runs the event"
+        assert actor.can_view_roster_names(meta.id), "and still sees who is staffing"
+
+        # people: the borrowed roster stays the choir's
+        assert not actor.can_view_full_roster(meta.id), (
+            "no contact details through the meta roster — the same leak by "
+            "another door if this is ever allowed"
+        )
+        assert meta.id not in actor.people_team_ids
+        assert not actor.can_view_volunteer(ids["oda"], oda_teams)
+        assert not actor.can_edit_volunteer(ids["oda"], oda_teams)
+        assert not actor.can_view_workload(oda_teams)
+        assert not actor.can_invite_volunteer(oda_teams)
+
+        # ...while her own member is still hers
+        mia_teams = await volunteer_team_ids(session, ids["mia"])
+        assert actor.can_edit_volunteer(ids["mia"], mia_teams)

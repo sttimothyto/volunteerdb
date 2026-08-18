@@ -15,8 +15,11 @@ which ministry leaders do from their roster.
    shared by a family — an address held by two volunteers is left unlinked
    rather than guessed at.
 2. The account is created with an **invite link** (`/invite/<token>`).
-   If outbound email is configured, the invite is emailed; the dialog also
-   shows the link so you can hand it out in person or by other means. The
+   The invite is emailed; as an admin, the dialog also shows the link so you
+   can hand it out in person or by other means. Only the link's digest is kept,
+   so this is the one moment it can be read — once the dialog is closed nobody
+   can show it again, and handing one over later means sending a fresh link
+   (which retires the old one). The
    link is single-use and **expires after 7 days**
    (`VDB_INVITE_TTL_HOURS`) — an expired one shows as *invite expired* on the
    account row, and is not a lockout: see [Reset access](#reset-access-forgot-password-lost-invite).
@@ -55,10 +58,17 @@ keyboard focus does too, and on a touch screen the mail icon marks it and a tap
 opens it.
 
 Clicking asks for confirmation, naming the address the link will go to, then
-creates the account, emails the invite, and shows the link so it can also be
-handed over in person. The badge then reads **invite sent** until the link is
-redeemed or runs out; clicking it again brings the link back up, with a *Send
-again* button.
+creates the account and **emails** the invite there. Leaders, seconds and core
+members are not shown the link itself: whoever holds it signs in as that
+volunteer, and the same person may add anybody to their team and then correct
+their address, so a visible link would make every never-used account takeable.
+Mailing it to the address on the volunteer's own record puts it where only they
+can read it. (An admin still sees the link, for hand-delivery.)
+
+The badge then reads **invite sent** until the link is redeemed or runs out;
+clicking it says an invite is already out and offers *Send again*, which mails a
+fresh link and retires the previous one. Nobody can bring the old link back up —
+only its digest is stored.
 
 Once the link expires unused, the control returns as **send a new invite**. That
 is safe precisely because nobody has ever used the account: there is no password
@@ -79,7 +89,10 @@ Two differences from the bulk button worth knowing, both deliberate:
   make an admin, relink, disable, or promote.
 
 Over the API this is `POST /api/volunteers/{id}/invite`, with the same
-permission rule. Note the API mints the link but does not email it.
+permission rule — and the same split: an admin gets `invite_token` back, while
+for anybody else the link is mailed and the response carries only
+`invite_expires_at`. It is the one API route that sends email, because the
+alternative is minting a credential that reaches nobody.
 
 ## Fix a wrong or missing link
 

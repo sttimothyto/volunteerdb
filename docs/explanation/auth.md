@@ -41,6 +41,9 @@ Verifiers*:
   five words rather than a mangled word.
 - **At most 128**, well past the "at least 64" the spec asks verifiers to
   permit; the cap only bounds the argon2 work a single request can demand.
+  Concurrency is bounded separately: each pass holds 64 MiB while it runs, so
+  at most six run at once (`auth._PASSWORD_LIMITER`) and the rest queue —
+  otherwise a burst of sign-ins could ask for more memory than the box has.
 - **No composition rules.** No required capital, digit or symbol — the spec
   forbids them ("SHALL NOT impose other composition rules"), and they push
   people towards `Parish2026!` and away from four random words.
@@ -234,10 +237,35 @@ outer bound. Sign-out clears the session; rotating the storage secret
 [signs everyone out at once](../how-to/rotate-secrets.md). Production adds
 `Secure` to the cookie since Caddy terminates TLS.
 
-## API tokens are hashed like passwords
+Loading `/login`, an invite link or an address-confirmation link while signed
+out also **mints a fresh session id**. NiceGUI assigns that id on a browser's
+first request and never changes it, and the server's per-user storage is keyed
+by it — so an id planted on somebody's browser (a shared kiosk, an XSS on a
+sibling subdomain) would otherwise become the *authenticated* id the moment they
+signed in. It is rotated on the way in rather than at sign-in itself because
+sign-in happens over the websocket, where no response is left to carry a
+`Set-Cookie`. A signed-in browser is never rotated: that would read as a random
+logout.
+
+## Every emailed link is hashed like a password
 
 `POST /api/auth/login` returns a personal Bearer token whose SHA-256 digest
 is all the server keeps — a leaked database does not leak usable tokens
 (migration `0004` invalidated all pre-hashing tokens on this principle).
 Each login rotates the token, so revocation is "log in again" or
-deactivate the account. See [Use the JSON API](../how-to/api-recipes.md).
+deactivate the account. Forcing a reset (*re-invite*) revokes it too: it was
+issued against the password being invalidated, and that route is what an admin
+reaches for on an account they think is compromised.
+See [Use the JSON API](../how-to/api-recipes.md).
+
+The **invite link** and the **address-change link** are held the same way, for
+the same reason: each one signs its holder in (or moves the address the account
+signs in with), so a read of the database — or of a backup — must not hand out
+working ones. Only the digest is stored, which has a consequence worth stating
+plainly: a link that has been sent cannot be shown again by anybody, admin
+included. Handing one over means issuing a **fresh** link, and the previous one
+stops working. That is the trade every password-reset flow makes, and it is why
+the *invite sent* badge offers "send again" rather than "show me the link".
+
+One-time codes go further and are argon2-hashed, like passwords — six digits is
+a small space, so a digest would be worth grinding.

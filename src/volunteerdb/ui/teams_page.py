@@ -8,7 +8,9 @@ from fastapi import Request
 from nicegui import ui
 
 from .. import query_lang
+from ..log import audit_log
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
+from ..permissions import require
 from ..services import elections as elections_service
 from ..services import events as event_service
 from ..services import interest as interest_service
@@ -330,8 +332,6 @@ def _team_dialog(all_teams, team=None) -> None:
         @notify_errors
         async def save() -> None:
             async with action_session() as (session, actor):
-                from ..permissions import require
-
                 require(actor.is_admin, "only admins manage teams")
                 parent_id = parent.value or None
                 weight_value = (
@@ -505,8 +505,6 @@ def _application_form_dialog(team_id: int, current: str | None) -> None:
         @notify_errors
         async def save(new_value: str | None) -> None:
             async with action_session() as (session, actor):
-                from ..permissions import require
-
                 require(
                     actor.can_view_full_roster(team_id),
                     "manage this team's application form",
@@ -553,8 +551,6 @@ def _interests_section(interests) -> None:
 
 async def _resolve_interest(interest_id: int) -> None:
     async with action_session() as (session, actor):
-        from ..permissions import require
-
         interest = await interest_service.get(session, interest_id)
         if interest is None:
             raise LookupError("interest vanished")
@@ -582,8 +578,6 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
         @notify_errors
         async def save(new_value: str | None) -> None:
             async with action_session() as (session, actor):
-                from ..permissions import require
-
                 require(
                     actor.can_view_full_roster(team_id),
                     "manage this team's home page",
@@ -605,8 +599,6 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
 @notify_errors
 async def _fetch_home_page(team_id: int) -> None:
     async with action_session() as (session, actor):
-        from ..permissions import require
-
         require(actor.can_view_full_roster(team_id), "manage this team's home page")
         team = await team_service.get(session, team_id)
         if team is None or not team.home_doc_url:
@@ -699,10 +691,28 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             if can_full:
                 csv_stem = team.name.lower().replace(" ", "-")
 
+                @notify_errors
                 async def export_roster() -> None:
-                    async with action_session() as (session, _):
+                    # Re-checked inside the session, not trusted from the render
+                    # pass: a tab stays open across a demotion, and this handler
+                    # was the one on this page taking the rendered gate as the
+                    # gate. Notes ride along only for someone who may read them
+                    # (api/io.py:export_team says why).
+                    async with action_session() as (session, actor):
+                        require(actor.can_view_full_roster(team_id), "export this team")
                         content = await exporter.export_csv(
-                            session, team_id=team_id, at=at
+                            session,
+                            team_id=team_id,
+                            at=at,
+                            include_notes=actor.is_admin
+                            or actor.can_manage_team(team_id),
+                        )
+                        audit_log(
+                            "export.team_roster",
+                            team_id=team_id,
+                            as_of=at.isoformat() if at else None,
+                            notes_included=actor.is_admin
+                            or actor.can_manage_team(team_id),
                         )
                     ui.download(content, f"{csv_stem}.csv")
 
@@ -731,6 +741,8 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                         "large teams use Copy email list instead"
                     )
 
+        # core members included on purpose: leaders are often elderly and a
+        # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
         if can_full and at is None:
             _home_page_section(team, team_page, team_id, slug, base_url)
             _application_form_section(team, team_id)
@@ -831,6 +843,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                                 volunteer.email,
                                 accounts.get(volunteer.id),
                                 base_url,
+                                reveal=actor.is_admin,
                             )
                             if can_invite and volunteer.is_active
                             else None
@@ -864,8 +877,6 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                         ui.notify("Pick a volunteer", color="warning")
                         return
                     async with action_session() as (session, actor):
-                        from ..permissions import require
-
                         require(
                             actor.can_manage_team(team_id), "manage this team's roster"
                         )
@@ -879,8 +890,6 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
 
 async def _change_role(membership_id: int, role_value: str) -> None:
     async with action_session() as (session, actor):
-        from ..permissions import require
-
         membership = await membership_service.get(session, membership_id)
         if membership is None:
             raise LookupError("membership vanished")
@@ -892,8 +901,6 @@ async def _change_role(membership_id: int, role_value: str) -> None:
 
 async def _remove_member(membership_id: int) -> None:
     async with action_session() as (session, actor):
-        from ..permissions import require
-
         membership = await membership_service.get(session, membership_id)
         if membership is None:
             raise LookupError("membership vanished")
@@ -905,8 +912,6 @@ async def _remove_member(membership_id: int) -> None:
 @notify_errors
 async def _delete_team(team_id: int) -> None:
     async with action_session() as (session, actor):
-        from ..permissions import require
-
         require(actor.is_admin, "only admins delete teams")
         await team_service.delete(session, team_id)
     ui.navigate.to("/teams")

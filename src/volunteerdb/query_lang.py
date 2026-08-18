@@ -20,7 +20,7 @@ casts, arithmetic, or field-to-field comparisons.
 
 Access control mirrors services.volunteers.search's leak model, extended to
 negation. NOT is pushed to the leaves (De Morgan), then each leaf over a
-*private* field (phone, notes, custom values) is compiled as
+*private* field (email, phone, notes, custom values) is compiled as
 ``AND(visible, comparison)`` where ``visible`` is self plus the actor's
 full-view teams: a private predicate is *false* for volunteers whose
 private fields the actor cannot see — in either polarity, so
@@ -29,9 +29,8 @@ positive form can leak by presence. Membership fields (team, role) are
 *roster* tier: their EXISTS only considers teams whose roster the actor may
 view, and negation applies at the EXISTS (``team != 'X'`` means "holds no
 such visible membership"), so invisible memberships never influence the
-result either way. Public fields (names, email — which already match for
-everyone in plain search — id, created, is_active) compile bare. Admins and
-trusted internal callers (actor None) skip the wraps. Tables outside the
+result either way. Public fields (names, id, created, is_active) compile
+bare. Admins and trusted internal callers (actor None) skip the wraps. Tables outside the
 registry (accounts, history, ballots…) simply cannot be named.
 """
 
@@ -290,7 +289,10 @@ _VOLUNTEER_FIELDS: dict[str, _Field] = {
     ),
     "first_name": _Field(FieldType.text, _PUBLIC, lambda b: b.V.first_name),
     "last_name": _Field(FieldType.text, _PUBLIC, lambda b: b.V.last_name),
-    "email": _Field(FieldType.text, _PUBLIC, lambda b: b.V.email),
+    # _PRIVATE, not _PUBLIC: the volunteers list renders an address the viewer
+    # may not see as `•••`, and a bare LIKE leaf recovered it a character at a
+    # time. services.volunteers.search scopes it the same way now.
+    "email": _Field(FieldType.text, _PRIVATE, lambda b: b.V.email),
     "id": _Field(FieldType.integer, _PUBLIC, lambda b: b.V.id),
     "is_active": _Field(FieldType.checkbox, _PUBLIC, lambda b: b.V.is_active),
     "created": _Field(FieldType.timestamptz, _PUBLIC, lambda b: b.V.created_at),

@@ -71,7 +71,7 @@ async def _parish(session):
 async def test_graph_admin_sees_everything(database):
     async with db_session() as session:
         parent, child, other, on_parent, on_child, on_other = await _parish(session)
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         actor = await load_actor(session, admin)
@@ -96,7 +96,7 @@ async def test_graph_admin_sees_everything(database):
 async def test_graph_member_sees_only_own_team(database):
     async with db_session() as session:
         parent, child, other, on_parent, on_child, on_other = await _parish(session)
-        account = await users.create(
+        account, _ = await users.create(
             session,
             "chris@example.org",
             volunteer_id=on_child.id,
@@ -129,7 +129,7 @@ async def test_graph_photo_datum_only_on_photographed_volunteers(database):
         await photos.set_photo(
             session, on_parent.id, buffer.getvalue(), uploaded_by=None
         )
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         actor = await load_actor(session, admin)
@@ -146,7 +146,7 @@ async def test_graph_photo_datum_only_on_photographed_volunteers(database):
 async def test_graph_team_filter_restricts_to_subtree(database):
     async with db_session() as session:
         parent, child, other, on_parent, on_child, on_other = await _parish(session)
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         actor = await load_actor(session, admin)
@@ -167,7 +167,7 @@ async def test_graph_team_filter_restricts_to_subtree(database):
 async def test_graph_narrows_to_volunteer_ids(database):
     async with db_session() as session:
         parent, child, other, on_parent, on_child, on_other = await _parish(session)
-        admin = await users.create(
+        admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
         actor = await load_actor(session, admin)

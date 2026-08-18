@@ -101,11 +101,17 @@ def test_private_and_roster_leaves_are_scoped_for_members():
         user=AppUser(is_admin=False),
         volunteer_id=7,
         managed_team_ids=set(),
+        people_team_ids=set(),
         full_view_team_ids=set(),
         names_view_team_ids={3},
     )
     sql = str(compile_v("phone LIKE '555%'", actor))
     assert "volunteer.id =" in sql, "private leaf is AND-ed with the visibility scope"
+    sql = str(compile_v("email LIKE 'j%'", actor))
+    assert "volunteer.id =" in sql, (
+        "email is private too: unwrapped, this leaf walked an address out of a "
+        "column the list renders as `•••`"
+    )
     sql = str(compile_v("NOT (phone LIKE '555%')", actor))
     assert "volunteer.id =" in sql and "NOT LIKE" in sql, (
         "negation lands on the comparison, never on the visibility scope"
@@ -119,6 +125,7 @@ def test_private_and_roster_leaves_are_scoped_for_members():
         user=AppUser(is_admin=True),
         volunteer_id=None,
         managed_team_ids=set(),
+        people_team_ids=set(),
         full_view_team_ids=set(),
         names_view_team_ids=set(),
     )

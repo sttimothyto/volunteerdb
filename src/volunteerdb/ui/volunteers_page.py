@@ -354,6 +354,7 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                         volunteer.email,
                         account,
                         base_url,
+                        reveal=actor.is_admin,
                         where="profile",
                     )
 
@@ -602,6 +603,9 @@ def _edit_dialog(
                 )
                 return
             fields = {} if staged else {"email": email.value or None}
+            # somebody else's address moving is worth a word to the address it
+            # moved away from; see _notify_replaced_address
+            replaced = on_file if not is_self and on_file and typed != on_file else None
             async with action_session() as (session, actor):
                 ids = await volunteer_team_ids(session, volunteer.id)
                 require(
@@ -621,6 +625,8 @@ def _edit_dialog(
                     await custom_field_service.set_values(session, volunteer.id, values)
             if staged:
                 await _stage_own_email(staged, base_url)
+            elif replaced:
+                await _notify_replaced_address(volunteer.id, replaced, typed, base_url)
             dialog.close()
             ui.navigate.reload()
 
@@ -628,6 +634,28 @@ def _edit_dialog(
             ui.button("Cancel", on_click=dialog.close).props("flat")
             ui.button("Save", on_click=save)
     dialog.open()
+
+
+async def _notify_replaced_address(
+    volunteer_id: int, was: str, now: str, base_url: str
+) -> None:
+    """Tell the address a leader just moved a volunteer away from.
+
+    The edit itself is immediate and stays that way — a leader correcting a
+    bounced address cannot wait on somebody who cannot read their mail. But a
+    redirected address is also the first step of a takeover (point it at your
+    own, ask for their invite, redeem it), so the mailbox losing the account
+    hears about it on a channel the person doing the edit does not control.
+    After the commit, like every other message this page sends."""
+    audit_log(
+        "volunteer.address_replaced_by_other",
+        volunteer_id=volunteer_id,
+        was=was,
+        now=now or "(none)",
+    )
+    if not now:  # cleared rather than redirected: nothing to point them at
+        return
+    await mail.send_email(was, *mail.address_edited_email(now, f"{base_url}/login"))
 
 
 async def _stage_own_email(address: str, base_url: str) -> None:

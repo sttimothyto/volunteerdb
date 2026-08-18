@@ -289,3 +289,85 @@ async def test_sync_readding_an_archived_volunteer_reactivates(choir):
     async with db_session() as session:
         (dora,) = await volunteers.search(session, "dora@example.org")
         assert dora.is_active, "joining a team implies active"
+
+
+async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir):
+    """A team's sheet is edited by whoever holds its Drive share and applied
+    overnight with nobody watching. Before this it ran unrestricted, so pasting
+    a stranger's row rewrote their address on the spot — point it at your own
+    mailbox, then ask for their invite, and the account is yours. The sheet may
+    still add people; it may only edit the ones already on the roster."""
+    async with db_session() as session:
+        outsider = await volunteers.create(
+            session, "Orla", "Outsider", "orla@example.org"
+        )
+        other = await teams.create(session, "Altar Servers")
+        await memberships.assign(session, outsider.id, other.id, TeamRole.member)
+        outsider_id = outsider.id
+
+    poisoned = _csv_bytes(
+        [
+            ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
+            ["", "Mia", "Member", "mia@example.org", "", "", "Choir", "member"],
+            ["", "Carl", "Cross", "carl@example.org", "", "", "Choir", "member"],
+            ["", "Dora", "Done", "dora@example.org", "", "", "Choir", "member"],
+            [outsider_id, "Orla", "Outsider", "attacker@evil.example", "", "", "", ""],
+        ]
+    )
+    report = await importer.run_team_sync(
+        poisoned, team_id=choir["choir"], user_id=None
+    )
+    assert not report.applied, "all-or-nothing: the whole sheet rolls back"
+    assert any("not allowed to edit" in i.message for i in report.errors)
+
+    async with db_session() as session:
+        still = await volunteers.get(session, outsider_id)
+        assert still.email == "orla@example.org", "her address is untouched"
+
+
+async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(choir):
+    """Replacing an address is reported for the caller to mail; filling a blank
+    one is not — there is no mailbox to tell.
+
+    Both rows carry an ID: matching is email-first with no name fallback, so a
+    blank-ID row with a new address creates a second person instead of moving
+    the first (the rule test_sheets_matching pins). Mia is on the roster
+    already, so the sheet may move her — that is the licence working, not a
+    hole; what it may not do is move somebody it merely lists."""
+    async with db_session() as session:
+        blank = await volunteers.create(session, "Basil", "Blank")  # no address
+        await memberships.assign(session, blank.id, choir["choir"], TeamRole.member)
+        blank_id = blank.id
+
+    moved = _csv_bytes(
+        [
+            ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
+            [
+                choir["mia"],
+                "Mia",
+                "Member",
+                "mia.new@example.org",
+                "",
+                "",
+                "Choir",
+                "member",
+            ],
+            ["", "Carl", "Cross", "carl@example.org", "", "", "Choir", "member"],
+            ["", "Dora", "Done", "dora@example.org", "", "", "Choir", "member"],
+            [
+                blank_id,
+                "Basil",
+                "Blank",
+                "basil@example.org",
+                "",
+                "",
+                "Choir",
+                "member",
+            ],
+        ]
+    )
+    report = await importer.run_team_sync(moved, team_id=choir["choir"], user_id=None)
+    assert report.applied, report.errors
+    assert report.addresses_replaced == [("mia@example.org", "mia.new@example.org")], (
+        "Mia moved and gets a notice; Basil's blank was filled in, so nobody does"
+    )

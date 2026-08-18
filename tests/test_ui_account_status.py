@@ -41,10 +41,10 @@ async def _parish(session) -> dict[str, int]:
     for v in (mia, nils, opal, quin):
         await memberships.assign(session, v.id, music.id, TeamRole.member)
 
-    lena_u = await users.create(session, "lena@example.org", volunteer_id=lena.id)
-    mia_u = await users.create(session, "mia@example.org", volunteer_id=mia.id)
-    opal_u = await users.create(session, "opal@example.org", volunteer_id=opal.id)
-    quin_u = await users.create(session, "quin@example.org", volunteer_id=quin.id)
+    lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
+    mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
+    opal_u, _ = await users.create(session, "opal@example.org", volunteer_id=opal.id)
+    quin_u, _ = await users.create(session, "quin@example.org", volunteer_id=quin.id)
     opal_u.last_login_at = LOGGED_IN_AT
     opal_u.password_hash = "x"  # settled: signed in and chose a password
     quin_u.last_login_at = LOGGED_IN_AT

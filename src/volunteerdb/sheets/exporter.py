@@ -47,8 +47,16 @@ async def build_roster_rows(
     team_ids: set[int] | None = None,
     at: datetime | None = None,
     subtree: bool = True,
+    include_notes: bool = True,
 ) -> RosterData:
     """One row per membership, ordered by (team path, volunteer name).
+
+    include_notes=False blanks the "Volunteer notes" column while keeping it in
+    place, for an exporter allowed to read the roster but not the notes on it
+    (a core member: everywhere else `notes` needs can_edit_volunteer). The
+    column stays because the file has to round-trip — and it does, because a
+    blank cell parses to None and the importer leaves a None field alone
+    (sheets/common.clean_cell, importer.apply_rows).
 
     Scope: whole parish (team_ids=None, which also appends volunteers with no
     membership as rows with blank team columns), or the union of the given
@@ -89,7 +97,7 @@ async def build_roster_rows(
             v.last_name,
             v.email,
             v.phone,
-            v.notes,
+            v.notes if include_notes else None,
         )
 
     def custom_cells(v: Volunteer) -> tuple:
@@ -156,11 +164,19 @@ async def export_csv(
     team_ids: set[int] | None = None,
     at: datetime | None = None,
     subtree: bool = True,
+    include_notes: bool = True,
 ) -> bytes:
     """Whole parish, one team's subtree (team_id), or a union of subtrees
     (team_ids); subtree=False restricts to direct memberships (Drive-sheet mode).
+    include_notes=False blanks the notes column — see build_roster_rows.
     """
     if team_ids is None and team_id is not None:
         team_ids = {team_id}
-    data = await build_roster_rows(session, team_ids=team_ids, at=at, subtree=subtree)
+    data = await build_roster_rows(
+        session,
+        team_ids=team_ids,
+        at=at,
+        subtree=subtree,
+        include_notes=include_notes,
+    )
     return _csv_bytes(data.header, data.rows)

@@ -35,12 +35,23 @@ def invite_ttl() -> timedelta:
     return timedelta(hours=settings().invite_ttl_hours)
 
 
+def _token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def _issue_invite(user: AppUser) -> str:
     """Arm the account's invite/reset link. Token and expiry are set and
-    cleared as a pair, so a token with no live expiry is simply dead."""
-    user.invite_token = new_token()
+    cleared as a pair, so a token with no live expiry is simply dead.
+
+    Only the SHA-256 digest is stored, as for api_token: the link is a bearer
+    credential that signs the holder in as that account, so a read of the
+    database — or of a backup — must not hand out live ones. The plaintext is
+    returned here and never again, which is why an outstanding invite can be
+    re-sent but not re-displayed."""
+    raw = new_token()
+    user.invite_token = _token_digest(raw)
     user.invite_expires_at = datetime.now(UTC) + invite_ttl()
-    return user.invite_token
+    return raw
 
 
 def _clear_invite(user: AppUser) -> None:
@@ -131,10 +142,6 @@ async def authenticate(
     return user
 
 
-def _token_digest(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 async def authenticate_token(session: AsyncSession, token: str) -> AppUser | None:
     if not token:
         return None
@@ -168,9 +175,16 @@ async def create(
     is_admin: bool = False,
     password: str | None = None,
     link_by_email: bool = True,
-) -> AppUser:
-    """Create an account. Without a password it gets a time-limited invite
-    token instead, redeemed via the invite link (emailed, or handed out).
+) -> tuple[AppUser, str | None]:
+    """Create an account, and hand back the invite link it armed.
+
+    Returns (account, plaintext invite token) — the token is None when a
+    password was supplied, since then there is no link. It has to come back
+    here: only the digest is stored (see _issue_invite), so this is the one
+    moment the link exists in readable form.
+
+    Without a password the account gets a time-limited invite token instead,
+    redeemed via the invite link (emailed, or handed out).
 
     A password given here is held to the same policy as one the volunteer
     chooses for themselves (passwords.check), so no path into the database can
@@ -193,11 +207,10 @@ async def create(
         is_admin=is_admin,
         password_hash=password_hash,
     )
-    if not password:
-        _issue_invite(user)
+    token = None if password else _issue_invite(user)
     session.add(user)
     await session.flush()
-    return user
+    return user, token
 
 
 async def set_password(session: AsyncSession, user_id: int, password: str) -> None:
@@ -230,12 +243,18 @@ async def clear_password(session: AsyncSession, user_id: int) -> None:
 async def reissue_invite(session: AsyncSession, user_id: int) -> str:
     """New invite link for a user who lost their password. Invalidates the old
     password — this is also how an admin forces a change on an account believed
-    to be compromised (NIST SP 800-63B §3.1.1.2)."""
+    to be compromised (NIST SP 800-63B §3.1.1.2).
+
+    The API token goes with it, for the same reason clear_password drops it:
+    it was issued against the password being invalidated. Leaving it alive
+    meant the one action an admin takes against a compromised account left the
+    stolen credential working."""
     user = await get(session, user_id)
     if user is None:
         raise LookupError(f"user {user_id} not found")
     token = _issue_invite(user)
     user.password_hash = None
+    user.api_token = None
     await session.flush()
     return token
 
@@ -281,10 +300,10 @@ async def invite_volunteer(
                 f"{addr} already signs in to another account — a shared address "
                 "can only hold one. Ask a parish admin to sort out the link."
             )
-        user = await create(session, addr, volunteer_id=volunteer_id)
+        user, token = await create(session, addr, volunteer_id=volunteer_id)
         # create() arms an invite whenever no password is given, which is our
         # case; the fallback keeps the return type honest rather than asserting.
-        return user, user.invite_token or _issue_invite(user)
+        return user, token or _issue_invite(user)
 
     if not account.is_active:
         raise ValueError(
@@ -327,7 +346,9 @@ async def redeem_invite(
     if not token:
         return None
     user = (
-        await session.execute(sa.select(AppUser).where(AppUser.invite_token == token))
+        await session.execute(
+            sa.select(AppUser).where(AppUser.invite_token == _token_digest(token))
+        )
     ).scalar_one_or_none()
     if user is None or not user.is_active or not invite_live(user):
         return None
@@ -431,11 +452,12 @@ async def start_email_change(
     other = await get_by_email(session, addr)
     if other is not None and other.id != user.id:
         raise ValueError("another account already signs in with that address")
+    raw = new_token()
     user.pending_email = addr
-    user.email_change_token = new_token()
+    user.email_change_token = _token_digest(raw)  # digest only, like invite_token
     user.email_change_expires_at = datetime.now(UTC) + EMAIL_CHANGE_TTL
     await session.flush()
-    return user, user.email_change_token
+    return user, raw
 
 
 async def cancel_email_change(session: AsyncSession, user_id: int) -> AppUser:
@@ -459,7 +481,7 @@ async def pending_email_change(session: AsyncSession, token: str) -> AppUser | N
         return None
     user = (
         await session.execute(
-            sa.select(AppUser).where(AppUser.email_change_token == token)
+            sa.select(AppUser).where(AppUser.email_change_token == _token_digest(token))
         )
     ).scalar_one_or_none()
     if user is None or not user.is_active or not email_change_live(user):
@@ -564,7 +586,10 @@ async def set_volunteer(
 
 @dataclass
 class ProvisionReport:
-    created: list[tuple[Volunteer, AppUser]] = field(default_factory=list)
+    # (volunteer, account, plaintext invite token) — the token is only readable
+    # here, at the moment it is minted (services.users._issue_invite stores a
+    # digest), so a caller that means to mail it must do so from this report.
+    created: list[tuple[Volunteer, AppUser, str]] = field(default_factory=list)
     linked: list[tuple[Volunteer, AppUser]] = field(
         default_factory=list
     )  # adopted an account that already existed at that address
@@ -607,10 +632,10 @@ async def bulk_provision(session: AsyncSession) -> ProvisionReport:
         if v.id in linked:
             report.skipped.append((v, "already has an account"))
         elif existing is None:
-            user = await create(session, email, volunteer_id=v.id)
+            user, token = await create(session, email, volunteer_id=v.id)
             by_email[email] = user
             linked.add(v.id)
-            report.created.append((v, user))
+            report.created.append((v, user, token or _issue_invite(user)))
         elif existing.volunteer_id is None:
             existing.volunteer_id = v.id
             linked.add(v.id)
