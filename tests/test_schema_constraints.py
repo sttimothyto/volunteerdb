@@ -219,9 +219,9 @@ async def test_a_cancelled_event_records_when(database):
 
 
 async def test_a_task_force_cannot_be_its_own_owner(database):
-    """Teardown restores event.team_id = owner_team_id and then deletes the meta
-    team. An equal pair would be a silent no-op that takes the event — and its
-    whole attendance record — with it."""
+    """Teardown puts the event back on its owner and then deletes the meta team.
+    An equal pair would leave the event on a team about to disappear — and the
+    attendance record goes with the event."""
     async with db_session() as session:
         team = await session.scalar(
             sa.insert(Team).values(name="Liturgy").returning(Team.id)
@@ -238,9 +238,48 @@ async def test_a_task_force_cannot_be_its_own_owner(database):
             .returning(Event.id)
         )
     detail = await _refused(
-        sa.text(
-            "INSERT INTO event_task_force (event_id, team_id, owner_team_id)"
-            " VALUES (:e, :t, :t)"
-        ).bindparams(e=event, t=team)
+        sa.update(Event)
+        .where(Event.id == event)
+        .values(task_force_team_id=team, owner_team_id=team)
     )
-    assert "ck_task_force_teams" in detail
+    assert "ck_event_task_force_teams" in detail
+
+
+async def test_deleting_a_meta_team_no_longer_threatens_its_event(database):
+    """The reason the task force moved onto the event. It used to be a side table
+    whose team_id cascaded from team, so teardown had to repoint the event and
+    flush BEFORE deleting the meta team, or event.team_id's own cascade took the
+    event and its whole attendance record. The column is ON DELETE SET NULL now,
+    so the same delete blanks a marker instead."""
+    async with db_session() as session:
+        owner = await session.scalar(
+            sa.insert(Team).values(name="Liturgy").returning(Team.id)
+        )
+        meta = await session.scalar(
+            sa.insert(Team).values(name="Liturgy task force").returning(Team.id)
+        )
+        starts = datetime.now(UTC) + timedelta(days=7)
+        event = await session.scalar(
+            sa.insert(Event)
+            .values(
+                team_id=owner,  # not the meta team: this test is about the marker
+                title="Picnic",
+                starts_at=starts,
+                ends_at=starts + timedelta(hours=2),
+                task_force_team_id=meta,
+                owner_team_id=owner,
+            )
+            .returning(Event.id)
+        )
+
+    async with db_session() as session:
+        await session.execute(sa.delete(Team).where(Team.id == meta))
+
+    async with db_session() as session:
+        row = (
+            await session.execute(
+                sa.select(Event.id, Event.task_force_team_id).where(Event.id == event)
+            )
+        ).one()
+        assert row.id == event, "the event survived its meta team"
+        assert row.task_force_team_id is None

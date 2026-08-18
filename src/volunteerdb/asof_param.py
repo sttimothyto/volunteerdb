@@ -1,4 +1,4 @@
-"""Shared 'as of' parsing for the GUI and the JSON API.
+"""Parsing the `?as_of=` query parameter, shared by both front doors.
 
 Both surfaces accept the same query string, so both must resolve it to the same
 instant. They did not: the API annotated as_of as a datetime and let FastAPI

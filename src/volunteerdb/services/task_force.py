@@ -31,7 +31,6 @@ from ..config import settings
 from ..models import (
     Event,
     EventStatus,
-    EventTaskForce,
     EventTaskForceSource,
     Membership,
     Team,
@@ -50,7 +49,12 @@ TEAM_NAME_MAX = 200
 
 @dataclass(frozen=True)
 class TaskForceView:
-    task_force: EventTaskForce
+    """An event's task force: the meta team it was repointed to, the owner it
+    will be given back at teardown, and the teams that contributed rosters."""
+
+    event: Event
+    team_id: int  # the meta team; membership of it gates sign-up
+    owner_team_id: int | None  # None only if the owner team was deleted
     sources: list[Team]
 
 
@@ -62,8 +66,9 @@ def _require_upcoming(event: Event, action: str) -> None:
 
 
 async def get_for_event(session: AsyncSession, event_id: int) -> TaskForceView | None:
-    tf = await session.get(EventTaskForce, event_id)
-    if tf is None:
+    """The event's task force, or None when one team staffs it alone."""
+    event = await session.get(Event, event_id)
+    if event is None or event.task_force_team_id is None:
         return None
     sources = list(
         await session.scalars(
@@ -73,7 +78,12 @@ async def get_for_event(session: AsyncSession, event_id: int) -> TaskForceView |
             .order_by(Team.name)
         )
     )
-    return TaskForceView(task_force=tf, sources=sources)
+    return TaskForceView(
+        event=event,
+        team_id=event.task_force_team_id,
+        owner_team_id=event.owner_team_id,
+        sources=sources,
+    )
 
 
 async def _create_meta_team(
@@ -141,26 +151,19 @@ async def add_collaborating_team(
     if await session.get(Team, source_team_id) is None:
         raise LookupError(f"team {source_team_id} not found")
 
-    tf = await session.get(EventTaskForce, event_id)
-    if tf is None:
+    if event.task_force_team_id is None:
         if source_team_id == event.team_id:
             raise ValueError("that team already staffs this event")
         owner_team_id = event.team_id
         meta = await _create_meta_team(session, event, owner_team_id)
-        tf = EventTaskForce(
-            event_id=event.id,
-            team_id=meta.id,
-            owner_team_id=owner_team_id,
-            created_by=created_by,
-        )
-        session.add(tf)
         session.add(EventTaskForceSource(event_id=event.id, team_id=owner_team_id))
         session.add(EventTaskForceSource(event_id=event.id, team_id=source_team_id))
-        await session.flush()
+        event.owner_team_id = owner_team_id
+        event.task_force_team_id = meta.id
         event.team_id = meta.id  # membership of the meta team now gates sign-up
         await session.flush()
     else:
-        if source_team_id == tf.team_id:
+        if source_team_id == event.task_force_team_id:
             raise ValueError("that is the task force itself")
         already = await session.scalar(
             sa.select(sa.literal(1))
@@ -175,7 +178,7 @@ async def add_collaborating_team(
         session.add(EventTaskForceSource(event_id=event_id, team_id=source_team_id))
         await session.flush()
     await refresh_rosters(session, None, event_id)  # authorized above
-    return await session.get(Team, tf.team_id)  # type: ignore[return-value]
+    return await session.get(Team, event.task_force_team_id)  # type: ignore[arg-type]
 
 
 async def refresh_rosters(
@@ -185,11 +188,12 @@ async def refresh_rosters(
     highest role wins per person, an existing meta role is never downgraded,
     nobody is removed (leaving the task force is roster management on the
     meta team itself). Returns how many people were added."""
-    tf = await session.get(EventTaskForce, event_id)
-    if tf is None:
+    event = await session.get(Event, event_id)
+    if event is None or event.task_force_team_id is None:
         raise LookupError(f"event {event_id} has no task force")
+    meta_team_id = event.task_force_team_id
     require(
-        actor is None or actor.can_manage_team(tf.team_id),
+        actor is None or actor.can_manage_team(meta_team_id),
         "manage this event",
     )
     source_ids = list(
@@ -209,7 +213,7 @@ async def refresh_rosters(
     existing = {
         m.volunteer_id: m
         for m in await session.scalars(
-            sa.select(Membership).where(Membership.team_id == tf.team_id)
+            sa.select(Membership).where(Membership.team_id == meta_team_id)
         )
     }
     added = 0
@@ -217,12 +221,12 @@ async def refresh_rosters(
         current = existing.get(volunteer_id)
         if current is None:
             await memberships.assign(
-                session, None, volunteer_id, tf.team_id, role, existing=None
+                session, None, volunteer_id, meta_team_id, role, existing=None
             )
             added += 1
         elif ROLE_RANK[role] < ROLE_RANK[current.role]:
             await memberships.assign(
-                session, None, volunteer_id, tf.team_id, role, existing=current
+                session, None, volunteer_id, meta_team_id, role, existing=current
             )
     return added
 
@@ -232,13 +236,12 @@ async def teardown_due(session: AsyncSession) -> list[int]:
     was cancelled."""
     return list(
         await session.scalars(
-            sa.select(EventTaskForce.event_id)
-            .join(Event, Event.id == EventTaskForce.event_id)
-            .where(
+            sa.select(Event.id).where(
+                Event.task_force_team_id.is_not(None),
                 sa.or_(
                     Event.ends_at <= sa.func.now(),
-                    Event.status == EventStatus.cancelled.value,
-                )
+                    Event.status == EventStatus.cancelled,
+                ),
             )
         )
     )
@@ -248,16 +251,30 @@ async def teardown(session: AsyncSession, event_id: int) -> None:
     """Restore the owner, then dismantle the meta team. Assignments and
     RSVPs reference the volunteer and the event, never the team, so the
     attendance record survives intact."""
-    tf = await session.get(EventTaskForce, event_id)
-    if tf is None:
-        raise LookupError(f"event {event_id} has no task force")
-    meta_team_id = tf.team_id
     event = await session.get(Event, event_id)
-    if event is not None:
-        # repoint and FLUSH before the team delete: event.team_id cascades
-        # on team delete, and the reverse order deletes the event itself
-        event.team_id = tf.owner_team_id
+    if event is None or event.task_force_team_id is None:
+        raise LookupError(f"event {event_id} has no task force")
+    meta_team_id = event.task_force_team_id
+    if event.owner_team_id is None:
+        # The owner team was deleted while the task force was live, so there is
+        # nothing to give the event back to. Keep it where it is: the meta team
+        # stops being a task force and becomes the team that staffs this event,
+        # which is a strange-looking but intact record. The alternative is
+        # deleting the meta team out from under the event and losing its whole
+        # attendance history with it.
+        event.task_force_team_id = None
         await session.flush()
-    await session.delete(tf)  # sources cascade; frees the teams.delete guard
+        return
+    # repoint FIRST, then let go of the meta team. The columns are ON DELETE SET
+    # NULL now (models.Event), so this is no longer the load-bearing ordering it
+    # once was — but the event still has to point somewhere real before the team
+    # it points at goes away, because event.team_id itself cascades.
+    event.team_id = event.owner_team_id
+    event.task_force_team_id = None
+    event.owner_team_id = None
+    await session.flush()
+    await session.execute(
+        sa.delete(EventTaskForceSource).where(EventTaskForceSource.event_id == event_id)
+    )
     await session.flush()
     await team_service.delete(session, None, meta_team_id)  # teardown, not a user act

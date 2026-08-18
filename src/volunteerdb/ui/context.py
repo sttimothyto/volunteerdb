@@ -9,7 +9,7 @@ from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import asof
+from .. import asof_param
 from ..db import db_session
 from ..log import bind_actor
 from ..permissions import Actor, Forbidden, load_actor
@@ -138,10 +138,10 @@ def notify_errors(handler: Callable) -> Callable:
 
 def parse_as_of(raw: str) -> datetime | None:
     """Query-param 'as of': a date means end of that day, local time. Shared with
-    the API (see asof.py); a page ignores garbage and renders live data rather
+    the API (see asof_param.py); a page ignores garbage and renders live data
     than erroring at the reader."""
     try:
-        return asof.parse_as_of(raw)
+        return asof_param.parse_as_of(raw)
     except ValueError:
         return None
 

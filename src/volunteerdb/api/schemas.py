@@ -724,7 +724,10 @@ class TaskForceOut(BaseModel):
 
     event_id: int
     team_id: int  # the meta team; membership of it gates sign-up
-    owner_team_id: int  # restored at teardown
+    # null only if the owner team was deleted while the task force was live: the
+    # event then stays on the meta team at teardown rather than losing its
+    # attendance record (services/task_force.teardown)
+    owner_team_id: int | None
     sources: list[TeamWithPath]
 
 

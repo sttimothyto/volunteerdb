@@ -26,6 +26,15 @@ ROLE_LABELS: dict[TeamRole, str] = {
     TeamRole.member: "Member",
 }
 
+# One mechanism for every closed set of values: a native PostgreSQL enum, with
+# the column typed as the Python enum so a typo is a failure at assignment
+# rather than at flush. Earlier revisions used varchar + CHECK for these,
+# reasoning that adding a value would need ALTER TYPE — but `ALTER TYPE … ADD
+# VALUE` has existed since 9.1, and rev 0018 showed the CHECK path is no
+# cheaper: it needed DROP + CREATE with the value list duplicated in the
+# migration and in this file. Every member is a StrEnum, so `event.status ==
+# "cancelled"` still reads true and nothing had to change at the comparison
+# sites.
 team_role_enum = sa.Enum(TeamRole, name="team_role")
 
 
@@ -73,6 +82,23 @@ FIELD_TYPE_LABELS: dict[FieldType, str] = {
 }
 
 
+class PageStatus(enum.StrEnum):
+    """State of a team's cached public page (services/pages.py)."""
+
+    pending = "pending"  # a doc URL is set, nothing fetched yet
+    ok = "ok"
+    error = "error"  # the last fetch failed; the previous html is still served
+
+
+class SyncStatus(enum.StrEnum):
+    """Outcome of a team's last Drive roster sync (jobs/drive_sync.py)."""
+
+    applied = "applied"
+    unchanged = "unchanged"  # the sheet was not newer than the last mark
+    new = "new"  # a sheet was bootstrapped for a team that had none
+    error = "error"
+
+
 class EventStatus(enum.StrEnum):
     scheduled = "scheduled"
     cancelled = "cancelled"
@@ -111,6 +137,14 @@ SUB_REQUEST_STATUS_LABELS: dict[SubRequestStatus, str] = {
     SubRequestStatus.claimed: "Claimed",
     SubRequestStatus.cancelled: "Cancelled",
 }
+
+proposal_status_enum = sa.Enum(ProposalStatus, name="proposal_status")
+field_type_enum = sa.Enum(FieldType, name="custom_field_type")
+event_status_enum = sa.Enum(EventStatus, name="event_status")
+assignment_kind_enum = sa.Enum(AssignmentKind, name="assignment_kind")
+sub_request_status_enum = sa.Enum(SubRequestStatus, name="sub_request_status")
+page_status_enum = sa.Enum(PageStatus, name="page_status")
+sync_status_enum = sa.Enum(SyncStatus, name="sync_status")
 
 # sys_period marks when this row version became current; history triggers close it
 SYS_PERIOD_DEFAULT = sa.text("tstzrange(clock_timestamp(), NULL)")
@@ -230,20 +264,19 @@ class Proposal(Base):
     __tablename__ = "proposal"
     __table_args__ = (
         sa.CheckConstraint(
-            "status IN ('open', 'appointed', 'cancelled')",
-            name="ck_proposal_status",
-        ),
-        sa.CheckConstraint(
             "nomination_deadline < voting_deadline",
             name="ck_proposal_deadlines",
         ),
         # at most one OPEN proposal per seat
+        # the literal is cast explicitly: an index predicate comparing an enum
+        # column to an untyped literal needs a cast PostgreSQL will not accept
+        # as immutable there
         sa.Index(
             "uq_proposal_open",
             "team_id",
             "role",
             unique=True,
-            postgresql_where=sa.text("status = 'open'"),
+            postgresql_where=sa.text("status = 'open'::proposal_status"),
         ),
         # the ORDER BY of both list_proposals queries
         sa.Index("ix_proposal_created_at", "created_at"),
@@ -267,9 +300,10 @@ class Proposal(Base):
         sa.ForeignKey("team.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[TeamRole] = mapped_column(team_role_enum)
-    # plain string + CHECK, not a PG enum, so adding statuses never needs ALTER TYPE
-    status: Mapped[str] = mapped_column(
-        sa.String(20), default=ProposalStatus.open.value, server_default="open"
+    status: Mapped[ProposalStatus] = mapped_column(
+        proposal_status_enum,
+        default=ProposalStatus.open,
+        server_default=ProposalStatus.open.value,
     )
     notes: Mapped[str | None] = mapped_column(sa.Text)
     # last day to nominate / last day to vote, inclusive, in the parish's day
@@ -474,9 +508,6 @@ class Event(Base):
     __tablename__ = "event"
     __table_args__ = (
         sa.CheckConstraint("starts_at < ends_at", name="ck_event_times"),
-        sa.CheckConstraint(
-            "status IN ('scheduled', 'cancelled')", name="ck_event_status"
-        ),
         # serves the team page's and /events' team-scoped upcoming lists
         sa.Index("ix_event_team_starts", "team_id", "starts_at"),
         # serves the reminder job's and /events' date-window scans
@@ -504,6 +535,21 @@ class Event(Base):
             "(status = 'cancelled') = (cancelled_at IS NOT NULL)",
             name="ck_event_cancelled_at",
         ),
+        # the meta team must never BE the owner: teardown puts the event back on
+        # the owner and then deletes the meta team, so an equal pair would leave
+        # the event on a team about to disappear
+        sa.CheckConstraint(
+            "task_force_team_id IS NULL OR task_force_team_id <> owner_team_id",
+            name="ck_event_task_force_teams",
+        ),
+        # one event per meta team: a task force exists for exactly one occasion
+        sa.UniqueConstraint("task_force_team_id", name="uq_event_task_force_team"),
+        # a cascade-delete path from team, and the column the teardown sweep reads
+        sa.Index(
+            "ix_event_owner_team",
+            "owner_team_id",
+            postgresql_where=sa.text("owner_team_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -514,9 +560,10 @@ class Event(Base):
     location: Mapped[str | None] = mapped_column(sa.String(200))
     starts_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True))
-    # plain string + CHECK, not a PG enum, so adding statuses never needs ALTER TYPE
-    status: Mapped[str] = mapped_column(
-        sa.String(20), default=EventStatus.scheduled.value, server_default="scheduled"
+    status: Mapped[EventStatus] = mapped_column(
+        event_status_enum,
+        default=EventStatus.scheduled,
+        server_default=EventStatus.scheduled.value,
     )
     cancelled_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
     cancelled_by: Mapped[int | None] = mapped_column(
@@ -537,6 +584,24 @@ class Event(Base):
     # recurrence engine: the id exists solely so a sign-up can copy itself
     # onto the later weeks of the same series.
     series_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # --- task force (services/task_force.py) ---------------------------------
+    # When several teams staff one occasion, an auto-created "task force" team
+    # holds the union of their rosters and team_id above points at it, with the
+    # real owner parked here until teardown. Both NULL means one team staffs
+    # this event alone, which is the ordinary case.
+    #
+    # ON DELETE SET NULL on both, and that is the point of them living here.
+    # They used to be a side table whose team_id cascaded, so deleting the meta
+    # team deleted the row — which meant teardown had to repoint the event and
+    # FLUSH *before* the delete, or event.team_id's own cascade took the event
+    # and its whole attendance record with it. An ordering requirement that
+    # load-bearing is better expressed as a column that simply goes NULL.
+    task_force_team_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="SET NULL")
+    )
+    owner_team_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("team.id", ondelete="SET NULL")
+    )
 
 
 class EventSlot(Base):
@@ -577,9 +642,6 @@ class EventAssignment(Base):
         # one slot per person per event; also serves event-scoped reads
         sa.UniqueConstraint("event_id", "volunteer_id", name="uq_event_assignment"),
         sa.CheckConstraint(
-            "kind IN ('signup', 'assigned', 'sub')", name="ck_event_assignment_kind"
-        ),
-        sa.CheckConstraint(
             "hours_override IS NULL OR hours_override >= 0",
             name="ck_event_assignment_hours",
         ),
@@ -618,7 +680,7 @@ class EventAssignment(Base):
     volunteer_id: Mapped[int] = mapped_column(
         sa.ForeignKey("volunteer.id", ondelete="CASCADE")
     )
-    kind: Mapped[str] = mapped_column(sa.String(20))
+    kind: Mapped[AssignmentKind] = mapped_column(assignment_kind_enum)
     assigned_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
@@ -646,56 +708,21 @@ class EventAssignment(Base):
     hours_override: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2))
 
 
-class EventTaskForce(Base):
-    """Marks an event whose owning team was swapped for an auto-created
-    "task force" team so several teams can staff it (services/task_force.py
-    automates the documented one-event-one-team pattern). owner_team_id is
-    the real owner, restored at teardown BEFORE the meta team is deleted —
-    event.team_id cascades on team delete, so that order is load-bearing.
-
-    Not system-versioned: provenance whose lifecycle is create/teardown.
-    The meta team and its memberships are ordinary versioned rows — that is
-    what keeps a torn-down task force visible in as-of history."""
-
-    __tablename__ = "event_task_force"
-    __table_args__ = (
-        # The meta team must never BE the owner: teardown restores
-        # event.team_id = owner_team_id and then deletes the meta team, so an
-        # equal pair would be a silent no-op that takes the event with it.
-        sa.CheckConstraint("team_id <> owner_team_id", name="ck_task_force_teams"),
-        # both are cascade-delete paths from team, and both were unindexed
-        sa.Index("ix_event_task_force_owner", "owner_team_id"),
-    )
-
-    event_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("event.id", ondelete="CASCADE"), primary_key=True
-    )
-    # the auto-created meta team the event was repointed to
-    team_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("team.id", ondelete="CASCADE"), unique=True
-    )
-    owner_team_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("team.id", ondelete="CASCADE")
-    )
-    created_by: Mapped[int | None] = mapped_column(
-        sa.ForeignKey("app_user.id", ondelete="SET NULL")
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
-
-
 class EventTaskForceSource(Base):
-    """One team whose roster was copied into a task force (the owner team is
-    always a source too)."""
+    """One team whose roster was copied into an event's task force (the owner
+    team is always a source too).
+
+    The only part of the task force that still needs a table of its own: the
+    event carries which meta team and which owner (models.Event), and this
+    carries the list of contributors, which is many per event.
+    """
 
     __tablename__ = "event_task_force_source"
 
     # (event, team) is the row's identity, so it is the primary key — the
     # surrogate id was a second one, and its only reader was an existence probe
     event_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("event_task_force.event_id", ondelete="CASCADE"),
-        primary_key=True,
+        sa.ForeignKey("event.id", ondelete="CASCADE"), primary_key=True
     )
     team_id: Mapped[int] = mapped_column(
         sa.ForeignKey("team.id", ondelete="CASCADE"), primary_key=True
@@ -742,16 +769,12 @@ class EventSubRequest(Base):
 
     __tablename__ = "event_sub_request"
     __table_args__ = (
-        sa.CheckConstraint(
-            "status IN ('open', 'claimed', 'cancelled')",
-            name="ck_event_sub_request_status",
-        ),
         # at most one OPEN request per assignment
         sa.Index(
             "uq_event_sub_request_open",
             "assignment_id",
             unique=True,
-            postgresql_where=sa.text("status = 'open'"),
+            postgresql_where=sa.text("status = 'open'::sub_request_status"),
         ),
         # open means unresolved; claimed means resolved AND by somebody
         sa.CheckConstraint(
@@ -780,9 +803,10 @@ class EventSubRequest(Base):
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
     note: Mapped[str | None] = mapped_column(sa.String(200))
-    # plain string + CHECK, not a PG enum, so adding statuses never needs ALTER TYPE
-    status: Mapped[str] = mapped_column(
-        sa.String(20), default=SubRequestStatus.open.value, server_default="open"
+    status: Mapped[SubRequestStatus] = mapped_column(
+        sub_request_status_enum,
+        default=SubRequestStatus.open,
+        server_default=SubRequestStatus.open.value,
     )
     claimed_by_volunteer_id: Mapped[int | None] = mapped_column(
         sa.ForeignKey("volunteer.id", ondelete="SET NULL")
@@ -872,18 +896,10 @@ class CustomFieldDef(Base):
     """
 
     __tablename__ = "custom_field_def"
-    __table_args__ = (
-        sa.CheckConstraint(
-            "field_type IN (" + ", ".join(f"'{ft.value}'" for ft in FieldType) + ")",
-            name="ck_custom_field_def_field_type",
-        ),
-    )
-
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(sa.String(50), unique=True)  # immutable slug
     label: Mapped[str] = mapped_column(sa.String(100))
-    # plain string + CHECK, not a PG enum, so adding types never needs ALTER TYPE
-    field_type: Mapped[str] = mapped_column(sa.String(20))
+    field_type: Mapped[FieldType] = mapped_column(field_type_enum)
     options: Mapped[list | None] = mapped_column(JSONB)  # select choices
     show_in_list: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     position: Mapped[int] = mapped_column(default=0, server_default=sa.text("0"))
@@ -945,8 +961,10 @@ class TeamPage(Base):
     )
     html: Mapped[str | None] = mapped_column(sa.Text)
     fetched_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
-    status: Mapped[str] = mapped_column(
-        sa.String(20), default="pending", server_default="pending"
+    status: Mapped[PageStatus] = mapped_column(
+        page_status_enum,
+        default=PageStatus.pending,
+        server_default=PageStatus.pending.value,
     )
     error: Mapped[str | None] = mapped_column(sa.Text)
 
@@ -989,7 +1007,7 @@ class TeamSheet(Base):
     file_id: Mapped[str | None] = mapped_column(sa.String(128), unique=True)
     file_name: Mapped[str | None] = mapped_column(sa.String(300))
     last_synced_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
-    last_status: Mapped[str | None] = mapped_column(sa.String(20))
+    last_status: Mapped[SyncStatus | None] = mapped_column(sync_status_enum)
     last_error: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()

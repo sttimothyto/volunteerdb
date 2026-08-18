@@ -42,7 +42,7 @@ import sqlalchemy as sa
 from ..config import settings
 from ..db import db_session
 from ..log import init_logging
-from ..models import TeamSheet
+from ..models import SyncStatus, TeamSheet
 from ..services import interest as interest_service
 from ..services import mail
 from ..services import pages as page_service
@@ -200,23 +200,23 @@ async def apply(workdir: Path) -> int:
         status: str
         error: str | None = None
         if entry is None:
-            status = "new"  # no sheet on Drive yet; the regenerate leg creates it
+            status = SyncStatus.new  # no sheet yet; the regenerate leg makes one
         elif last_synced is not None and entry.mod_time <= last_synced:
-            status = "unchanged"  # nobody edited the sheet since our last upload
+            status = SyncStatus.unchanged  # nobody edited it since our last upload
         else:
             csv_path = in_dir / f"{entry.name}.csv"
             if not csv_path.exists():
-                status = "error"
+                status = SyncStatus.error
                 error = f"sheet {entry.name!r} is listed but its CSV export is missing"
             elif csv_path.stat().st_size > MAX_SHEET_BYTES:
-                status = "error"
+                status = SyncStatus.error
                 error = f"sheet {entry.name!r} export is implausibly large"
             else:
                 report = await importer.run_team_sync(
                     csv_path.read_bytes(), team_id=team_id, user_id=sync_user_id
                 )
                 if report.applied:
-                    status = "applied"
+                    status = SyncStatus.applied
                     # a sheet that redirected somebody's address tells the
                     # mailbox it moved away from — unattended overnight edits
                     # are exactly the ones nobody would otherwise see
@@ -242,7 +242,7 @@ async def apply(workdir: Path) -> int:
                             "check the roster for a duplicated person"
                         )
                 else:
-                    status = "error"
+                    status = SyncStatus.error
                     error = "; ".join(
                         f"row {issue.row}: {issue.message}"
                         for issue in report.errors[:5]
@@ -312,7 +312,7 @@ async def record(workdir: Path) -> int:
                 session.add(sheet)
             sheet.file_id = entry.file_id
             sheet.file_name = entry.name
-            if sheet.last_status != "error":
+            if sheet.last_status != SyncStatus.error:
                 sheet.last_synced_at = entry.mod_time
             recorded += 1
     print(f"sync record: {recorded} sheet identities stored")

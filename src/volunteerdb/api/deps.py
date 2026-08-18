@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..asof import parse_as_of
+from ..asof_param import parse_as_of
 from ..db import sessionmaker
 from ..log import bind_actor
 from ..permissions import Actor, Forbidden, load_actor

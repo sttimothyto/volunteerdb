@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
-from ..models import EventTaskForce, Membership, Team, TeamRole, Volunteer
+from ..models import Event, Membership, Team, TeamRole, Volunteer
 from ..permissions import Actor, require
 
 
@@ -226,7 +226,7 @@ async def delete(session: AsyncSession, actor: Actor | None, team_id: int) -> No
     # the event still points at this team, and event.team_id CASCADEs — a
     # direct delete would take the event and its attendance record with it
     live = await session.scalar(
-        sa.select(EventTaskForce.event_id).where(EventTaskForce.team_id == team_id)
+        sa.select(Event.id).where(Event.task_force_team_id == team_id)
     )
     if live is not None:
         raise ValueError(

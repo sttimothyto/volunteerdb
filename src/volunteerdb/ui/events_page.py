@@ -959,7 +959,7 @@ async def event_detail_page(request: Request, event_id: int):
             paths = team_service.team_paths(all_teams)
             staffing = {t.id for t in tf_view.sources} if tf_view else {event.team_id}
             if tf_view:
-                staffing.add(tf_view.task_force.team_id)
+                staffing.add(tf_view.team_id)
             collaborator_options = {
                 t.id: paths[t.id]
                 for t in all_teams

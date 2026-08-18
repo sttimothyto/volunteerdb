@@ -467,8 +467,8 @@ async def get_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
     paths = team_service.team_paths(await team_service.list_all(ctx.session))
     return TaskForceOut(
         event_id=event_id,
-        team_id=view.task_force.team_id,
-        owner_team_id=view.task_force.owner_team_id,
+        team_id=view.team_id,
+        owner_team_id=view.owner_team_id,
         sources=[
             TeamWithPath(**TeamOut.model_validate(t).model_dump(), path=paths[t.id])
             for t in view.sources

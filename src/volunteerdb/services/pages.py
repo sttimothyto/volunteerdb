@@ -30,7 +30,7 @@ import structlog
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Team, TeamPage, TeamPageImage
+from ..models import PageStatus, Team, TeamPage, TeamPageImage
 from ..permissions import Actor, require
 
 logger = structlog.get_logger(__name__)
@@ -326,7 +326,7 @@ async def fetch_and_store(
                 f"doc text is over {HTML_MAX_BYTES // 1_000_000} MB"
                 " with its images extracted"
             )
-        if force or page.status != "ok" or page.html != html:
+        if force or page.status != PageStatus.ok or page.html != html:
             await session.execute(
                 sa.delete(TeamPageImage).where(TeamPageImage.team_id == team.id)
             )
@@ -335,10 +335,10 @@ async def fetch_and_store(
         else:
             logger.info("page unchanged; image rows kept", team_id=team.id)
         page.fetched_at = datetime.now(UTC)
-        page.status = "ok"
+        page.status = PageStatus.ok
         page.error = None
     except (httpx.HTTPError, ValueError) as exc:
-        page.status = "error"
+        page.status = PageStatus.error
         page.error = str(exc)[:500]
     await session.flush()
     return page

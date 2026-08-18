@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .history import entity
 from .models import (
     AppUser,
-    EventTaskForce,
+    Event,
     Membership,
     ProposalVoter,
     TeamRole,
@@ -196,15 +196,16 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
     # the Actor field comments). They stay in `managed` so their event is still
     # managed and in `names_view` so you can see who is staffing it, but they
     # are cut out of `people` and `full_view` — no contact details through the
-    # meta roster, no edit rights over somebody else's members. One tiny query:
-    # the table holds a row per collaborative event and is torn down after.
+    # meta roster, no edit rights over somebody else's members. One tiny query
+    # against a partial index: only collaborative events carry the column, and
+    # it goes back to NULL at teardown.
     meta_ids: set[int] = set()
     scope = managed | full_view
     if scope:
         meta_ids = set(
             await session.scalars(
-                sa.select(EventTaskForce.team_id).where(
-                    EventTaskForce.team_id.in_(scope)
+                sa.select(Event.task_force_team_id).where(
+                    Event.task_force_team_id.in_(scope)
                 )
             )
         )

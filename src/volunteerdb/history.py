@@ -22,11 +22,13 @@ from .db import sessionmaker
 from .models import HISTORY_TABLES, Base
 
 
-def asof[T: Base](model: type[T], at: datetime) -> type[T]:
+def snapshot[T: Base](model: type[T], at: datetime) -> type[T]:
     """An aliased ORM entity representing `model` as of time `at`.
 
-    Usable anywhere the model class is: select(asof(Volunteer, t)), joins, etc.
-    Entities loaded through it are read-only snapshots; execute via fetch().
+    Usable anywhere the model class is: select(snapshot(Volunteer, t)), joins,
+    etc. Entities loaded through it are read-only snapshots; execute via
+    fetch(). Callers reach it through entity(), which passes the live model
+    through when `at` is None.
     """
     live = model.__table__
     hist = HISTORY_TABLES[model]
@@ -44,7 +46,7 @@ def asof[T: Base](model: type[T], at: datetime) -> type[T]:
 
 def entity[T: Base](model: type[T], at: datetime | None) -> type[T]:
     """`model` itself, or its as-of alias when `at` is given."""
-    return asof(model, at) if at is not None else model
+    return snapshot(model, at) if at is not None else model
 
 
 async def fetch(
