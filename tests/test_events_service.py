@@ -740,6 +740,7 @@ async def test_substitute_hands_the_slot_over(database):
             assignment_id=assignment_id,
             new_volunteer_id=vids[2],
             acted_by=None,
+            caller_notifies=True,  # the GUI mails the incoming volunteer directly
         )
         assert (assignment.volunteer_id, outgoing.id, incoming.id) == (
             vids[2],
@@ -757,13 +758,42 @@ async def test_substitute_hands_the_slot_over(database):
         )
     notices = await _notices(handed_over_id)
     assert NotificationStage.event_scheduled in notices, (
-        "the caller mails the incoming volunteer right away, so the digest's "
-        "own scheduling notice would duplicate it"
+        "caller_notifies=True: the caller mails the incoming volunteer right "
+        "away, so the digest's own scheduling notice is suppressed"
     )
     assert not notices & {
         NotificationStage.event_week,
         NotificationStage.event_day,
     }, "the new person still needs the reminders"
+
+
+async def test_substitute_default_lets_the_digest_reach_the_new_person(database):
+    """With no direct mail (the JSON API), the "scheduled" stamp the outgoing
+    person carried must be cleared so the nightly digest tells the incoming
+    volunteer — a stale stamp would otherwise silence it."""
+    team_id, vids = await _team_with_members(3)
+    event_id = await _one_event(team_id)
+    async with db_session() as session:
+        a = await event_service.sign_up(
+            session, None, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
+        )
+        assignment_id = a.id
+    # the self sign-up stamped event_scheduled for the outgoing volunteer
+    assert NotificationStage.event_scheduled in await _notices(assignment_id)
+    async with db_session() as session:
+        assignment, _outgoing, _incoming = await event_service.substitute(
+            session,
+            None,
+            assignment_id=assignment_id,
+            new_volunteer_id=vids[2],
+            acted_by=None,
+        )
+        handed_over_id = assignment.id
+    notices = await _notices(handed_over_id)
+    assert NotificationStage.event_scheduled not in notices, (
+        "no direct mail: the stale stamp is cleared so the digest notifies "
+        "the incoming volunteer"
+    )
 
 
 async def test_substitute_rejects_bad_targets(database):

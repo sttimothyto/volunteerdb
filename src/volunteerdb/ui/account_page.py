@@ -37,6 +37,7 @@ async def account_page(request: Request):
     base_url = str(request.base_url).rstrip("/")
     login_url = f"{base_url}/login"
     account_url = f"{base_url}/account"
+    ip = request.client.host if request.client else "unknown"
     async with page_session() as (session, actor):
         user = actor.user
         user_id = user.id
@@ -65,12 +66,15 @@ async def account_page(request: Request):
                 color="negative",
             )
             return
+        # charge every attempt, before the service can reveal whether the
+        # address is taken: a failed probe must count too, or it is an
+        # unthrottled account-existence oracle.
+        throttle.hit(key)
         async with action_session() as (session, actor):
             account, token = await user_service.start_email_change(
                 session, actor.user.id, addr
             )
             target = account.pending_email
-        throttle.hit(key)
         audit_log("auth.email_change_requested", user=f"{user_id}:{email}", to=target)
         # Both after the commit. The new address gets the proof — it is only a
         # claim until somebody reads mail there — and the old address gets a
@@ -112,17 +116,19 @@ async def account_page(request: Request):
             ui.notify("The two passwords don't match", color="negative")
             return
         if must_retype:
-            # Failed attempts here count against the same budget as failed
-            # sign-ins for this account (SP 800-63B §3.2.2).
-            key = f"pw:{email.lower()}"
-            if throttle.blocked(key, 5, 900):
+            # Failed attempts here count against the same budgets as failed
+            # sign-ins for this account (SP 800-63B §3.2.2): the per-account
+            # bucket AND the per-IP flood bucket, exactly as the login page does.
+            keys = (f"pw:{email.lower()}", f"pw-ip:{ip}")
+            if throttle.blocked(keys[0], 5, 900) or throttle.blocked(keys[1], 30, 900):
                 ui.notify(
                     "Too many failed attempts — try again in a few minutes.",
                     color="negative",
                 )
                 return
             if not await async_verify_password(stored_hash, current.value or ""):
-                throttle.hit(key)
+                for key in keys:
+                    throttle.hit(key)
                 logger.warning("auth.password_change_denied", email=email)
                 ui.notify("That is not your current password", color="negative")
                 return

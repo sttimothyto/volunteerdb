@@ -79,6 +79,16 @@ async def build_roster_rows(
             include_ids |= team_service.descendant_ids(all_teams, team_id)
     else:
         include_ids = team_ids
+    if team_ids is None or subtree:
+        # A task-force meta team is a borrowed roster the exporter's rights do
+        # not cascade into (permissions.load_actor makes the same cut). Dropping
+        # it here stops a scoped subtree export — authorized on the owner team
+        # alone — from leaking the collaborating teams' contact details through
+        # the meta team that sits under the owner, and stops a parish export from
+        # duplicating people under the transient task-force team. The explicit
+        # subtree=False mode (the Drive sheet) names its teams exactly and is
+        # trusted to; drive_sync never hands it a meta team.
+        include_ids -= await team_service.meta_team_ids(session, include_ids)
 
     M, V = entity(Membership, at), entity(Volunteer, at)
     membership_pairs = await fetch(

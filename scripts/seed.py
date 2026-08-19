@@ -1139,11 +1139,12 @@ async def _staff(
             taken.add(volunteer_id)
             if signup:
                 await events.sign_up(
-                    session, slot_id=slots[name].id, volunteer_id=volunteer_id
+                    session, None, slot_id=slots[name].id, volunteer_id=volunteer_id
                 )
             else:
                 await events.assign(
                     session,
+                    None,
                     slot_id=slots[name].id,
                     volunteer_id=volunteer_id,
                     assigned_by=by,
@@ -1179,6 +1180,7 @@ async def _series(
     first = _at(anchor, hour, minute)
     created = await events.create_event(
         session,
+        None,
         team_id=team_id,
         title=title,
         starts_at=first,
@@ -1203,6 +1205,7 @@ async def _settle(session: AsyncSession, plan: list[Occurrence]) -> None:
     for occurrence in plan:
         await events.update_event(
             session,
+            None,
             occurrence.event.id,
             starts_at=occurrence.starts_at,
             ends_at=occurrence.ends_at,
@@ -1267,6 +1270,7 @@ async def _rsvps(
         available = rng.random() > 0.28
         await events.set_rsvp(
             session,
+            None,
             event_id=event.id,
             volunteer_id=volunteer_id,
             available=available,
@@ -1325,6 +1329,7 @@ async def _cast_ballots(
         }
         await elections.cast_ballot(
             session,
+            None,
             proposal.id,
             voter_volunteer_id=volunteer_id,
             scores=scores,
@@ -1517,10 +1522,10 @@ async def seed_photos(
 async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:
     for index, spec in enumerate(PAGES, start=1):
         team_id = parish.team_ids[spec.team]
-        await pages.set_home_doc_url(session, team_id, DOC_URL.format(n=index))
+        await pages.set_home_doc_url(session, None, team_id, DOC_URL.format(n=index))
         if spec.form:
             await teams.set_application_form_url(
-                session, team_id, FORM_URL.format(n=index)
+                session, None, team_id, FORM_URL.format(n=index)
             )
         html = pages.sanitize_doc_html(
             f"<h1>{spec.team}</h1><p><em>{spec.blurb}</em></p>"
@@ -1550,7 +1555,9 @@ async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:
             note=note,
         )
         if submission is not None and resolved:
-            await interest.resolve(session, submission.id, resolved_by=parish.admin_id)
+            await interest.resolve(
+                session, None, submission.id, resolved_by=parish.admin_id
+            )
 
 
 async def seed_schedule(
@@ -1778,6 +1785,7 @@ async def seed_schedule(
     picnic = (
         await events.create_event(
             session,
+            None,
             team_id=parish.team_ids["Parish Picnic Task Force"],
             title="Parish picnic",
             starts_at=_at(picnic_day, 11),
@@ -1815,6 +1823,7 @@ async def seed_schedule(
     reception = (
         await events.create_event(
             session,
+            None,
             team_id=parish.team_ids["Bereavement Ministry"],
             title="Funeral reception — the Delgado family",
             starts_at=_at(funeral_day, 11),
@@ -1840,6 +1849,7 @@ async def seed_schedule(
     bazaar = (
         await events.create_event(
             session,
+            None,
             team_id=parish.team_ids["Catholic Women's League"],
             title="Christmas bazaar — planning meeting",
             starts_at=_at(bazaar_day, 19),
@@ -1871,6 +1881,7 @@ async def seed_schedule(
     open_call = await _first_assignment(session, next_mass.id)
     await events.request_sub(
         session,
+        None,
         assignment_id=open_call.id,
         requested_by=parish.user_ids["maria.alvarez@example.org"],
         note="Away at a wedding — sorry for the short notice.",
@@ -1878,6 +1889,7 @@ async def seed_schedule(
     next_servers = servers[-3].event
     await events.request_sub(
         session,
+        None,
         assignment_id=(await _first_assignment(session, next_servers.id)).id,
         requested_by=parish.user_ids["peter.kowalski@example.org"],
         note="Exam that morning.",
@@ -1885,6 +1897,7 @@ async def seed_schedule(
     next_youth = youth[-2].event
     claimed = await events.request_sub(
         session,
+        None,
         assignment_id=(await _first_assignment(session, next_youth.id)).id,
         requested_by=parish.user_ids["emmanuel.d@example.org"],
         note="Down with the flu.",
@@ -1897,35 +1910,39 @@ async def seed_schedule(
     ]
     if spare:
         await events.claim_sub(
-            session, sub_request_id=claimed.id, volunteer_id=spare[0]
+            session, None, sub_request_id=claimed.id, volunteer_id=spare[0]
         )
     withdrawn = await events.request_sub(
         session,
+        None,
         assignment_id=(await _first_assignment(session, next_youth.id, offset=1)).id,
         requested_by=parish.user_ids["emmanuel.d@example.org"],
         note="Might have a clash — will confirm.",
     )
-    await events.cancel_sub(session, withdrawn.id)
+    await events.cancel_sub(session, None, withdrawn.id)
 
     # --- a cancelled event, its roster still attached ---
-    await events.cancel_event(session, choir[-1].event.id, cancelled_by=admin)
+    await events.cancel_event(session, None, choir[-1].event.id, cancelled_by=admin)
 
     # --- manager exceptions to the derived attendance on past events ---
     last_mass = lectors[7].event
     await events.set_attendance(
         session,
+        None,
         assignment_id=(await _first_assignment(session, last_mass.id)).id,
         attended=False,
         hours=None,
     )
     await events.set_attendance(
         session,
+        None,
         assignment_id=(await _first_assignment(session, work_day.event.id)).id,
         attended=True,
         hours=Decimal("8.50"),
     )
     await events.set_attendance(
         session,
+        None,
         assignment_id=(
             await _first_assignment(session, cleaning.event.id, offset=1)
         ).id,
@@ -1947,6 +1964,7 @@ async def seed_elections(
     # 1. nominating — the Hospitality vacancy the coverage report leads with
     await elections.create_proposal(
         session,
+        None,
         team_id=parish.team_ids["Hospitality"],
         role=L,
         nomination_deadline=TODAY + timedelta(days=5),
@@ -1965,6 +1983,7 @@ async def seed_elections(
     # 2. voting, ballots half in — the tally stays hidden until the deadline
     voting = await elections.create_proposal(
         session,
+        None,
         team_id=parish.team_ids["Prayer Chain"],
         role=L,
         nomination_deadline=TODAY - timedelta(days=3),
@@ -1989,6 +2008,7 @@ async def seed_elections(
     # 3. concluded, awaiting a decision — tally visible, appoint button live
     concluded = await elections.create_proposal(
         session,
+        None,
         team_id=parish.team_ids["Ushers"],
         role=S,
         nomination_deadline=TODAY - timedelta(days=20),
@@ -2012,6 +2032,7 @@ async def seed_elections(
     # 4. appointed — and the membership the appointment created
     decided = await elections.create_proposal(
         session,
+        None,
         team_id=parish.team_ids["Bereavement Ministry"],
         role=L,
         nomination_deadline=TODAY - timedelta(days=50),
@@ -2032,9 +2053,10 @@ async def seed_elections(
         rng,
         today=TODAY - timedelta(days=45),
     )
-    result = await elections.tally(session, decided.id)
+    result = await elections._tally(session, decided.id)
     await elections.appoint(
         session,
+        None,
         decided.id,
         result.winner_id or decided_candidates[0],
         decided_by=admin,
@@ -2043,6 +2065,7 @@ async def seed_elections(
     # 5. cancelled — the seat was filled another way
     cancelled = await elections.create_proposal(
         session,
+        None,
         team_id=parish.team_ids["Website & Socials"],
         role=L,
         nomination_deadline=TODAY - timedelta(days=30),
@@ -2055,11 +2078,12 @@ async def seed_elections(
             candidate(person("Gregory Nakamura"), "Runs the socials already."),
         ],
     )
-    await elections.cancel(session, cancelled.id, decided_by=admin)
+    await elections.cancel(session, None, cancelled.id, decided_by=admin)
 
     # 6. concluded then re-opened: the Ignatian "debate together, then repeat"
     first_round = await elections.create_proposal(
         session,
+        None,
         team_id=parish.team_ids["Children's Liturgy"],
         role=L,
         nomination_deadline=TODAY - timedelta(days=35),
@@ -2082,6 +2106,7 @@ async def seed_elections(
     )
     await elections.new_round(
         session,
+        None,
         first_round.id,
         created_by=admin,
         nomination_deadline=TODAY + timedelta(days=7),

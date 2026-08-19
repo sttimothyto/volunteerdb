@@ -160,31 +160,30 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
                     requested_by=actor.user.id,
                     note=note.value,
                 )
-                view = await event_service.detail(session, actor, assignment.event_id)
-                asker = next(
-                    v
-                    for sv in view.slots
-                    for a, v in sv.entries
-                    if a.id == assignment_id
-                )
-                slot_name = next(
-                    sv.slot.name
-                    for sv in view.slots
-                    if sv.slot.id == assignment.slot_id
-                )
+                # Gather what the mail needs directly, NOT via the roster-gated
+                # detail(): an assignee who was since removed from the team may
+                # still hand off their own slot (request_sub authorized them),
+                # but detail()'s view check would 403 here and roll the just-
+                # created request back.
+                event = await event_service.get(session, assignment.event_id)
+                if event is None:
+                    raise LookupError("event vanished")
+                asker = await session.get(Volunteer, assignment.volunteer_id)
+                slot = await session.get(EventSlot, assignment.slot_id)
+                paths = team_service.team_paths(await team_service.list_all(session))
                 audience = await event_service.member_emails(
                     session,
-                    view.event.team_id,
+                    event.team_id,
                     exclude_volunteer_ids=await event_service.assigned_volunteer_ids(
-                        session, view.event.id
+                        session, event.id
                     ),
                 )
                 message = mail.sub_request_email(
-                    view.event.title,
-                    view.path,
-                    slot_name,
-                    mail.event_when(view.event.starts_at, view.event.ends_at),
-                    asker.full_name,
+                    event.title,
+                    paths.get(event.team_id, f"team {event.team_id}"),
+                    slot.name if slot else "volunteer",
+                    mail.event_when(event.starts_at, event.ends_at),
+                    asker.full_name if asker else "A teammate",
                     sub.note,
                     f"{base_url}/events",
                 )
@@ -237,6 +236,7 @@ async def _substitute_dialog(
                     assignment_id=assignment_id,
                     new_volunteer_id=pick.value,
                     acted_by=actor.user.id,
+                    caller_notifies=True,  # the mail below tells the incoming volunteer
                 )
                 slot = await session.get(EventSlot, assignment.slot_id)
                 message = mail.substituted_in_email(

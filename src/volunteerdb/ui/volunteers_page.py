@@ -3,7 +3,7 @@ from urllib.parse import quote_plus
 from fastapi import Request
 from nicegui import app, ui
 
-from .. import query_lang
+from .. import query_lang, throttle
 from ..log import audit_log
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import team_ids_map, volunteer_team_ids
@@ -301,6 +301,8 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                             field_defs,
                             is_self=volunteer_id == actor.volunteer_id,
                             base_url=base_url,
+                            own_login=actor.user.email,
+                            own_user_id=actor.user.id,
                         ),
                     ).props("dense outline")
                 if actor.is_admin:
@@ -538,11 +540,18 @@ def _edit_dialog(
     *,
     is_self: bool = False,
     base_url: str = "",
+    own_login: str | None = None,
+    own_user_id: int | None = None,
 ) -> None:
     """The contact-detail editor. `is_self` changes exactly one field's
     behaviour: your own address is not written here but staged and mailed a
     confirmation link, because it is also what you sign in with. Everything
-    else in the form saves immediately either way."""
+    else in the form saves immediately either way.
+
+    The one exception: typing the address you ALREADY sign in with just syncs
+    the volunteer row onto it — no confirmation, because there is nothing to
+    confirm — which is the only way to fill a linked record whose email is
+    blank (own_login / own_user_id name that signed-in account)."""
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label(f"Edit {volunteer.full_name}").classes("text-lg font-medium")
         first = (
@@ -592,16 +601,35 @@ def _edit_dialog(
                 values[key] = raw
             typed = (email.value or "").strip().lower()
             on_file = (volunteer.email or "").strip().lower()
-            # your own address goes the long way round; everyone else's is a
-            # plain edit, as it has to be — a leader correcting a bounced
-            # address cannot wait on the person who cannot read their mail
-            staged = typed if is_self and typed != on_file else None
+            login = (own_login or "").strip().lower()
+            # your own address goes the long way round — UNLESS you are only
+            # syncing your record onto the address you already sign in with,
+            # which is already confirmed and so needs no round-trip (and is the
+            # one way to fill a linked record whose email is blank). Everyone
+            # else's is a plain edit, as it has to be — a leader correcting a
+            # bounced address cannot wait on the person who cannot read their mail.
+            staged = (
+                typed if is_self and typed != on_file and typed != login else None
+            )
             if is_self and not typed:
                 ui.notify(
                     "Your own address cannot be blank — it is how you sign in.",
                     color="warning",
                 )
                 return
+            if staged and own_user_id is not None:
+                # F1: charge the send budget the /account and API doors charge,
+                # on every attempt (before the service reveals whether the
+                # address is taken), so this door is not the loose one.
+                key = f"email-change:{own_user_id}"
+                if throttle.blocked(key, 5, 900):
+                    ui.notify(
+                        "Too many address changes requested — try again in a "
+                        "few minutes.",
+                        color="negative",
+                    )
+                    return
+                throttle.hit(key)
             fields = {} if staged else {"email": email.value or None}
             # somebody else's address moving is worth a word to the address it
             # moved away from; see _notify_replaced_address

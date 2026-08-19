@@ -124,10 +124,17 @@ async def _active_teams() -> tuple[list[tuple[int, str, str]], dict[int, tuple]]
         all_teams = await team_service.list_all(session)
         paths = team_service.team_paths(all_teams)
         slugs = page_service.slug_map(paths)
+        # A task-force meta team is a borrowed roster, not a ministry with its
+        # own Drive sheet: syncing one would export the collaborating teams'
+        # contact details (actor=None skips redaction), share it with their
+        # leaders, and let a sheet editor rewrite borrowed members' addresses —
+        # exactly the escalation permissions.load_actor cuts out. Never give one
+        # a sheet.
+        meta = await team_service.meta_team_ids(session)
         active = [
             (t.id, paths[t.id], slugs[t.id] + SHEET_SUFFIX)
             for t in all_teams
-            if t.is_active
+            if t.is_active and t.id not in meta
         ]
         stored = {
             s.team_id: (s.file_id, s.last_synced_at, s.last_status)
@@ -220,10 +227,14 @@ async def apply(workdir: Path) -> int:
                     # a sheet that redirected somebody's address tells the
                     # mailbox it moved away from — unattended overnight edits
                     # are exactly the ones nobody would otherwise see
-                    # (services.mail.address_edited_email)
+                    # (services.mail.address_edited_email). No configured base
+                    # URL means no usable link, so send the notice without one
+                    # rather than a bare "/login" (event_reminders guards the
+                    # same way).
+                    base = settings().public_base_url.rstrip("/")
                     await mail.notify_replaced_addresses(
                         report.addresses_replaced,
-                        f"{settings().public_base_url.rstrip('/')}/login",
+                        f"{base}/login" if base else None,
                     )
                     print(
                         f"{path}: +{report.volunteers_created} volunteers, "

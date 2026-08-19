@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from ..models import ROLE_LABELS, FieldType, TeamRole
 
@@ -96,9 +96,16 @@ class TeamOut(ORMModel):
     description: str | None
     is_active: bool
     # 0 = excluded from workload scores; there is no "unset" any more, because
-    # NULL and 0 always scored the same
+    # NULL and 0 always scored the same. An as-of read can still surface a
+    # team_history row whose weight predates the NOT NULL default and is NULL;
+    # it means 0, so fold it here rather than 500 the whole response.
     workload_weight: float = 0
     home_doc_url: str | None = None  # public Google Doc behind /ministries/
+
+    @field_validator("workload_weight", mode="before")
+    @classmethod
+    def _weight_or_zero(cls, value: object) -> object:
+        return 0 if value is None else value
     # the team's own Google Form, mailed to people who ask about the ministry
     # from its public page
     application_form_url: str | None = None

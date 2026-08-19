@@ -98,13 +98,18 @@ async def update_volunteer(
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
     fields = data.model_dump(exclude_unset=True)
     if "email" in fields and volunteer_id == ctx.actor.volunteer_id:
-        # Your own address is also what you sign in with, so it moves only
-        # after the new one has proved somebody reads mail there — and this
-        # API sends no email (the precedent api/events.py states), so it
-        # cannot run that exchange. Everyone else's address is a plain edit.
+        # Your own address is also what you sign in with, so moving it to a NEW
+        # address needs the confirm round-trip — and this API sends no email
+        # (the precedent api/events.py states), so it cannot run that exchange.
+        # Two writes are still fine: no change at all, and syncing your record
+        # onto the address you ALREADY sign in with (already confirmed — the one
+        # way to fill a linked record whose email is blank). Everyone else's
+        # address is a plain edit.
         on_file = await service.get(ctx.session, volunteer_id)
         typed = (fields["email"] or "").strip().lower()
-        if on_file is not None and typed != (on_file.email or "").strip().lower():
+        current = (on_file.email or "").strip().lower() if on_file else ""
+        own_login = (ctx.actor.user.email or "").strip().lower()
+        if typed != current and typed != own_login:
             raise ValueError(
                 "your own address changes only once the new one confirms "
                 "itself; ask for it on the Password & sign-in page (/account) "

@@ -457,10 +457,12 @@ async def set_attendance(
 # nothing else, while the GUI could invite other ministries to staff it.
 
 
-@router.get("/{event_id}/task-force")
-async def get_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
-    """The task force behind this event, or null if one team staffs it alone."""
-    await event_service.detail(ctx.session, ctx.actor, event_id)  # authorizes
+async def _task_force_out(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
+    """Build the task-force payload for an event, or None if one team staffs it
+    alone. Does NOT authorize: a caller that just performed an authorized
+    mutation uses it directly — re-checking here against the actor loaded at
+    request start would 403 on a meta team created mid-request. The GET gates
+    first, below."""
     view = await task_force_service.get_for_event(ctx.session, event_id)
     if view is None:
         return None
@@ -474,6 +476,13 @@ async def get_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
             for t in view.sources
         ],
     )
+
+
+@router.get("/{event_id}/task-force")
+async def get_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
+    """The task force behind this event, or null if one team staffs it alone."""
+    await event_service.visible(ctx.session, ctx.actor, event_id)  # authorizes
+    return await _task_force_out(ctx, event_id)
 
 
 @router.post("/{event_id}/collaborators", status_code=201)
@@ -500,7 +509,10 @@ async def add_collaborator(
         source_team_id=data.team_id,
         via="api",
     )
-    return await get_task_force(ctx, event_id)  # type: ignore[return-value]
+    # already authorized by add_collaborating_team; build the payload without
+    # re-checking, so the first collaborator (which creates the meta team the
+    # request-start actor cannot yet see) does not 403 and roll back
+    return await _task_force_out(ctx, event_id)  # type: ignore[return-value]
 
 
 @router.post("/{event_id}/task-force/refresh")
@@ -511,7 +523,7 @@ async def refresh_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut:
     existing role is never downgraded, and nobody is removed — leaving a task
     force is roster management on the meta team itself."""
     await task_force_service.refresh_rosters(ctx.session, ctx.actor, event_id)
-    return await get_task_force(ctx, event_id)  # type: ignore[return-value]
+    return await _task_force_out(ctx, event_id)  # type: ignore[return-value]
 
 
 @router.post("/assignments/{assignment_id}/substitute")

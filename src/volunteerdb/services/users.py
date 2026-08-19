@@ -514,8 +514,13 @@ async def pending_email_change(session: AsyncSession, token: str) -> AppUser | N
     return user
 
 
-async def confirm_email_change(session: AsyncSession, token: str) -> AppUser | None:
-    """Redeem the link: the address moves, and moves everywhere.
+async def confirm_email_change(
+    session: AsyncSession, token: str
+) -> tuple[AppUser, str] | None:
+    """Redeem the link: the address moves, and moves everywhere. Returns the
+    account and the address it moved *away* from — that old mailbox is owed the
+    §4.1.2 receipt, and this instance is mutated in place, so the caller cannot
+    recover the old address afterwards.
 
     The account's login address and the volunteer record behind it are set
     together — one person, one address. That is what carries the change into
@@ -529,6 +534,7 @@ async def confirm_email_change(session: AsyncSession, token: str) -> AppUser | N
     user = await pending_email_change(session, token)
     if user is None:
         return None
+    previous = user.email  # the mailbox being moved away from
     addr = user.pending_email
     taken = await get_by_email(session, addr)
     if taken is not None and taken.id != user.id:
@@ -550,7 +556,7 @@ async def confirm_email_change(session: AsyncSession, token: str) -> AppUser | N
             volunteer.email = addr
     _clear_email_change(user)
     await session.flush()
-    return user
+    return user, previous
 
 
 async def issue_api_token(session: AsyncSession, user_id: int) -> str:

@@ -78,6 +78,28 @@ def descendant_ids(teams: list[Team], root_id: int) -> set[int]:
     return result
 
 
+async def meta_team_ids(
+    session: AsyncSession, candidates: set[int] | None = None
+) -> set[int]:
+    """Team ids that are a live task force's meta team.
+
+    A meta team is a borrowed roster copied from several real teams to staff one
+    event (services.task_force); it confers rights over the EVENT, never over
+    the people it borrowed. Every consumer that WIDENS scope over a team subtree
+    — permissions.load_actor, roster export, the Drive-sheet enumeration — must
+    exclude these, or the collaboration hands out contact details it must not.
+    One definition, so no consumer forgets. Pass `candidates` to restrict the
+    check to a set of ids already in hand."""
+    if candidates is not None and not candidates:
+        return set()
+    stmt = sa.select(Event.task_force_team_id).where(
+        Event.task_force_team_id.is_not(None)
+    )
+    if candidates is not None:
+        stmt = stmt.where(Event.task_force_team_id.in_(candidates))
+    return set(await session.scalars(stmt))
+
+
 def team_paths(teams: list[Team]) -> dict[int, str]:
     """id -> 'Parent / Child' display path.
 
@@ -222,16 +244,24 @@ async def delete(session: AsyncSession, actor: Actor | None, team_id: int) -> No
     team = await get(session, team_id)
     if team is None:
         raise LookupError(f"team {team_id} not found")
-    # a live task force is deleted by its event's teardown, never directly:
-    # the event still points at this team, and event.team_id CASCADEs — a
-    # direct delete would take the event and its attendance record with it
+    # a live task force is torn down by its event, never deleted directly —
+    # neither the meta team (event.team_id CASCADEs, so a direct delete takes
+    # the event and its attendance record with it) NOR the owner team (the meta
+    # team is its child under an ON DELETE RESTRICT parent FK, so deleting the
+    # owner would otherwise die as a raw IntegrityError instead of this sentence)
     live = await session.scalar(
-        sa.select(Event.id).where(Event.task_force_team_id == team_id)
+        sa.select(Event.id).where(
+            sa.or_(
+                Event.task_force_team_id == team_id,
+                Event.owner_team_id == team_id,
+            )
+        )
     )
     if live is not None:
         raise ValueError(
-            f"this team is the task force of event {live} — it is removed "
-            "automatically after the event ends (manage it from the event page)"
+            f"this team is part of the task force staffing event {live} — it is "
+            "removed automatically after the event ends (manage it from the "
+            "event page)"
         )
     await session.delete(team)
     await session.flush()

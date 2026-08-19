@@ -292,6 +292,23 @@ ALTER TABLE proposal_voter
     DROP COLUMN voting_notified_at;
 
 -- ============================================================================
+-- Invite tokens now live at rest as a SHA-256 digest, the way api_token already
+-- did (services.users._token_digest). redeem_invite looks an invite up BY that
+-- digest, so the plaintext tokens revision 0023 stored have to be hashed in
+-- place here — otherwise every invite outstanding at deploy stops matching and
+-- goes dead (a 404 the admin page still shows as "pending"), and each has to be
+-- re-issued by hand. This has no DDL of its own: it is a data backfill the app
+-- change needs, not part of any 0024-0028 revision.
+--
+-- encode(sha256(convert_to(t, 'UTF8')), 'hex') reproduces
+-- hashlib.sha256(t.encode()).hexdigest() exactly: lowercase hex of the token's
+-- UTF-8 bytes. email_change_token needs no equivalent (a new column, so no old
+-- plaintext exists); api_token was already hashed by revision 0004.
+UPDATE app_user
+    SET invite_token = encode(sha256(convert_to(invite_token, 'UTF8')), 'hex')
+    WHERE invite_token IS NOT NULL;
+
+-- ============================================================================
 -- Normalising two names and one extension, so a migrated database and a fresh
 -- one are the same database. None of these changes behaviour.
 -- ============================================================================

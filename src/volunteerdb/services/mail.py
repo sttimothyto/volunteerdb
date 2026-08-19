@@ -221,19 +221,23 @@ def email_change_done_email(new_address: str, login_url: str) -> tuple[str, str]
 
 
 async def notify_replaced_addresses(
-    pairs: list[tuple[str, str]], login_url: str
+    pairs: list[tuple[str, str]], login_url: str | None
 ) -> None:
     """Mail every address a bulk edit moved a volunteer away from.
 
     For the importer and the Drive sync, which redirect addresses in bulk and
     are the quietest place in the app to do it. Call it *after* the commit —
-    a dead mail provider must not roll an import back."""
+    a dead mail provider must not roll an import back. `login_url` is None when
+    no public base URL is configured (the cron Drive sync): the notice still
+    goes out, just without a sign-in link."""
     for was, now in pairs:
         if was and now and was != now:
             await send_email(was, *address_edited_email(now, login_url))
 
 
-def address_edited_email(new_address: str, login_url: str) -> tuple[str, str]:
+def address_edited_email(
+    new_address: str, login_url: str | None = None
+) -> tuple[str, str]:
     """Sent to the address a *leader or admin* has just moved a volunteer away
     from — the third-party counterpart to email_change_done_email.
 
@@ -244,6 +248,7 @@ def address_edited_email(new_address: str, login_url: str) -> tuple[str, str]:
     The independent-channel notice of SP 800-63B §4.1.2 is what turns a silent
     redirect into one the volunteer can see and report, so it goes out even
     though the old address is often the broken one; a bounce costs nothing."""
+    sign_in = f" — sign in at {login_url}" if login_url else ""
     return (
         "Your VolunteerDB address was changed",
         f"Somebody who helps run one of your ministries changed the address on "
@@ -251,7 +256,7 @@ def address_edited_email(new_address: str, login_url: str) -> tuple[str, str]:
         "used for rosters, event notices, and signing in.\n\n"
         "This is the last message we will send to this address.\n\n"
         "If you asked for that, or you knew about it, there is nothing to "
-        f"do — sign in at {login_url}.\n\n"
+        f"do{sign_in}.\n\n"
         "If it is news to you, tell the parish office straight away.",
     )
 

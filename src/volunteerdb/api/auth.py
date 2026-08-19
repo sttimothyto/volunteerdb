@@ -79,13 +79,18 @@ async def set_own_password(
     hearing about on a channel the caller does not control."""
     user = ctx.actor.user
     email = user.email
-    key = f"pw:{email.lower()}"
-    if throttle.blocked(key, 5, 900):
+    ip = request.client.host if request.client else "unknown"
+    # both buckets, exactly as POST /auth/login charges them: the per-account
+    # limit and the per-IP flood limit, so a spray of current-password guesses
+    # across many accounts from one IP is throttled at the IP too.
+    keys = (f"pw:{email.lower()}", f"pw-ip:{ip}")
+    if throttle.blocked(keys[0], 5, 900) or throttle.blocked(keys[1], 30, 900):
         raise HTTPException(429, "too many failed attempts; try again in a few minutes")
     if user.password_hash is None or not await async_verify_password(
         user.password_hash, data.current_password
     ):
-        throttle.hit(key)
+        for key in keys:
+            throttle.hit(key)
         logger.warning("auth.password_change_denied", email=email, via="api")
         raise HTTPException(403, "that is not your current password")
     await service.set_password(ctx.session, user.id, data.new_password)
@@ -107,7 +112,7 @@ async def clear_own_password(
     user = ctx.actor.user
     email = user.email
     await service.clear_password(ctx.session, user.id)
-    audit_log("auth.password_removed", user=f"{user.id}:{email}", via="api")
+    audit_log("auth.password_cleared", user=f"{user.id}:{email}", via="api")
     base_url = str(request.base_url).rstrip("/")
     background.add_task(
         mail.send_email,
@@ -132,11 +137,15 @@ async def request_email_change(
     key = f"email-change:{user.id}"
     if throttle.blocked(key, 5, 900):
         raise HTTPException(429, "too many address changes requested; try again later")
+    # charge the budget on every attempt, before the service can reveal whether
+    # the address exists: a probe that fails ("another account already signs in
+    # with that address") must count too, or the budget is only on successful
+    # sends and this is an unthrottled account-existence oracle.
+    throttle.hit(key)
     account, token = await service.start_email_change(
         ctx.session, user.id, data.new_email
     )
     target = account.pending_email
-    throttle.hit(key)
     audit_log("auth.email_change_requested", user=f"{user.id}:{was}", to=target)
     hours = int(service.EMAIL_CHANGE_TTL.total_seconds() // 3600)
     base_url = str(request.base_url).rstrip("/")
@@ -179,17 +188,21 @@ async def confirm_email_change(
     unknown, expired or already-spent link answers 404 the same way, saying
     nothing about which it was."""
     async with db_session() as session:
-        user = await service.confirm_email_change(session, data.token)
-        if user is None:
+        result = await service.confirm_email_change(session, data.token)
+        if result is None:
             raise HTTPException(404, "that link is not valid any more")
+        user, was = result
         out = UserOut.model_validate(user)
         out.has_password = user.password_hash is not None
         out.invite_token = out.invite_expires_at = None
-        was_id, now = user.id, user.email
-    audit_log("auth.email_change_confirmed", user=f"{was_id}:{now}", via="api")
+        user_id, now = user.id, user.email
+    audit_log("auth.email_changed", user=f"{user_id}:{now}", via="api")
     base_url = str(request.base_url).rstrip("/")
+    # the receipt goes to the mailbox the account moved AWAY from (§4.1.2): that
+    # address is owed the last word, and on a hijacked-session takeover it is the
+    # only independent channel that can surface it. `now` names the new address.
     background.add_task(
-        mail.send_email, now, *mail.email_change_done_email(now, f"{base_url}/login")
+        mail.send_email, was, *mail.email_change_done_email(now, f"{base_url}/login")
     )
     return out
 

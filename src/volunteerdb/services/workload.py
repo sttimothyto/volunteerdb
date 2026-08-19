@@ -162,8 +162,16 @@ async def scores(
         },
         value=sa.cast(M.role, sa.String),
     )
+    # coalesce the weight, not the sum: an as-of snapshot can join team_history
+    # rows whose workload_weight predates the NOT NULL default and is still NULL
+    # (NULL ⇒ counts 0, per the module docstring). Without this, a volunteer
+    # whose memberships all land on NULL-weight rows sums to NULL and Decimal(None)
+    # raises.
     stmt = (
-        sa.select(M.volunteer_id, sa.func.sum(T.workload_weight * mult))
+        sa.select(
+            M.volunteer_id,
+            sa.func.sum(sa.func.coalesce(T.workload_weight, 0) * mult),
+        )
         .join(T, T.id == M.team_id)
         .group_by(M.volunteer_id)
     )

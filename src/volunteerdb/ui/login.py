@@ -288,19 +288,18 @@ async def confirm_email_page(token: str, request: Request):
     async def apply() -> None:
         try:
             async with db_session() as session:
-                # snapshot the outgoing address first: confirm_email_change
-                # mutates the same instance, and this mailbox is owed the
-                # receipt (§4.1.2) for a binding that is about to change
-                before = await user_service.pending_email_change(session, token)
-                was = before.email if before is not None else None
-                user = await user_service.confirm_email_change(session, token)
+                # confirm_email_change hands back the outgoing address: this
+                # mailbox is owed the receipt (§4.1.2) for a binding that just
+                # changed, and the instance is mutated in place
+                result = await user_service.confirm_email_change(session, token)
         except ValueError as exc:  # the address went to somebody else first
             _show_dead_link(body, login_url, str(exc))
             return
-        if user is None:
+        if result is None:
             logger.warning("auth.email_change_invalid")
             _show_dead_link(body, login_url)
             return
+        user, was = result
         audit_log("auth.email_changed", user=f"{user.id}:{user.email}")
         settled = user.email
         if was:

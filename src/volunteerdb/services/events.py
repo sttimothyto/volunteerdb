@@ -391,6 +391,14 @@ async def _visible(session: AsyncSession, actor: Actor | None, event_id: int) ->
     return event
 
 
+async def visible(session: AsyncSession, actor: Actor | None, event_id: int) -> Event:
+    """Authorize that `actor` may see this event and return it — the light gate
+    for endpoints (e.g. the task-force view) that need the event visible but not
+    the full detail() load. Keeps the check in the service both surfaces call,
+    not at a front door."""
+    return await _visible(session, actor, event_id)
+
+
 async def add_slot(
     session: AsyncSession,
     actor: Actor | None,
@@ -611,6 +619,12 @@ async def similar_events(
     outside the actor's scope. difflib does the matching: parish-scale event
     counts need no index (pg_trgm's similarity() is there if this ever grows).
     """
+    # Naive input would be read as the server's clock (container UTC), not the
+    # parish's, shifting the calendar day and the whole day-overlap window. The
+    # GUI always sends aware datetimes; the JSON API surface must too, the same
+    # rule create enforces via _check_times.
+    if starts_at.tzinfo is None or ends_at.tzinfo is None:
+        raise ValueError("event times must carry a timezone")
     wanted = _norm_location(location or "")
     if not wanted:
         return []
@@ -1258,11 +1272,20 @@ async def substitute(
     assignment_id: int,
     new_volunteer_id: int,
     acted_by: int | None,
+    caller_notifies: bool = False,
 ) -> tuple[EventAssignment, Volunteer, Volunteer]:
     """Hand a slot directly to a chosen teammate — the claim flow minus the
     open call. Any open substitute request on the assignment is cancelled in
     the same transaction. Returns (assignment, outgoing, incoming) for the
-    caller's post-commit mail to the person now on the hook."""
+    caller's post-commit mail to the person now on the hook.
+
+    The incoming volunteer did not act, so they must be told they are now
+    scheduled. Pass caller_notifies=True when the caller mails them a
+    substitution notice right after commit (the GUI): the digest's "scheduled"
+    notice is then suppressed to avoid a duplicate. The default, False, is for a
+    caller that sends no mail (the JSON API): any stale "scheduled" stamp the
+    outgoing person's assignment carried is cleared so the nightly digest tells
+    the new person, matching how a manager `assign` reaches its volunteer."""
     assignment = await session.get(EventAssignment, assignment_id)
     if assignment is None:
         raise LookupError(f"assignment {assignment_id} not found")
@@ -1297,9 +1320,20 @@ async def substitute(
     # the new person still needs the reminders, on default preferences
     assignment.notify_7d = assignment.notify_24h = True
     await session.flush()
-    # the caller mails the incoming volunteer right after commit, so the
-    # digest's "scheduled" notice would only duplicate it
-    await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
+    if caller_notifies:
+        # the caller mails the incoming volunteer right after commit, so the
+        # digest's "scheduled" notice would only duplicate it
+        await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
+    else:
+        # no direct mail from this caller: clear any "scheduled" stamp the
+        # outgoing person's assignment carried so the nightly digest reaches the
+        # incoming volunteer (a stale stamp would otherwise silence it)
+        await session.execute(
+            sa.delete(Notification).where(
+                Notification.assignment_id == assignment.id,
+                Notification.stage == NotificationStage.event_scheduled,
+            )
+        )
     await _reset_reminders(session, assignment.id)
     return assignment, outgoing, incoming
 

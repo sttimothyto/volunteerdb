@@ -79,10 +79,6 @@ async def unresolved(
     return list(rows)
 
 
-async def get(session: AsyncSession, interest_id: int) -> Interest | None:
-    return await session.get(Interest, interest_id)
-
-
 async def resolve(
     session: AsyncSession,
     actor: Actor | None,
