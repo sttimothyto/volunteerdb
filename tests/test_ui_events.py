@@ -553,13 +553,50 @@ async def test_a_leader_can_rename_a_slot_and_change_its_capacity(database):
         # find(kind=ui.input).pop() returns the capacity box
         user.find(marker="slot-edit-name").elements.pop().value = "Lector"
         user.find(marker="slot-edit-capacity").elements.pop().value = 3
+        user.find(marker="slot-edit-description").elements.pop().value = "Ambo, first"
         user.find(marker="slot-edit-save").click()
         await user.should_see("Lector", retries=SLOW)
         await user.should_see("0/3", retries=SLOW)
+        await user.should_see("Ambo, first", retries=SLOW)
 
     async with db_session() as session:
         slot = (await event_service.detail(session, None, event_id)).slots[0].slot
         assert (slot.name, slot.capacity) == ("Lector", 3)
+        assert slot.description == "Ambo, first"
+
+
+async def test_a_leader_adds_a_slot_with_a_description(database):
+    """The add dialog had no GUI coverage at all. The description is the point:
+    the name is the series-wide identity a copy-forward matches on, so anything
+    explanatory has to live beside it rather than in it."""
+    async with db_session() as session:
+        ids = await _parish(session)
+    event_id = await _seed_event(
+        ids["liturgy"], slots=[event_service.SlotInput("Lector", 1, 0)]
+    )
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/events/{event_id}")
+        user.find("Add slot").click()
+        await user.should_see("Add a slot", retries=SLOW)
+        user.find(kind=ui.input, content="Slot name").elements.pop().value = "Greeter"
+        user.find(
+            marker="slot-add-description"
+        ).elements.pop().value = "Main door, from 10:00"
+        user.find(marker="slot-add-save").click()
+        # wait on the reloaded page, not on the dialog: both strings above are
+        # already visible as the values just typed, so should_see on them
+        # returns before save has run. Only the new slot's badge is new.
+        await user.should_see("0/∞", retries=SLOW)
+        await user.should_see("Greeter")
+        await user.should_see("Main door, from 10:00")
+
+    async with db_session() as session:
+        slots = (await event_service.detail(session, None, event_id)).slots
+        greeter = next(s.slot for s in slots if s.slot.name == "Greeter")
+        assert greeter.description == "Main door, from 10:00"
+        assert greeter.capacity is None, "blank capacity is still unlimited"
 
 
 async def test_a_member_may_not_reach_the_slot_edit_control(database):

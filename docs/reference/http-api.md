@@ -240,8 +240,8 @@ still reaches its volunteer through `jobs.event_reminders`.
 | `GET /api/events/{id}` | roster-name rights | Slots with entries and RSVPs; managers additionally get derived `attendance` once the event ended |
 | `PATCH /api/events/{id}` | manage the team | Details/times; allowed on past events (corrected times recompute auto hours), cancelled → 422 |
 | `POST /api/events/{id}/cancel` | manage the team | Resolves open sub requests with it; already cancelled → 422 |
-| `POST /api/events/{id}/slots` | manage the team | 201; future events only |
-| `PATCH /api/events/{id}/slots/{sid}` | manage the team | Shrinking capacity below occupancy → 422 |
+| `POST /api/events/{id}/slots` | manage the team | 201; future events only. Optional `description` (≤ 300 chars) is a note beside the name, not part of it |
+| `PATCH /api/events/{id}/slots/{sid}` | manage the team | Shrinking capacity below occupancy → 422. An explicit `"description": null` clears the note |
 | `DELETE /api/events/{id}/slots/{sid}` | manage the team | 204; blocked while occupied, and an event keeps ≥ 1 slot |
 | `PUT /api/events/{id}/rsvp` | member of the team | 204; idempotent overwrite `{available, note?}` (the ballot idiom) |
 | `POST /api/events/{id}/slots/{sid}/assignments` | self: member; with `volunteer_id`: manager | 201; capacity full → 422, one slot per person per event → 422/409. Self sign-ups may pass `repeat_series: true` to copy the sign-up onto later weeks of the series (same slot name; full/conflicting weeks skip) and `notify_7d`/`notify_24h` (default true) to choose reminder stages |

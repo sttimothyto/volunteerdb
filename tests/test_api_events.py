@@ -285,6 +285,49 @@ async def test_cancel_blocks_further_changes(client, seeded, token_leader):
     assert len(r.json()) == 1
 
 
+async def test_slot_description_round_trips_and_clears(client, seeded, token_leader):
+    """POST accepts it, GET returns it, PATCH rewords it, explicit null clears
+    it — and over the cap is a 422 rather than a 500 out of the driver."""
+    r = await client.post(
+        "/api/events", json=_payload(seeded["team_id"]), headers=token_leader
+    )
+    event_id = r.json()[0]["id"]
+
+    r = await client.post(
+        f"/api/events/{event_id}/slots",
+        json={"name": "Greeter", "description": "Main door, from 10:00"},
+        headers=token_leader,
+    )
+    assert r.status_code == 201 and r.json()["description"] == "Main door, from 10:00"
+    slot_id = r.json()["id"]
+
+    detail = (await client.get(f"/api/events/{event_id}", headers=token_leader)).json()
+    greeter = next(s for s in detail["slots"] if s["slot"]["name"] == "Greeter")
+    assert greeter["slot"]["description"] == "Main door, from 10:00"
+
+    r = await client.patch(
+        f"/api/events/{event_id}/slots/{slot_id}",
+        json={"description": "Side door instead"},
+        headers=token_leader,
+    )
+    assert r.status_code == 200 and r.json()["description"] == "Side door instead"
+    assert r.json()["name"] == "Greeter", "a description-only patch leaves the name"
+
+    r = await client.patch(
+        f"/api/events/{event_id}/slots/{slot_id}",
+        json={"description": None},
+        headers=token_leader,
+    )
+    assert r.status_code == 200 and r.json()["description"] is None
+
+    r = await client.post(
+        f"/api/events/{event_id}/slots",
+        json={"name": "Cantor", "description": "x" * 301},
+        headers=token_leader,
+    )
+    assert r.status_code == 422
+
+
 async def test_slot_crud_guards(client, seeded, token_leader, token_member):
     r = await client.post(
         "/api/events", json=_payload(seeded["team_id"]), headers=token_leader

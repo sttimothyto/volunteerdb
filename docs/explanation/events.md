@@ -82,6 +82,12 @@ index the way one-open-per-seat rules are — so `sign_up`/`assign` take the
 slot row `FOR UPDATE` first. This is the codebase's first row lock, held
 for a single count-and-insert inside one transaction.
 
+A slot may also carry an optional **description** — "main door, from 10:00".
+It is deliberately not part of the name: the name is the series-wide identity
+a copy-forward matches on, so explaining a slot by renaming it would quietly
+stop every later week from matching. The description is decoration on the row
+and nothing reads it but the page.
+
 ## RSVP is a signal; the assignment is the commitment
 
 Volunteers answer *available / not available* (with a short note) per

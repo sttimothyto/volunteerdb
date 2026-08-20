@@ -215,7 +215,8 @@ async def create_event(ctx: CtxDep, data: EventCreateIn) -> list[EventOut]:
         description=data.description,
         location=data.location,
         slots=[
-            event_service.SlotInput(s.name, s.capacity, s.position) for s in data.slots
+            event_service.SlotInput(s.name, s.capacity, s.position, s.description)
+            for s in data.slots
         ],
         repeat_weekly_until=data.repeat_weekly_until,
         created_by=ctx.actor.user.id,
@@ -278,6 +279,7 @@ async def add_slot(ctx: CtxDep, event_id: int, data: EventSlotIn) -> EventSlotOu
         name=data.name,
         capacity=data.capacity,
         position=data.position,
+        description=data.description,
     )
     return EventSlotOut.model_validate(slot)
 

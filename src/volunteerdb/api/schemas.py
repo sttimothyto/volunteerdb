@@ -470,6 +470,7 @@ class EventSlotIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     capacity: int | None = Field(default=None, ge=1)  # null = unlimited
     position: int = 0
+    description: str | None = Field(default=None, max_length=300)
 
 
 class EventSlotPatch(BaseModel):
@@ -477,6 +478,9 @@ class EventSlotPatch(BaseModel):
     name: str | None = None
     capacity: int | None = Field(default=None, ge=1)
     position: int | None = None
+    # sent explicitly as null this one does clear: a note is decoration, and
+    # a leader who wants it gone has no other way to say so
+    description: str | None = Field(default=None, max_length=300)
 
 
 class EventSlotOut(ORMModel):
@@ -484,6 +488,7 @@ class EventSlotOut(ORMModel):
     name: str
     capacity: int | None  # null = unlimited
     position: int
+    description: str | None
 
 
 class EventCreateIn(BaseModel):

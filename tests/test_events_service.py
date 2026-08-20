@@ -105,7 +105,7 @@ async def test_create_defaults_to_one_unlimited_volunteers_slot(database):
 async def test_create_with_explicit_slots_and_validation(database):
     team_id, _ = await _team_with_members()
     slots = [
-        event_service.SlotInput("Lector", 2),
+        event_service.SlotInput("Lector", 2, description="  Arrive 15 min early  "),
         event_service.SlotInput("Greeter", None, position=1),
     ]
     event_id = await _one_event(team_id, slots=slots)
@@ -115,10 +115,15 @@ async def test_create_with_explicit_slots_and_validation(database):
             ("Lector", 2),
             ("Greeter", None),
         ]
+        # the description is trimmed, and absent means NULL rather than ""
+        assert d.slots[0].slot.description == "Arrive 15 min early"
+        assert d.slots[1].slot.description is None
         for bad in (
             [event_service.SlotInput("")],
             [event_service.SlotInput("A"), event_service.SlotInput("A")],
             [event_service.SlotInput("A", 0)],
+            # over-long would raise DataError, which notify_errors does not catch
+            [event_service.SlotInput("A", description="x" * 301)],
         ):
             with pytest.raises(ValueError):
                 await event_service.create_event(
@@ -143,6 +148,51 @@ async def test_create_with_explicit_slots_and_validation(database):
             )
 
 
+async def test_slot_descriptions_are_added_edited_and_cleared(database):
+    """A note you can write once and never correct is worse than no note, so
+    add_slot and update_slot both carry it — and blank means absent, not ""."""
+    team_id, _ = await _team_with_members()
+    event_id = await _one_event(team_id)
+    async with db_session() as session:
+        slot = await event_service.add_slot(
+            session,
+            None,
+            event_id,
+            name="Greeter",
+            description="  Main door, from 10:00  ",
+        )
+        assert slot.description == "Main door, from 10:00"
+
+        blank = await event_service.add_slot(
+            session, None, event_id, name="Usher", description="   "
+        )
+        assert blank.description is None
+
+        with pytest.raises(ValueError):
+            await event_service.add_slot(
+                session, None, event_id, name="Cantor", description="x" * 301
+            )
+
+    async with db_session() as session:
+        edited = await event_service.update_slot(
+            session, None, slot.id, description="Side door instead"
+        )
+        assert edited.description == "Side door instead"
+
+        # name and capacity are untouched by a description-only edit
+        assert (edited.name, edited.capacity) == ("Greeter", None)
+
+        cleared = await event_service.update_slot(
+            session, None, slot.id, description=""
+        )
+        assert cleared.description is None
+
+        with pytest.raises(ValueError):
+            await event_service.update_slot(
+                session, None, slot.id, description="x" * 301
+            )
+
+
 async def test_repeat_weekly_is_inclusive_and_copies_slots(database):
     team_id, _ = await _team_with_members()
     start = _at(date.today() + timedelta(days=7), 10)
@@ -154,7 +204,9 @@ async def test_repeat_weekly_is_inclusive_and_copies_slots(database):
             title="Sunday Mass",
             starts_at=start,
             ends_at=start + timedelta(hours=1),
-            slots=[event_service.SlotInput("Lector", 2)],
+            slots=[
+                event_service.SlotInput("Lector", 2, description="Ambo, first reading")
+            ],
             repeat_weekly_until=start.date() + timedelta(days=14),
             created_by=None,
         )
@@ -162,6 +214,9 @@ async def test_repeat_weekly_is_inclusive_and_copies_slots(database):
         for e in created:
             d = await event_service.detail(session, None, e.id)
             assert [(s.slot.name, s.slot.capacity) for s in d.slots] == [("Lector", 2)]
+            # written once at creation, carried onto every occurrence — the
+            # reason a description belongs on the slot rather than in its name
+            assert d.slots[0].slot.description == "Ambo, first reading"
 
 
 async def test_repeat_keeps_wall_clock_time_across_dst(database):

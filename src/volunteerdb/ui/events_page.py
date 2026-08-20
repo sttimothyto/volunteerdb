@@ -850,6 +850,14 @@ def _add_slot_dialog(event_id: int) -> None:
             .props("outlined dense clearable")
             .classes("w-full")
         )
+        # the name is the series-wide identity a copy-forward matches on, so
+        # anything explanatory belongs here instead of in it
+        description = (
+            ui.input("Description (optional)")
+            .props("outlined dense")
+            .classes("w-full")
+            .mark("slot-add-description")
+        )
 
         @notify_errors
         async def save() -> None:
@@ -860,23 +868,33 @@ def _add_slot_dialog(event_id: int) -> None:
                     event_id,
                     name=name.value or "",
                     capacity=int(capacity.value) if capacity.value else None,
+                    description=description.value,
                 )
             dialog.close()
             ui.navigate.reload()
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Add slot", on_click=save)
+            # marked like slot-edit-save: the button that opens this dialog
+            # carries the same label, so a test needs to name this one
+            ui.button("Add slot", on_click=save).mark("slot-add-save")
     dialog.open()
 
 
-def _edit_slot_dialog(slot_id: int, name_now: str, capacity_now: int | None) -> None:
-    """Rename a slot, or change how many it holds.
+def _edit_slot_dialog(
+    slot_id: int,
+    name_now: str,
+    capacity_now: int | None,
+    description_now: str | None = None,
+) -> None:
+    """Rename a slot, change how many it holds, or reword its description.
 
     Reachable over the API (PATCH /events/{id}/slots/{sid}) and nowhere in the
     GUI, so a mistyped slot name could only be fixed by deleting the slot —
-    which needs it empty, and so meant taking the roster off it first. Shrinking
-    below what is already filled is refused by the service."""
+    which needs it empty, and so meant taking the roster off it first. The
+    description is here for the same reason: a note you can write once and
+    never correct is worse than no note. Shrinking below what is already
+    filled is refused by the service."""
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label("Edit slot").classes("text-lg font-medium")
         name = (
@@ -896,6 +914,12 @@ def _edit_slot_dialog(slot_id: int, name_now: str, capacity_now: int | None) -> 
             .classes("w-full")
             .mark("slot-edit-capacity")
         )
+        description = (
+            ui.input("Description (optional)", value=description_now or "")
+            .props("outlined dense")
+            .classes("w-full")
+            .mark("slot-edit-description")
+        )
 
         @notify_errors
         async def save() -> None:
@@ -906,6 +930,7 @@ def _edit_slot_dialog(slot_id: int, name_now: str, capacity_now: int | None) -> 
                     slot_id,
                     name=name.value or "",
                     capacity=int(capacity.value) if capacity.value else None,
+                    description=description.value,
                 )
             dialog.close()
             ui.navigate.reload()
@@ -1466,17 +1491,20 @@ async def event_detail_page(request: Request, event_id: int):
                     if can_manage and upcoming:
                         ui.button(
                             icon="edit",
-                            on_click=lambda _, sid=slot.id, sn=slot.name, sc=(slot.capacity): (
-                                _edit_slot_dialog(sid, sn, sc)
+                            on_click=lambda _, sid=slot.id, sn=slot.name, sc=slot.capacity, sd=slot.description: (
+                                _edit_slot_dialog(sid, sn, sc, sd)
                             ),
                         ).props("dense flat").mark(f"slot-edit-{slot.id}").tooltip(
-                            "Rename this slot, or change how many it holds"
+                            "Rename this slot, change how many it holds, or "
+                            "reword its description"
                         )
                     if can_manage and upcoming and not sv.entries:
                         ui.button(
                             icon="delete",
                             on_click=lambda _, sid=slot.id: _delete_slot(sid),
                         ).props("dense flat").tooltip("Remove this empty slot")
+                if slot.description:
+                    ui.label(slot.description).classes("text-sm text-gray-600")
                 for assignment, volunteer in sv.entries:
                     with ui.row().classes(
                         "w-full items-center gap-2 p-1 rounded hover:bg-gray-100"

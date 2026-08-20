@@ -52,6 +52,11 @@ _UNSET: object = object()
 # create should materialize (concrete rows, no recurrence engine)
 MAX_REPEAT_DAYS = 366
 
+# mirrors EventSlot.description. Checked here rather than left to the column:
+# notify_errors turns ValueError into a toast but lets DataError escape, so an
+# over-long paste in the GUI would otherwise die unhandled.
+SLOT_DESCRIPTION_MAX = 300
+
 TWO_PLACES = Decimal("0.01")
 
 
@@ -63,6 +68,7 @@ class SlotInput:
     name: str
     capacity: int | None = None  # None = unlimited
     position: int = 0
+    description: str | None = None  # a line under the name; never identity
 
 
 @dataclass(frozen=True)
@@ -182,6 +188,10 @@ def _check_slots(slots: list[SlotInput]) -> None:
         raise ValueError("slot names must be unique within the event")
     if any(s.capacity is not None and s.capacity < 1 for s in slots):
         raise ValueError("slot capacity must be at least 1 (or blank for unlimited)")
+    if any(len((s.description or "").strip()) > SLOT_DESCRIPTION_MAX for s in slots):
+        raise ValueError(
+            f"a slot description is at most {SLOT_DESCRIPTION_MAX} characters"
+        )
 
 
 def _occurrences(
@@ -267,6 +277,7 @@ async def create_event(
                     name=slot.name.strip(),
                     capacity=slot.capacity,
                     position=slot.position,
+                    description=_clean_description(slot.description),
                 )
             )
     await session.flush()
@@ -399,6 +410,12 @@ async def visible(session: AsyncSession, actor: Actor | None, event_id: int) -> 
     return await _visible(session, actor, event_id)
 
 
+def _clean_description(text: str | None) -> str | None:
+    """Blank is absent: an untouched input must not store an empty string,
+    which would render as a stray line under the slot name."""
+    return (text or "").strip() or None
+
+
 async def add_slot(
     session: AsyncSession,
     actor: Actor | None,
@@ -407,10 +424,11 @@ async def add_slot(
     name: str,
     capacity: int | None = None,
     position: int = 0,
+    description: str | None = None,
 ) -> EventSlot:
     event = await _managed(session, actor, event_id)
     _require_open(event, "add a slot")
-    _check_slots([SlotInput(name, capacity, position)])
+    _check_slots([SlotInput(name, capacity, position, description)])
     existing = await session.scalar(
         sa.select(EventSlot.id).where(
             EventSlot.event_id == event_id, EventSlot.name == name.strip()
@@ -419,7 +437,11 @@ async def add_slot(
     if existing is not None:
         raise ValueError("a slot with that name already exists")
     slot = EventSlot(
-        event_id=event_id, name=name.strip(), capacity=capacity, position=position
+        event_id=event_id,
+        name=name.strip(),
+        capacity=capacity,
+        position=position,
+        description=_clean_description(description),
     )
     session.add(slot)
     await session.flush()
@@ -434,6 +456,7 @@ async def update_slot(
     name: str | object = _UNSET,
     capacity: int | None | object = _UNSET,
     position: int | object = _UNSET,
+    description: str | None | object = _UNSET,
 ) -> EventSlot:
     slot = await session.get(EventSlot, slot_id)
     if slot is None:
@@ -458,6 +481,13 @@ async def update_slot(
         slot.capacity = capacity  # type: ignore[assignment]
     if position is not _UNSET:
         slot.position = int(position)  # type: ignore[arg-type]
+    if description is not _UNSET:
+        text = _clean_description(description)  # type: ignore[arg-type]
+        if text is not None and len(text) > SLOT_DESCRIPTION_MAX:
+            raise ValueError(
+                f"a slot description is at most {SLOT_DESCRIPTION_MAX} characters"
+            )
+        slot.description = text
     await session.flush()
     return slot
 

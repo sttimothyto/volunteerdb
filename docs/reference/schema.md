@@ -341,6 +341,7 @@ A named position to fill at an event ("Lector", "Greeter — main door").
 | `name` | varchar(100) | unique per event (`uq_event_slot_name`) |
 | `capacity` | smallint | nullable; NULL = unlimited, CHECK `>= 1` otherwise |
 | `position` | integer | display order |
+| `description` | varchar(300) | nullable; an optional line under the name. Never identity — the series copy-forward matches on `name` alone |
 
 An event created without slots gets one unlimited `Volunteers` slot — the
 rule that lets one schema serve both staffed liturgies and attendance-only

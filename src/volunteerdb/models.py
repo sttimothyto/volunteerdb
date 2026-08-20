@@ -556,6 +556,12 @@ class EventSlot(Base):
     name: Mapped[str] = mapped_column(sa.String(100))
     capacity: Mapped[int | None] = mapped_column(sa.SmallInteger)
     position: Mapped[int] = mapped_column(default=0, server_default=sa.text("0"))
+    # an optional line under the name ("main door, before Mass"), so the name
+    # stays the short label a series copy-forward matches on. Capped like
+    # event_rsvp.note rather than free Text: it renders inline in the slot card.
+    # keep this the LAST column -- ADD COLUMN appends, and
+    # test_schema_invariants compares declared order against physical order
+    description: Mapped[str | None] = mapped_column(sa.String(300))
 
 
 class EventAssignment(Base):
