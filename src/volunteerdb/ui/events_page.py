@@ -208,6 +208,7 @@ async def _substitute_dialog(
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label("Hand this slot to a teammate").classes("text-lg font-medium")
         ui.label(
+            "Select this ONLY if there is prior agreement with the hand off target. "
             "They take the slot immediately and are emailed about it. The "
             "change is recorded: who made it, and when, goes into the log."
         ).classes("text-sm text-gray-500")
@@ -1027,7 +1028,8 @@ def _collaboration_card(
             )
         else:
             ui.label(
-                "Need another ministry for this event? Adding a "
+                "Need another ministry for this event? After asking their "
+                "ministry team leader for permission, adding a "
                 "collaborating team creates a temporary task-force "
                 "team holding both rosters, so everyone can sign up; "
                 "it is removed automatically after the event."
