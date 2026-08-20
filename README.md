@@ -182,7 +182,9 @@ you apply.
 - **Migrations**: `make migrate` (`uv run alembic upgrade head`) after pulling
 - **Tests**: `make test` — starts the db container if needed, then runs
   `uv run pytest` against a separate `volunteerdb_test` database. Pass extra
-  arguments with `make test ARGS="-k roster"`.
+  arguments with `make test ARGS="-k roster"`. The browser tests under
+  `tests/e2e/` need Chromium once per machine:
+  `uv run playwright install --with-deps chromium`.
 - **Start over**: `make fresh` wipes the database volume, re-migrates, re-seeds
 - Dev auto-reload: `make dev` (`VDB_RELOAD=true uv run python -m
   volunteerdb.main`). It must be the `python -m` form — under the

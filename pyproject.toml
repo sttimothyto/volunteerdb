@@ -35,6 +35,10 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=6.0",
+    # Browser tests (tests/e2e). The asyncio flavour of pytest-playwright, not
+    # the sync one: this suite runs under asyncio_mode=auto, and Playwright's
+    # sync API refuses to be driven from inside a running event loop.
+    "pytest-playwright-asyncio>=0.9",
     "ruff>=0.15",
 ]
 docs = [

@@ -9,6 +9,8 @@ __pycache__/
 dist/
 docs/_build/
 bench-results/
+# playwright's screenshots, videos and traces (pytest --output)
+test-results/
 
 # Claude Code scratch worktrees (git worktree add --checkout, one venv each)
 .claude/worktrees/

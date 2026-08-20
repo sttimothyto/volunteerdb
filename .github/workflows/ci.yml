@@ -67,8 +67,14 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen
-      # Deliberately not setting VDB_TEST_ALLOW_NO_DB: an unreachable database
-      # must fail the run, not skip into a green one.
+      # tests/e2e drives a real browser. --with-deps because a bare runner is
+      # missing the shared libraries Chromium needs; only chromium, because
+      # that is the only browser the suite launches.
+      - name: install chromium
+        run: uv run playwright install --with-deps chromium
+      # Deliberately not setting VDB_TEST_ALLOW_NO_DB or
+      # VDB_TEST_ALLOW_NO_BROWSER: a missing database or browser must fail the
+      # run, not skip into a green one.
       - name: pytest
         run: uv run pytest -q
 
