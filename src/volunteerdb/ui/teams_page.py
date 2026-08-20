@@ -5,20 +5,22 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import Request
-from nicegui import ui
+from nicegui import events, ui
 
 from .. import query_lang
+from ..config import settings
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
+from ..permissions import require
 from ..services import elections as elections_service
 from ..services import events as event_service
-from ..services import mail
+from ..services import mail, roster_sheets
 from ..services import memberships as membership_service
 from ..services import pages as page_service
 from ..services import reports as report_service
 from ..services import teams as team_service
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
-from ..sheets import exporter
+from ..sheets import exporter, importer
 from ..sheets.common import sheet_url
 from . import column_order, invites
 from .account_status import roster_account
@@ -191,6 +193,35 @@ async def teams_page(as_of: str = ""):
                 ui.button(
                     "New team", icon="add", on_click=lambda: _team_dialog(options)
                 ).props("dense")
+            # Context-sensitive, and hidden entirely below core: the
+            # exporter authorizes every id in the scope anyway, so this only
+            # decides whether an unusable button is on screen.
+            if actor.is_admin or actor.full_view_team_ids:
+
+                @notify_errors
+                async def export_teams() -> None:
+                    """Parish for admins; every team you lead or sit on the
+                    core of, in one file, for everybody else."""
+                    async with action_session() as (session, actor):
+                        # re-derived inside the session, like export_roster on
+                        # the detail page: the rendered gate is not the gate
+                        if actor.is_admin:
+                            scope, name = None, "parish"
+                        else:
+                            # full_view_team_ids, not people_team_ids: core
+                            # members may export too, and load_actor has
+                            # already taken the task forces out of it (a
+                            # borrowed roster is not yours to export)
+                            require(bool(actor.full_view_team_ids), "export your teams")
+                            scope, name = actor.full_view_team_ids, "my-teams"
+                        content = await exporter.export_csv(
+                            session, actor, team_ids=scope
+                        )
+                    ui.download(content, f"volunteerdb-{name}.csv")
+
+                ui.button(
+                    "Export team(s)", icon="download", on_click=export_teams
+                ).props("dense outline")
         columns = [
             {
                 "name": "team",
@@ -452,133 +483,289 @@ def _home_page_section(
         ).classes("text-sm text-gray-500")
 
 
-def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -> None:
-    """The team's Google Drive roster sheet, for leaders/seconds: the nightly
-    sync applies sheet edits to the database and mirrors the database back.
-    Admins may additionally point the team at a different spreadsheet."""
+def _sheet_section(
+    team_sheet: TeamSheet | None, team_id: int, base_url: str, is_admin: bool
+) -> None:
+    """The team's roster spreadsheet, for leaders/seconds (and admins).
+
+    Everything to do with getting rosters in and out of a spreadsheet lives
+    here now: the sheet's link, the template to copy, an on-demand sync, and
+    the .csv import that used to have a page of its own. Gated on can_manage
+    by the caller — the link IS the access to the sheet, so who may see it is
+    who may manage the roster.
+    """
     ui.label("Roster spreadsheet").classes("text-lg font-medium")
-    pending = bool(team_sheet is not None and team_sheet.requested_file_id)
-    if team_sheet is None or not team_sheet.file_id:
-        with ui.row().classes("items-center gap-2"):
-            if is_admin:
-                ui.button(
-                    "Link a spreadsheet",
-                    icon="add_link",
-                    on_click=lambda: _roster_sheet_dialog(team_id, pending),
-                ).props("dense outline")
-            ui.label(
-                "The nightly sync (2:30) creates a Google Sheet for this team's "
-                "roster; the link will appear here."
-            ).classes("text-sm text-gray-500 vdb-prose")
-    else:
-        with ui.row().classes("items-center gap-2"):
+    linked = team_sheet is not None and bool(team_sheet.file_id)
+    with ui.row().classes("items-center gap-2"):
+        if linked:
             ui.link(
                 team_sheet.file_name or "Google Sheet",
                 sheet_url(team_sheet.file_id),
                 new_tab=True,
             )
-            if is_admin:
+            ui.button(
                 # not plain "Change": the home-page section above carries one
                 # of those, and the two sit a few lines apart
-                ui.button(
-                    "Change spreadsheet",
-                    icon="edit",
-                    on_click=lambda: _roster_sheet_dialog(team_id, pending),
-                ).props("dense flat")
-            ui.label(
-                "Edits sync into the database nightly (2:30); rows removed from "
-                "the sheet leave the roster. The same sync grants this team's "
-                "leaders and seconds edit access, at the email on their volunteer "
-                "record — Google emails an invitation the first time."
-            ).classes("text-sm text-gray-500 vdb-prose")
-    if pending:
-        with ui.row().classes("items-center gap-2"):
-            ui.link(
-                "Requested spreadsheet",
-                sheet_url(team_sheet.requested_file_id),
-                new_tab=True,
+                "Change spreadsheet",
+                icon="edit",
+                on_click=lambda: _roster_sheet_dialog(team_id, linked=True),
+            ).props("dense flat")
+            ui.button(
+                "Sync now",
+                icon="sync",
+                on_click=lambda: _sync_sheet(team_id, roster_sheets.IMPORT),
+            ).props("dense outline")
+            ui.button(
+                "Overwrite sheet",
+                icon="upload",
+                on_click=lambda: _sync_sheet(team_id, roster_sheets.EXPORT),
+            ).props("dense flat").tooltip(
+                "Rewrites the spreadsheet from the database, discarding "
+                "whatever is in it — the way out of a mangled sheet."
+            )
+        else:
+            ui.button(
+                "Link a spreadsheet",
+                icon="add_link",
+                on_click=lambda: _roster_sheet_dialog(team_id, linked=False),
+            ).props("dense outline")
+        if settings().template_sheet_url:
+            # The decorated Google Sheet (role dropdown, hidden ID column,
+            # structure warning) replaces the bare CSV: copy it, share the
+            # copy, link it here — the decoration comes along with the copy.
+            ui.button("Roster template (Google Sheets)", icon="open_in_new").props(
+                f'outline dense href="{settings().template_sheet_url}" target="_blank"'
+            )
+        else:  # dev fallback: no Drive template configured
+            ui.button(
+                "Empty template",
+                icon="description",
+                on_click=lambda: ui.download(
+                    exporter.template_csv(), "volunteerdb-template.csv"
+                ),
+            ).props("outline dense")
+    if linked:
+        ui.label(
+            "Edits sync into the database nightly (2:30), and the sheet is "
+            "rewritten to match. Nobody is ever removed by a sync — take a "
+            "member off the roster below instead. Anyone holding this link "
+            "can edit the sheet, so keep it among the people who help run "
+            "this team."
+        ).classes("text-sm text-gray-500 vdb-prose")
+    else:
+        ui.label(
+            "The nightly sync (2:30) creates a Google Sheet for this team's "
+            "roster; the link will appear here. Or copy the template, share "
+            "it as “anyone with the link can edit”, and link it yourself."
+        ).classes("text-sm text-gray-500 vdb-prose")
+    if team_sheet is not None:
+        if team_sheet.last_status == "error":
+            ui.label(f"Last sync failed: {team_sheet.last_error}").classes(
+                "text-negative text-sm"
+            )
+        elif team_sheet.last_synced_at is not None:
+            ui.label(f"Last synced {team_sheet.last_synced_at:%Y-%m-%d %H:%M}").classes(
+                "text-sm text-gray-500"
+            )
+    _sheet_import_block(base_url, is_admin)
+
+
+@notify_errors
+async def _sync_sheet(team_id: int, direction: str) -> None:
+    """Sync on demand, the way the home-page section's Fetch now works.
+
+    The actor is re-derived server-side inside sync_team, so a tab left open
+    across a demotion stops syncing.
+    """
+    async with action_session() as (_session, actor):
+        user_id = actor.user.id
+    ui.notify("Syncing with Google Sheets…")
+    outcome = await roster_sheets.sync_team(
+        team_id, direction=direction, user_id=user_id
+    )
+    if outcome.failed:
+        ui.notify(f"Sync failed: {outcome.message}", color="negative", multi_line=True)
+    else:
+        ui.notify(outcome.message, color="positive", multi_line=True)
+    ui.navigate.to(f"/teams/{team_id}")
+
+
+def _sheet_import_block(base_url: str, is_admin: bool) -> None:
+    """The .csv import, moved here from the retired /import page.
+
+    Deliberately still importer.run_import, unchanged: it scopes rows to the
+    teams the actor manages all by itself, so a leader uploading here cannot
+    reach anybody else's roster, and the dry-run -> preview -> apply flow is
+    the one already covered by tests.
+    """
+    state: dict = {"content": None, "filename": None}
+    ui.label("Import a .csv").classes("text-md font-medium mt-2")
+    ui.label(
+        "1. DO NOT edit the ID Column. "
+        "2. Imports never delete anything and a blank cell never clears a "
+        "field; they only add and update. "
+        "3. Ensure import is congruent with provided template; "
+        "system will not accept any errors."
+        + (
+            ""
+            if is_admin
+            else " Rows are limited to the teams you lead; new volunteers must "
+            "be put on one of your teams in the same file."
+        )
+    ).classes("text-sm text-gray-500 vdb-prose")
+
+    report_area = ui.column().classes("w-full gap-2")
+
+    async def render_report(report: importer.ImportReport) -> None:
+        report_area.clear()
+        with report_area:
+            if report.applied:
+                ui.label("Import applied ✔").classes(
+                    "text-positive text-lg font-medium"
+                )
+            elif report.has_errors:
+                ui.label("Not applied — fix the errors below and re-upload.").classes(
+                    "text-negative font-medium"
+                )
+            else:
+                ui.label("Dry run — nothing written yet.").classes(
+                    "text-amber-700 font-medium"
+                )
+            reactivated = (
+                f", {report.volunteers_reactivated} reactivated"
+                if report.volunteers_reactivated
+                else ""
             )
             ui.label(
-                "Takes effect at the next sync (2:30), which checks the sheet "
-                "against the roster template first."
-                + (
-                    " Until then this team keeps the one above."
-                    if team_sheet.file_id
-                    else ""
+                f"volunteers: +{report.volunteers_created} new, "
+                f"{report.volunteers_updated} updated{reactivated} · "
+                f"memberships: +{report.memberships_created} new, "
+                f"{report.memberships_updated} updated"
+            )
+            if report.warnings:
+                count = len(report.warnings)
+                # Warnings never block an import, so the ones that flag
+                # possible duplicates or a suspect ID are easy to scroll
+                # past. Put the count where the eye already is.
+                ui.label(
+                    f"⚠️ {count} warning{'' if count == 1 else 's'} — these do not "
+                    "stop the import. Possible duplicates and suspect IDs all "
+                    "appear here."
+                ).classes("text-amber-700 font-medium")
+            for issue in report.errors:
+                ui.label(f"❌ {issue.sheet} row {issue.row}: {issue.message}").classes(
+                    "text-negative text-sm"
                 )
-                + (
-                    " Its rows will be imported into the database."
-                    if team_sheet.requested_import
-                    else " It will be overwritten from the database."
+            for issue in report.warnings:
+                ui.label(f"⚠️ {issue.sheet} row {issue.row}: {issue.message}").classes(
+                    "text-amber-700 text-sm"
                 )
-            ).classes("text-sm text-gray-500 vdb-prose")
-    if team_sheet is None:
-        return
-    if team_sheet.last_status == "error":
-        ui.label(f"Last sync failed: {team_sheet.last_error}").classes(
-            "text-negative text-sm"
+            if not report.applied and not report.has_errors and state["content"]:
+                ui.button(
+                    "Apply this import", icon="publish", on_click=apply_import
+                ).props("color=positive")
+
+    @notify_errors
+    async def on_upload(e: events.UploadEventArguments) -> None:
+        state["content"] = await e.file.read()
+        state["filename"] = e.file.name
+        async with action_session() as (_, actor):
+            user_id = actor.user.id  # run_import checks the right itself
+        report = await importer.run_import(
+            state["content"], dry_run=True, user_id=user_id
         )
-    elif team_sheet.last_synced_at is not None:
-        ui.label(f"Last synced {team_sheet.last_synced_at:%Y-%m-%d %H:%M}").classes(
-            "text-sm text-gray-500"
+        await render_report(report)
+
+    @notify_errors
+    async def apply_import() -> None:
+        async with action_session() as (_, actor):
+            user_id = actor.user.id  # run_import checks the right itself
+        report = await importer.run_import(
+            state["content"], dry_run=False, user_id=user_id
         )
+        await render_report(report)
+        if report.applied:
+            ui.notify(f"Imported {state['filename']}", color="positive")
+            # after the commit: a row that redirected somebody's address
+            # tells the mailbox it moved away from (services/mail.py)
+            await mail.notify_replaced_addresses(
+                report.addresses_replaced, f"{base_url}/login"
+            )
+
+    ui.upload(
+        label="Drop a .csv file here (validated before anything is written)",
+        on_upload=on_upload,
+        auto_upload=True,
+        max_file_size=10_000_000,
+    ).props('accept=".csv"').classes("w-full")
 
 
 _IMPORT_ROWS = "Import its rows into the database"
 _OVERWRITE = "Overwrite it from the database"
 
 
-def _roster_sheet_dialog(team_id: int, pending: bool) -> None:
-    """Point the team at a different roster spreadsheet. Admin only — enforced
-    server-side on save."""
+def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
+    """Link the team to a roster spreadsheet. Leaders/seconds and admins —
+    enforced server-side on save."""
     with ui.dialog() as dialog, ui.card().classes("w-[32rem] gap-3"):
         ui.label("Roster spreadsheet").classes("text-lg font-medium")
         ui.label(
-            "Paste the link of a Google Sheet that lives in the parish roster "
-            "folder on Drive — a copy of the roster template, or another team's "
-            "sheet. The sync cannot see files it did not create, so a sheet made "
-            "anywhere else will be refused."
+            "Paste the link of a Google Sheet shared as “anyone with the link "
+            "can edit” — copy the roster template to make one."
         ).classes("text-sm text-gray-500")
-        url = ui.input("Google Sheets link").props("outlined dense").classes("w-full")
+        ui.label(
+            "Keep this link private. It holds every member's email, phone and "
+            "notes, and anyone who has it can change them. Share it only with "
+            "the people who help run this team."
+        ).classes("text-sm text-negative vdb-prose")
+        url = (
+            ui.input("Google Sheets link")
+            .props("outlined dense maxlength=500")
+            .classes("w-full")
+        )
         direction = ui.radio([_OVERWRITE, _IMPORT_ROWS], value=_OVERWRITE).props(
             "dense"
         )
         direction.tooltip(
             "Overwriting keeps the parish database as it is and rewrites the "
-            "sheet from it. Importing replaces this team's roster with the "
-            "sheet's rows, and can remove members."
+            "sheet from it. Importing adds and updates from the sheet's rows "
+            "— it never removes anybody."
         )
         ui.label(
-            "Nothing changes until the next sync (2:30): it checks the sheet "
-            "against the template, and reports here if it cannot."
+            "Saving syncs straight away, so you will know at once whether the "
+            "sheet is shared and shaped correctly."
         ).classes("text-sm text-gray-500")
 
         @notify_errors
         async def save() -> None:
             async with action_session() as (session, actor):
-                await team_service.request_roster_sheet(
-                    session,
-                    actor,
-                    team_id,
-                    url.value or "",
-                    import_rows=direction.value == _IMPORT_ROWS,
+                await team_service.set_roster_sheet(
+                    session, actor, team_id, url.value or ""
                 )
+                user_id = actor.user.id
             dialog.close()
-            ui.navigate.to(f"/teams/{team_id}")
-
-        @notify_errors
-        async def withdraw() -> None:
-            async with action_session() as (session, actor):
-                await team_service.cancel_roster_sheet_request(session, actor, team_id)
-            dialog.close()
+            ui.notify("Syncing with Google Sheets…")
+            outcome = await roster_sheets.sync_team(
+                team_id,
+                direction=(
+                    roster_sheets.IMPORT
+                    if direction.value == _IMPORT_ROWS
+                    else roster_sheets.EXPORT
+                ),
+                user_id=user_id,
+            )
+            if outcome.failed:
+                ui.notify(
+                    f"Linked, but the first sync failed: {outcome.message}",
+                    color="negative",
+                    multi_line=True,
+                )
+            else:
+                ui.notify(outcome.message, color="positive", multi_line=True)
             ui.navigate.to(f"/teams/{team_id}")
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
-            if pending:
-                ui.button("Withdraw request", on_click=withdraw).props(
-                    "flat color=negative"
-                )
             ui.button("Save", on_click=save)
     dialog.open()
 
@@ -768,7 +955,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         if can_full and at is None:
             _home_page_section(team, team_page, team_id, slug, base_url)
         if can_manage:
-            _sheet_section(team_sheet, team_id, actor.is_admin)
+            _sheet_section(team_sheet, team_id, base_url, actor.is_admin)
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")

@@ -52,14 +52,14 @@ def test_the_nightly_ordering_holds(name):
     """The one constraint between the five scheduled times, until now recorded
     only in prose in five places.
 
-    The backup must precede the Drive sync so its dump is a restore point
+    The backup must precede the roster sync so its dump is a restore point
     taken immediately before the only automated bulk write in the system; the
-    three in-app jobs must come after both, so they never contend with either.
+    remaining in-app jobs come after both, so they never contend with either.
     """
     site = siteconf.load(name)
     ordered = [
         site.schedule_backup_at,
-        site.schedule_drive_sync_at,
+        site.schedule_roster_sync_at,
         site.schedule_fetch_pages_at,
         site.schedule_proposal_digest_at,
         site.schedule_event_reminders_at,

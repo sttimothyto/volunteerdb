@@ -7,7 +7,6 @@ def register_pages() -> None:
         elections_page,
         events_page,
         fields_admin_page,
-        imports_page,
         login,
         ministries_routes,
         photos_route,

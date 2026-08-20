@@ -49,6 +49,7 @@ from .jobs import (
     fetch_pages,
     job_lock,
     proposal_digest,
+    roster_sync,
     task_force_cleanup,
 )
 from .models import JobRun
@@ -74,9 +75,11 @@ class Job:
 
 
 # Registry order is execution order when several jobs are due at once (e.g.
-# startup catch-up), preserving the fetch -> digest -> reminders chain the
-# crontab used to space out by half-hours.
+# startup catch-up), preserving the sync -> fetch -> digest -> reminders chain
+# the crontab used to space out by half-hours. roster_sync leads: a digest or
+# reminder should speak for the roster the sheets just settled on.
 JOBS: tuple[Job, ...] = (
+    Job("roster_sync", "roster_sync_at", roster_sync.main),
     Job("fetch_pages", "fetch_pages_at", fetch_pages.main),
     Job("proposal_digest", "proposal_digest_at", proposal_digest.main),
     Job("event_reminders", "event_reminders_at", event_reminders.main),

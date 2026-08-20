@@ -268,23 +268,23 @@ the kept html.
 | Column | Type | Notes |
 |---|---|---|
 | `team_id` | integer | PK, FK → `team.id` ON DELETE CASCADE |
-| `file_id` | varchar(128) | unique; Drive file id — survives renames, backs the leader-facing sheet link |
+| `file_id` | varchar(128) | unique; Drive file id — survives renames, and the leader-facing link is derived from it |
 | `file_name` | varchar(300) | name the sheet currently has on Drive |
-| `last_synced_at` | timestamptz | Drive ModTime recorded after the last upload; sheets not newer than this skip the apply leg |
+| `last_synced_at` | timestamptz | when the last clean sync finished; not advanced for a team whose sync failed |
 | `last_status` | sync_status | outcome of the last sync for this team |
 | `last_error` | text | |
 | `created_at` | timestamptz | |
-| `requested_file_id` | varchar(128) | unique; a repoint an admin asked for, held *beside* `file_id` and never over it |
-| `requested_import` | boolean | NOT NULL DEFAULT false — true imports the newly linked sheet's rows, false regenerates it from the database |
 
-Identity of the team's roster spreadsheet in Google Drive, maintained by
-`jobs.drive_sync` (see the Drive roster sync how-to). A pointer to an
-external artifact — current-state only.
+Identity of the team's roster spreadsheet, set by a leader or second
+(`services.teams.set_roster_sheet`) and synced by `jobs.roster_sync` — see
+[Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md). A
+pointer to an external artifact — current-state only.
 
-The `requested_*` pair is how an admin repoints a team. Nothing in the app
-can reach Drive, so the link is only verified by the next nightly sync; it
-adopts the request or drops it with a reason, and either way the team keeps
-a working `file_id` throughout.
+Revision `0005` dropped a `requested_file_id`/`requested_import` pair that
+held a pasted link *beside* `file_id` until a nightly run could verify it.
+That indirection existed only because the app could not reach Drive; a
+link-shared sheet is readable the moment it is pasted, so `file_id` is now
+written directly.
 
 (event)=
 ## `event` (not versioned)

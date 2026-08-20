@@ -1,9 +1,14 @@
-"""Sync mode: a team's sheet is that team's COMPLETE roster.
+"""Sync mode: a team's sheet, applied as that team's roster.
 
-Unlike manual imports (add/update only), run_team_sync removes memberships
-absent from the sheet — the history twins retain them — and archives a
-volunteer who thereby loses their last membership anywhere. A safety
-threshold refuses removals that would drop most of a team at once.
+run_team_sync defaults to remove=False, and that default is the contract the
+whole roster-spreadsheet feature rests on: a sheet adds and updates, never
+removes. A leader who deletes a row has not fired anybody, and the sync's
+write-back leg puts that person straight back into the sheet.
+
+The removal machinery underneath (apply_rows(remove=True)) is still exercised
+here — it is the engine's behaviour when a caller really does mean "this file
+is the complete roster", and its safety rails are worth keeping honest — but
+no production caller passes it.
 """
 
 import csv
@@ -72,7 +77,9 @@ async def test_sync_roundtrip_of_team_export_is_a_noop(choir):
         content = await exporter.export_csv(
             session, None, team_id=choir["choir"], subtree=False
         )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        content, team_id=choir["choir"], user_id=None, remove=True
+    )
     assert not report.has_errors, report.errors
     assert report.applied
     assert report.memberships_removed == 0 and report.volunteers_archived == 0
@@ -89,7 +96,9 @@ async def test_sync_applies_adds_updates_and_removals(choir):
             ["", "Nora", "New", "nora@example.org", "", "", "Choir", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        content, team_id=choir["choir"], user_id=None, remove=True
+    )
     assert not report.has_errors, report.errors
     assert report.applied
     assert report.volunteers_created == 1
@@ -132,7 +141,9 @@ async def test_sync_blank_team_defaults_to_the_sheet_team(choir):
             ["", "Dora", "Done", "dora@example.org", "", "", "", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        content, team_id=choir["choir"], user_id=None, remove=True
+    )
     assert not report.has_errors, report.errors
     assert report.applied and report.memberships_removed == 0
 
@@ -146,7 +157,9 @@ async def test_sync_rejects_rows_for_other_teams(choir):
             ["", "Dora", "Done", "dora@example.org", "", "", "Choir", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        content, team_id=choir["choir"], user_id=None, remove=True
+    )
     assert report.has_errors and not report.applied
     assert any("only manages 'Choir'" in e.message for e in report.errors)
     assert await _team_volunteer_ids(choir["choir"]) == {
@@ -162,7 +175,9 @@ async def test_sync_safety_threshold_refuses_mass_removal(choir):
     content = _csv_bytes(
         [["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"]]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        content, team_id=choir["choir"], user_id=None, remove=True
+    )
     assert report.has_errors and not report.applied
     assert any("safety threshold" in e.message for e in report.errors)
     assert len(await _team_volunteer_ids(choir["choir"])) == 4, "roster untouched"
@@ -176,7 +191,9 @@ async def test_sync_small_removals_pass_the_threshold(choir):
             ["", "Mia", "Member", "mia@example.org", "", "", "Choir", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        content, team_id=choir["choir"], user_id=None, remove=True
+    )
     assert not report.has_errors, report.errors
     assert report.applied and report.memberships_removed == 2
 
@@ -191,7 +208,9 @@ async def test_sync_row_errors_prevent_all_removals(choir):
             ["", "Carl", "Cross", "carl@example.org", "", "", "Choir", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        content, team_id=choir["choir"], user_id=None, remove=True
+    )
     assert report.has_errors and not report.applied
     assert report.memberships_removed == 0
     assert choir["dora"] in await _team_volunteer_ids(choir["choir"])
@@ -206,7 +225,7 @@ async def test_sync_dry_run_reports_without_writing(choir):
         ]
     )
     report = await importer.run_team_sync(
-        content, team_id=choir["choir"], user_id=None, dry_run=True
+        content, team_id=choir["choir"], user_id=None, dry_run=True, remove=True
     )
     assert not report.has_errors and not report.applied
     assert report.memberships_removed == 1
@@ -217,7 +236,7 @@ async def test_sync_empty_sheet_never_wipes_a_team(choir):
     """A header-only download (or an accidentally emptied sheet) must not read
     as 'everyone left' — even for teams too small for the percentage breaker."""
     report = await importer.run_team_sync(
-        _csv_bytes([]), team_id=choir["choir"], user_id=None
+        _csv_bytes([]), team_id=choir["choir"], user_id=None, remove=True
     )
     assert report.has_errors and not report.applied
     assert any("refusing to empty the team" in e.message for e in report.errors)
@@ -232,7 +251,9 @@ async def test_sync_empty_sheet_never_wipes_a_team(choir):
                 session, None, volunteer_id, duo.id, TeamRole.member
             )
         duo_id = duo.id
-    report = await importer.run_team_sync(_csv_bytes([]), team_id=duo_id, user_id=None)
+    report = await importer.run_team_sync(
+        _csv_bytes([]), team_id=duo_id, user_id=None, remove=True
+    )
     assert report.has_errors and not report.applied
     assert len(await _team_volunteer_ids(duo_id)) == 2, "roster untouched"
 
@@ -242,7 +263,7 @@ async def test_sync_empty_sheet_for_an_empty_team_is_fine(choir):
         fresh = await teams.create(session, None, "Fresh")
         fresh_id = fresh.id
     report = await importer.run_team_sync(
-        _csv_bytes([]), team_id=fresh_id, user_id=None
+        _csv_bytes([]), team_id=fresh_id, user_id=None, remove=True
     )
     assert not report.has_errors, report.errors
     assert report.applied and report.memberships_removed == 0
@@ -259,7 +280,9 @@ async def test_sync_create_plus_remove_raises_a_churn_warning(choir):
             ["", "Dora", "Done", "dora@example.org", "", "", "Choir", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        content, team_id=choir["choir"], user_id=None, remove=True
+    )
     assert not report.has_errors, report.errors
     assert report.applied
     assert report.volunteers_created == 1, "the new address created a second Mia"
@@ -278,7 +301,7 @@ async def test_sync_readding_an_archived_volunteer_reactivates(choir):
         ]
     )
     report = await importer.run_team_sync(
-        keep_three, team_id=choir["choir"], user_id=None
+        keep_three, team_id=choir["choir"], user_id=None, remove=True
     )
     assert report.applied and report.volunteers_archived == 1
 
@@ -291,7 +314,7 @@ async def test_sync_readding_an_archived_volunteer_reactivates(choir):
         ]
     )
     report = await importer.run_team_sync(
-        with_dora, team_id=choir["choir"], user_id=None
+        with_dora, team_id=choir["choir"], user_id=None, remove=True
     )
     assert report.applied, report.errors
     assert report.volunteers_reactivated == 1
@@ -325,7 +348,7 @@ async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir):
         ]
     )
     report = await importer.run_team_sync(
-        poisoned, team_id=choir["choir"], user_id=None
+        poisoned, team_id=choir["choir"], user_id=None, remove=True
     )
     assert not report.applied, "all-or-nothing: the whole sheet rolls back"
     assert any("not allowed to edit" in i.message for i in report.errors)
@@ -378,8 +401,75 @@ async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(c
             ],
         ]
     )
-    report = await importer.run_team_sync(moved, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        moved, team_id=choir["choir"], user_id=None, remove=True
+    )
     assert report.applied, report.errors
     assert report.addresses_replaced == [("mia@example.org", "mia.new@example.org")], (
         "Mia moved and gets a notice; Basil's blank was filled in, so nobody does"
     )
+
+
+# --- the production default: a sheet never removes anybody -------------------
+
+
+async def test_the_default_sync_never_removes_a_missing_member(choir):
+    """The contract jobs.roster_sync runs under. Dora is absent from the sheet
+    and stays on the roster regardless — the write-back leg is what reconciles
+    the sheet, by putting her back into it."""
+    content = _csv_bytes(
+        [
+            ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
+            ["", "Mia", "Member", "mia@example.org", "", "", "Choir", "member"],
+            ["", "Carl", "Cross", "carl@example.org", "", "", "Choir", "member"],
+        ]
+    )
+    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    assert report.applied
+    assert report.memberships_removed == 0
+    assert report.volunteers_archived == 0
+    assert choir["dora"] in await _team_volunteer_ids(choir["choir"])
+
+
+async def test_the_default_sync_still_adds_and_updates(choir):
+    """Not removing is not the same as not applying: the sheet is still the
+    way a leader adds somebody and fixes a phone number."""
+    content = _csv_bytes(
+        [
+            ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
+            [
+                "",
+                "Nina",
+                "New",
+                "nina@example.org",
+                "416-555-0143",
+                "",
+                "Choir",
+                "member",
+            ],
+        ]
+    )
+    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    assert report.applied
+    assert report.volunteers_created == 1
+    assert report.memberships_removed == 0
+    ids = await _team_volunteer_ids(choir["choir"])
+    # everyone who was there is still there, and Nina joined them
+    assert {choir["lena"], choir["mia"], choir["carl"], choir["dora"]} <= ids
+    assert len(ids) == 5
+
+
+async def test_an_empty_sheet_is_harmless_when_nothing_is_removed(choir):
+    """The empty-sheet guard exists for remove=True. With the production
+    default an emptied sheet is simply a no-op, which is the better failure:
+    the write-back refills it the same night."""
+    report = await importer.run_team_sync(
+        _csv_bytes([]), team_id=choir["choir"], user_id=None
+    )
+    assert report.applied and not report.has_errors
+    assert await _team_volunteer_ids(choir["choir"]) == {
+        choir["lena"],
+        choir["mia"],
+        choir["carl"],
+        choir["dora"],
+    }

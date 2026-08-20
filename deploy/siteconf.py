@@ -53,9 +53,6 @@ PG_TUNING = (
 BACKUP_SCRIPT = "/usr/local/bin/volunteerdb-backup"
 BACKUP_DIR = "/var/backups/volunteerdb"
 RCLONE_CONF = "/root/.config/rclone/rclone.conf"
-SYNC_WORKDIR = "/var/lib/volunteerdb-drive-sync"
-DRIVE_SYNC_SCRIPT = "/usr/local/bin/volunteerdb-drive-sync"
-DECORATE_SCRIPT = "/usr/local/bin/volunteerdb-decorate-sheets"
 
 # What files.sync ships to APP_DIR, which is also the podman build context.
 # Kept separate from .containerignore on purpose: the glob semantics differ
@@ -129,8 +126,6 @@ QUADLETS = (
 TIMER_UNITS = (
     "volunteerdb-backup.service",
     "volunteerdb-backup.timer",
-    "volunteerdb-drive-sync.service",
-    "volunteerdb-drive-sync.timer",
 )
 
 
@@ -165,13 +160,12 @@ class Site:
     backup_retain_local_days: int
     backup_retain_remote_days: int
 
-    # [drive_sync]
-    drive_sync_sheets_folder: str
-    drive_sync_revoke_public_links: bool
+    # [sheets]
+    sheets_folder_id: str
 
     # [schedule] — parish-local times, "HH:MM"
     schedule_backup_at: str
-    schedule_drive_sync_at: str
+    schedule_roster_sync_at: str
     schedule_fetch_pages_at: str
     schedule_proposal_digest_at: str
     schedule_event_reminders_at: str
@@ -251,7 +245,7 @@ def load(name: str | None = None) -> Site:
         )
     for field_name in (
         "schedule_backup_at",
-        "schedule_drive_sync_at",
+        "schedule_roster_sync_at",
         "schedule_fetch_pages_at",
         "schedule_proposal_digest_at",
         "schedule_event_reminders_at",

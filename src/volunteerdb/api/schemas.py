@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -124,8 +124,8 @@ class HomeDocPatch(BaseModel):
 
 
 class TeamSheetOut(ORMModel):
-    """A team's Google Drive roster sheet, and any repoint waiting on the
-    nightly sync to check it (jobs.drive_sync)."""
+    """A team's roster spreadsheet and the last sync's outcome
+    (jobs.roster_sync)."""
 
     file_id: str | None = None
     file_name: str | None = None
@@ -133,30 +133,32 @@ class TeamSheetOut(ORMModel):
     last_status: str | None = None
     last_error: str | None = None
     last_synced_at: datetime | None = None
-    requested_file_id: str | None = None
-    requested_url: str | None = None
-    requested_import: bool = False
 
     @model_validator(mode="after")
     def _links(self) -> "TeamSheetOut":
-        """Both links are derived, never stored: the Drive file id is what
-        survives the rename a team rename triggers."""
+        """The link is derived, never stored: the file id is what survives a
+        team rename, and Google rewriting its own URL shapes."""
         if self.file_id:
             self.url = sheet_url(self.file_id)
-        if self.requested_file_id:
-            self.requested_url = sheet_url(self.requested_file_id)
         return self
 
 
 class RosterSheetPatch(BaseModel):
-    """Body of PATCH /teams/{id}/roster-sheet. Admin-only, unlike HomeDocPatch:
-    a roster sheet carries members' addresses and phone numbers, and adopting
-    one hands it a bulk write over the roster."""
+    """Body of PATCH /teams/{id}/roster-sheet — leaders and seconds, but not
+    core members as HomeDocPatch allows: a roster sheet carries members'
+    addresses and phone numbers, and linking one hands it a bulk write over
+    the roster."""
 
-    url: str | None = Field(default=None, max_length=500)  # null withdraws
-    # False regenerates the newly linked sheet from the database; True imports
-    # its rows instead, through the importer's usual removal thresholds
-    import_rows: bool = False
+    url: str = Field(max_length=500)
+
+
+class RosterSheetSync(BaseModel):
+    """Body of POST /teams/{id}/roster-sheet/sync."""
+
+    # "import" applies the sheet's rows then writes the result back; "export"
+    # skips the read and overwrites the sheet from the database. Importing
+    # never removes anybody -- services.roster_sheets explains why.
+    direction: Literal["import", "export"] = "import"
 
 
 class TeamWithPath(TeamOut):

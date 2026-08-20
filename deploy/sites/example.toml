@@ -60,21 +60,19 @@ retain_local_days = 14
 # Encrypted copies kept on Drive.
 retain_remote_days = 730
 
-[drive_sync]
-# Google Drive folder holding one roster sheet per team.
-sheets_folder = "volunteerdb-spreadsheets"
-# Leave false until every team has a leader or second with an email address on
-# file. Turning it on revokes anyone-with-link access, which locks out anyone
-# who has no individual grant to fall back on.
-revoke_public_links = false
+[sheets]
+# Drive folder id new roster sheets are created in (the folder's id, from its
+# URL -- not its name: the app addresses it through the Drive API). The OAuth
+# credentials that go with it are secrets and live in the remote env file.
+folder_id = ""
 
 [schedule]
-# Parish-local times. Keep the ordering: the backup must precede the Drive
+# Parish-local times. Keep the ordering: the backup must precede the roster
 # sync, so its dump is a restore point taken immediately before the only
-# automated bulk write in the system, and the three in-app jobs must come
+# automated bulk write in the system, and the remaining in-app jobs must come
 # after both. tests/test_deploy_config.py enforces that ordering.
 backup_at = "02:00"
-drive_sync_at = "02:30"
+roster_sync_at = "02:30"
 fetch_pages_at = "03:00"
 proposal_digest_at = "03:30"
 event_reminders_at = "04:00"

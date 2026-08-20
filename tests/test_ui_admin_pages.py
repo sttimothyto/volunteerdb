@@ -37,9 +37,6 @@ async def test_admin_pages_render(database):
         await user.open("/admin/workload")
         await user.should_see("Role multipliers")
 
-        await user.open("/import")
-        await user.should_see("Full parish export")
-
         await user.open("/")
         await user.should_see("Focus on team")  # the merged ministry graph
 
@@ -53,15 +50,13 @@ async def test_admin_pages_render(database):
         await user.open(f"/login-dev/{member_id}")
         await user.open("/admin/users")
         await user.should_see("Admins only.")
-        await user.open("/import")
-        await user.should_see(
-            "Import/Export is available to admins and to team leaders/seconds."
-        )
         await user.open("/elections")
         await user.should_see("Elections are available to admins")
 
 
-async def test_leader_import_page_scoped(database):
+async def test_leader_sees_scoped_export_on_teams_page(database):
+    """The retired /import page's "My teams export" now lives on /teams, as a
+    button whose scope follows the actor."""
     async with db_session() as session:
         liturgy = await teams.create(session, None, "Liturgy")
         lena = await volunteers.create(
@@ -79,9 +74,10 @@ async def test_leader_import_page_scoped(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{leader_id}")
         await user.should_see("dev-login ok")
-        await user.open("/import")
-        await user.should_see("My teams export")
-        await user.should_see("Import/Export")  # nav link visible to leaders
+        await user.open("/teams")
+        await user.should_see("Export team(s)")
+        # the nav link the page used to have is gone with the page
+        await user.should_not_see("Import/Export")
 
 
 async def test_admin_users_provision_button(database, monkeypatch):

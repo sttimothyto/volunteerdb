@@ -97,9 +97,8 @@ on stderr, having created nothing.
 ## `volunteerdb.jobs` — scheduled one-shot jobs
 
 ```sh
+python -m volunteerdb.jobs.roster_sync
 python -m volunteerdb.jobs.fetch_pages
-python -m volunteerdb.jobs.drive_sync apply /sync
-python -m volunteerdb.jobs.drive_sync record /sync
 python -m volunteerdb.jobs.proposal_digest [--today YYYY-MM-DD]
 python -m volunteerdb.jobs.event_reminders [--today YYYY-MM-DD]
 python -m volunteerdb.jobs.calendar_sync
@@ -109,10 +108,10 @@ python -m volunteerdb.jobs.task_force_cleanup
 `fetch_pages` refreshes every team home page from its public Google Doc
 (see [Publish a team home page](../how-to/team-home-pages.md)); each team
 fetches in its own transaction, so one bad doc cannot block the rest.
-`drive_sync` is the Python half of the nightly roster sync (see
-[Sync team rosters with Google Sheets](../how-to/drive-roster-sync.md)):
-it only reads and writes a work directory — rclone on the host does all the
-Drive traffic. `proposal_digest` emails each proposal voter one nightly
+`roster_sync` reconciles every team's roster with its Google Sheet (see
+[Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md));
+each team syncs independently, so one unshared sheet cannot stop the rest,
+and unconfigured it exits 0 with "not configured". `proposal_digest` emails each proposal voter one nightly
 digest of what needs their input; `event_reminders` emails each volunteer
 their event notices (scheduled by a manager, serving this week, serving
 tomorrow — the reminder stages honour the per-sign-up preferences). Both
@@ -127,9 +126,9 @@ unconfigured it exits 0 with "not configured", so it is always safe to run.
 finished or cancelled event (see
 [Events and scheduling](../explanation/events.md)).
 
-All of these except `drive_sync` run **inside the app process**:
-`volunteerdb.scheduler` fires the nightly three at their parish-local times
-(`VDB_FETCH_PAGES_AT` 03:00, `VDB_PROPOSAL_DIGEST_AT` 03:30,
+All of these run **inside the app process**: `volunteerdb.scheduler` fires
+the nightly four at their parish-local times (`VDB_ROSTER_SYNC_AT` 02:30,
+`VDB_FETCH_PAGES_AT` 03:00, `VDB_PROPOSAL_DIGEST_AT` 03:30,
 `VDB_EVENT_REMINDERS_AT` 04:00), `calendar_sync` every 30 minutes and
 `task_force_cleanup` hourly, records completion in the `job_run` table
 so a restart or redeploy cannot skip a night, retries a nightly failure
@@ -143,10 +142,9 @@ localhost/volunteerdb:latest python -m volunteerdb.jobs.<name>`. An
 advisory lock (taken by both the scheduler and the CLI) keeps a manual run
 and the scheduler from working the same job concurrently.
 
-`drive_sync` is the exception: its legs are invoked by the host's
-systemd-timed sync script at 02:30 (`journalctl -u volunteerdb-drive-sync`),
-which sandwiches them between rclone transfers — see the deploy's timer
-units. The 02:00 backup timer is the same host-side pattern.
+The 02:00 backup remains the one host-side systemd timer; the roster sync
+used to be the other, wrapped in rclone transfers, until reading a
+link-shared sheet made the host leg unnecessary.
 
 ## `healthcheck.py` — container health probe
 

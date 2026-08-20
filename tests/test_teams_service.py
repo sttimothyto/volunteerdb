@@ -207,39 +207,35 @@ async def test_leader_emails_covers_leader_and_second_only(database):
         ]
 
 
-async def test_request_roster_sheet_validates_the_link(database):
-    """The app cannot reach Drive, so the only check available here is the link
-    itself; everything about the FILE is the nightly sync's to decide."""
+async def test_set_roster_sheet_validates_the_link(database):
+    """Only the link's shape is checked here; whether the FILE is shared and
+    shaped like a roster is the sync's to discover, and it says so in the
+    error it records against the team."""
     async with db_session() as session:
         team = await teams.create(session, None, "Choir")
 
         with pytest.raises(ValueError, match="Google Sheets link"):
-            await teams.request_roster_sheet(session, None, team.id, "not a url")
+            await teams.set_roster_sheet(session, None, team.id, "not a url")
         with pytest.raises(ValueError, match="Google Sheets link"):
             # a Doc link is the mistake worth catching: the team page offers a
             # box for each, and they are not interchangeable
-            await teams.request_roster_sheet(
+            await teams.set_roster_sheet(
                 session, None, team.id, "https://docs.google.com/document/d/abc123"
             )
 
-        sheet = await teams.request_roster_sheet(
+        sheet = await teams.set_roster_sheet(
             session,
             None,
             team.id,
             "https://docs.google.com/spreadsheets/d/abc123/edit#gid=0",
         )
-        assert sheet.requested_file_id == "abc123", "the id, not the whole URL"
-        assert sheet.requested_import is False, "overwrite-from-database by default"
-        assert sheet.file_id is None, (
-            "the live pointer is untouched until a sync has seen the file — a "
-            "bad link must never cost a team the sheet it already has"
-        )
+        assert sheet.file_id == "abc123", "the id, not the whole URL"
 
 
-async def test_request_roster_sheet_is_admin_only(database):
-    """Not widened the way the home-page doc deliberately is: a roster sheet
-    carries addresses and phone numbers, and adopting one bulk-writes the
-    roster."""
+async def test_a_leader_may_set_the_roster_sheet(database):
+    """Widened from admin-only with the transport. The old rule was not a
+    judgement about trust: nothing in the app could reach Drive, so a leader's
+    pasted link could not be checked until the next nightly run."""
     async with db_session() as session:
         team = await teams.create(session, None, "Choir")
         lena = await volunteers.create(
@@ -250,54 +246,80 @@ async def test_request_roster_sheet_is_admin_only(database):
         leader = await load_actor(session, user)
 
     async with db_session() as session:
+        sheet = await teams.set_roster_sheet(
+            session, leader, team.id, "https://docs.google.com/spreadsheets/d/abc123"
+        )
+        assert sheet.file_id == "abc123"
+
+
+async def test_a_core_member_may_not_set_the_roster_sheet(database):
+    """Where this stops, and why it stops short of the home-page doc: that
+    publishes a page anybody may read, while this carries every member's
+    address and phone and grants a bulk write over the roster."""
+    async with db_session() as session:
+        team = await teams.create(session, None, "Choir")
+        cora = await volunteers.create(
+            session, None, "Cora", "Core", "cora@example.org"
+        )
+        await memberships.assign(session, None, cora.id, team.id, TeamRole.core)
+        user, _ = await users.create(session, "cora@example.org")
+        core = await load_actor(session, user)
+
+    async with db_session() as session:
         with pytest.raises(Forbidden):
-            await teams.request_roster_sheet(
-                session,
-                leader,
-                team.id,
-                "https://docs.google.com/spreadsheets/d/abc123",
+            await teams.set_roster_sheet(
+                session, core, team.id, "https://docs.google.com/spreadsheets/d/abc123"
             )
-        with pytest.raises(Forbidden):
-            await teams.cancel_roster_sheet_request(session, leader, team.id)
 
 
 async def test_one_spreadsheet_belongs_to_one_team(database):
     """Two teams on one sheet would each overwrite the other's roster every
-    night, so a sheet already used — or already spoken for — is refused."""
+    night, so a sheet already in use is refused."""
     async with db_session() as session:
         choir = await teams.create(session, None, "Choir")
         altar = await teams.create(session, None, "Altar Society")
         url = "https://docs.google.com/spreadsheets/d/abc123"
 
-        await teams.request_roster_sheet(session, None, choir.id, url)
+        await teams.set_roster_sheet(session, None, choir.id, url)
         with pytest.raises(ValueError, match="Choir"):
-            await teams.request_roster_sheet(session, None, altar.id, url)
-
-        # re-requesting the same sheet for the same team is not a clash: it is
-        # how the direction of the switch is changed before a sync runs
-        again = await teams.request_roster_sheet(
-            session, None, choir.id, url, import_rows=True
-        )
-        assert again.requested_import is True
-
-        withdrawn = await teams.cancel_roster_sheet_request(session, None, choir.id)
-        assert withdrawn.requested_file_id is None
-        assert withdrawn.requested_import is False
-        # freed by the withdrawal
-        moved = await teams.request_roster_sheet(session, None, altar.id, url)
-        assert moved.requested_file_id == "abc123"
+            await teams.set_roster_sheet(session, None, altar.id, url)
 
 
-async def test_request_refuses_the_sheet_the_team_already_syncs_with(database):
+async def test_setting_the_sheet_the_team_already_has_is_refused(database):
     async with db_session() as session:
         team = await teams.create(session, None, "Choir")
         session.add(TeamSheet(team_id=team.id, file_id="abc123"))
         await session.flush()
 
         with pytest.raises(ValueError, match="already syncs"):
-            await teams.request_roster_sheet(
+            await teams.set_roster_sheet(
                 session, None, team.id, "https://docs.google.com/spreadsheets/d/abc123"
             )
+
+
+async def test_relinking_clears_the_previous_sync_result(database):
+    """A stale 'Last sync failed' under a link that has since been replaced
+    reads as a problem with the NEW sheet."""
+    async with db_session() as session:
+        team = await teams.create(session, None, "Choir")
+        session.add(
+            TeamSheet(
+                team_id=team.id,
+                file_id="old123",
+                file_name="choir-membership-list",
+                last_status="error",
+                last_error="the spreadsheet is not shared",
+            )
+        )
+        await session.flush()
+
+        sheet = await teams.set_roster_sheet(
+            session, None, team.id, "https://docs.google.com/spreadsheets/d/new456"
+        )
+        assert sheet.file_id == "new456"
+        assert sheet.last_status is None
+        assert sheet.last_error is None
+        assert sheet.file_name is None, "the sync fills this in from the sheet"
 
 
 async def test_roster_sheet_needs_management_rights(database):

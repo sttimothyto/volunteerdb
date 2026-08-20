@@ -409,20 +409,14 @@ async def test_a_pending_address_change_shows_on_your_own_account(client, seeded
 
 
 async def test_roster_sheet_endpoint(client, seeded, token_admin, token_leader):
-    """Repointing is admin-only — unlike the home doc, which is deliberately
-    open to leaders and core members. The link is only recorded here; the
-    nightly sync is what checks the file (jobs.drive_sync)."""
+    """Linking is open to leaders and seconds — unlike the old admin-only rule,
+    which existed because nothing in the app could reach Drive, so a pasted
+    link could not be checked until the next nightly run. The link is only
+    recorded here; moving data is /roster-sheet/sync."""
     team = seeded["team_id"]
 
     r = await client.get(f"/api/teams/{team}/roster-sheet", headers=token_leader)
-    assert r.status_code == 200 and r.json() is None, "no sheet made yet"
-
-    r = await client.patch(
-        f"/api/teams/{team}/roster-sheet",
-        json={"url": "https://docs.google.com/spreadsheets/d/abc123"},
-        headers=token_leader,
-    )
-    assert r.status_code == 403, "a leader may not repoint their own team"
+    assert r.status_code == 200 and r.json() is None, "no sheet linked yet"
 
     r = await client.patch(
         f"/api/teams/{team}/roster-sheet",
@@ -433,22 +427,14 @@ async def test_roster_sheet_endpoint(client, seeded, token_admin, token_leader):
 
     r = await client.patch(
         f"/api/teams/{team}/roster-sheet",
-        json={
-            "url": "https://docs.google.com/spreadsheets/d/abc123",
-            "import_rows": True,
-        },
-        headers=token_admin,
+        json={"url": "https://docs.google.com/spreadsheets/d/abc123"},
+        headers=token_leader,
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, "a leader may link their own team's sheet"
     body = r.json()
-    assert body["requested_file_id"] == "abc123"
-    assert body["requested_import"] is True
-    assert body["requested_url"] == "https://docs.google.com/spreadsheets/d/abc123"
-    assert body["file_id"] is None and body["url"] is None, (
-        "the live pointer only moves once a sync has seen the file"
-    )
+    assert body["file_id"] == "abc123"
+    assert body["url"] == "https://docs.google.com/spreadsheets/d/abc123"
+    assert body["last_status"] is None, "nothing has synced yet"
 
-    r = await client.patch(
-        f"/api/teams/{team}/roster-sheet", json={"url": None}, headers=token_admin
-    )
-    assert r.status_code == 200 and r.json()["requested_file_id"] is None
+    r = await client.get(f"/api/teams/{team}/roster-sheet", headers=token_admin)
+    assert r.json()["file_id"] == "abc123"

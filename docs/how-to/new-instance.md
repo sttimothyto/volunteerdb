@@ -148,30 +148,31 @@ only on-server copy of that password is gone.
 VDB_SITE=myparish uvx pyinfra==3.10.0 deploy/inventory.py deploy/deploy.py -y
 ```
 
-Green this time, through the backup and Drive-sync steps.
+Green this time, through the backup step.
 
 You now have a running instance. Sign in at `https://<your domain>/login` as
 `[mail] admin_email` and start entering teams and volunteers, or import a
-[roster spreadsheet](import-export.md).
+[roster spreadsheet](roster-spreadsheets.md).
 
 ## 9. Roster sheets on Drive (optional)
 
 Only if you want the nightly two-way sync with Google Sheets. Read
-[Sync team rosters with Google Sheets](drive-roster-sync.md) first — in
-particular its one-time verification that file IDs survive re-upload on your
-host, which must pass **before** the sync goes live. If IDs are not stable,
-every link you have shared with a leader breaks on the first sync.
+[Sync team rosters with Google Sheets](roster-spreadsheets.md) first.
 
-Then create the `[drive_sync] sheets_folder` folder, make the roster template
-sheet, and set its URL on one deploy:
+Create the Drive folder new roster sheets go in and put its id in
+`[sheets] folder_id`, make the roster template sheet (shared read-only to
+anyone with the link), then run `scripts/sheets_authorize.py` as the parish
+Google account and pass the results on one deploy:
 
 ```sh
 VDB_SITE=myparish VDB_TEMPLATE_SHEET_URL='https://docs.google.com/…' \
+  VDB_SHEETS_CLIENT_ID='…' VDB_SHEETS_CLIENT_SECRET='…' \
+  VDB_SHEETS_REFRESH_TOKEN='…' \
   uvx pyinfra==3.10.0 deploy/inventory.py deploy/deploy.py -y
 ```
 
-Like the mail key, it is read back from the server on later runs, so you pass
-it once.
+Like the mail key, they are read back from the server on later runs, so you
+pass them once.
 
 ## 10. Deploy from CI (optional)
 

@@ -4,12 +4,14 @@ import httpx
 from fastapi import APIRouter
 
 from ..services import pages as page_service
+from ..services import roster_sheets as sheet_service
 from ..services import teams as service
 from .deps import AsOf, CtxDep
 from .schemas import (
     HomeDocPatch,
     RosterEntry,
     RosterSheetPatch,
+    RosterSheetSync,
     TeamIn,
     TeamOut,
     TeamPageOut,
@@ -94,12 +96,12 @@ async def set_home_doc(ctx: CtxDep, team_id: int, data: HomeDocPatch) -> TeamOut
 
 @router.get("/{team_id}/roster-sheet")
 async def get_roster_sheet(ctx: CtxDep, team_id: int) -> TeamSheetOut | None:
-    """The team's Google Drive roster sheet: its link, the last sync's outcome,
-    and any repoint an admin has asked for but no sync has checked yet.
+    """The team's roster spreadsheet: its link and the last sync's outcome.
 
-    Null until the nightly job has made the team a sheet. Management rights,
-    matching what the team page shows — the sheet is the roster, so who may see
-    the link is who may manage the roster."""
+    Null until somebody links one, or the nightly job makes the team one.
+    Management rights, matching what the team page shows — the sheet is the
+    roster, so who may see the link is who may manage the roster. And the link
+    *is* the access: the sheet is shared to anyone holding it."""
     sheet = await service.roster_sheet(ctx.session, ctx.actor, team_id)
     return None if sheet is None else TeamSheetOut.model_validate(sheet)
 
@@ -108,22 +110,41 @@ async def get_roster_sheet(ctx: CtxDep, team_id: int) -> TeamSheetOut | None:
 async def set_roster_sheet(
     ctx: CtxDep, team_id: int, data: RosterSheetPatch
 ) -> TeamSheetOut:
-    """Point the team at a different roster spreadsheet, or send url=null to
-    withdraw a request no sync has acted on yet.
+    """Point the team at a roster spreadsheet.
 
-    **Admin-only** — deliberately not the wider group that may set the team's
-    home-page doc. Nothing here reaches Drive: the app cannot, so the link is
-    recorded as a request and the next nightly sync is what verifies it, keeps
-    the team on its current sheet if the file is invisible or is not a roster,
-    and reports the outcome in `last_status`/`last_error`."""
-    if data.url is None:
-        sheet = await service.cancel_roster_sheet_request(
-            ctx.session, ctx.actor, team_id
-        )
-    else:
-        sheet = await service.request_roster_sheet(
-            ctx.session, ctx.actor, team_id, data.url, import_rows=data.import_rows
-        )
+    **Leaders and seconds**, not admins only. The old admin-only rule existed
+    because nothing in the app could reach Drive, so a pasted link could not be
+    checked until the next nightly sync — handing that to a leader meant handing
+    them a request nobody could validate. A link-shared sheet is readable the
+    moment it is pasted.
+
+    Still narrower than `set_home_doc`, which core members may use: that
+    publishes a page anybody may read, while this carries every member's
+    address and phone and grants a bulk write over the roster.
+
+    The link is only recorded here. Call `/roster-sheet/sync` to move data."""
+    sheet = await service.set_roster_sheet(ctx.session, ctx.actor, team_id, data.url)
+    return TeamSheetOut.model_validate(sheet)
+
+
+@router.post("/{team_id}/roster-sheet/sync")
+async def sync_roster_sheet(
+    ctx: CtxDep, team_id: int, data: RosterSheetSync
+) -> TeamSheetOut:
+    """Sync the team's roster with its spreadsheet now, instead of waiting for
+    the nightly job. Same rights as setting the link.
+
+    `direction="import"` applies the sheet's rows and then writes the result
+    back, so the sheet ends up showing what the database holds.
+    `direction="export"` skips the read and overwrites the sheet — the answer
+    that cannot lose parish data. Importing never removes anybody."""
+    await service.roster_sheet(ctx.session, ctx.actor, team_id)  # rights + 404
+    outcome = await sheet_service.sync_team(
+        team_id, direction=data.direction, user_id=ctx.actor.user.id
+    )
+    if outcome.failed:
+        raise ValueError(outcome.message)
+    sheet = await service.roster_sheet(ctx.session, ctx.actor, team_id)
     return TeamSheetOut.model_validate(sheet)
 
 

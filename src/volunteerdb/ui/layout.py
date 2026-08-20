@@ -33,8 +33,6 @@ def frame(
     ]
     if actor.can_access_elections:
         nav_items.append(("Elections", "/elections"))
-    if actor.can_import_export:
-        nav_items.append(("Import/Export", "/import"))
     if actor.is_admin:
         nav_items += [
             ("Accounts", "/admin/users"),

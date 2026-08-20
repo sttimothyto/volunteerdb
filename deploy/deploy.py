@@ -40,7 +40,6 @@ from steps import secrets as secrets_step  # noqa: E402
 from steps.app import deploy_app  # noqa: E402
 from steps.backup import deploy_backup  # noqa: E402
 from steps.base import install_base  # noqa: E402
-from steps.drive_sync import deploy_drive_sync  # noqa: E402
 
 # Everything specific to this parish; everything else is a siteconf constant.
 site = siteconf.load()
@@ -62,10 +61,8 @@ UNIT_VARS = dict(
     listen_port=site.host_listen_port,
     app_port=siteconf.APP_PORT,
     backup_script=siteconf.BACKUP_SCRIPT,
-    drive_sync_script=siteconf.DRIVE_SYNC_SCRIPT,
     timezone=site.site_timezone,
     backup_at=site.schedule_backup_at,
-    drive_sync_at=site.schedule_drive_sync_at,
 )
 
 # Reads /etc/volunteerdb/env back off the host, so this runs per host and
@@ -101,4 +98,3 @@ deploy_app(
 
 deploy_backup(site, here=HERE, unit_vars=UNIT_VARS)
 
-deploy_drive_sync(site, here=HERE, unit_vars=UNIT_VARS)

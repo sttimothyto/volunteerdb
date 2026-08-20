@@ -159,7 +159,7 @@ One roster `.csv`, one row per person per team — export, edit, re-import:
 **ID, First name, Last name, Email, Phone, Volunteer notes, Team path**
 (`Liturgy / Music Ministry`)**, Role** (label or short value), plus one
 read-only column per custom field. The same format drives the nightly
-two-way Google Drive roster sync.
+two-way Google Sheets roster sync.
 
 The ID column (written by every export) pins a row to its exact record —
 that is how an email gets corrected safely; leave it blank for new people.
@@ -171,7 +171,13 @@ existing record first if they are the same person. Imports only add/update —
 they never delete, they cannot archive anyone, and a blank cell never clears a
 field — and are **all-or-nothing**: any error rejects the whole file with a
 row-by-row report. The GUI always dry-runs first and shows the report before
-you apply.
+you apply; it lives under **Roster spreadsheet** on each team's page, beside
+the team's Google Sheet link.
+
+The nightly sync reads each team's sheet over the anonymous CSV export
+endpoint (the sheets are shared "anyone with the link can edit") and writes
+back with the parish account's token. It never removes anybody: a row deleted
+from a sheet is simply restored by the write-back.
 
 ## Operations
 

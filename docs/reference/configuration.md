@@ -105,7 +105,8 @@ ignored. Copy `.env.example` as a starting point.
 
 `VDB_SCHEDULER_ENABLED`
 : The in-app scheduler that runs the nightly jobs (`fetch_pages`,
-  `proposal_digest`, `event_reminders`) inside the server process. Default:
+  `roster_sync`, `proposal_digest`, `event_reminders`) inside the server
+  process. Default:
   `true`. Always off under `VDB_RELOAD=true` regardless — dev reload
   restarts the process on every save, which would re-fire startup hooks.
   See [CLI and jobs](cli.md).
@@ -118,11 +119,11 @@ ignored. Copy `.env.example` as a starting point.
   fixed interval rather than at a nightly time; those keep retrying on
   their own cadence and alert this address at most once per parish day.
 
-`VDB_FETCH_PAGES_AT`, `VDB_PROPOSAL_DIGEST_AT`, `VDB_EVENT_REMINDERS_AT`
+`VDB_ROSTER_SYNC_AT`, `VDB_FETCH_PAGES_AT`, `VDB_PROPOSAL_DIGEST_AT`, `VDB_EVENT_REMINDERS_AT`
 : Parish-local (`VDB_TIMEZONE`) times the in-app scheduler runs each
-  nightly job. Defaults: `03:00`, `03:30`, `04:00` — kept clear of
-  02:00–02:30, when the host's backup and Drive-sync timers run. Setting
-  one a couple of minutes ahead is the way to watch a job fire in dev.
+  nightly job. Defaults: `02:30`, `03:00`, `03:30`, `04:00` — kept clear of
+  02:00, when the host's backup timer runs. Setting one a couple of minutes
+  ahead is the way to watch a job fire in dev.
 
 `VDB_INVITE_TTL_HOURS`
 : How long an invite link stays redeemable — and since re-inviting is how a
@@ -142,12 +143,24 @@ ignored. Copy `.env.example` as a starting point.
   reminder windows and the weekly repeat helper use the same zone.
 
 `VDB_TEMPLATE_SHEET_URL`
-: URL of the decorated roster-template Google Sheet in the Drive folder.
-  Default: empty, in which case the **/import** page offers a plain CSV
-  download instead of linking to the sheet. The deploy writes it and reads it
-  back on later runs, like `VDB_PUBLIC_BASE_URL`; set it once after the
-  template sheet exists. See
-  [Sync team rosters with Google Sheets](../how-to/drive-roster-sync.md).
+: URL of the decorated roster-template Google Sheet, shared read-only to
+  anyone with the link. Default: empty, in which case a team's **Roster
+  spreadsheet** section offers a plain CSV download instead of linking to the
+  sheet. The deploy writes it and reads it back on later runs, like
+  `VDB_PUBLIC_BASE_URL`; set it once after the template sheet exists. See
+  [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md).
+
+`VDB_SHEETS_CLIENT_ID`, `VDB_SHEETS_CLIENT_SECRET`, `VDB_SHEETS_REFRESH_TOKEN`, `VDB_SHEETS_FOLDER_ID`
+: Roster spreadsheet sync: the OAuth client and refresh token authorised as
+  the parish Google account (`scripts/sheets_authorize.py`), and the id of the
+  Drive folder new roster sheets are created in. With all four set, the in-app
+  scheduler syncs every team's roster with its sheet nightly and a team page
+  can sync one on demand. Defaults: empty — the job exits "not configured" and
+  the team page says so. Only the *write* leg needs these: reading a sheet
+  shared "anyone with the link can edit" takes no credentials at all. The
+  deploy writes them and reads them back on later runs, like
+  `VDB_TEMPLATE_SHEET_URL`; set them once after the one-time authorization.
+  See [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md).
 
 `VDB_GCAL_CLIENT_ID`, `VDB_GCAL_CLIENT_SECRET`, `VDB_GCAL_REFRESH_TOKEN`, `VDB_GCAL_CALENDAR_ID`
 : Google Calendar sync: the OAuth client and refresh token authorised as

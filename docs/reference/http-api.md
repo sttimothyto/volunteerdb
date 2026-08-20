@@ -105,8 +105,9 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | `GET /api/teams/{id}` | signed in | `as_of=` |
 | `PATCH /api/teams/{id}` | admin | `clear_parent`, `clear_workload_weight` flags |
 | `PATCH /api/teams/{id}/home-doc` | full roster on the team (leader/second/core, admin) | `{"url": "https://docs.google.com/document/d/…"}`, or `null` to unpublish |
-| `GET /api/teams/{id}/roster-sheet` | manage the team | The Drive roster sheet's link, last sync outcome, and any pending repoint; `null` before the sync has made one |
-| `PATCH /api/teams/{id}/roster-sheet` | admin | `{"url": "https://docs.google.com/spreadsheets/d/…", "import_rows": false}`, or `null` to withdraw. Recorded as a request — the nightly sync verifies the sheet and reports in `last_status`/`last_error` |
+| `GET /api/teams/{id}/roster-sheet` | manage the team | The roster spreadsheet's link and the last sync's outcome; `null` before one is linked. Holding the link is edit access to the sheet, so this is management-gated |
+| `PATCH /api/teams/{id}/roster-sheet` | manage the team | `{"url": "https://docs.google.com/spreadsheets/d/…"}`. Records the link only; 422 on anything that is not a Sheets URL, and on a sheet another team already uses |
+| `POST /api/teams/{id}/roster-sheet/sync` | manage the team | `{"direction": "import"}` applies the sheet's rows then writes the result back; `"export"` overwrites the sheet from the database. Importing never removes anybody. 422 with the reason if the sheet is unshared or malformed |
 | `DELETE /api/teams/{id}` | admin | 204; parent of sub-teams is protected |
 | `GET /api/teams/{id}/roster` | roster names on the team | Contact details/notes redacted per role, `as_of=` |
 | `GET /api/teams/{id}/page` | full roster on the team | Whether the public page is publishing, and when it last fetched; `null` when no doc is set. The HTML is not here — it is served to the world at `/ministries/<slug>.html` |
@@ -169,7 +170,7 @@ leaders, seconds and core members create an account for one of their own people.
 |---|---|---|
 | `GET /api/export/parish.csv` | admin | Full roster export, `as_of=` |
 | `GET /api/export/team/{team_id}.csv` | full roster on the team | Roster export (sub-teams included), `as_of=`. The **Volunteer notes** column comes through blank unless the caller may read notes (admin or leader/second of the team) — everywhere else `notes` needs `can_edit_volunteer`, and the column stays in place so the file still round-trips |
-| `GET /api/export/my-teams.csv` | leads/seconds any team | Union of managed teams, `as_of=` |
+| `GET /api/export/my-teams.csv` | leads/seconds any team | Union of managed teams, `as_of=`. The GUI's *Export team(s)* button on `/teams` covers the same ground, widened to core members |
 | `POST /api/import` | admin or leader/second (rows scoped) | Multipart `file=` (roster `.csv`); `dry_run=`; all-or-nothing; 10 MB cap. A row that **redirects** an existing address mails the mailbox it moved away from |
 
 Column layout: see the [spreadsheet format](spreadsheets.md).

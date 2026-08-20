@@ -18,7 +18,7 @@ date*.
   first backup.
 - **Need to get something done?** The how-to guides are task recipes —
   for example [deploying to production](how-to/deploy.md) or
-  [importing a spreadsheet](how-to/import-export.md).
+  [importing a spreadsheet](how-to/roster-spreadsheets.md).
 - **Want to understand a design?** The explanation pages cover the
   [architecture](explanation/architecture.md), the
   [permission model](explanation/permissions.md), and the
@@ -49,9 +49,8 @@ how-to/deploy
 how-to/backup-restore
 how-to/rotate-secrets
 how-to/manage-users
-how-to/import-export
+how-to/roster-spreadsheets
 how-to/team-home-pages
-how-to/drive-roster-sync
 how-to/google-calendar-sync
 how-to/custom-fields-and-workload
 how-to/api-recipes

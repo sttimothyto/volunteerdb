@@ -357,8 +357,9 @@ async def test_search_box_runs_where_filters_over_the_rows(database):
 
 
 async def test_roster_sheet_section_gated_by_role(database):
-    """The sheet IS the roster, contact details and all, so the link shows to
-    managers only — and only an admin may repoint the team at another sheet."""
+    """The sheet IS the roster, contact details and all — and holding its link
+    is edit access to it — so the whole section shows to managers only. Within
+    it, leaders now get every control an admin gets."""
     async with db_session() as session:
         ids = await _parish(session)
         session.add(
@@ -372,52 +373,47 @@ async def test_roster_sheet_section_gated_by_role(database):
         await user.should_see("liturgy-list")
         await user.should_see("Change spreadsheet")
 
-        # Lena leads Liturgy: she gets the link, never the repoint control
+        # Lena leads Liturgy: same controls as the admin, including the import
+        # that used to live on its own page
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['liturgy']}")
         await user.should_see("Roster spreadsheet")
         await user.should_see("liturgy-list")
-        await user.should_not_see("Change spreadsheet")
+        await user.should_see("Change spreadsheet")
+        await user.should_see("Import a .csv")
+        await user.should_see("DO NOT edit the ID Column")
 
         # Mia is a plain member of Music: no sheet section at all
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open(f"/teams/{ids['music']}")
         await user.should_see("Roster")
         await user.should_not_see("Roster spreadsheet")
+        await user.should_not_see("Import a .csv")
 
 
-async def test_repoint_dialog_records_a_request_without_moving_the_link(database):
-    async with db_session() as session:
-        ids = await _parish(session)
-        session.add(
-            TeamSheet(team_id=ids["liturgy"], file_id="f123", file_name="liturgy-list")
-        )
-
-    async with user_simulation(main_file=SIM_MAIN) as user:
-        await user.open(f"/login-dev/{ids['admin_u']}")
-        await user.open(f"/teams/{ids['liturgy']}")
-        user.find("Change spreadsheet", kind=ui.button).click()
-        await user.should_see("Google Sheets link")
-
-        user.find("Google Sheets link").type(
-            "https://docs.google.com/spreadsheets/d/newsheet123/edit"
-        )
-        user.find("Save", kind=ui.button).click()
-        await user.should_see("Requested spreadsheet", retries=SLOW)
-
-    async with db_session() as session:
-        sheet = await session.get(TeamSheet, ids["liturgy"])
-    assert sheet.requested_file_id == "newsheet123"
-    assert sheet.file_id == "f123", "nothing moves until a sync has seen the file"
-
-
-async def test_repoint_dialog_rejects_a_doc_link(database):
+async def test_the_change_dialog_warns_that_the_link_is_the_access(database):
+    """The one thing a leader must be told: link sharing means whoever holds
+    the link can rewrite the roster."""
     async with db_session() as session:
         ids = await _parish(session)
         session.add(TeamSheet(team_id=ids["liturgy"], file_id="f123"))
 
     async with user_simulation(main_file=SIM_MAIN) as user:
-        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        user.find("Change spreadsheet", kind=ui.button).click()
+        await user.should_see("Keep this link private")
+        await user.should_see("anyone with the link")
+
+
+async def test_the_change_dialog_rejects_a_doc_link(database):
+    """The team page offers a box for each, and they are not interchangeable."""
+    async with db_session() as session:
+        ids = await _parish(session)
+        session.add(TeamSheet(team_id=ids["liturgy"], file_id="f123"))
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['liturgy']}")
         user.find("Change spreadsheet", kind=ui.button).click()
         await user.should_see("Google Sheets link")
@@ -431,7 +427,56 @@ async def test_repoint_dialog_rejects_a_doc_link(database):
 
     async with db_session() as session:
         sheet = await session.get(TeamSheet, ids["liturgy"])
-    assert sheet.requested_file_id is None
+    assert sheet.file_id == "f123", "a rejected link costs the team nothing"
+
+
+async def test_export_teams_button_is_access_control_aware(database):
+    """Replaces the retired /import page's parish/my-teams pair. A plain
+    member has nothing to export, so the button is not rendered at all —
+    the exporter would refuse the scope anyway, this only keeps an unusable
+    button off the screen."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open("/teams")
+        await user.should_see("Export team(s)")
+
+        # Lena leads Liturgy
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open("/teams")
+        await user.should_see("Export team(s)")
+
+        # Mia is a plain member of Music: no teams of her own to export
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open("/teams")
+        await user.should_not_see("Export team(s)")
+
+
+async def test_a_core_member_may_export_their_teams(database):
+    """full_view_team_ids, not people_team_ids: core is included on purpose,
+    and the exporter blanks the notes column for them."""
+    async with db_session() as session:
+        ids = await _parish(session)
+        cora = await volunteers.create(
+            session, None, "Cora", "Core", "cora@example.org"
+        )
+        await memberships.assign(
+            session, None, cora.id, ids["hospitality"], TeamRole.core
+        )
+        cora_u, _ = await users.create(
+            session, "cora@example.org", volunteer_id=cora.id
+        )
+        ids["cora_u"] = cora_u.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['cora_u']}")
+        await user.open("/teams")
+        await user.should_see("Export team(s)")
+        # but the roster spreadsheet stays with leaders and seconds
+        await user.open(f"/teams/{ids['hospitality']}")
+        await user.should_not_see("Roster spreadsheet")
 
 
 async def test_new_team_dialog_starts_at_weight_one(database):

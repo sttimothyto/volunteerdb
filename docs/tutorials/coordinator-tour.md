@@ -142,7 +142,7 @@ the fourfold role, as laid out in the
 ## Where next
 
 - Everyday tasks: [manage accounts](../how-to/manage-users.md),
-  [import/export spreadsheets](../how-to/import-export.md).
+  [import/export spreadsheets](../how-to/roster-spreadsheets.md).
 - The ideas behind what you just saw:
   [permissions](../explanation/permissions.md),
   [history](../explanation/history.md),

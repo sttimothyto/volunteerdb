@@ -66,8 +66,9 @@ class Settings(BaseSettings):
     # Where scheduler job failures are emailed; empty: they only log (ERROR).
     alert_email: str = ""
     # Parish-local (VDB_TIMEZONE) times the nightly jobs run, kept clear of
-    # 02:00-02:30 when the host's backup and Drive-sync timers fire. Setting
-    # one a couple of minutes ahead is the way to watch a job fire in dev.
+    # 02:00 when the host's backup timer fires. Setting one a couple of
+    # minutes ahead is the way to watch a job fire in dev.
+    roster_sync_at: time = time(2, 30)
     fetch_pages_at: time = time(3, 0)
     proposal_digest_at: time = time(3, 30)
     event_reminders_at: time = time(4, 0)
@@ -79,10 +80,22 @@ class Settings(BaseSettings):
     # is an emailed code anyway — and expiry is never a lockout: the account
     # can still sign in with an emailed code and set a password from /account.
     invite_ttl_hours: int = Field(default=168, gt=0)
-    # URL of the decorated roster-template Google Sheet in the Drive folder.
-    # Set: the /import page links there instead of offering the bare CSV.
-    # Empty (dev): the page falls back to a plain CSV download.
+    # URL of the decorated roster-template Google Sheet on Drive, shared
+    # read-only to anyone with the link. Set: a team's Roster spreadsheet
+    # section links there instead of offering the bare CSV, and a leader who
+    # copies it inherits the dropdowns, hidden ID column and header warning.
+    # Empty (dev): the section falls back to a plain CSV download.
     template_sheet_url: str = ""
+    # Google Sheets roster sync (jobs/roster_sync.py): OAuth client + refresh
+    # token authorised as the parish Google account, and the id of the Drive
+    # folder new roster sheets are created in. All four set: rosters sync with
+    # their sheets nightly and the team page can sync one on demand. Any empty:
+    # the job exits "not configured" and the section says so. Provisioning
+    # walkthrough: docs/how-to/roster-spreadsheets.md.
+    sheets_client_id: str = ""
+    sheets_client_secret: str = ""
+    sheets_refresh_token: str = ""
+    sheets_folder_id: str = ""
     # Google Calendar sync (jobs/calendar_sync.py): OAuth client + refresh
     # token authorised as the parish Google account, and the id of the public
     # calendar it owns. All four set: upcoming events reconcile onto that

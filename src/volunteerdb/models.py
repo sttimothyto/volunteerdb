@@ -969,9 +969,10 @@ class TeamPageImage(Base):
 
 
 class TeamSheet(Base):
-    """Identity of the team's roster spreadsheet in Google Drive, maintained by
-    jobs.drive_sync. The stable file_id (not the name) is what keeps the
-    leader-facing sheet link working across team renames.
+    """Identity of the team's roster spreadsheet on Google Drive, set by a
+    leader or second and synced by jobs.roster_sync. The stable file_id (not
+    the name) is what keeps the leader-facing sheet link working across team
+    renames and re-titles.
 
     Not system-versioned: a pointer to an external artifact, current-state only.
     """
@@ -988,19 +989,6 @@ class TeamSheet(Base):
     last_error: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
-    # An admin has asked to repoint this team at a different spreadsheet
-    # (services.teams.request_roster_sheet). Held BESIDE file_id rather than
-    # over it: nothing in the app can reach Drive, so the link is only checked
-    # by the next nightly sync, and a link that turns out to be invisible or
-    # malformed must not have cost the team the sheet it already had.
-    requested_file_id: Mapped[str | None] = mapped_column(sa.String(128), unique=True)
-    # Which side wins the first sync after the switch: False regenerates the
-    # newly linked sheet from the database (the default the dialog offers, and
-    # the one that cannot lose parish data), True imports its rows through the
-    # importer's usual layout checks and removal thresholds.
-    requested_import: Mapped[bool] = mapped_column(
-        default=False, server_default=sa.false()
     )
 
 

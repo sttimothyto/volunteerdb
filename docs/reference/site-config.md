@@ -135,30 +135,28 @@ in it, installed and reloaded without complaint.
 `retain_remote_days`
 : How long encrypted copies stay on Drive.
 
-## `[drive_sync]`
+## `[sheets]`
 
-`sheets_folder`
-: The Google Drive folder holding one roster sheet per team.
-
-`revoke_public_links`
-: Leave `false` until every team has a leader or second with an email address
-  on file. Turning it on strips the anyone-with-link grants, which locks out
-  anyone with no individual grant to fall back on. See
-  [Sync team rosters with Google Sheets](../how-to/drive-roster-sync.md).
+`folder_id`
+: The id of the Google Drive folder new roster sheets are created in — the
+  folder's id from its URL, not its name: the app addresses it through the
+  Drive API. The OAuth credentials that go with it are secrets and live in
+  the remote env file, not here. See
+  [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md).
 
 ## `[schedule]`
 
-Five parish-local times, `HH:MM`. The first two drive systemd timers on the
-host; the last three are written into the app's environment for its in-process
+Five parish-local times, `HH:MM`. The first drives a systemd timer on the
+host; the rest are written into the app's environment for its in-process
 scheduler.
 
-`backup_at`, `drive_sync_at`
+`backup_at`, `roster_sync_at`
 : The backup must come first, so its dump is a restore point taken
-  immediately before the Drive sync — the only automated bulk write in the
+  immediately before the roster sync — the only automated bulk write in the
   system.
 
 `fetch_pages_at`, `proposal_digest_at`, `event_reminders_at`
-: The in-app jobs, which must come after both host jobs so they never contend
+: The remaining in-app jobs, which come after both so they never contend
   with either.
 
 :::{note}

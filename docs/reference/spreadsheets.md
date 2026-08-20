@@ -11,7 +11,7 @@ Memberships), then a ten-column CSV with `Active`, `Joined on` and
 `Membership notes` columns. Both are retired: an `.xlsx` upload is rejected
 with a pointer to export a fresh roster CSV, and an old-layout CSV fails the
 header check ("download a fresh template or export"). The same CSV also
-serves as the nightly Google Drive roster sync format.
+serves as the nightly Google Sheets roster sync format.
 ```
 
 ## Columns
@@ -75,8 +75,7 @@ carries their ID (any export has it), or set it in the app (or via
 - **Custom field values are not imported.** They are exported for reference;
   extra columns are ignored with a warning.
 - **Archive anyone.** There is no Active column: archiving happens in the
-  app, or when the Drive sync removes someone's last membership. The one
-  automatic transition in the other direction: a row that puts an archived
+  app. The one automatic transition in the other direction: a row that puts an archived
   volunteer **on a team** reactivates them (joining implies active), and the
   report says so. A bare contact-update row leaves the archive flag alone.
 
@@ -91,11 +90,11 @@ carries their ID (any export has it), or set it in the app (or via
 
 ## Import semantics
 
-- **Add and update only** — a manual import never deletes volunteers or
-  memberships. (The nightly
-  [Drive roster sync](../how-to/drive-roster-sync.md) is the one deliberate
-  exception: a team's synced sheet is treated as that team's complete
-  roster.)
+- **Add and update only** — an import never deletes volunteers or
+  memberships, and this now holds for the nightly
+  [roster sync](../how-to/roster-spreadsheets.md) too: a row deleted from a
+  team's sheet is restored by the write-back leg, not treated as a
+  resignation. Members leave a team in the app.
 - **All-or-nothing** — any error rejects the entire file; nothing is
   written. The response is a row-by-row report of issues.
 - **Dry run** — the GUI always validates first and shows the report before
@@ -122,12 +121,12 @@ One quirk to know: a row carrying an ID, or one that reuses an existing
 volunteer's email, counts as an update of that volunteer, and is rejected
 unless they are within scope.
 
-## Drive sheet decoration
+## Sheet decoration
 
-The Google Sheets the nightly sync maintains (and the template sheet the
-`/import` page links to) carry cosmetic guardrails, re-applied every night
-by the sync's decorate leg
-([how-to](../how-to/drive-roster-sync.md#sheet-decoration-self-healing)):
+The Google Sheets the nightly sync maintains (and the template sheet a team's
+**Roster spreadsheet** section links to) carry cosmetic guardrails,
+re-applied every night by the sync's decorate leg
+([how-to](../how-to/roster-spreadsheets.md#sheet-decoration-self-healing)):
 a strict **Role dropdown** of the four display labels, a strict **Team
 dropdown**, a **hidden ID column** (still exported — the pin survives), a
 **frozen, warning-protected header row**, and a structure-warning note on
@@ -151,6 +150,6 @@ All data exports accept `as_of=` over the API for historical snapshots
 (`my-teams` applies the *current* set of managed teams to the historical
 data). GUI entry points: the `/import` page and the "Export roster (.csv)"
 button on team pages. See
-[Import and export spreadsheets](../how-to/import-export.md) for the
+[Import and export spreadsheets](../how-to/roster-spreadsheets.md) for the
 workflow and the {ref}`HTTP API reference <api-import-export>` for the
 endpoints.

@@ -37,6 +37,10 @@ class Secrets:
     gcal_client_secret: str
     gcal_refresh_token: str
     gcal_calendar_id: str
+    sheets_client_id: str
+    sheets_client_secret: str
+    sheets_refresh_token: str
+    sheets_folder_id: str
 
 
 def _remote_env(env_file: str) -> dict[str, str]:
@@ -105,5 +109,28 @@ def resolve(
             os.environ.get("VDB_GCAL_CALENDAR_ID")
             or existing.get("VDB_GCAL_CALENDAR_ID")
             or ""
+        ),
+        # Roster spreadsheet sync credentials + target folder: set once after
+        # scripts/sheets_authorize.py (docs/how-to/roster-spreadsheets.md),
+        # reused on every later deploy — the sheet-URL pattern again.
+        sheets_client_id=(
+            os.environ.get("VDB_SHEETS_CLIENT_ID")
+            or existing.get("VDB_SHEETS_CLIENT_ID")
+            or ""
+        ),
+        sheets_client_secret=(
+            os.environ.get("VDB_SHEETS_CLIENT_SECRET")
+            or existing.get("VDB_SHEETS_CLIENT_SECRET")
+            or ""
+        ),
+        sheets_refresh_token=(
+            os.environ.get("VDB_SHEETS_REFRESH_TOKEN")
+            or existing.get("VDB_SHEETS_REFRESH_TOKEN")
+            or ""
+        ),
+        sheets_folder_id=(
+            os.environ.get("VDB_SHEETS_FOLDER_ID")
+            or existing.get("VDB_SHEETS_FOLDER_ID")
+            or site.sheets_folder_id
         ),
     )

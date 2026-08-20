@@ -215,11 +215,22 @@ async def run_import(
 
 
 async def run_team_sync(
-    content: bytes, *, team_id: int, user_id: int | None, dry_run: bool = False
+    content: bytes,
+    *,
+    team_id: int,
+    user_id: int | None,
+    dry_run: bool = False,
+    remove: bool = False,
 ) -> ImportReport:
-    """Apply one team's Drive sheet as that team's complete roster (upserts
-    plus removals). All-or-nothing: any error — including the removal safety
-    threshold — rolls the whole team back.
+    """Apply one team's roster sheet to the database. All-or-nothing: any
+    error rolls the whole team back.
+
+    `remove` is False by design, and that is the rule the whole feature is
+    built on: a sheet only ever adds and updates. Somebody in the database but
+    missing from the sheet is not a departure — it is a row a leader deleted,
+    a filtered view, or a botched paste — so the write-back leg puts them back
+    into the sheet instead. Members leave a team in the app, where the change
+    is attributable and reversible.
 
     Scoped to the one team, not unrestricted. A sheet is edited by whoever
     holds its Drive share and applied overnight with nobody looking, so it runs
@@ -240,7 +251,14 @@ async def run_team_sync(
     )
     try:
         async with db_session(user_id) as session:
-            await apply_rows(session, rows, report, sheet_actor, sync_team_id=team_id)
+            await apply_rows(
+                session,
+                rows,
+                report,
+                sheet_actor,
+                sync_team_id=team_id,
+                remove=remove,
+            )
             if dry_run or report.has_errors:
                 raise _Abort()
             report.applied = True
@@ -269,6 +287,7 @@ async def apply_rows(
     actor=None,
     *,
     sync_team_id: int | None = None,
+    remove: bool = True,
 ) -> None:
     """Upsert volunteers and memberships from parsed rows.
 
@@ -596,8 +615,11 @@ async def apply_rows(
         if sync_team_id is not None:
             kept_volunteer_ids.add(target.id)
 
-    # --- sync mode: the sheet is the whole roster, so absence means removal ---
-    if sync_team_id is None or report.has_errors:
+    # --- sync mode: absence means removal, only when the caller asks -------
+    # run_team_sync passes remove=False (see its docstring): a roster sheet
+    # never removes anybody. The block below is kept for callers that do mean
+    # "this file is the complete roster", and its safety rails with it.
+    if sync_team_id is None or not remove or report.has_errors:
         return
     if not kept_volunteer_ids and presync_members:
         # Stronger than the percentage breaker below: a header-only download

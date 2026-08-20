@@ -31,22 +31,17 @@ rclone_remote = "volunteerdb-gdrive-backup"
 retain_local_days = 14
 retain_remote_days = 730
 
-[drive_sync]
-sheets_folder = "volunteerdb-spreadsheets"
-# Phase two of the move to per-leader sheet access. The sync grants each
-# team's leaders/seconds edit access already; turning this on also strips the
-# anyone-with-link and domain-wide grants the sheets still carry. Do that only
-# once the nightly "no leader or second with an email" alert has been worked
-# down — everyone on that list edits by link, and revoking it locks them out
-# with nothing to fall back on.
-revoke_public_links = false
+[sheets]
+# Drive folder id new roster sheets are created in. The OAuth credentials that
+# go with it are secrets, kept in the remote env file (see deploy/steps/secrets).
+folder_id = ""
 
 [schedule]
 # Parish-local (see [site] timezone). The backup runs first so its dump is a
-# restore point taken immediately before the Drive sync, the only automated
-# bulk write in the system. The three in-app jobs are kept clear of both.
+# restore point taken immediately before the roster sync, the only automated
+# bulk write in the system. The other in-app jobs are kept clear of both.
 backup_at = "02:00"
-drive_sync_at = "02:30"
+roster_sync_at = "02:30"
 fetch_pages_at = "03:00"
 proposal_digest_at = "03:30"
 event_reminders_at = "04:00"

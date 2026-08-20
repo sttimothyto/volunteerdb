@@ -17,10 +17,12 @@ GUI and the API. For the rationale, see
 |---|---|---|---|---|---|
 | Manage roster (add/remove/change roles), their teams | ✓ | ✓ | | | |
 | Edit contact info of volunteers on their teams | ✓ | ✓ | | | |
-| Spreadsheet import/export, their teams | ✓ | ✓ | | | |
-| See the team's Drive roster sheet link, their teams | ✓ | ✓ | | | |
+| Spreadsheet import, their teams | ✓ | ✓ | | | |
+| See the team's roster spreadsheet link, their teams | ✓ | ✓ | | | |
+| Link a team to a roster spreadsheet, and sync it | ✓ | ✓ | | | |
 | See workload scores/bands of volunteers on their teams | ✓ | ✓ | | | |
 | View full roster incl. contact details, their teams | ✓ | ✓ | ✓ | | |
+| Export their teams' rosters in one file (*Export team(s)*) | ✓ | ✓ | ✓ | | |
 | Invite a volunteer on their teams to create an account | ✓ | ✓ | ✓ | | |
 | Set the team's public home-page doc, their teams | ✓ | ✓ | ✓ | | |
 | View full volunteer profiles (shared team) | ✓ | ✓ | ✓ | | |
@@ -33,9 +35,8 @@ GUI and the API. For the rationale, see
 | Events: create, edit, cancel, slots, assign, attendance, their teams | ✓ | ✓ | | | |
 | Events: view listing/detail, RSVP, sign up, substitutions — own team's events | ✓† | ✓† | ✓† | ✓† | |
 | Create/edit/delete teams | ✓ | | | | |
-| Point a team at a different Drive roster sheet | ✓ | | | | |
 | Create/delete volunteers; toggle active | ✓ | | | | |
-| Parish-wide import/export | ✓ | | | | |
+| Parish-wide export | ✓ | | | | |
 | Accounts, custom fields, workload config | ✓ | | | | |
 
 Additional rules:
@@ -92,14 +93,18 @@ Additional rules:
   phone, notes and custom values only among volunteers the viewer may see
   unredacted. Otherwise `email LIKE 'j%'` walks an address out of a column the
   page renders as `•••`.
-- The team's **public home-page doc** and its **Drive roster sheet** look
+- The team's **public home-page doc** and its **roster spreadsheet** look
   alike and are gated deliberately differently. Setting the home-page doc
   includes core members, because ministry leaders here are often elderly and
   a public page nobody can refresh goes stale; what is at stake is what the
-  page says, under a name the parish can correct. Repointing the roster
-  sheet is admin-only and stays that way: that sheet carries every member's
-  address, phone and notes, and adopting one hands it a bulk write over the
-  roster.
+  page says, under a name the parish can correct. Linking a roster
+  spreadsheet stops at leaders and seconds: that sheet carries every member's
+  address, phone and notes, and linking one hands it a bulk write over the
+  roster. It used to be admin-only — not out of a narrower judgement about
+  trust, but because nothing in the app could reach Drive, so a pasted link
+  could not be checked until the next nightly run. A link-shared sheet is
+  readable the moment it is pasted, and the person who runs the ministry can
+  now do this themselves.
 - The same rule reaches the **spreadsheet export**: a core member may export
   their team's roster, but the *Volunteer notes* column comes through blank,
   because notes need edit rights everywhere else. Exports are recorded in the
@@ -158,15 +163,14 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/login` | Password or email-OTP sign-in | public |
 | `/invite/{token}` | Redeem invite, optionally set password | public (valid, unexpired token) |
 | `/account` | Own sign-in settings: set, change or remove the password (header gear → *Password & sign-in*) | signed in |
-| `/teams` | Team hierarchy + coverage counts in one sortable table, search box, as-of picker | signed in (coverage columns: admin/leaders; "New team": admin) |
-| `/teams/{id}` | Team detail, roster, as-of picker, roster export, invite a member; archive/reactivate the ministry | signed in; roster per matrix; invite needs full-roster rights; archiving is admin-only, like every other team edit |
+| `/teams` | Team hierarchy + coverage counts in one sortable table, search box, as-of picker, *Export team(s)* | signed in (coverage columns: admin/leaders; "New team": admin; export: admin/leader/second/core) |
+| `/teams/{id}` | Team detail, roster, as-of picker, roster export, the **Roster spreadsheet** section (link, sync, template, .csv import), invite a member; archive/reactivate the ministry | signed in; roster per matrix; invite needs full-roster rights; archiving is admin-only, like every other team edit |
 | `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report, invite | signed in; contact details, notes and the impact report per matrix. The **service timeline** and sign-in status are shown to every viewer, like the roster's account badge — who served where, and when, is parish-wide the way the directory and graph already are |
 | `/events` | Duties, claimable substitutions, searchable event table; `?team=` narrows to one ministry, `?past=1` shows past and cancelled | signed in; listings scoped per matrix ("New event": admin or leader/second) |
 | `/events/{id}` | One event: slots (add, rename, re-capacity, remove), sign-up, RSVP, substitutions, attendance | roster-names rights on the owning team |
 | `/elections` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |
 | `/elections/{id}` | One proposal: candidates, roll, ballot form, tally, appoint; deadlines and notes are editable while it is open | managers of that team or its voting members |
-| `/import` | Spreadsheet import/export | admin or leader/second (scoped to their teams) |
 | `/manual` | This documentation (header settings gear → *Manual*) | signed in |
 | `/admin/users` | Accounts: create, invite, bulk provision | admin |
 | `/admin/fields` | Custom field definitions | admin |
