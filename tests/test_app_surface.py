@@ -28,6 +28,19 @@ def _concrete(path: str) -> str:
     return re.sub(r"\{(\w+)\}", "1", path)  # every placeholder is an integer id
 
 
+def _session_id(cookie: str) -> str:
+    """The session id inside a Starlette session cookie.
+
+    The cookie is `<payload>.<timestamp>.<signature>` (itsdangerous), and
+    AuthMiddleware re-issues it on every request so an active session cannot
+    expire out from under a reader — which means the string as a whole changes
+    with the clock while the id inside it stays put. Comparing whole cookies
+    turns "did the session rotate?" into a question about the second hand, and
+    fails whenever a request happens to straddle a tick.
+    """
+    return cookie.split(".")[0]
+
+
 async def test_every_api_route_rejects_an_anonymous_request(client, api_app):
     """Self-maintaining authz sweep: a new endpoint that forgets CtxDep fails
     here the moment it is added, without anyone remembering to test it."""
@@ -128,7 +141,9 @@ async def test_the_login_page_hands_out_a_fresh_session_id(real_app_client):
 
     second = await real_app_client.get("/login", follow_redirects=False)
     assert second.status_code == 200
-    assert real_app_client.cookies.get(cookie_name) != planted, (
+    assert _session_id(real_app_client.cookies.get(cookie_name)) != _session_id(
+        planted
+    ), (
         "an anonymous visit to /login must mint a new session id, not reuse the "
         "one the browser turned up holding"
     )
@@ -136,9 +151,9 @@ async def test_the_login_page_hands_out_a_fresh_session_id(real_app_client):
     for entry in ("/invite/nope", "/confirm-email/nope"):
         before = real_app_client.cookies.get(cookie_name)
         await real_app_client.get(entry, follow_redirects=False)
-        assert real_app_client.cookies.get(cookie_name) != before, (
-            f"{entry} authenticates a browser too, so it rotates as well"
-        )
+        assert _session_id(real_app_client.cookies.get(cookie_name)) != _session_id(
+            before
+        ), f"{entry} authenticates a browser too, so it rotates as well"
 
 
 async def test_a_signed_in_browser_is_not_rotated_off_its_own_session(
@@ -162,9 +177,9 @@ async def test_a_signed_in_browser_is_not_rotated_off_its_own_session(
 
     for entry in ("/login", "/invite/nope", "/confirm-email/nope"):
         await real_app_client.get(entry, follow_redirects=False)
-        assert real_app_client.cookies.get("session") == signed_in, (
-            f"{entry} rotated a signed-in browser's session id"
-        )
+        assert _session_id(real_app_client.cookies.get("session")) == _session_id(
+            signed_in
+        ), f"{entry} rotated a signed-in browser's session id"
 
     # and the session still works
     response = await real_app_client.get("/volunteers", follow_redirects=False)
