@@ -35,11 +35,11 @@ async def dashboard(request: Request, as_of: str = ""):
     at = parse_as_of(as_of)
     async with page_session() as (session, actor):
         elements = await graph_service.elements(session, actor, at=at)
-        all_teams = await team_service.list_all(session, at=at)
-        paths = team_service.team_paths(all_teams)
+        tree = await team_service.tree(session, at=at)
+        paths = tree.paths
         team_options = {0: "— whole parish —"} | {
             t.id: paths[t.id]
-            for t in all_teams
+            for t in tree.teams
             if actor.is_admin or actor.can_view_roster_names(t.id)
         }
         my_assignments = (
@@ -47,9 +47,7 @@ async def dashboard(request: Request, as_of: str = ""):
             if actor.volunteer_id
             else []
         )
-        # the teams list is already in hand; hand it over rather than paying
-        # for a second list_all inside the statistics
-        figures = await stats_service.dashboard(session, actor, at=at, teams=all_teams)
+        figures = await stats_service.dashboard(session, actor, at=at)
         # band chips in the legend, for the viewers who see coloured dots at all
         bands = (
             (await workload_service.get_config(session)).bands

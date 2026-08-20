@@ -31,12 +31,12 @@ def test_children_map_sorts_siblings_case_insensitively():
     assert [t.name for t in by_parent[None]] == ["Alpha", "miDDle", "zeta"]
 
 
-def test_descendant_ids_includes_root_and_transitive():
-    tree = _tree()
-    assert teams.descendant_ids(tree, 1) == {1, 2, 3}
-    assert teams.descendant_ids(tree, 2) == {2, 3}
-    assert teams.descendant_ids(tree, 4) == {4}
-    assert teams.descendant_ids(tree, 99) == {99}, "unknown root is just itself"
+def test_descendants_includes_root_and_transitive():
+    tree = teams.build_tree(_tree())
+    assert tree.descendants(1) == {1, 2, 3}
+    assert tree.descendants(2) == {2, 3}
+    assert tree.descendants(4) == {4}
+    assert tree.descendants(99) == {99}, "unknown root is just itself"
 
 
 def test_team_paths_builds_parent_slash_child():

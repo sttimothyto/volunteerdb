@@ -48,6 +48,7 @@ from volunteerdb.models import (
 )
 from volunteerdb.permissions import load_actor, team_ids_map
 from volunteerdb.services import custom_fields as custom_field_service
+from volunteerdb.services import events as event_service
 from volunteerdb.services import graph as graph_service
 from volunteerdb.services import pages as page_service
 from volunteerdb.services import stats as stats_service
@@ -410,8 +411,8 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
         parish_roster = await export_csv(session, None)  # for the re-import pattern
         # landmark slug for the ministries_page pattern: lowest-id published team
         published_now = await page_service.published_teams(session)
-        slug_teams = await team_service.list_all(session)
-    page_slug = page_service.slug_map(team_service.team_paths(slug_teams))[
+        slug_paths = (await team_service.tree(session)).paths
+    page_slug = page_service.slug_map(slug_paths)[
         min(team.id for team in published_now)
     ]
 
@@ -471,8 +472,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
         # mirrors the data block of ui/ministries_routes.ministries_index
         async with db_session() as session:
             published = await page_service.published_teams(session)
-            all_teams = await team_service.list_all(session)
-        paths = team_service.team_paths(all_teams)
+            paths = (await team_service.tree(session)).paths
         slugs = page_service.slug_map(paths)
         sorted(
             (paths.get(team.id, team.name), slugs[team.id])
@@ -483,8 +483,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
     async def ministries_page():
         # mirrors the data block of ui/ministries_routes.ministry_page
         async with db_session() as session:
-            all_teams = await team_service.list_all(session)
-            paths = team_service.team_paths(all_teams)
+            paths = (await team_service.tree(session)).paths
             slugs = page_service.slug_map(paths)
             team_id = next((tid for tid, s in slugs.items() if s == page_slug), None)
             page = await page_service.published_page(session, team_id)
@@ -503,10 +502,22 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
             user = await user_service.get(session, marks["admin_user"])
             actor = await load_actor(session, user)
             await graph_service.elements(session, actor)
-            all_teams = await team_service.list_all(session)
-            team_service.team_paths(all_teams)
-            await stats_service.dashboard(session, actor, teams=all_teams)
+            await team_service.tree(session)
+            await stats_service.dashboard(session, actor)
             await workload_service.get_config(session)
+
+    async def page_events():
+        # mirrors the data block of ui/events_page.events_page for a leader who
+        # may create events — keep in sync. Three team-table reads before the
+        # memo, not the four the page pays in production: this seed creates no
+        # events, so list_events() returns before it looks at the tree.
+        # tests/test_team_cache.py covers the four-read case with a real event.
+        async with db_session() as session:
+            user = await user_service.get(session, marks["leader_user"])
+            actor = await load_actor(session, user)
+            await event_service.claimable_subs(session, actor)
+            await event_service.list_events(session, actor)
+            await team_service.tree(session)
 
     async def dashboard_stats():
         # the statistics alone, so their cost is separable from the graph's
@@ -517,6 +528,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
     return {
         "page_volunteers_list": page_volunteers_list,
+        "page_events": page_events,
         "page_dashboard": page_dashboard,
         "dashboard_stats": dashboard_stats,
         "search_blank": search_blank,

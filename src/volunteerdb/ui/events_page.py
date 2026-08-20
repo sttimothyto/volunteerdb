@@ -169,7 +169,7 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
                     raise LookupError("event vanished")
                 asker = await session.get(Volunteer, assignment.volunteer_id)
                 slot = await session.get(EventSlot, assignment.slot_id)
-                paths = team_service.team_paths(await team_service.list_all(session))
+                paths = (await team_service.tree(session)).paths
                 audience = await event_service.member_emails(
                     session,
                     event.team_id,
@@ -301,7 +301,7 @@ async def _self_removal_dialog(assignment_id: int) -> None:
                     raise LookupError("event vanished")
                 slot = await session.get(EventSlot, assignment.slot_id)
                 me = await session.get(Volunteer, assignment.volunteer_id)
-                paths = team_service.team_paths(await team_service.list_all(session))
+                paths = (await team_service.tree(session)).paths
                 audience = await team_service.leader_emails(session, event.team_id)
                 message = mail.self_removal_email(
                     event.title,
@@ -537,11 +537,11 @@ async def events_page(request: Request, past: str = "", team: str = ""):
         visible_teams = {s.event.team_id: s.path for s in summaries}
         managed_options: dict[int, str] = {}
         if actor.can_create_events:
-            all_teams = await team_service.list_all(session)
-            paths = team_service.team_paths(all_teams)
+            tree = await team_service.tree(session)
+            paths = tree.paths
             managed_options = {
                 t.id: paths[t.id]
-                for t in all_teams
+                for t in tree.teams
                 if t.is_active and actor.can_manage_team(t.id)
             }
     if show_past:
@@ -1335,7 +1335,7 @@ async def _do_cancel(event_id: int) -> None:
         cancelled, emails = await event_service.cancel_event(
             session, actor, event_id, cancelled_by=actor.user.id
         )
-        paths = team_service.team_paths(await team_service.list_all(session))
+        paths = (await team_service.tree(session)).paths
         message = mail.event_cancelled_email(
             cancelled.title,
             paths.get(cancelled.team_id, ""),
@@ -1390,14 +1390,14 @@ async def event_detail_page(request: Request, event_id: int):
         tf_view = await task_force_service.get_for_event(session, event_id)
         collaborator_options: dict[int, str] = {}
         if can_manage:
-            all_teams = await team_service.list_all(session)
-            paths = team_service.team_paths(all_teams)
+            tree = await team_service.tree(session)
+            paths = tree.paths
             staffing = {t.id for t in tf_view.sources} if tf_view else {event.team_id}
             if tf_view:
                 staffing.add(tf_view.team_id)
             collaborator_options = {
                 t.id: paths[t.id]
-                for t in all_teams
+                for t in tree.teams
                 if t.is_active and t.id not in staffing
             }
             source_paths = (

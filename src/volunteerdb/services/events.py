@@ -547,7 +547,7 @@ async def list_events(
     if not events:
         return []
     event_ids = [e.id for e in events]
-    paths = team_service.team_paths(await team_service.list_all(session))
+    paths = (await team_service.tree(session)).paths
 
     slot_rows = (
         await session.execute(
@@ -679,7 +679,7 @@ async def similar_events(
         .order_by(Event.starts_at, Event.id)
     )
     visible = visible_team_ids(actor)
-    paths = team_service.team_paths(await team_service.list_all(session))
+    paths = (await team_service.tree(session)).paths
     out: list[SimilarEvent] = []
     for event in candidates:
         have = _norm_location(event.location or "")
@@ -715,7 +715,7 @@ async def detail(
     Roster-names rights on the owning team, which is the documented visibility
     domain for an event and the names of who is staffing it."""
     event = await _visible(session, actor, event_id)
-    paths = team_service.team_paths(await team_service.list_all(session))
+    paths = (await team_service.tree(session)).paths
     slots = list(
         await session.scalars(
             sa.select(EventSlot)
@@ -842,7 +842,7 @@ async def claimable_subs(session: AsyncSession, actor: Actor) -> list[ClaimableS
             .order_by(Event.starts_at)
         )
     ).all()
-    paths = team_service.team_paths(await team_service.list_all(session))
+    paths = (await team_service.tree(session)).paths
     return [
         ClaimableSub(
             sub=sub,

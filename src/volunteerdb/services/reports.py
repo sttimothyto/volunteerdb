@@ -26,18 +26,11 @@ class CoverageRow:
 
 
 async def coverage(
-    session: AsyncSession,
-    at: datetime | None = None,
-    teams: list[Team] | None = None,
+    session: AsyncSession, at: datetime | None = None
 ) -> list[CoverageRow]:
-    """Role headcounts per team; the dashboard's 'holes to fill' report.
-
-    `teams` lets a caller that already listed them (the teams page needs the
-    inactive ones too, which never become rows here) hand them over instead of
-    paying for a second list_all; it must be the same `at` snapshot.
-    """
-    all_teams = teams if teams is not None else await team_service.list_all(session, at)
-    paths = team_service.team_paths(all_teams)
+    """Role headcounts per team; the dashboard's 'holes to fill' report."""
+    tree = await team_service.tree(session, at)
+    paths = tree.paths
     M = entity(Membership, at)
     rows = (
         await session.execute(
@@ -55,7 +48,7 @@ async def coverage(
             counts=by_team.get(t.id, {}),
             total=sum(by_team.get(t.id, {}).values()),
         )
-        for t in all_teams
+        for t in tree.teams
         if t.is_active
     ]
     # teams with holes first, then by path for stable reading

@@ -67,9 +67,7 @@ class VolunteerPanel:
             assignments = await volunteer_service.assignments(
                 session, volunteer_id, at=self.at
             )
-            paths = team_service.team_paths(
-                await team_service.list_all(session, at=self.at)
-            )
+            paths = (await team_service.tree(session, at=self.at)).paths
             photo_at = (await photo_service.versions(session, [volunteer_id])).get(
                 volunteer_id
             )

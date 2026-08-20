@@ -6,7 +6,9 @@ migrated with alembic; every test starts from truncated tables.
 
 import asyncio
 import os
+import re
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -49,6 +51,38 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 # a stopwatch. 3 s is nowhere near the real cost; the extra is only ever spent
 # on a genuine failure.
 SLOW = 30
+
+
+# The compiled SQL of a live team-tree read (services.teams.tree). Unique to it:
+# `session.get(Team, ...)` compiles to a WHERE on the primary key with no ORDER
+# BY, and the sibling tables spell themselves `team_sheet` / `team_history`, so
+# neither can be mistaken for this. Snapshot reads order by the union alias
+# instead, hence the alternation.
+TEAM_TREE_SQL = r"FROM team ORDER BY team\.name|team_asof ORDER BY team_asof\.name"
+
+
+@contextmanager
+def count_sql(pattern: str):
+    """Statements executed on the app engine matching `pattern`, as a list that
+    fills while the block runs.
+
+    Modelled on scripts/bench.py's capture_sql. Nothing else in the suite asserts
+    a query count; this exists so the team-tree memo cannot silently regress into
+    the per-caller reads it replaced (tests/test_team_cache.py).
+    """
+    seen: list[str] = []
+    matcher = re.compile(pattern)
+    engine = db.engine().sync_engine
+
+    def before(conn, cursor, statement, parameters, context, executemany):
+        if matcher.search(statement):
+            seen.append(statement)
+
+    sa.event.listen(engine, "before_cursor_execute", before)
+    try:
+        yield seen
+    finally:
+        sa.event.remove(engine, "before_cursor_execute", before)
 
 
 async def mail_to(sent: list[tuple[str, str, str]], address: str, timeout_s=3.0):

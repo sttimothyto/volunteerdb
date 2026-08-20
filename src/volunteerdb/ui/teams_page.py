@@ -34,7 +34,7 @@ from .volunteer_panel import VolunteerPanel
 ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
 
-def _hierarchy_rows(all_teams, coverage, actor) -> list[dict]:
+def _hierarchy_rows(tree, coverage, actor) -> list[dict]:
     """One row per team in depth-first order, so every child sits directly under
     its parent and `depth` can indent it into the shape the old tree drew.
 
@@ -42,8 +42,7 @@ def _hierarchy_rows(all_teams, coverage, actor) -> list[dict]:
     column the browser does not render still receives its row data, so a hidden
     column would ship every team's headcounts to every signed-in member.
     """
-    by_parent = team_service.children_map(all_teams)
-    paths = team_service.team_paths(all_teams)
+    by_parent, paths = tree.by_parent, tree.paths
     by_team = {r.team.id: r for r in coverage}
     rows: list[dict] = []
     seen: set[int] = set()
@@ -85,7 +84,7 @@ def _hierarchy_rows(all_teams, coverage, actor) -> list[dict]:
 
     for team in by_parent.get(None, []):
         emit(team, 0)
-    for team in all_teams:
+    for team in tree.teams:
         # parent outside this snapshot: list it as a root rather than drop it
         emit(team, 0)
     return rows
@@ -157,15 +156,11 @@ def _wire_search(
 async def teams_page(as_of: str = ""):
     at = parse_as_of(as_of)
     async with page_session() as (session, actor):
-        all_teams = await team_service.list_all(session, at)
+        tree = await team_service.tree(session, at)
         show_coverage = actor.is_admin or bool(actor.managed_team_ids)
-        coverage = (
-            await report_service.coverage(session, at, teams=all_teams)
-            if show_coverage
-            else []
-        )
+        coverage = await report_service.coverage(session, at) if show_coverage else []
 
-    rows = _hierarchy_rows(all_teams, coverage, actor)
+    rows = _hierarchy_rows(tree, coverage, actor)
 
     suffix = f"?as_of={as_of}" if as_of else ""
     for row in rows:
@@ -193,7 +188,7 @@ async def teams_page(as_of: str = ""):
             )
             if actor.is_admin and at is None:
                 ui.button(
-                    "New team", icon="add", on_click=lambda: _team_dialog(all_teams)
+                    "New team", icon="add", on_click=lambda: _team_dialog(tree)
                 ).props("dense")
         columns = [
             {
@@ -284,17 +279,23 @@ async def teams_page(as_of: str = ""):
             "rowClick",
             lambda e: ui.navigate.to(f"/teams/{e.args[1]['id']}{suffix}"),
         )
-        if not all_teams:
+        if not tree.teams:
             ui.label("No teams yet.").classes("text-gray-500")
         count = ui.label(_team_count(len(rows))).classes("text-sm text-gray-500")
         if search is not None:
             _wire_search(search, count, table, rows)
 
 
-def _team_dialog(all_teams, team=None) -> None:
-    """Create (team=None) or edit a team. Admin only — enforced server-side on save."""
-    paths = team_service.team_paths(all_teams)
-    parent_options = {0: "— top level —"} | {t.id: paths[t.id] for t in all_teams}
+def _team_dialog(tree, team=None, *, exclude_id: int | None = None) -> None:
+    """Create (team=None) or edit a team. Admin only — enforced server-side on save.
+
+    `exclude_id` drops one team from the parent choices: editing a team, it is
+    the team itself, which cannot be its own parent.
+    """
+    paths = tree.paths
+    parent_options = {0: "— top level —"} | {
+        t.id: paths[t.id] for t in tree.teams if t.id != exclude_id
+    }
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label("Edit team" if team else "New team").classes("text-lg font-medium")
         name = (
@@ -639,8 +640,8 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             ):
                 ui.label(f"No team with id {team_id} at this time.")
             return
-        all_teams = await team_service.list_all(session, at=at)
-        paths = team_service.team_paths(all_teams)
+        tree = await team_service.tree(session, at=at)
+        paths = tree.paths
         slug = page_service.slug_map(paths).get(team_id)
         can_names = actor.can_view_roster_names(team_id)
         can_full = actor.can_view_full_roster(team_id)
@@ -658,7 +659,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         accounts = await user_service.accounts_by_volunteer(
             session, [v.id for _, v in roster]
         )
-        children = [t for t in all_teams if t.parent_team_id == team_id]
+        children = tree.by_parent.get(team_id, [])
         volunteer_options = (
             await volunteer_service.name_map(session) if can_manage else {}
         )
@@ -699,9 +700,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                 ui.button(
                     "Edit team",
                     icon="edit",
-                    on_click=lambda: _team_dialog(
-                        [t for t in all_teams if t.id != team_id], team
-                    ),
+                    on_click=lambda: _team_dialog(tree, team, exclude_id=team_id),
                 ).props("dense outline")
                 ui.button(
                     "Delete", icon="delete", on_click=lambda: _delete_team(team_id)

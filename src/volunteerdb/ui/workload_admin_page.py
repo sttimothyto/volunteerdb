@@ -19,8 +19,8 @@ async def workload_page():
                 ui.label("Admins only.").classes("text-gray-500")
             return
         config = await workload_service.get_config(session)
-        all_teams = await team_service.list_all(session)
-        paths = team_service.team_paths(all_teams)
+        tree = await team_service.tree(session)
+        all_teams, paths = tree.teams, tree.paths
 
     with frame("Workload", actor):
         ui.label(

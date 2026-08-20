@@ -99,6 +99,11 @@ twins ([History and time travel](history.md)).
   services cannot forget to write it.
 - **As-of reads** are the same service functions with an optional
   timestamp; `history.py` swaps live tables for live∪history unions.
+- **The team tree is read once per unit of work.** `services/teams.tree()`
+  memoizes it on the session, keyed by the as-of timestamp, and a session
+  listener drops the memo the moment any team row is written (`team_cache.py`).
+  Same argument as the history triggers: invalidation is not something a
+  service has to remember, because nothing has to remember it.
 - **Email** (`services/mail.py`) degrades gracefully: without an SMTP2GO
   key it logs messages instead of sending, which keeps development and the
   [test suite](../how-to/run-tests.md) offline.

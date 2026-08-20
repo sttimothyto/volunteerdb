@@ -69,14 +69,14 @@ async def build_roster_rows(
     """
     if team_ids is not None and not team_ids:
         raise ValueError("team_ids must be None (parish) or a non-empty set")
-    all_teams = await team_service.list_all(session, at=at)
-    paths = team_service.team_paths(all_teams)
+    tree = await team_service.tree(session, at=at)
+    paths = tree.paths
     if team_ids is None:
-        include_ids = {t.id for t in all_teams}
+        include_ids = {t.id for t in tree.teams}
     elif subtree:
         include_ids = set()
         for team_id in team_ids:
-            include_ids |= team_service.descendant_ids(all_teams, team_id)
+            include_ids |= tree.descendants(team_id)
     else:
         include_ids = team_ids
     if team_ids is None or subtree:

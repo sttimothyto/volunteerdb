@@ -262,10 +262,10 @@ async def volunteer_detail(request: Request, volunteer_id: int):
         )
         spells = await volunteer_service.timeline(session, volunteer_id)
         account = await user_service.account_for_volunteer(session, volunteer_id)
-        all_teams = await team_service.list_all(session)
-        paths = team_service.team_paths(all_teams)
+        tree = await team_service.tree(session)
+        paths = tree.paths
         assignable = {
-            t.id: paths[t.id] for t in all_teams if actor.can_manage_team(t.id)
+            t.id: paths[t.id] for t in tree.teams if actor.can_manage_team(t.id)
         }
         photo_at = (await photo_service.versions(session, [volunteer_id])).get(
             volunteer_id

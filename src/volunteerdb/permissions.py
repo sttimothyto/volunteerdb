@@ -180,9 +180,9 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
         # through), so it is resolved at the single point of use.
         from .services import teams as team_service
 
-        all_teams = await team_service.list_all(session)
+        tree = await team_service.tree(session)
         for team_id, role in roles_by_team.items():
-            subtree = team_service.descendant_ids(all_teams, team_id)
+            subtree = tree.descendants(team_id)
             if role in (TeamRole.leader, TeamRole.second):
                 managed |= subtree
             elif role == TeamRole.core:

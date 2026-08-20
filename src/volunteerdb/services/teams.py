@@ -1,9 +1,12 @@
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import team_cache
 from ..history import entity, fetch
 from ..models import Event, Membership, Team, TeamRole, TeamSheet, Volunteer
 from ..permissions import Actor, require
@@ -25,12 +28,65 @@ async def get(
     return rows[0][0] if rows else None
 
 
-async def list_all(session: AsyncSession, at: datetime | None = None) -> list[Team]:
+@dataclass(frozen=True, slots=True)
+class TeamTree:
+    """Every shape of the team tree a caller needs, computed once.
+
+    Read-only: `teams` is a tuple, and the two maps must not be mutated — one
+    session shares a single instance between everything that asks for it.
+    """
+
+    teams: tuple[Team, ...]
+    paths: dict[int, str]  # id -> "Parent / Child"
+    by_parent: dict[int | None, list[Team]]  # parent id (None = root) -> children
+
+    def descendants(self, root_id: int) -> set[int]:
+        """root_id plus all transitive sub-team ids.
+
+        Over the prebuilt by_parent, so asking repeatedly is free — load_actor
+        asks once per role the actor holds.
+        """
+        return _walk(self.by_parent, root_id)
+
+
+async def tree(session: AsyncSession, at: datetime | None = None) -> TeamTree:
+    """The team tree, read at most once per session per `at` snapshot.
+
+    Prefer this over list_all(): it also carries the display paths and the parent
+    index that nearly every caller went on to rebuild by hand.
+
+    The memo lives on the Session and is dropped the moment any Team row is
+    inserted, changed or deleted in it (team_cache.py), so it cannot predate the
+    caller's own write — provided that write has been flushed, which every
+    mutation site here and in services.pages does before returning. Keyed by
+    `at`, so a snapshot is never served for a live read.
+    """
+    hit = team_cache.cached(session, at)
+    if hit is not None:
+        return hit
     T = entity(Team, at)
-    return [row[0] for row in await fetch(session, sa.select(T).order_by(T.name), at)]
+    rows = await fetch(session, sa.select(T).order_by(T.name), at)
+    built = build_tree([row[0] for row in rows])
+    team_cache.store(session, at, built)
+    return built
 
 
-def children_map(teams: list[Team]) -> dict[int | None, list[Team]]:
+def build_tree(teams: Sequence[Team]) -> TeamTree:
+    """A TeamTree over teams already in hand. tree() is the door for callers with
+    a session; this one is for the pure tests and anyone holding a plain list."""
+    return TeamTree(
+        teams=tuple(teams), paths=team_paths(teams), by_parent=children_map(teams)
+    )
+
+
+async def list_all(session: AsyncSession, at: datetime | None = None) -> list[Team]:
+    """The teams, name-ordered. A view over tree(), so it costs one query per
+    session — a fresh list each call, so a caller that sorts or filters in place
+    cannot corrupt the copy everyone else is holding."""
+    return list((await tree(session, at)).teams)
+
+
+def children_map(teams: Sequence[Team]) -> dict[int | None, list[Team]]:
     by_parent: dict[int | None, list[Team]] = {}
     for t in teams:
         by_parent.setdefault(t.parent_team_id, []).append(t)
@@ -43,17 +99,17 @@ async def search(
     session: AsyncSession, query: str, at: datetime | None = None
 ) -> list[tuple[Team, str]]:
     """Active teams whose name, description, or display path contains `query`
-    (case-insensitive), as (team, path) sorted by path. Done in Python over
-    list_all: paths are computed recursively, and the whole table is ~60 rows.
-    No actor: the team directory is visible to every signed-in user."""
+    (case-insensitive), as (team, path) sorted by path. Done in Python over the
+    session's tree: paths are computed recursively, and the whole table is ~60
+    rows. No actor: the team directory is visible to every signed-in user."""
     q = query.strip().lower()
     if not q:
         return []
-    all_teams = await list_all(session, at)
-    paths = team_paths(all_teams)
+    directory = await tree(session, at)
+    paths = directory.paths
     hits = [
         (t, paths[t.id])
-        for t in all_teams
+        for t in directory.teams
         if t.is_active
         and (
             q in t.name.lower()
@@ -65,9 +121,8 @@ async def search(
     return hits
 
 
-def descendant_ids(teams: list[Team], root_id: int) -> set[int]:
-    """root_id plus all transitive sub-team ids."""
-    by_parent = children_map(teams)
+def _walk(by_parent: dict[int | None, list[Team]], root_id: int) -> set[int]:
+    """root_id plus every id reachable below it."""
     result: set[int] = set()
     stack = [root_id]
     while stack:
@@ -101,7 +156,7 @@ async def meta_team_ids(
     return set(await session.scalars(stmt))
 
 
-def team_paths(teams: list[Team]) -> dict[int, str]:
+def team_paths(teams: Sequence[Team]) -> dict[int, str]:
     """id -> 'Parent / Child' display path.
 
     Cycles cannot occur in live data (_check_no_cycle) but this also runs on
@@ -201,8 +256,12 @@ async def _check_no_cycle(
 ) -> None:
     if new_parent_id is None:
         return
-    teams = await list_all(session)
-    if new_parent_id == team_id or new_parent_id in descendant_ids(teams, team_id):
+    # The session's memo is safe to read here even mid-update: update() assigns
+    # parent_team_id only AFTER this check, and any earlier update() in the same
+    # transaction flushed, which drops the memo. So the parent edges below are
+    # never behind the caller's own writes.
+    subtree = (await tree(session)).descendants(team_id)
+    if new_parent_id == team_id or new_parent_id in subtree:
         raise CycleError("a team cannot be its own ancestor")
 
 

@@ -33,11 +33,10 @@ def _weight_to_decimal(fields: dict) -> None:
 @router.get("")
 async def list_teams(ctx: CtxDep, as_of: AsOf) -> list[TeamWithPath]:
     """The team directory (structure is visible to every signed-in user)."""
-    all_teams = await service.list_all(ctx.session, at=as_of)
-    paths = service.team_paths(all_teams)
+    tree = await service.tree(ctx.session, at=as_of)
     return [
-        TeamWithPath(**TeamOut.model_validate(t).model_dump(), path=paths[t.id])
-        for t in all_teams
+        TeamWithPath(**TeamOut.model_validate(t).model_dump(), path=tree.paths[t.id])
+        for t in tree.teams
     ]
 
 

@@ -29,15 +29,15 @@ async def elements(
     volunteers' roster-visible memberships and the teams they touch — a
     matching volunteer with no visible membership does not appear; the
     /volunteers list is the complete answer. None means no narrowing."""
-    all_teams = await team_service.list_all(session, at)
-    paths = team_service.team_paths(all_teams)
+    tree = await team_service.tree(session, at)
+    paths = tree.paths
 
     visible_ids = {
-        t.id for t in all_teams if actor.is_admin or actor.can_view_roster_names(t.id)
+        t.id for t in tree.teams if actor.is_admin or actor.can_view_roster_names(t.id)
     }
     if team_id is not None:
-        visible_ids &= team_service.descendant_ids(all_teams, team_id)
-    shown_teams = [t for t in all_teams if t.id in visible_ids]
+        visible_ids &= tree.descendants(team_id)
+    shown_teams = [t for t in tree.teams if t.id in visible_ids]
 
     M, V = entity(Membership, at), entity(Volunteer, at)
     membership_stmt = sa.select(

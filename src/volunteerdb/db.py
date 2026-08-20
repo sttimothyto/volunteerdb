@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from . import audit  # noqa: F401 — registers the CRUD audit listeners
+from . import (
+    audit,  # noqa: F401 — registers the CRUD audit listeners
+    team_cache,  # noqa: F401 — registers the team-tree cache listeners
+)
 from .config import settings
 from .log import bind_fallback_user
 

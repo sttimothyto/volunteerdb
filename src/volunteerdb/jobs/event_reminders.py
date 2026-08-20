@@ -99,7 +99,7 @@ async def main(today: date | None = None) -> int:
                 .order_by(Event.starts_at, Event.id)
             )
         ).all()
-        paths = team_service.team_paths(await team_service.list_all(session))
+        paths = (await team_service.tree(session)).paths
         # which stages these assignments have already had, in one query: the
         # per-row decisions below are then plain set membership
         already = (

@@ -125,8 +125,8 @@ async def _active_teams() -> tuple[list[tuple[int, str, str]], dict[int, tuple]]
     team's stored sheet identity (file_id, last_synced_at, last_status) and any
     pending repoint an admin asked for (requested_file_id, requested_import)."""
     async with db_session() as session:
-        all_teams = await team_service.list_all(session)
-        paths = team_service.team_paths(all_teams)
+        tree = await team_service.tree(session)
+        paths = tree.paths
         slugs = page_service.slug_map(paths)
         # A task-force meta team is a borrowed roster, not a ministry with its
         # own Drive sheet: syncing one would export the collaborating teams'
@@ -137,7 +137,7 @@ async def _active_teams() -> tuple[list[tuple[int, str, str]], dict[int, tuple]]
         meta = await team_service.meta_team_ids(session)
         active = [
             (t.id, paths[t.id], slugs[t.id] + SHEET_SUFFIX)
-            for t in all_teams
+            for t in tree.teams
             if t.is_active and t.id not in meta
         ]
         stored = {

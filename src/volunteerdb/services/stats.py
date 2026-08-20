@@ -29,7 +29,6 @@ from ..models import (
     Membership,
     ProposalBallot,
     ProposalVoter,
-    Team,
     Volunteer,
 )
 from ..permissions import Actor, team_ids_map
@@ -142,20 +141,14 @@ async def dashboard(
     actor: Actor,
     *,
     at: datetime | None = None,
-    teams: list[Team] | None = None,
 ) -> DashboardStats:
-    """Every statistic `actor` may see, and nothing else.
-
-    `teams` lets a caller that already listed them — the dashboard needs the
-    list for its team filter — hand them over instead of paying for a second
-    list_all; it must be the same `at` snapshot.
-    """
-    all_teams = teams if teams is not None else await team_service.list_all(session, at)
+    """Every statistic `actor` may see, and nothing else."""
+    tree = await team_service.tree(session, at)
     live = at is None
 
-    parish = await _parish(session, all_teams, at=at) if actor.is_admin else None
+    parish = await _parish(session, tree, at=at) if actor.is_admin else None
     leadership = (
-        await _leadership(session, actor, all_teams, at=at)
+        await _leadership(session, actor, tree, at=at)
         if actor.is_admin or actor.full_view_team_ids
         else None
     )
@@ -170,7 +163,7 @@ async def dashboard(
 
 
 async def _parish(
-    session: AsyncSession, all_teams: list[Team], *, at: datetime | None
+    session: AsyncSession, tree: team_service.TeamTree, *, at: datetime | None
 ) -> ParishStats:
     V, M = entity(Volunteer, at), entity(Membership, at)
 
@@ -216,7 +209,7 @@ async def _parish(
     return ParishStats(
         active_volunteers=active,
         inactive_volunteers=by_active.get(False, 0),
-        active_teams=sum(1 for t in all_teams if t.is_active),
+        active_teams=sum(1 for t in tree.teams if t.is_active),
         assignments=assignments,
         unassigned_volunteers=max(active - assigned, 0),
         accounts=accounts,
@@ -226,7 +219,7 @@ async def _parish(
 async def _leadership(
     session: AsyncSession,
     actor: Actor,
-    all_teams: list[Team],
+    tree: team_service.TeamTree,
     *,
     at: datetime | None,
 ) -> LeadershipStats:
@@ -253,7 +246,7 @@ async def _leadership(
 
     visible_teams = [
         t
-        for t in all_teams
+        for t in tree.teams
         if t.is_active and (view_scope is None or t.id in view_scope)
     ]
     stats = LeadershipStats(
@@ -264,7 +257,7 @@ async def _leadership(
 
     # --- leadership gaps: the same gate as GET /api/reports/coverage --------
     if actor.is_admin or actor.managed_team_ids:
-        rows = await report_service.coverage(session, at, teams=all_teams)
+        rows = await report_service.coverage(session, at)
         if manage_scope is not None:
             rows = [r for r in rows if r.team.id in manage_scope]
         # coverage() already sorts holes first, so the sample is the worst few

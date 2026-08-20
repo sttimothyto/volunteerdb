@@ -69,7 +69,7 @@ async def main(today: date | None = None) -> int:
                 .order_by(Proposal.id)
             )
         ).all()
-        paths = team_service.team_paths(await team_service.list_all(session))
+        paths = (await team_service.tree(session)).paths
         already = (
             {
                 (row.voter_id, row.stage)

@@ -346,11 +346,11 @@ async def apply_rows(
         if team_id == sync_team_id
     }
 
-    all_teams = await team_service.list_all(session)
-    paths = team_service.team_paths(all_teams)
+    tree = await team_service.tree(session)
+    paths = tree.paths
     team_by_path = {p.lower(): tid for tid, p in paths.items()}
     team_by_name: dict[str, list[int]] = {}
-    for t in all_teams:
+    for t in tree.teams:
         team_by_name.setdefault(t.name.lower(), []).append(t.id)
 
     def resolve_team(team_path: str) -> int | str:

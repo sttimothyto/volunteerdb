@@ -468,7 +468,7 @@ async def _task_force_out(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
     view = await task_force_service.get_for_event(ctx.session, event_id)
     if view is None:
         return None
-    paths = team_service.team_paths(await team_service.list_all(ctx.session))
+    paths = (await team_service.tree(ctx.session)).paths
     return TaskForceOut(
         event_id=event_id,
         team_id=view.team_id,

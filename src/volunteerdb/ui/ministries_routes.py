@@ -93,8 +93,7 @@ async def ministries_redirect() -> RedirectResponse:
 async def ministries_index() -> HTMLResponse:
     async with db_session() as session:
         published = await page_service.published_teams(session)
-        all_teams = await team_service.list_all(session)
-    paths = team_service.team_paths(all_teams)
+        paths = (await team_service.tree(session)).paths
     slugs = page_service.slug_map(paths)
     items = sorted(
         (paths.get(team.id, team.name), slugs[team.id])
@@ -117,10 +116,10 @@ async def ministries_index() -> HTMLResponse:
 
 async def _resolve_slug(session, slug: str) -> tuple[Team | None, dict[int, str]]:
     """The team behind a public slug (or None) plus every team's display path."""
-    all_teams = await team_service.list_all(session)
-    paths = team_service.team_paths(all_teams)
+    tree = await team_service.tree(session)
+    paths = tree.paths
     slugs = page_service.slug_map(paths)
-    team = next((t for t in all_teams if slugs.get(t.id) == slug), None)
+    team = next((t for t in tree.teams if slugs.get(t.id) == slug), None)
     return team, paths
 
 

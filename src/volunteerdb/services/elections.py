@@ -295,7 +295,7 @@ async def list_proposals(
             )
         )
     rows = (await session.execute(stmt)).all()
-    paths = team_service.team_paths(await team_service.list_all(session))
+    paths = (await team_service.tree(session)).paths
     counts = await _counts(session, [p.id for p, _ in rows])
     return [
         ProposalSummary(
@@ -365,7 +365,7 @@ async def involving(
     rows = (await session.execute(stmt)).all()
     if not rows:
         return []
-    paths = team_service.team_paths(await team_service.list_all(session))
+    paths = (await team_service.tree(session)).paths
     return [
         ProposalInvolvement(
             proposal=p,
@@ -392,7 +392,7 @@ async def detail(
     today = today or local_today()
     proposal = await _get_or_raise(session, proposal_id)
     team = await session.get(Team, proposal.team_id)
-    paths = team_service.team_paths(await team_service.list_all(session))
+    paths = (await team_service.tree(session)).paths
 
     email_ids = {i for i in (proposal.created_by, proposal.decided_by) if i}
     emails: dict[int, str] = {}
