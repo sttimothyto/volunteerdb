@@ -205,38 +205,23 @@ async def _check_no_cycle(
         raise CycleError("a team cannot be its own ancestor")
 
 
-# the form URL is mailed verbatim to whatever address a public-form submitter
-# typed, so only Google Forms links are accepted — never an arbitrary URL
-GOOGLE_FORM_PREFIXES = ("https://docs.google.com/forms/", "https://forms.gle/")
-
-
-async def set_application_form_url(
-    session: AsyncSession, actor: Actor | None, team_id: int, url: str | None
-) -> Team:
-    """Set or clear the team's Google application form; validates the link shape.
-
-    Full-roster rights, like the home-page doc it sits beside: core members are
-    included on purpose, because ministry leaders here are often elderly and a
-    public page nobody can refresh goes stale."""
-    require(
-        actor is None or actor.can_view_full_roster(team_id),
-        "manage this team's application form",
+async def leader_emails(session: AsyncSession, team_id: int) -> list[str]:
+    """Emails of the team's leader(s) and second(s): who the nightly Drive sync
+    grants edit access to the team's roster sheet, and who an event's
+    notifications go to. Lowercased and blank-free — imports leave '' where a
+    roster had no address, and neither a mailer nor a Drive share can do
+    anything with it."""
+    rows = await session.scalars(
+        sa.select(Volunteer.email)
+        .join(Membership, Membership.volunteer_id == Volunteer.id)
+        .where(
+            Membership.team_id == team_id,
+            Membership.role.in_([TeamRole.leader, TeamRole.second]),
+            Volunteer.email.is_not(None),
+            Volunteer.email != "",
+        )
     )
-    team = await get(session, team_id)
-    if team is None:
-        raise LookupError(f"team {team_id} not found")
-    if url and url.strip():
-        cleaned = url.strip()
-        if not cleaned.startswith(GOOGLE_FORM_PREFIXES):
-            raise ValueError(
-                "not a Google Form link — expected https://docs.google.com/forms/… "
-                "or https://forms.gle/…"
-            )
-        team.application_form_url = cleaned
-    else:
-        team.application_form_url = None
-    await session.flush()
-    return team
+    return sorted({email.strip().lower() for email in rows if email.strip()})
 
 
 async def delete(session: AsyncSession, actor: Actor | None, team_id: int) -> None:

@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from volunteerdb.db import db_session
-from volunteerdb.models import Team
-from volunteerdb.services import teams
+from volunteerdb.models import Team, TeamRole
+from volunteerdb.services import memberships, teams, volunteers
 from volunteerdb.services.teams import CycleError
 
 
@@ -174,3 +174,33 @@ async def test_search_matches_name_description_and_path(database):
         ], "a parent's name matches its children through the path, sorted by path"
         assert await teams.search(session, "old guild") == [], "inactive teams excluded"
         assert await teams.search(session, "   ") == [], "blank query matches nothing"
+
+
+async def test_leader_emails_covers_leader_and_second_only(database):
+    """Who the nightly Drive sync shares a roster sheet with, and who an event's
+    notices go to. Core members are not leadership, and an address a mailer
+    cannot use is not an address."""
+    async with db_session() as session:
+        team = await teams.create(session, None, "Choir")
+        team_id = team.id
+        lena = await volunteers.create(
+            session, None, "Lena", "Leader", "lena@example.org"
+        )
+        sam = await volunteers.create(session, None, "Sam", "Second", "sam@example.org")
+        cora = await volunteers.create(
+            session, None, "Cora", "Core", "cora@example.org"
+        )
+        noel = await volunteers.create(session, None, "Noel", "NoEmail")
+        # what an import of a roster with an empty Email cell can leave behind:
+        # not NULL, but nothing a mailer or a Drive share can use either
+        blank = await volunteers.create(session, None, "Bea", "Blank")
+        blank.email = "  "
+        await memberships.assign(session, None, lena.id, team_id, TeamRole.leader)
+        await memberships.assign(session, None, sam.id, team_id, TeamRole.second)
+        await memberships.assign(session, None, cora.id, team_id, TeamRole.core)
+        await memberships.assign(session, None, noel.id, team_id, TeamRole.second)
+        await memberships.assign(session, None, blank.id, team_id, TeamRole.leader)
+        assert await teams.leader_emails(session, team_id) == [
+            "lena@example.org",
+            "sam@example.org",
+        ]

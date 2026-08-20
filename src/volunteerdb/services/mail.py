@@ -261,65 +261,6 @@ def address_edited_email(
     )
 
 
-def interest_leader_email(
-    team_path: str,
-    name: str,
-    email: str,
-    phone: str | None,
-    note: str | None,
-    team_url: str,
-) -> tuple[str, str]:
-    """Sent to the team's leader(s) and second(s) when someone submits the
-    public "I'm interested" form. The submitter's free text belongs here and
-    only here — never in the applicant-facing mail."""
-    lines = [f"Someone is interested in joining {team_path}:", ""]
-    lines.append(f"  Name:  {name}")
-    lines.append(f"  Email: {email}")
-    if phone:
-        lines.append(f"  Phone: {phone}")
-    if note:
-        lines.append(f"  Note:  {note}")
-    lines += [
-        "",
-        "If the team has an application form linked, they were sent it "
-        "directly; otherwise, please follow up with them.",
-        f"Open interests are listed on your team page: {team_url}",
-    ]
-    return (f"New interest in {team_path}", "\n".join(lines))
-
-
-def interest_applicant_email(
-    team_name: str, application_form_url: str | None
-) -> tuple[str, str]:
-    """Confirmation to the address typed into the public form.
-
-    A fixed template on purpose: the form is public and the recipient address
-    is submitter-chosen, so echoing ANY submitted text (even the name) would
-    let a stranger deliver their words to an arbitrary mailbox through the
-    parish's sender. team_name comes from the database; the form URL is
-    prefix-validated to Google Forms (services/teams.py)."""
-    if application_form_url:
-        next_step = (
-            "The next step is the ministry's application form — "
-            f"you can fill it in here: {application_form_url}"
-        )
-    else:
-        next_step = (
-            "The ministry leader will follow up with you about the next "
-            "steps, including an application form."
-        )
-    where = org()
-    at_org = f" at {where}" if where else ""
-    return (
-        f"Thank you for your interest in {team_name}",
-        f"Thank you for your interest in the {team_name} ministry{at_org}"
-        " — the ministry leaders have been told.\n\n"
-        f"{next_step}\n\n"
-        "If you didn't fill in a form on our ministries site, you can safely "
-        "ignore this email.",
-    )
-
-
 @dataclass(frozen=True)
 class DigestItem:
     """One proposal in a voter's nightly digest (jobs/proposal_digest.py)."""
@@ -433,7 +374,7 @@ def sub_request_email(
     """Sent to the event team's members (minus the requester and anyone
     already serving that event) when someone asks for a substitute. The
     audience is authenticated teammates, so the requester's short note may
-    appear — unlike the public interest form's mail."""
+    appear verbatim."""
     lines = [
         f"{requester_name} can no longer serve as {slot} at:",
         "",

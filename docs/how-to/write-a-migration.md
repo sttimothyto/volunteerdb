@@ -9,9 +9,11 @@ order have parted company. Append a new column at the end of the class, because
 that is where `ALTER TABLE … ADD COLUMN` puts it.
 
 The chain currently starts at `0001`, which is the whole schema in one revision:
-revisions `0001`–`0028` were squashed. See
-[the migration history](../reference/schema.md#migration-history) for what that
-means for a database that predates it.
+revisions `0001`–`0028` were squashed. `0002` is a worked example of a **drop**
+on a versioned table — it removes `team.application_form_url` and rebuilds
+`team_history` around the gap. See
+[the migration history](../reference/schema.md#migration-history) for what the
+squash means for a database that predates it.
 
 ## Ordinary migrations
 
@@ -57,8 +59,9 @@ examples, so it is written out here in full:
 **Dropping** a live column follows the same recipe with the drops first:
 PostgreSQL skips dropped columns when expanding a row, so the twin must be
 rebuilt to the post-drop order, and the old column's history values go with it.
-`deploy/catchup-0023.sql` has a worked example — the `volunteer.updated_at`
-drop, its twin rebuild and the index recreation, in SQL rather than Python.
+`migrations/versions/0002_drop_application_form_and_interest.py` is that shape in
+Python; `deploy/catchup-0023.sql` has the same thing in SQL — the
+`volunteer.updated_at` drop, its twin rebuild and the index recreation.
 
 No trigger changes are needed — `versioning()` resolves `<table>_history` by
 name at runtime. Tables that are *not* versioned (`app_user`,

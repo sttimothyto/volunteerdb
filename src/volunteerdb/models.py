@@ -211,12 +211,9 @@ class Team(Base):
     workload_weight: Mapped[Decimal] = mapped_column(
         sa.Numeric(8, 2), default=Decimal(0), server_default=sa.text("0")
     )
-    # public Google Doc used as the team's volunteer home page (services/pages.py)
-    home_doc_url: Mapped[str | None] = mapped_column(sa.String(500))
-    # the team's own Google application form, mailed to people who express
-    # interest on the public ministry page (services/interest.py).
+    # public Google Doc used as the team's volunteer home page (services/pages.py).
     # keep this the LAST column so the history twin's order matches the DB
-    application_form_url: Mapped[str | None] = mapped_column(sa.String(500))
+    home_doc_url: Mapped[str | None] = mapped_column(sa.String(500))
 
 
 class Membership(Base):
@@ -422,56 +419,6 @@ class ProposalBallot(Base):
     # sets this explicitly, so the declarative hook never fired
     updated_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
-
-
-class Interest(Base):
-    """One outsider's "I'm interested" submission from the team's public
-    ministry page. The leader resolves it once handled (application form
-    returned, person contacted, or dismissed).
-
-    Not system-versioned (like proposal): workflow data whose lifecycle is
-    self-recorded in created_at/resolved_at.
-    """
-
-    __tablename__ = "interest"
-    __table_args__ = (
-        # at most one OPEN interest per (team, lowercased email) — repeat
-        # submissions must not re-mail leaders and applicants. The CHECK below
-        # is what makes "lowercased" true: without it one mixed-case row written
-        # any other way would slip past this index entirely.
-        sa.Index(
-            "uq_interest_open",
-            "team_id",
-            "email",
-            unique=True,
-            postgresql_where=sa.text("resolved_at IS NULL"),
-        ),
-        sa.CheckConstraint("email = lower(email)", name="ck_interest_email_lower"),
-        # One-directional, and the direction matters: resolved_by is ON DELETE
-        # SET NULL, so a resolved submission whose handler's account was later
-        # deleted legitimately keeps the time and loses the name. What cannot
-        # happen is a handler with no moment of handling.
-        sa.CheckConstraint(
-            "resolved_by IS NULL OR resolved_at IS NOT NULL",
-            name="ck_interest_resolution",
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    # no index=: uq_interest_open leads with team_id, and both readers filter
-    # `resolved_at IS NULL` — which is exactly that index's predicate
-    team_id: Mapped[int] = mapped_column(sa.ForeignKey("team.id", ondelete="CASCADE"))
-    name: Mapped[str] = mapped_column(sa.String(200))
-    email: Mapped[str] = mapped_column(sa.String(255))  # lowercased; CHECKed above
-    phone: Mapped[str | None] = mapped_column(sa.String(50))
-    note: Mapped[str | None] = mapped_column(sa.Text)
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
-    resolved_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
-    resolved_by: Mapped[int | None] = mapped_column(
-        sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
 
 

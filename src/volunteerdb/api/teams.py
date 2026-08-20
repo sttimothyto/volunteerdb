@@ -3,14 +3,11 @@ from decimal import Decimal
 import httpx
 from fastapi import APIRouter
 
-from ..services import interest as interest_service
 from ..services import pages as page_service
 from ..services import teams as service
 from .deps import AsOf, CtxDep
 from .schemas import (
-    ApplicationFormPatch,
     HomeDocPatch,
-    InterestOut,
     RosterEntry,
     TeamIn,
     TeamOut,
@@ -94,23 +91,6 @@ async def set_home_doc(ctx: CtxDep, team_id: int, data: HomeDocPatch) -> TeamOut
     return TeamOut.model_validate(team)
 
 
-@router.patch("/{team_id}/application-form")
-async def set_application_form(
-    ctx: CtxDep, team_id: int, data: ApplicationFormPatch
-) -> TeamOut:
-    """Set (or clear, with url=null) the Google Form mailed to people who ask
-    about this ministry from its public page.
-
-    Same audience as the home-page doc, and the same reason: both are how the
-    team speaks to strangers. Only Google Forms links are accepted — the URL is
-    mailed verbatim to whatever address a public form submitter typed, so an
-    arbitrary one would make the parish a redirector."""
-    team = await service.set_application_form_url(
-        ctx.session, ctx.actor, team_id, data.url
-    )
-    return TeamOut.model_validate(team)
-
-
 @router.get("/{team_id}/roster")
 async def team_roster(ctx: CtxDep, team_id: int, as_of: AsOf) -> list[RosterEntry]:
     # the fetch is only to 404 an id nobody has: an unknown team would
@@ -137,38 +117,6 @@ async def team_roster(ctx: CtxDep, team_id: int, as_of: AsOf) -> list[RosterEntr
             )
         )
     return entries
-
-
-# --- interest submissions and the public page ---------------------------------
-#
-# The public /ministries/ page has always had a form and the team page has
-# always listed what it collected; neither reached JSON. The form itself stays
-# GUI-only on purpose — its submitter has no account, and what bounds it is a
-# honeypot and a throttle rather than a permission.
-
-
-@router.get("/{team_id}/interest")
-async def list_interest(ctx: CtxDep, team_id: int) -> list[InterestOut]:
-    """Open "I'm interested" submissions from this team's public page.
-
-    Manage rights: each one carries a stranger's name, address, phone and free
-    text, addressed to this ministry's leadership. Resolved ones are not listed —
-    the list is a to-do, and `resolved_at` is how one leaves it."""
-    rows = await interest_service.unresolved(ctx.session, ctx.actor, team_id)
-    return [InterestOut.model_validate(r) for r in rows]
-
-
-@router.post("/{team_id}/interest/{interest_id}/resolve")
-async def resolve_interest(ctx: CtxDep, team_id: int, interest_id: int) -> InterestOut:
-    """Mark a submission handled — the person was contacted, the form sent, or
-    it was a bot. Resolving frees the (team, address) pair, so the same person
-    can express interest again later."""
-    interest = await interest_service.resolve(
-        ctx.session, ctx.actor, interest_id, resolved_by=ctx.actor.user.id
-    )
-    if interest.team_id != team_id:
-        raise LookupError(f"interest {interest_id} is not on team {team_id}")
-    return InterestOut.model_validate(interest)
 
 
 @router.get("/{team_id}/page")

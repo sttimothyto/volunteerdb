@@ -107,9 +107,6 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | `PATCH /api/teams/{id}/home-doc` | full roster on the team (leader/second/core, admin) | `{"url": "https://docs.google.com/document/d/…"}`, or `null` to unpublish |
 | `DELETE /api/teams/{id}` | admin | 204; parent of sub-teams is protected |
 | `GET /api/teams/{id}/roster` | roster names on the team | Contact details/notes redacted per role, `as_of=` |
-| `PATCH /api/teams/{id}/application-form` | full roster on the team | `{"url": "https://docs.google.com/forms/…"}`, or `null` to clear. Prefix-validated to Google Forms — the URL is mailed verbatim to whoever typed an address into the public page. Also now on `TeamOut` |
-| `GET /api/teams/{id}/interest` | manage the team | Open "I'm interested" submissions from the public page. Resolved ones are not listed: the list is a to-do |
-| `POST /api/teams/{id}/interest/{interest_id}/resolve` | manage the team | Marks one handled, freeing the (team, address) pair so the same person may ask again later |
 | `GET /api/teams/{id}/page` | full roster on the team | Whether the public page is publishing, and when it last fetched; `null` when no doc is set. The HTML is not here — it is served to the world at `/ministries/<slug>.html` |
 | `POST /api/teams/{id}/page/fetch` | full roster on the team | Refetch now instead of waiting for the nightly job. A failed fetch keeps the last good page and reports itself in `status` |
 

@@ -100,8 +100,10 @@ def test_mail_names_the_organisation_when_one_is_configured(monkeypatch):
     # Never a possessive: any name ending in s would produce "Timothy's's".
     assert "'s's" not in body and "'s's" not in subject
 
-    _, applicant = mail.interest_applicant_email("Hospitality", None)
-    assert "ministry at St. Timothy's — " in applicant
+    _, confirm = mail.email_change_email(
+        "https://vdb.example.org/confirm-email/tok", "new@example.org", 24
+    )
+    assert "the volunteer database for St. Timothy's, " in confirm
     settings.cache_clear()
 
 
@@ -114,14 +116,16 @@ def test_mail_reads_cleanly_with_no_organisation_set(monkeypatch):
     settings.cache_clear()
 
     subject, body = mail.invite_email("https://vdb.example.org/invite/tok")
-    _, applicant = mail.interest_applicant_email("Hospitality", None)
+    _, confirm = mail.email_change_email(
+        "https://vdb.example.org/confirm-email/tok", "new@example.org", 24
+    )
 
     assert subject == "Your VolunteerDB account"
-    for text in (subject, body, applicant):
+    for text in (subject, body, confirm):
         assert "  " not in text, f"double space in {text!r}"
         assert " at ." not in text and text.rstrip() == text.rstrip()
     assert body.startswith("An account has been created for you in VolunteerDB, ")
-    assert "ministry — the ministry leaders" in applicant
+    assert "in VolunteerDB, the volunteer database, to this one" in confirm
     settings.cache_clear()
 
 

@@ -43,8 +43,7 @@ Elections
 
 Public
 - six ministries publish a home page (their cached HTML is written straight
-  in — dev has no Google to fetch from) with an application form on three,
-  and ten interest submissions from the public form, two already resolved
+  in — dev has no Google to fetch from)
 
 Passwords
 ---------
@@ -83,7 +82,6 @@ from volunteerdb.models import (
     EventSlot,
     EventSubRequest,
     FieldType,
-    Interest,
     Membership,
     Proposal,
     ProposalBallot,
@@ -99,7 +97,6 @@ from volunteerdb.services import (
     custom_fields,
     elections,
     events,
-    interest,
     memberships,
     pages,
     photos,
@@ -900,7 +897,6 @@ PHOTOGRAPHED: tuple[str, ...] = (
 DOC_URL = (
     "https://docs.google.com/document/d/1SeededDemoDoc{n:02d}0000000000000000/edit"
 )
-FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSeededDemoForm{n:02d}/viewform"
 
 
 @dataclass(frozen=True)
@@ -908,7 +904,6 @@ class PageSpec:
     team: str
     blurb: str
     detail: str
-    form: bool = False
 
 
 PAGES: tuple[PageSpec, ...] = (
@@ -919,7 +914,6 @@ PAGES: tuple[PageSpec, ...] = (
         "the faithful. You are rostered about once a month, you get the "
         "readings a fortnight ahead, and Rose runs a short training session "
         "twice a year — no experience needed, just a willingness to prepare.",
-        form=True,
     ),
     PageSpec(
         "Altar Servers",
@@ -927,7 +921,6 @@ PAGES: tuple[PageSpec, ...] = (
         "Servers carry the cross and candles, hold the book, and help the "
         "priest and deacon at the altar. Training runs on the first Saturday "
         "of the month; a parent is always welcome to stay and watch.",
-        form=True,
     ),
     PageSpec(
         "Choir",
@@ -942,7 +935,6 @@ PAGES: tuple[PageSpec, ...] = (
         "Games, a talk, small groups and food, every Friday in term time. "
         "Adult leaders are screened and trained; the parish covers the cost "
         "of the police check.",
-        form=True,
     ),
     PageSpec(
         "Food Bank",
@@ -957,30 +949,6 @@ PAGES: tuple[PageSpec, ...] = (
         "The League meets on the second Tuesday of the month after the 7pm "
         "Mass. We run the bazaar, the bereavement kitchen and the parish's "
         "letter-writing campaigns.",
-    ),
-)
-
-# Interest submissions from those public pages: (team, name, note, resolved)
-INTERESTS: tuple[tuple[str, str, str | None, bool], ...] = (
-    ("Lectors", "Priya Raghunathan", "I read at my old parish in Mississauga.", False),
-    ("Lectors", "Owen Fitzgerald", None, False),
-    ("Altar Servers", "Marisol Ibarra", "For my son Diego, he's in grade 5.", False),
-    ("Choir", "Tobias Lindgren", "Baritone, sang in a university choir.", False),
-    ("Choir", "Amelia Wong", "Can I come and listen to a practice first?", True),
-    ("Youth Group", "Nathan Boateng", "Available Friday evenings from May.", False),
-    (
-        "Youth Group",
-        "Claudia Ferrante",
-        "I'm a high-school teacher, happy to help with the talks.",
-        False,
-    ),
-    ("Food Bank", "Hassan Nourbakhsh", "Saturdays work best for me.", False),
-    ("Food Bank", "Greta Molnar", "I have a van if deliveries are needed.", True),
-    (
-        "Catholic Women's League",
-        "Josefina Duarte",
-        "New to the parish — moved here in January.",
-        False,
     ),
 )
 
@@ -1523,16 +1491,12 @@ async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:
     for index, spec in enumerate(PAGES, start=1):
         team_id = parish.team_ids[spec.team]
         await pages.set_home_doc_url(session, None, team_id, DOC_URL.format(n=index))
-        if spec.form:
-            await teams.set_application_form_url(
-                session, None, team_id, FORM_URL.format(n=index)
-            )
         html = pages.sanitize_doc_html(
             f"<h1>{spec.team}</h1><p><em>{spec.blurb}</em></p>"
             f"<p>{spec.detail}</p>"
-            "<h2>Getting in touch</h2><p>Leave your details in the form below "
-            "and the ministry's leaders will call you. There is no commitment "
-            "in asking.</p>"
+            "<h2>Getting in touch</h2><p>New volunteers are always welcome. "
+            "Speak to one of the ministry's leaders after Mass, or call the "
+            "parish office. There is no commitment in asking.</p>"
         )
         session.add(
             TeamPage(
@@ -1543,21 +1507,6 @@ async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:
             )
         )
     await session.flush()
-
-    for team_name, name, note, resolved in INTERESTS:
-        local = name.lower().replace(" ", ".").replace("'", "")
-        submission = await interest.submit(
-            session,
-            team_id=parish.team_ids[team_name],
-            name=name,
-            email=f"{local}@{EMAIL_DOMAIN}",
-            phone="555-0199",
-            note=note,
-        )
-        if submission is not None and resolved:
-            await interest.resolve(
-                session, None, submission.id, resolved_by=parish.admin_id
-            )
 
 
 async def seed_schedule(
@@ -2132,7 +2081,6 @@ COUNTED: tuple[tuple[str, type], ...] = (
     ("proposals", Proposal),
     ("ballots", ProposalBallot),
     ("published pages", TeamPage),
-    ("interest submissions", Interest),
 )
 
 
@@ -2179,7 +2127,7 @@ async def seed() -> None:
     print("  Elections → Proposals: one in every state (nominating → appointed)")
     print("  Events: rosters either side of today, two open substitution calls")
     print("  Maria Alvarez: two leaderships, red workload, an ended spell")
-    print("  /ministries/: six public pages, ten interest submissions")
+    print("  /ministries/: six public pages")
     print(f"\nEvery login below uses the password: {DEMO_PASSWORD}")
     for account in ACCOUNTS:
         if account.headline:

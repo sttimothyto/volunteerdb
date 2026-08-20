@@ -158,7 +158,7 @@ free of API calls.
 
 ## Not versioned
 
-None of the five tables is system-versioned, per the `proposal`/`interest`
+None of the five tables is system-versioned, per the `proposal`
 precedent: workflow data whose lifecycle is self-recorded
 (`status`, `created_at`, `cancelled_at`, `resolved_at`), with the audit
 listeners logging every write. The `as_of` time machine does not apply;

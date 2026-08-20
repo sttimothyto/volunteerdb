@@ -42,7 +42,7 @@ ended/rejoined spells and mid-spell promotions for the timeline chart, five
 custom fields, placeholder headshots, ~55 events either side of today with
 rosters, RSVPs, substitutions and attendance overrides, one proposal in
 every state (nominating, voting, awaiting decision, appointed, cancelled,
-re-opened), six published ministry pages and ten interest submissions. A
+re-opened) and six published ministry pages. A
 team named **Clergy** is filled, which is all it takes to be the
 {term}`clergy team`, so proposals opened on the demo data get a realistic
 voting roll. Refuses to run if any volunteers exist.

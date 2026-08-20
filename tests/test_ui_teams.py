@@ -217,51 +217,6 @@ async def test_email_list_buttons_gated_like_contact_details(database):
         await user.should_not_see("Copy email list")
 
 
-async def test_application_form_controls_gated_like_home_page(database):
-    async with db_session() as session:
-        ids = await _parish(session)
-
-    async with user_simulation(main_file=SIM_MAIN) as user:
-        await user.open(f"/login-dev/{ids['lena_u']}")
-        await user.open(f"/teams/{ids['liturgy']}")
-        await user.should_see("Application form")
-        await user.should_see("Set application form")
-
-        await user.open(f"/login-dev/{ids['mia_u']}")
-        await user.open(f"/teams/{ids['music']}")
-        await user.should_see("Roster")
-        await user.should_not_see("Application form")
-
-
-async def test_interests_listed_for_managers_only(database):
-    from volunteerdb.services import interest
-
-    async with db_session() as session:
-        ids = await _parish(session)
-        await interest.submit(
-            session,
-            team_id=ids["music"],
-            name="Ann Applicant",
-            email="ann@example.org",
-            note="I sing alto",
-        )
-
-    async with user_simulation(main_file=SIM_MAIN) as user:
-        # Lena manages Music via the Liturgy subtree
-        await user.open(f"/login-dev/{ids['lena_u']}")
-        await user.open(f"/teams/{ids['music']}")
-        await user.should_see("Interested people")
-        await user.should_see("Ann Applicant")
-        await user.should_see("I sing alto")
-
-        # Mia is a plain member of Music: an outsider's PII stays out of reach
-        await user.open(f"/login-dev/{ids['mia_u']}")
-        await user.open(f"/teams/{ids['music']}")
-        await user.should_see("Roster")
-        await user.should_not_see("Interested people")
-        await user.should_not_see("Ann Applicant")
-
-
 async def test_published_page_link_and_qr_use_the_path_slug(database):
     """The public URL slug comes from the team's display path ("Liturgy /
     Music" → liturgy-music), not the bare team name — regression for the

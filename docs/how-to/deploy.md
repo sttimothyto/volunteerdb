@@ -92,6 +92,16 @@ container-name DNS), curl, ca-certificates, rclone.
 5. Restarts `volunteerdb-app.service` onto the fresh image and **smoke
    tests** `/login` until it answers 200, then prunes dangling images.
 
+:::{note}
+Steps 4 and 5 are not simultaneous: the migration runs against a database the
+*previous* image is still serving. A revision that only adds is invisible in
+that window, but one that **drops** a column the running image still maps —
+`0002` drops `team.application_form_url` — makes the old container answer 500
+on every page that reads that table until the restart lands. It is tens of
+seconds, but run such a deploy attended and at a quiet hour, or stop
+`volunteerdb-app.service` first and let the deploy bring it back.
+:::
+
 **Nightly backup** and **Drive roster sync.** Each installs its wrapper
 script and its systemd timer. They come last deliberately: the backup step
 asserts the one-time rclone remotes exist, and on an instance where they do

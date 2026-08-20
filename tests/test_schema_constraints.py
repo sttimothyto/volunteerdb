@@ -22,7 +22,6 @@ from volunteerdb.models import (
     Event,
     EventAssignment,
     EventSlot,
-    Interest,
     Proposal,
     ProposalBallot,
     Team,
@@ -154,49 +153,23 @@ async def test_a_pending_address_needs_its_whole_triple(database):
 
 
 async def test_an_address_cannot_be_stored_in_mixed_case(database):
-    """Every lookup folds case, and uq_interest_open indexes the raw column, so
-    one mixed-case row would have been invisible to the dedup and to search."""
+    """Sign-in, invites and the email-change flow all look accounts up by a
+    folded address, so a row stored shouty is a row nobody can sign in as. The
+    database refuses it rather than trusting every writer to lower() first —
+    and on volunteer, where the address is optional, NULL still has to pass."""
     detail = await _refused(sa.insert(AppUser).values(email="Shouty@Example.ORG"))
     assert "ck_app_user_email_lower" in detail
 
-    async with db_session() as session:
-        team = await session.scalar(
-            sa.insert(Team).values(name="Liturgy").returning(Team.id)
-        )
     detail = await _refused(
-        sa.insert(Interest).values(team_id=team, name="Ann", email="Ann@Example.ORG")
-    )
-    assert "ck_interest_email_lower" in detail
-
-
-async def test_a_handler_cannot_be_recorded_without_a_handling(database):
-    """One-directional on purpose: resolved_by is ON DELETE SET NULL, so a
-    resolved submission may lose its handler and keep the time. The reverse — a
-    handler with no moment — is what cannot happen."""
-    async with db_session() as session:
-        team = await session.scalar(
-            sa.insert(Team).values(name="Liturgy").returning(Team.id)
-        )
-        user = await session.scalar(
-            sa.insert(AppUser).values(email="admin@example.org").returning(AppUser.id)
-        )
-    detail = await _refused(
-        sa.insert(Interest).values(
-            team_id=team, name="Ann", email="ann@example.org", resolved_by=user
+        sa.insert(Volunteer).values(
+            first_name="Ann", last_name="Loud", email="Ann@Example.ORG"
         )
     )
-    assert "ck_interest_resolution" in detail
+    assert "ck_volunteer_email_lower" in detail
 
-    # ...and the SET NULL shape stays storable
     async with db_session() as session:
         await session.execute(
-            sa.insert(Interest).values(
-                team_id=team,
-                name="Bea",
-                email="bea@example.org",
-                resolved_at=sa.func.now(),
-                resolved_by=None,
-            )
+            sa.insert(Volunteer).values(first_name="Bea", last_name="Quiet")
         )
 
 

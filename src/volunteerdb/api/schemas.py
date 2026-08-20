@@ -106,16 +106,6 @@ class TeamOut(ORMModel):
     @classmethod
     def _weight_or_zero(cls, value: object) -> object:
         return 0 if value is None else value
-    # the team's own Google Form, mailed to people who ask about the ministry
-    # from its public page
-    application_form_url: str | None = None
-
-
-class ApplicationFormPatch(BaseModel):
-    """Body of PATCH /teams/{id}/application-form. Same audience as
-    HomeDocPatch, and the same reason: both are the team's public voice."""
-
-    url: str | None = Field(default=None, max_length=500)
 
 
 class HomeDocPatch(BaseModel):
@@ -746,26 +736,6 @@ class SubstituteIn(BaseModel):
     """Hand a slot to a chosen teammate, rather than opening it to the team."""
 
     volunteer_id: int
-
-
-# --- interest submissions (api/teams.py) -------------------------------------
-
-
-class InterestOut(ORMModel):
-    """One "I'm interested" submission from a team's public ministry page.
-
-    Manage rights on the team: it carries a stranger's name and contact details,
-    addressed to that ministry's leadership rather than to the parish at large.
-    """
-
-    id: int
-    team_id: int
-    name: str
-    email: str
-    phone: str | None
-    note: str | None
-    created_at: datetime
-    resolved_at: datetime | None
 
 
 # --- team home pages (api/teams.py) ------------------------------------------

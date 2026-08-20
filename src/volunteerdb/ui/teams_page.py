@@ -11,7 +11,6 @@ from .. import query_lang
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
 from ..services import elections as elections_service
 from ..services import events as event_service
-from ..services import interest as interest_service
 from ..services import mail
 from ..services import memberships as membership_service
 from ..services import pages as page_service
@@ -466,107 +465,6 @@ def _sheet_section(team_sheet: TeamSheet | None) -> None:
         )
 
 
-def _application_form_section(team, team_id: int) -> None:
-    """The team's own Google application form: anyone who expresses interest
-    on the public ministry page is emailed it directly. Same audience as the
-    home-page controls (leaders/seconds/core members and admins)."""
-    ui.label("Application form").classes("text-lg font-medium")
-    if not team.application_form_url:
-        with ui.row().classes("items-center gap-2"):
-            ui.button(
-                "Set application form",
-                icon="add_link",
-                on_click=lambda: _application_form_dialog(team_id, None),
-            ).props("dense outline")
-            ui.label(
-                "Link the team's Google Form — people who express interest on "
-                "the public ministry page get it emailed automatically."
-            ).classes("text-sm text-gray-500 vdb-prose")
-        return
-    with ui.row().classes("items-center gap-2"):
-        ui.link("Google Form", team.application_form_url, new_tab=True)
-        ui.button(
-            "Change",
-            icon="edit",
-            on_click=lambda: _application_form_dialog(
-                team_id, team.application_form_url
-            ),
-        ).props("dense flat")
-        ui.label(
-            "Emailed automatically to anyone who expresses interest on the "
-            "public ministry page."
-        ).classes("text-sm text-gray-500")
-
-
-def _application_form_dialog(team_id: int, current: str | None) -> None:
-    """Set or clear the application form. Leader/second/core/admin — enforced
-    server-side on save."""
-    with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
-        ui.label("Team application form").classes("text-lg font-medium")
-        ui.label(
-            "Paste the team's Google Form link (docs.google.com/forms/… or "
-            "forms.gle/…). People who express interest on the public ministry "
-            "page receive it by email."
-        ).classes("text-sm text-gray-500")
-        url = (
-            ui.input("Google Form link", value=current or "")
-            .props("outlined dense")
-            .classes("w-full")
-        )
-
-        @notify_errors
-        async def save(new_value: str | None) -> None:
-            async with action_session() as (session, actor):
-                await team_service.set_application_form_url(
-                    session, actor, team_id, new_value
-                )
-            dialog.close()
-            ui.navigate.to(f"/teams/{team_id}")
-
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            if current:
-                ui.button("Clear", on_click=lambda: save(None)).props(
-                    "flat color=negative"
-                )
-            ui.button("Save", on_click=lambda: save(url.value))
-    dialog.open()
-
-
-def _interests_section(interests) -> None:
-    """Unresolved public-form submissions, for the team's managers. Resolve
-    once handled (form returned, person contacted, or not a fit)."""
-    ui.label("Interested people").classes("text-lg font-medium")
-    ui.label(
-        "From the public ministry page. Resolve an entry once you've followed up."
-    ).classes("text-sm text-gray-500")
-    for interest in interests:
-        with ui.row().classes(
-            "w-full items-center gap-3 p-2 rounded hover:bg-gray-100"
-        ):
-            ui.label(interest.name).classes("font-medium w-48")
-            ui.label(interest.email).classes("text-sm text-gray-600 w-56")
-            ui.label(interest.phone or "").classes("text-sm text-gray-600 w-36")
-            ui.label(f"{interest.created_at:%Y-%m-%d}").classes("text-sm text-gray-500")
-            ui.space()
-            ui.button(
-                icon="task_alt",
-                on_click=notify_errors(
-                    lambda _, iid=interest.id: _resolve_interest(iid)
-                ),
-            ).props("dense flat").tooltip("Resolve (handled)")
-        if interest.note:
-            ui.label(interest.note).classes("text-sm text-gray-600 pl-4 italic")
-
-
-async def _resolve_interest(interest_id: int) -> None:
-    async with action_session() as (session, actor):
-        await interest_service.resolve(
-            session, actor, interest_id, resolved_by=actor.user.id
-        )
-    ui.navigate.reload()
-
-
 def _home_doc_dialog(team_id: int, current: str | None) -> None:
     """Set or clear the home-page doc. Leader/second/core/admin — enforced
     server-side on save."""
@@ -657,11 +555,6 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             await session.get(TeamPage, team_id) if can_full and at is None else None
         )
         team_sheet = await session.get(TeamSheet, team_id) if can_manage else None
-        interests = (
-            await interest_service.unresolved(session, actor, team_id)
-            if can_manage
-            else []
-        )
         anniversaries = (
             await volunteer_service.team_anniversaries(
                 session, team_id, elections_service.local_today()
@@ -743,11 +636,8 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
         if can_full and at is None:
             _home_page_section(team, team_page, team_id, slug, base_url)
-            _application_form_section(team, team_id)
         if can_manage:
             _sheet_section(team_sheet)
-            if interests:
-                _interests_section(interests)
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")

@@ -68,7 +68,6 @@ mid-render and no write cascades somewhere the calling service did not name.
 | `sys_period` | tstzrange | |
 | `workload_weight` | numeric(8,2) | NOT NULL DEFAULT 0 — a third state meaning "treat as 0" had no distinct behaviour |
 | `home_doc_url` | varchar(500) | nullable; public Google Doc behind the team's `/ministries/` page |
-| `application_form_url` | varchar(500) | nullable; the team's Google Form, emailed to public-page interest submitters (prefix-validated to Google Forms) |
 
 ## `membership` (versioned)
 
@@ -280,27 +279,6 @@ Identity of the team's roster spreadsheet in Google Drive, maintained by
 `jobs.drive_sync` (see the Drive roster sync how-to). A pointer to an
 external artifact — current-state only.
 
-## `interest` (not versioned)
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | integer | PK |
-| `team_id` | integer | FK → `team.id` ON DELETE CASCADE, indexed |
-| `name` | varchar(200) | as typed into the public form |
-| `email` | varchar(255) | CHECK `= lower(email)` |
-| `phone` | varchar(50) | nullable |
-| `note` | text | nullable; shown to managers and mailed to leaders — never echoed to the submitter |
-| `created_at` | timestamptz | |
-| `resolved_at` | timestamptz | nullable; set when a manager marks it handled |
-| `resolved_by` | integer | FK → `app_user.id` ON DELETE SET NULL; CHECK — a resolver implies a `resolved_at` (one-directional, because the FK may null the resolver later) |
-
-One "I'm interested" submission from the team's public `/ministries/` page.
-Partial unique index `uq_interest_open` on `(team_id, email) WHERE
-resolved_at IS NULL`: at most one open interest per person per team, so
-repeat submissions cannot re-mail leaders or the typed address. Not
-versioned (like `proposal`): workflow data whose lifecycle is self-recorded
-in `created_at`/`resolved_at`.
-
 (event)=
 ## `event` (not versioned)
 
@@ -415,7 +393,7 @@ the claimant, `claimed_by_volunteer_id` records who.
 | `id` | integer | PK |
 | `assignment_id` | integer | FK → `event_assignment.id` ON DELETE CASCADE, indexed |
 | `requested_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
-| `note` | varchar(200) | nullable; mailed to teammates (an authenticated audience, unlike the public interest form) |
+| `note` | varchar(200) | nullable; mailed to teammates, an authenticated audience, so it goes out verbatim |
 | `status` | sub_request_status | CHECK — `resolved_at` is NULL exactly while `open` |
 | `claimed_by_volunteer_id` | integer | FK → `volunteer.id` ON DELETE SET NULL; CHECK — set only on a `claimed` row (one-directional: the FK may null it later) |
 | `created_at` | timestamptz | |
@@ -501,13 +479,22 @@ why adding a live column requires rebuilding the twin; see
 
 ## Migration history
 
-There is one revision. Revisions `0001`–`0028` were squashed into a single
+The chain starts at `0001`. Revisions `0001`–`0028` were squashed into a single
 `0001_initial.py` describing the finished schema, because twenty-eight files of
 accreted history answered a question nobody asks — how the schema got here — at
 the cost of the one people do ask: what it is now. The reasoning that was worth
 keeping moved into `models.py`, beside the columns it explains.
 
-The statements in that migration are a frozen snapshot, deliberately written out
+`0002` drops the public interest pipeline: the `interest` table and
+`team.application_form_url`, which were one feature in two places — the Google
+Form link was only ever delivered as the confirmation email a submission
+triggered. Because `team` is system-versioned and `versioning()` archives
+positionally, dropping the column meant rebuilding `team_history` to the
+post-drop order; the historical values went with it. The two catch-up scripts in
+`deploy/` still create `interest`, and correctly so — they bring a pre-squash
+database up to `0001`, and `0002` drops it from there.
+
+The statements in `0001` are a frozen snapshot, deliberately written out
 rather than generated from `models.Base.metadata` at run time: a migration that
 imports the application's models stops describing the schema it created the
 moment those models change again.
@@ -552,9 +539,9 @@ them:
 | `volunteer.updated_at` | gone — `lower(sys_period)` is the last-modified time, and the column was ORM-only, so any Core write left it stale |
 | `team.workload_weight` nullable, "NULL counts as 0" | `NOT NULL DEFAULT 0`; the third state had no distinct behaviour |
 | `event_task_force_source.id` | dropped for the `(event_id, team_id)` primary key that was already unique |
-| lowercase emails by convention | `CHECK (email = lower(email))` on `interest`, `app_user` and `volunteer` |
+| lowercase emails by convention | `CHECK (email = lower(email))` on `app_user` and `volunteer` |
 | `proposal_ballot.proposal_id` and `event_assignment.event_id` kept in step by the service | composite foreign keys — a ballot's voter and candidate must belong to the proposal it claims, and an assignment's slot to its event |
-| no CHECK on `app_user` at all | the invite pair, the email-change triple and the OTP pair are enforced; likewise `interest`'s resolution, `event`'s cancellation and `event_sub_request`'s |
+| no CHECK on `app_user` at all | the invite pair, the email-change triple and the OTP pair are enforced; likewise `event`'s cancellation and `event_sub_request`'s |
 | six indexes with no possible consumer | dropped, and ten added for predicates that had none (see the notes in `models.py`) |
 | varchar + CHECK for five status columns, nothing for two more | native enum types throughout, and `Mapped[EventStatus]` rather than `Mapped[str]` |
 | `event_task_force` table | `event.task_force_team_id` and `event.owner_team_id`, both `ON DELETE SET NULL` — deleting a meta team can no longer take its event's attendance record with it |

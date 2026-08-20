@@ -12,8 +12,8 @@ _windows: dict[str, float] = {}
 
 # A key is normally dropped the moment its own window empties — but that only
 # happens if somebody asks about it again. Keys are attacker-supplied (an email
-# address on the login throttle, another on the public interest form), so a
-# stream of one-shot addresses would otherwise leave an entry each, forever.
+# address on the login throttle, an IP on the OTP one), so a stream of one-shot
+# addresses would otherwise leave an entry each, forever.
 # Every SWEEP_EVERY calls, walk the whole map once and drop what has gone
 # quiet: a few hundred keys at parish scale, so the walk is far cheaper than
 # the bookkeeping to avoid it.

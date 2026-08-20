@@ -49,40 +49,13 @@ team page in the app shows the error and the **last successful version stays
 published**. A doc that is not link-public is detected (Google redirects the
 anonymous fetch to a sign-in page) and reported rather than cached.
 
-## The "I'm interested" form
-
-Every published page ends with a small form (name, email, optional phone
-and note). When someone submits it:
-
-- the team's **leaders and seconds are emailed** the details, and the entry
-  appears under **Interested people** on the team's page in the app until a
-  manager resolves it;
-- the **submitter gets a confirmation email**: if the team has linked an
-  application form (below), the email contains that form's link directly —
-  otherwise it says the leader will follow up.
-
-Submissions are throttled per address and per sender, duplicates while one
-is still unresolved are dropped silently, and the confirmation email never
-echoes anything the submitter typed.
-
-## The application form
-
-Teams that use an application form manage it themselves as a **Google
-Form**. Under **Application form** on the team page, paste the form's link
-(`https://docs.google.com/forms/…` or `https://forms.gle/…`) — from then on
-everyone who expresses interest on the public page is emailed it
-automatically, folding the two steps into one. Only Google Forms links are
-accepted. Responses stay in Google Forms; VolunteerDB does not read them.
-
 ## Permissions
 
 Setting or clearing the doc link and fetching on demand require full-roster
 rights on the team: its **leaders, seconds-in-command, and core team
 members**, plus admins (`Actor.can_view_full_roster`). The API mirror is
 `PATCH /api/teams/{id}/home-doc` with body `{"url": "…"}` (or `null` to
-clear). The application-form link takes the same rights; the **Interested
-people** list and its resolve action take roster-management rights
-(leaders, seconds, admins).
+clear).
 
 ## Operations
 

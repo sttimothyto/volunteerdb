@@ -43,7 +43,6 @@ from ..config import settings
 from ..db import db_session
 from ..log import init_logging
 from ..models import SyncStatus, TeamSheet
-from ..services import interest as interest_service
 from ..services import mail
 from ..services import pages as page_service
 from ..services import teams as team_service
@@ -155,7 +154,7 @@ async def _manifest(active: list[tuple[int, str, str]]) -> dict:
         sheets = {
             expected: {
                 "team": path,
-                "editors": await interest_service.leader_emails(session, team_id),
+                "editors": await team_service.leader_emails(session, team_id),
             }
             for team_id, path, expected in active
         }

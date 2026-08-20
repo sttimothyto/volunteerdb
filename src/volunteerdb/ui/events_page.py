@@ -40,7 +40,6 @@ from ..models import (
 from ..permissions import Forbidden, require
 from ..services import events as event_service
 from ..services import gcal, mail
-from ..services import interest as interest_service
 from ..services import task_force as task_force_service
 from ..services import teams as team_service
 from . import column_order
@@ -303,7 +302,7 @@ async def _self_removal_dialog(assignment_id: int) -> None:
                 slot = await session.get(EventSlot, assignment.slot_id)
                 me = await session.get(Volunteer, assignment.volunteer_id)
                 paths = team_service.team_paths(await team_service.list_all(session))
-                audience = await interest_service.leader_emails(session, event.team_id)
+                audience = await team_service.leader_emails(session, event.team_id)
                 message = mail.self_removal_email(
                     event.title,
                     paths.get(event.team_id, ""),
@@ -353,7 +352,7 @@ async def _claim_sub(sub_request_id: int) -> None:
             claimant.full_name if claimant else "A teammate",
             asker.full_name,
         )
-        recipients = set(await interest_service.leader_emails(session, event.team_id))
+        recipients = set(await team_service.leader_emails(session, event.team_id))
         if asker.email:
             recipients.add(asker.email)
     for address in sorted(recipients):  # after commit

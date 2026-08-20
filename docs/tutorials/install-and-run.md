@@ -112,8 +112,7 @@ You land on the **Dashboard**. Five things confirm the seed did its job:
   last year's date and note the amber read-only banner.
 
 Signed out, <http://localhost:8080/ministries/> lists the six ministries
-that publish a public home page, each with the "I'm interested" form that
-feeds the interest pipeline.
+that publish a public home page.
 
 Because `.env` has no `VDB_SMTP2GO_API_KEY`, any email the app "sends"
 (try signing out and logging in as Maria with a blank password — the OTP
