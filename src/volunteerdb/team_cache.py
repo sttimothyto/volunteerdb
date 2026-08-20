@@ -24,6 +24,7 @@ dies.
 """
 
 from datetime import datetime
+from itertools import chain
 from typing import TYPE_CHECKING
 
 from sqlalchemy import event
@@ -40,21 +41,19 @@ if TYPE_CHECKING:  # the shape belongs to services.teams; importing it here cycl
 _KEY = "team_tree"
 
 
-# AsyncSession.info IS the info dict of the Session underneath it, so the
-# listeners below (which are handed the sync Session) and the service calls above
-# (which hold the AsyncSession) are reading and writing the same mapping.
-type AnySession = Session | AsyncSession
-
-
-def cached(session: AnySession, at: datetime | None) -> "TeamTree | None":
+# The two readers below hold the AsyncSession that services.teams was handed; the
+# writer is handed the sync Session by the listeners. The annotations differ but
+# the mapping does not: AsyncSession.info IS the info dict of the Session
+# underneath it, so a listener popping the key here is immediately visible above.
+def cached(session: AsyncSession, at: datetime | None) -> "TeamTree | None":
     return session.info.get(_KEY, {}).get(at)
 
 
-def store(session: AnySession, at: datetime | None, tree: "TeamTree") -> None:
+def store(session: AsyncSession, at: datetime | None, tree: "TeamTree") -> None:
     session.info.setdefault(_KEY, {})[at] = tree
 
 
-def invalidate(session: AnySession) -> None:
+def invalidate(session: Session) -> None:
     """Forget every snapshot, not just the live one.
 
     asof_param.parse_as_of bumps a bare date to the last microsecond of that day,
@@ -71,9 +70,12 @@ def _invalidate_on_team_write(session: Session, flush_context: UOWTransaction) -
     # No is_modified() filter, unlike audit.py's listener: over-invalidating costs
     # one small SELECT, while under-invalidating serves a tree that predates the
     # caller's own write.
+    # chain, not (*new, *dirty, *deleted): a tuple display is built in full before
+    # any() sees its first element, so every flush in the process — team or not —
+    # would pay a copy of all three collections.
     if any(
         isinstance(obj, Team)
-        for obj in (*session.new, *session.dirty, *session.deleted)
+        for obj in chain(session.new, session.dirty, session.deleted)
     ):
         invalidate(session)
 

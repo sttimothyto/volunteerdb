@@ -32,28 +32,37 @@ async def get(
 class TeamTree:
     """Every shape of the team tree a caller needs, computed once.
 
-    Read-only: `teams` is a tuple, and the two maps must not be mutated — one
+    Read-only: `teams` is a tuple, and the three maps must not be mutated — one
     session shares a single instance between everything that asks for it.
     """
 
     teams: tuple[Team, ...]
+    by_id: dict[int, Team]
     paths: dict[int, str]  # id -> "Parent / Child"
     by_parent: dict[int | None, list[Team]]  # parent id (None = root) -> children
 
     def descendants(self, root_id: int) -> set[int]:
         """root_id plus all transitive sub-team ids.
 
-        Over the prebuilt by_parent, so asking repeatedly is free — load_actor
-        asks once per role the actor holds.
+        Walks the prebuilt by_parent instead of rebuilding the children map per
+        call, which is what load_actor paid once per role the actor holds.
         """
-        return _walk(self.by_parent, root_id)
+        result: set[int] = set()
+        stack = [root_id]
+        while stack:
+            tid = stack.pop()
+            if tid in result:
+                continue
+            result.add(tid)
+            stack.extend(t.id for t in self.by_parent.get(tid, []))
+        return result
 
 
 async def tree(session: AsyncSession, at: datetime | None = None) -> TeamTree:
     """The team tree, read at most once per session per `at` snapshot.
 
-    Prefer this over list_all(): it also carries the display paths and the parent
-    index that nearly every caller went on to rebuild by hand.
+    Carries the teams themselves plus the id index, the display paths and the
+    parent index that nearly every caller went on to rebuild by hand.
 
     The memo lives on the Session and is dropped the moment any Team row is
     inserted, changed or deleted in it (team_cache.py), so it cannot predate the
@@ -75,15 +84,11 @@ def build_tree(teams: Sequence[Team]) -> TeamTree:
     """A TeamTree over teams already in hand. tree() is the door for callers with
     a session; this one is for the pure tests and anyone holding a plain list."""
     return TeamTree(
-        teams=tuple(teams), paths=team_paths(teams), by_parent=children_map(teams)
+        teams=tuple(teams),
+        by_id={t.id: t for t in teams},
+        paths=team_paths(teams),
+        by_parent=children_map(teams),
     )
-
-
-async def list_all(session: AsyncSession, at: datetime | None = None) -> list[Team]:
-    """The teams, name-ordered. A view over tree(), so it costs one query per
-    session — a fresh list each call, so a caller that sorts or filters in place
-    cannot corrupt the copy everyone else is holding."""
-    return list((await tree(session, at)).teams)
 
 
 def children_map(teams: Sequence[Team]) -> dict[int | None, list[Team]]:
@@ -119,19 +124,6 @@ async def search(
     ]
     hits.sort(key=lambda pair: pair[1].lower())
     return hits
-
-
-def _walk(by_parent: dict[int | None, list[Team]], root_id: int) -> set[int]:
-    """root_id plus every id reachable below it."""
-    result: set[int] = set()
-    stack = [root_id]
-    while stack:
-        tid = stack.pop()
-        if tid in result:
-            continue
-        result.add(tid)
-        stack.extend(t.id for t in by_parent.get(tid, []))
-    return result
 
 
 async def meta_team_ids(

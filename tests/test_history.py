@@ -1,7 +1,5 @@
 """System-versioning: updates/deletes archive old rows; as-of queries see them."""
 
-import asyncio
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -16,12 +14,7 @@ from volunteerdb.models import (
 )
 from volunteerdb.services import memberships, teams, volunteers
 
-
-async def _now() -> datetime:
-    await asyncio.sleep(0.02)  # clock_timestamp() granularity margin
-    now = datetime.now(UTC)
-    await asyncio.sleep(0.02)
-    return now
+from .conftest import _now
 
 
 async def test_update_archives_old_version(database):

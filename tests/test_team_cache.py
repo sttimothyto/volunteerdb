@@ -7,7 +7,6 @@ here is the only thing that fails when a later change reintroduces a bare
 per-caller read.
 """
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -24,14 +23,7 @@ from volunteerdb.services import (
     volunteers,
 )
 
-from .conftest import TEAM_TREE_SQL, count_sql
-
-
-async def _now() -> datetime:
-    await asyncio.sleep(0.02)  # clock_timestamp() granularity margin, as test_history
-    now = datetime.now(UTC)
-    await asyncio.sleep(0.02)
-    return now
+from .conftest import TEAM_TREE_SQL, _now, count_sql
 
 
 @pytest.fixture

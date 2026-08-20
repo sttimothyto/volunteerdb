@@ -456,6 +456,6 @@ async def test_new_team_dialog_starts_at_weight_one(database):
 
     async with db_session() as session:
         (created,) = [
-            t for t in await teams.list_all(session) if t.name == "Sacristans"
+            t for t in (await teams.tree(session)).teams if t.name == "Sacristans"
         ]
     assert created.workload_weight == Decimal(1)

@@ -187,8 +187,9 @@ async def teams_page(as_of: str = ""):
                 'dense outline href="/ministries/"'
             )
             if actor.is_admin and at is None:
+                options = _parent_options(tree)
                 ui.button(
-                    "New team", icon="add", on_click=lambda: _team_dialog(tree)
+                    "New team", icon="add", on_click=lambda: _team_dialog(options)
                 ).props("dense")
         columns = [
             {
@@ -286,16 +287,22 @@ async def teams_page(as_of: str = ""):
             _wire_search(search, count, table, rows)
 
 
-def _team_dialog(tree, team=None, *, exclude_id: int | None = None) -> None:
-    """Create (team=None) or edit a team. Admin only — enforced server-side on save.
+def _parent_options(tree, exclude_id: int | None = None) -> dict[int, str]:
+    """Parent choices for the team dialog, built before the button that opens it.
 
-    `exclude_id` drops one team from the parent choices: editing a team, it is
-    the team itself, which cannot be its own parent.
+    The dialog is opened from a click callback that outlives `page_session()`, so
+    it captures these plain ids and paths rather than the session's TeamTree —
+    which would pin every detached Team instance for the life of the browser tab,
+    and rebuild the same options on every open. `exclude_id` drops one team:
+    editing a team, it is the team itself, which cannot be its own parent.
     """
-    paths = tree.paths
-    parent_options = {0: "— top level —"} | {
-        t.id: paths[t.id] for t in tree.teams if t.id != exclude_id
+    return {0: "— top level —"} | {
+        t.id: tree.paths[t.id] for t in tree.teams if t.id != exclude_id
     }
+
+
+def _team_dialog(parent_options: dict[int, str], team=None) -> None:
+    """Create (team=None) or edit a team. Admin only — enforced server-side on save."""
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label("Edit team" if team else "New team").classes("text-lg font-medium")
         name = (
@@ -633,14 +640,16 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
     at = parse_as_of(as_of)
     base_url = str(request.base_url).rstrip("/")
     async with page_session() as (session, actor):
-        team = await team_service.get(session, team_id, at=at)
+        # out of the tree rather than team_service.get(): the page reads the whole
+        # table either way, and get() is a second round trip for a row in hand
+        tree = await team_service.tree(session, at=at)
+        team = tree.by_id.get(team_id)
         if team is None:
             with frame(
                 "Team not found", actor, as_of=at, asof_path=f"/teams/{team_id}"
             ):
                 ui.label(f"No team with id {team_id} at this time.")
             return
-        tree = await team_service.tree(session, at=at)
         paths = tree.paths
         slug = page_service.slug_map(paths).get(team_id)
         can_names = actor.can_view_roster_names(team_id)
@@ -697,10 +706,11 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
 
         with ui.row().classes("gap-2 w-full items-center"):
             if actor.is_admin and at is None:
+                options = _parent_options(tree, team_id)
                 ui.button(
                     "Edit team",
                     icon="edit",
-                    on_click=lambda: _team_dialog(tree, team, exclude_id=team_id),
+                    on_click=lambda: _team_dialog(options, team),
                 ).props("dense outline")
                 ui.button(
                     "Delete", icon="delete", on_click=lambda: _delete_team(team_id)

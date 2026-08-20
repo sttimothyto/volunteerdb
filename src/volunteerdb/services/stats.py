@@ -143,12 +143,11 @@ async def dashboard(
     at: datetime | None = None,
 ) -> DashboardStats:
     """Every statistic `actor` may see, and nothing else."""
-    tree = await team_service.tree(session, at)
     live = at is None
 
-    parish = await _parish(session, tree, at=at) if actor.is_admin else None
+    parish = await _parish(session, at=at) if actor.is_admin else None
     leadership = (
-        await _leadership(session, actor, tree, at=at)
+        await _leadership(session, actor, at=at)
         if actor.is_admin or actor.full_view_team_ids
         else None
     )
@@ -162,9 +161,7 @@ async def dashboard(
     )
 
 
-async def _parish(
-    session: AsyncSession, tree: team_service.TeamTree, *, at: datetime | None
-) -> ParishStats:
+async def _parish(session: AsyncSession, *, at: datetime | None) -> ParishStats:
     V, M = entity(Volunteer, at), entity(Membership, at)
 
     by_active = dict(
@@ -206,10 +203,11 @@ async def _parish(
         ).scalar_one()
 
     active = by_active.get(True, 0)
+    teams = (await team_service.tree(session, at)).teams
     return ParishStats(
         active_volunteers=active,
         inactive_volunteers=by_active.get(False, 0),
-        active_teams=sum(1 for t in tree.teams if t.is_active),
+        active_teams=sum(1 for t in teams if t.is_active),
         assignments=assignments,
         unassigned_volunteers=max(active - assigned, 0),
         accounts=accounts,
@@ -217,11 +215,7 @@ async def _parish(
 
 
 async def _leadership(
-    session: AsyncSession,
-    actor: Actor,
-    tree: team_service.TeamTree,
-    *,
-    at: datetime | None,
+    session: AsyncSession, actor: Actor, *, at: datetime | None
 ) -> LeadershipStats:
     # None means "no team filter": an admin's scope is the whole parish, and
     # their managed/full-view sets are empty precisely because they need none
@@ -244,10 +238,9 @@ async def _leadership(
         reach_stmt = reach_stmt.where(M.team_id.in_(view_scope))
     people, people_without_email = (await session.execute(reach_stmt)).one()
 
+    teams = (await team_service.tree(session, at)).teams
     visible_teams = [
-        t
-        for t in tree.teams
-        if t.is_active and (view_scope is None or t.id in view_scope)
+        t for t in teams if t.is_active and (view_scope is None or t.id in view_scope)
     ]
     stats = LeadershipStats(
         teams=len(visible_teams),

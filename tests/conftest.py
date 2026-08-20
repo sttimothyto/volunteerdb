@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -51,6 +52,21 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 # a stopwatch. 3 s is nowhere near the real cost; the extra is only ever spent
 # on a genuine failure.
 SLOW = 30
+
+
+async def _now() -> datetime:
+    """A timestamp that sits strictly between the write before it and the write
+    after it, for as-of assertions.
+
+    The sleeps are a clock_timestamp() granularity margin: without them a
+    snapshot taken right after a write can land on the same tick as the write,
+    and the union read picks up a row the test means to be looking past. Shared
+    by test_history.py and test_team_cache.py, which must not drift apart on it.
+    """
+    await asyncio.sleep(0.02)
+    now = datetime.now(UTC)
+    await asyncio.sleep(0.02)
+    return now
 
 
 # The compiled SQL of a live team-tree read (services.teams.tree). Unique to it:

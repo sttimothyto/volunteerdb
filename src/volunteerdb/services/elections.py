@@ -391,8 +391,10 @@ async def detail(
     await _viewable(session, actor, proposal_id)
     today = today or local_today()
     proposal = await _get_or_raise(session, proposal_id)
-    team = await session.get(Team, proposal.team_id)
+    # tree() first: it loads every Team into the identity map, so the get() below
+    # is served from it rather than costing a second round trip on a cold memo
     paths = (await team_service.tree(session)).paths
+    team = await session.get(Team, proposal.team_id)
 
     email_ids = {i for i in (proposal.created_by, proposal.decided_by) if i}
     emails: dict[int, str] = {}
