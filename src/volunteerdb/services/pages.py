@@ -383,6 +383,27 @@ async def published_teams(session: AsyncSession) -> list[Team]:
     return list(rows)
 
 
+async def is_published(session: AsyncSession, team_id: int) -> bool:
+    """Whether this team has a live public page — the same predicate as
+    published_page, without loading the html it exists to serve. The team page
+    draws a link off this for every reader, and a page can run to 2 MB.
+
+    No permission gate: /ministries/<slug>.html is world-readable, so whether
+    one exists is public too."""
+    return (
+        await session.scalar(
+            sa.select(TeamPage.team_id)
+            .join(Team, Team.id == TeamPage.team_id)
+            .where(
+                TeamPage.team_id == team_id,
+                Team.is_active,
+                Team.home_doc_url.is_not(None),
+                TeamPage.html.is_not(None),
+            )
+        )
+    ) is not None
+
+
 async def published_page(session: AsyncSession, team_id: int) -> TeamPage | None:
     """The one published page for team_id, or None — same predicate as
     published_teams, so an unpublished/inactive team reads as absent."""

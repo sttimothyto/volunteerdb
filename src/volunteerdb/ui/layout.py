@@ -65,7 +65,7 @@ def frame(
                 for label, target in nav_items:
                     ui.menu_item(label).props(f'href="{target}"')
         ui.space()
-        ui.label(actor.user.email).classes("text-sm opacity-80 gt-sm")
+        _own_email(actor)
         _own_avatar(actor)
         _settings_menu(dark, as_of, asof_path)
         ui.button(icon="logout", on_click=_logout).props(
@@ -78,6 +78,23 @@ def frame(
         if as_of is not None and asof_path is not None:
             asof_banner(as_of, asof_path)
         yield
+
+
+def _own_email(actor: Actor) -> None:
+    """Your address, and — for an account linked to a volunteer record — the
+    way to your own profile.
+
+    Unlinked accounts (the sync bot, an admin nobody linked) keep a plain
+    label: there is no page to send them to. Same null check _own_avatar makes
+    below, for the same reason. vdb-quiet keeps the header's own face — an
+    anchor here should read as the address it already was."""
+    classes = "text-sm opacity-80 gt-sm"
+    if actor.volunteer_id is None:
+        ui.label(actor.user.email).classes(classes).mark("header-email")
+        return
+    ui.link(actor.user.email, f"/volunteers/{actor.volunteer_id}").classes(
+        f"{classes} vdb-quiet"
+    ).tooltip("My volunteer profile").mark("header-email")
 
 
 def _own_avatar(actor: Actor) -> None:

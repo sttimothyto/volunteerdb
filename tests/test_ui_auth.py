@@ -24,6 +24,10 @@ async def test_anonymous_redirect_and_login_guards(database):
         await user.open("/volunteers")
         await user.should_see("Volunteer Database (VDB)")
 
+        # the way out for somebody who has no account and wants none
+        public = user.find("Browse ministry home pages", kind=ui.button).elements.pop()
+        assert public.props["href"] == "/ministries/"
+
         # wrong password: notified, still on the login card
         user.find(kind=ui.input, content="Email").type("admin@example.org")
         user.find(kind=ui.input, content="Password (optional)").type("wrong-pw")

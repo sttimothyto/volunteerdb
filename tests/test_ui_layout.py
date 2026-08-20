@@ -1,10 +1,11 @@
 """The header frame: one settings gear holds dark mode, the manual, and — only
-on the pages that can time-travel — the as-of date picker. To the right of the
-address it shows your own headshot, which is also how you change it."""
+on the pages that can time-travel — the as-of date picker. The address is the
+way to your own record, and the headshot beside it is how you change it."""
 
 from io import BytesIO
 from pathlib import Path
 
+from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 from PIL import Image
 
@@ -86,7 +87,8 @@ async def test_the_header_offers_an_upload_when_there_is_no_photo_yet(database):
 
 async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(database):
     """The sync bot, and any admin nobody linked: there is no volunteer row a
-    photo could hang off, so nothing renders rather than something broken."""
+    photo could hang off, so nothing renders rather than something broken. The
+    address beside it is plain text for the same reason — nowhere to send them."""
     async with db_session() as session:
         admin, _ = await users.create(session, "admin@example.org", is_admin=True)
         admin_id = admin.id
@@ -96,6 +98,30 @@ async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(databas
         await user.open("/volunteers")
         await user.should_see("Volunteers")
         await user.should_not_see(marker="header-avatar")
+        # find() raises rather than returning empty, so name what it is
+        address = user.find(marker="header-email").elements.pop()
+        assert isinstance(address, ui.label), (
+            "an unlinked account's address is a label, not a link"
+        )
+
+
+async def test_the_header_address_opens_your_own_record(database):
+    """The most natural handle on "me" in the whole app was dead text."""
+    async with db_session() as session:
+        maria = await volunteers.create(session, None, "Maria", "Alvarez")
+        account, _ = await users.create(
+            session, "maria@example.org", volunteer_id=maria.id
+        )
+        maria_id, account_id = maria.id, account.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{account_id}")
+        await user.open("/volunteers")
+        link = user.find(marker="header-email", kind=ui.link).elements.pop()
+        assert link.props["href"] == f"/volunteers/{maria_id}"
+
+        await user.open(f"/volunteers/{maria_id}")
+        await user.should_see("Maria Alvarez", retries=SLOW)
 
 
 async def test_the_header_avatar_and_the_profile_avatar_are_addressed_apart(database):

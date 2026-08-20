@@ -14,8 +14,8 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
-from volunteerdb.models import TeamRole, TeamSheet
-from volunteerdb.services import memberships, teams, users, volunteers
+from volunteerdb.models import TeamPage, TeamRole, TeamSheet
+from volunteerdb.services import memberships, pages, teams, users, volunteers
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 SLOW = 30  # conftest.SLOW: argon2 makes the dev-login round trip slow
@@ -198,6 +198,60 @@ async def test_home_page_controls_gated_by_full_roster_rights(database):
         await user.open(f"/teams/{ids['music']}")
         await user.should_see("Roster")
         await user.should_not_see("Volunteer home page")
+
+
+async def _publish(session, team_id: int) -> None:
+    """Give a team a live public page: a doc link plus cached html."""
+    await pages.set_home_doc_url(
+        session, None, team_id, f"https://docs.google.com/document/d/x{team_id}"
+    )
+    session.add(TeamPage(team_id=team_id, html="<p>hello</p>", status="ok"))
+
+
+async def test_the_teams_list_offers_the_public_index_to_everyone(database):
+    """The only door from inside the app to /ministries/ — no permission gate,
+    because the index is world-readable anyway."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open("/teams")
+        await user.should_see("View Team Homepages", retries=SLOW)
+
+
+async def test_a_non_member_reaches_a_published_team_page(database):
+    """A team's public page is public: the link shows for a reader who is not
+    on its roster and cannot see a single name on it."""
+    async with db_session() as session:
+        ids = await _parish(session)
+        await _publish(session, ids["hospitality"])
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        # Mia is on Music only — Hospitality's roster is closed to her
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/teams/{ids['hospitality']}")
+        await user.should_see("not on this team", retries=SLOW)
+        await user.should_see("View public homepage")
+
+        # ... and there is nothing to link to on a team that never published
+        await user.open(f"/teams/{ids['liturgy']}")
+        await user.should_see("not on this team", retries=SLOW)
+        await user.should_not_see("View public homepage")
+
+
+async def test_full_roster_viewers_get_the_public_link_once(database):
+    """A leader already reaches the page from the Volunteer home page section,
+    so the action-row link must not double up."""
+    async with db_session() as session:
+        ids = await _parish(session)
+        await _publish(session, ids["liturgy"])
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        await user.should_see("Public page", retries=SLOW)
+        await user.should_not_see("View public homepage")
 
 
 async def test_email_list_buttons_gated_like_contact_details(database):

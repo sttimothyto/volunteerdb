@@ -154,6 +154,11 @@ def login_page(request: Request, redirect_to: str = "/"):
                 "Checked: stay signed in for 90 days on this device. Unchecked: 1 day."
             )
         code_step.set_visibility(False)
+        # the one thing here worth reading without an account; outside the card
+        # on purpose, because it is not a way of signing in
+        ui.button("Browse ministry home pages", icon="public").props(
+            'outline no-caps href="/ministries/"'
+        ).classes("w-80")
         ui.label(
             "No password? None needed — we'll email you a code. "
             "Received an invite link? Open it to finish setup."

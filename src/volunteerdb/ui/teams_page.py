@@ -181,11 +181,16 @@ async def teams_page(as_of: str = ""):
                 if rows
                 else None
             )
-            # the search box grows into the free space and holds New team against
-            # the right edge; with no teams to search there is nothing growing,
-            # so the spacer takes over that job
+            # the search box grows into the free space and holds the buttons
+            # against the right edge; with no teams to search there is nothing
+            # growing, so the spacer takes over that job
             if search is None:
                 ui.space()
+            # no permission gate: /ministries/ is the world-readable index the
+            # QR codes point at, and this is the only door to it from inside
+            ui.button("View Team Homepages", icon="public").props(
+                'dense outline href="/ministries/"'
+            )
             if actor.is_admin and at is None:
                 ui.button(
                     "New team", icon="add", on_click=lambda: _team_dialog(all_teams)
@@ -636,6 +641,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             return
         all_teams = await team_service.list_all(session, at=at)
         paths = team_service.team_paths(all_teams)
+        slug = page_service.slug_map(paths).get(team_id)
         can_names = actor.can_view_roster_names(team_id)
         can_full = actor.can_view_full_roster(team_id)
         can_manage = actor.can_manage_team(team_id) and at is None
@@ -659,6 +665,11 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         team_page = (
             await session.get(TeamPage, team_id) if can_full and at is None else None
         )
+        # whose roster you are on has nothing to do with a page the world can
+        # read; the check never pulls the html the way team_page does
+        has_public_page = slug is not None and await page_service.is_published(
+            session, team_id
+        )
         team_sheet = await session.get(TeamSheet, team_id) if can_manage else None
         anniversaries = (
             await volunteer_service.team_anniversaries(
@@ -674,8 +685,6 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             if can_names and at is None
             else []
         )
-    slug = page_service.slug_map(paths).get(team_id)
-
     panel = VolunteerPanel(as_of, base_url)
     with frame(
         paths.get(team_id, team.name), actor, as_of=at, asof_path=f"/teams/{team_id}"
@@ -685,7 +694,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         if not team.is_active:
             ui.badge("inactive", color="grey")
 
-        with ui.row().classes("gap-2"):
+        with ui.row().classes("gap-2 w-full items-center"):
             if actor.is_admin and at is None:
                 ui.button(
                     "Edit team",
@@ -736,6 +745,14 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                         "Opens your mail app with everyone in BCC; for very "
                         "large teams use Copy email list instead"
                     )
+            # can_full viewers reach the page from the Volunteer home page
+            # section below, so this is the door for everyone else — a reader
+            # not on this team gets an otherwise empty row and this one link
+            if has_public_page and not (can_full and at is None):
+                ui.space()
+                ui.button("View public homepage", icon="public").props(
+                    f'dense outline href="/ministries/{slug}.html"'
+                )
 
         # core members included on purpose: leaders are often elderly and a
         # public page nobody can refresh goes stale (api/teams.py:set_home_doc)

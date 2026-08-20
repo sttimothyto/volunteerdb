@@ -42,6 +42,7 @@ _SHELL_CSS = """
   ul.index { list-style: none; padding: 0; }
   ul.index li { margin: 0.6rem 0; }
   ul.index a { font-size: 1.1rem; }
+  p.back { margin: 0 0 0.6rem; font-size: 0.9rem; }
 """
 
 
@@ -140,7 +141,10 @@ async def ministry_page(slug: str) -> HTMLResponse:
         if page.fetched_at
         else ""
     )
-    body = f'{_title(title)}{updated}<div class="doc">{page.html}</div>'
+    # the header brand points at the index too, but it reads as a site title;
+    # a reader who arrived from a QR code or a shared link needs a control
+    back = '<p class="back"><a href="/ministries/">← All ministries</a></p>'
+    body = f'{back}{_title(title)}{updated}<div class="doc">{page.html}</div>'
     return HTMLResponse(_shell(f"{title} — Ministries", body), headers=CACHE_HEADERS)
 
 

@@ -116,9 +116,11 @@ async def dashboard(request: Request, as_of: str = ""):
                 as_of=as_of,
             )
 
-        # Statistics run widest-audience first: the parish, then what the
-        # people who run ministries must act on, then — below the graph — what
-        # is only about the reader. Each block is absent, not empty, for a
+        # Statistics run widest-audience first — the parish, then what the
+        # people who run ministries must act on — and then narrow to the
+        # reader: their teams, then their own service. All four bands sit
+        # above the graph, which is the exploratory tail rather than the
+        # answer most readers came for. Each block is absent, not empty, for a
         # viewer without the right to it; the service never ran its queries.
         if figures.parish is not None:
             _parish_section(figures.parish, live=figures.live)
@@ -126,6 +128,10 @@ async def dashboard(request: Request, as_of: str = ""):
             _leadership_section(
                 figures.leadership, live=figures.live, is_admin=actor.is_admin
             )
+        if my_assignments:
+            _my_teams_section(my_assignments, as_of=as_of)
+        if figures.personal is not None:
+            _my_service_section(figures.personal)
 
         with ui.row().classes("items-center gap-2 w-full"):
             team_filter = (
@@ -170,9 +176,6 @@ async def dashboard(request: Request, as_of: str = ""):
             "panel. Zoom in to read names, or hover a node to isolate its "
             "connections."
         ).classes("text-sm text-gray-400")
-
-        if my_assignments or figures.personal is not None:
-            _personal_section(figures.personal, my_assignments, as_of=as_of)
 
 
 def _parish_section(p: stats_service.ParishStats, *, live: bool) -> None:
@@ -277,61 +280,63 @@ def _leadership_section(
                     stat_chip(phase.label, phase.count, href="/elections")
 
 
-def _personal_section(
-    mine: stats_service.PersonalStats | None, assignments: list, *, as_of: str
-) -> None:
-    """The reader's own service, last on the page: it is the narrowest
-    audience there is. Never their workload band — nobody sees their own."""
+def _my_teams_section(assignments: list, *, as_of: str) -> None:
+    """The reader's own memberships — its own band now, not a footnote
+    under My service. For most people this is the whole reason they
+    opened the page, so it comes before the figures and the graph."""
+    with stat_section("My teams"):
+        with ui.column().classes("w-full gap-1"):
+            for membership, team in assignments:
+                suffix = f"?as_of={as_of}" if as_of else ""
+                with (
+                    ui.link(target=f"/teams/{team.id}{suffix}").classes(
+                        "w-full vdb-quiet"
+                    ),
+                    ui.row().classes(
+                        "items-center gap-2 p-2 rounded bg-blue-50 cursor-pointer w-full"
+                    ),
+                ):
+                    ui.label(team.name).classes("font-medium")
+                    ui.badge(ROLE_LABELS[membership.role])
+
+
+def _my_service_section(mine: stats_service.PersonalStats) -> None:
+    """What the reader has done and is owed. Never their workload band —
+    nobody sees their own."""
     with stat_section("My service"):
-        if mine is not None:
-            with tile_row():
+        with tile_row():
+            stat_tile(
+                mine.upcoming_duties,
+                "Upcoming duties",
+                sub=mine.next_duty_at.astimezone().strftime("next %-d %b, %H:%M")
+                if mine.next_duty_at
+                else None,
+                hint=f"{mine.next_duty_title} · {mine.next_duty_slot}"
+                if mine.next_duty_title
+                else None,
+                href="/events",
+            )
+            if mine.claimable_subs:
                 stat_tile(
-                    mine.upcoming_duties,
-                    "Upcoming duties",
-                    sub=mine.next_duty_at.astimezone().strftime("next %-d %b, %H:%M")
-                    if mine.next_duty_at
-                    else None,
-                    hint=f"{mine.next_duty_title} · {mine.next_duty_slot}"
-                    if mine.next_duty_title
-                    else None,
+                    mine.claimable_subs,
+                    "Shifts I could cover",
                     href="/events",
                 )
-                if mine.claimable_subs:
-                    stat_tile(
-                        mine.claimable_subs,
-                        "Shifts I could cover",
-                        href="/events",
-                    )
-                if mine.ballots_waiting:
-                    stat_tile(
-                        mine.ballots_waiting,
-                        "Ballots waiting",
-                        warn=True,
-                        href="/elections",
-                    )
+            if mine.ballots_waiting:
                 stat_tile(
-                    # Decimal("3.00") formats as "3.00" under :g; via float it
-                    # reads as "3", and 3.5 still reads as "3.5"
-                    f"{float(mine.hours_served):g}",
-                    "Hours served",
-                    sub=f"{mine.events_attended} event"
-                    f"{'' if mine.events_attended == 1 else 's'} attended",
+                    mine.ballots_waiting,
+                    "Ballots waiting",
+                    warn=True,
+                    href="/elections",
                 )
-        if assignments:
-            ui.label("My teams").classes("text-sm text-gray-500")
-            with ui.column().classes("w-full gap-1"):
-                for membership, team in assignments:
-                    suffix = f"?as_of={as_of}" if as_of else ""
-                    with (
-                        ui.link(target=f"/teams/{team.id}{suffix}").classes(
-                            "w-full vdb-quiet"
-                        ),
-                        ui.row().classes(
-                            "items-center gap-2 p-2 rounded bg-blue-50 cursor-pointer w-full"
-                        ),
-                    ):
-                        ui.label(team.name).classes("font-medium")
-                        ui.badge(ROLE_LABELS[membership.role])
+            stat_tile(
+                # Decimal("3.00") formats as "3.00" under :g; via float it
+                # reads as "3", and 3.5 still reads as "3.5"
+                f"{float(mine.hours_served):g}",
+                "Hours served",
+                sub=f"{mine.events_attended} event"
+                f"{'' if mine.events_attended == 1 else 's'} attended",
+            )
 
 
 def _legend_entry(

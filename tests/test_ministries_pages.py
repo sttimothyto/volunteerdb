@@ -549,6 +549,9 @@ async def test_public_team_page_serves_cached_html(real_app_client):
     assert "/static/theme.css" in r.text and "vdb-page-title" in r.text, (
         "public pages wear the app theme"
     )
+    assert '<p class="back"><a href="/ministries/">' in r.text, (
+        "a reader who arrived by QR code or shared link can reach the index"
+    )
     assert "#FAF6EF" not in r.text, "the old hand-rolled palette is gone"
 
     r = await real_app_client.get("/ministries/no-such-team.html")
@@ -566,8 +569,9 @@ async def test_unpublished_team_page_404s(real_app_client):
 
 
 async def test_published_page_and_teams_share_the_predicate(database):
-    """published_page(team_id) must read as absent for exactly the teams
-    published_teams excludes — inactive, doc-less, or without cached html."""
+    """published_page(team_id) and is_published(team_id) must read as absent
+    for exactly the teams published_teams excludes — inactive, doc-less, or
+    without cached html."""
     published_id = await _publish("Choir")
     inactive_id = await _publish("Closed Ministry", active=False)
     async with db_session() as session:
@@ -584,8 +588,11 @@ async def test_published_page_and_teams_share_the_predicate(database):
         assert [t.id for t in await pages.published_teams(session)] == [published_id]
         page = await pages.published_page(session, published_id)
         assert page is not None and page.html == "<p>hello</p>"
+        # the team page asks this one for every reader, so it must not drift
+        assert await pages.is_published(session, published_id) is True
         for absent_id in (inactive_id, no_html_id, no_doc_id, 99999):
             assert await pages.published_page(session, absent_id) is None
+            assert await pages.is_published(session, absent_id) is False
 
 
 async def test_ministry_image_route_serves_published_teams_only(real_app_client):

@@ -552,7 +552,7 @@ def _edit_dialog(
     the volunteer row onto it — no confirmation, because there is nothing to
     confirm — which is the only way to fill a linked record whose email is
     blank (own_login / own_user_id name that signed-in account)."""
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
+    with ui.dialog() as dialog, ui.card().classes("w-[32rem] gap-3"):
         ui.label(f"Edit {volunteer.full_name}").classes("text-lg font-medium")
         first = (
             ui.input("First name", value=volunteer.first_name)
@@ -608,9 +608,7 @@ def _edit_dialog(
             # one way to fill a linked record whose email is blank). Everyone
             # else's is a plain edit, as it has to be — a leader correcting a
             # bounced address cannot wait on the person who cannot read their mail.
-            staged = (
-                typed if is_self and typed != on_file and typed != login else None
-            )
+            staged = typed if is_self and typed != on_file and typed != login else None
             if is_self and not typed:
                 ui.notify(
                     "Your own address cannot be blank — it is how you sign in.",

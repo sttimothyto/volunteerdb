@@ -1,18 +1,21 @@
-"""Headless UI test: the dashboard's three statistic tiers, per role.
+"""Headless UI test: the dashboard's statistic tiers, per role.
 
 Ordering down the page is the feature — parish, then leadership, then the
-graph, then the reader's own service — but what a test can hold onto is which
-sections exist at all for whom. A section that is absent here was never
-computed by services.stats; see tests/test_stats.py for that half.
+reader's own teams and service, and the graph last of all — but what a test
+can mostly hold onto is which sections exist at all for whom. A section that
+is absent here was never computed by services.stats; see tests/test_stats.py
+for that half.
 """
 
 from pathlib import Path
 
+from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
+from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -114,3 +117,11 @@ async def test_plain_member_sees_only_their_own_service(database):
         await user.should_not_see(LEADERSHIP_TILE)
         # workload is a leadership signal and never turns up on one's own page
         await user.should_not_see("Workload:")
+
+        # My teams, then My service, then the graph. NiceGUI hands out element
+        # ids in creation order, which is render order down the page — the only
+        # handle a headless run has on "above".
+        teams_head = user.find("My teams", kind=ui.label).elements.pop()
+        service_head = user.find("My service", kind=ui.label).elements.pop()
+        graph = user.find(kind=CytoscapeGraph).elements.pop()
+        assert teams_head.id < service_head.id < graph.id
