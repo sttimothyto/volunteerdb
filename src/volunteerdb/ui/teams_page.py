@@ -19,6 +19,7 @@ from ..services import teams as team_service
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..sheets import exporter
+from ..sheets.common import sheet_url
 from . import column_order, invites
 from .account_status import roster_account
 from .context import (
@@ -312,10 +313,13 @@ def _team_dialog(all_teams, team=None) -> None:
         )
         weight = (
             ui.number(
-                "Workload weight (optional)",
+                "Workload weight",
+                # a new ministry is ordinary work, not zero work, so the box
+                # starts at 1 rather than at the 0 that means "excluded". It
+                # stays clearable, so excluding one is still a single click.
                 value=float(team.workload_weight)
                 if team is not None and team.workload_weight is not None
-                else None,
+                else 1.0,
                 min=0,
                 step=0.5,
             )
@@ -323,7 +327,9 @@ def _team_dialog(all_teams, team=None) -> None:
             .classes("w-full")
         )
         weight.tooltip(
-            "How work-heavy this ministry is; leave empty to exclude it from workload scores"
+            "How work-heavy this ministry is, against a weight of 1. New "
+            "ministries start at 1; clear the box to exclude this one from "
+            "workload scores"
         )
         # Archiving was reachable over the API (PATCH /teams/{id} is_active) and
         # nowhere in the GUI, which rendered the "inactive" badge it could not
@@ -433,28 +439,68 @@ def _home_page_section(
         ).classes("text-sm text-gray-500")
 
 
-def _sheet_section(team_sheet: TeamSheet | None) -> None:
+def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -> None:
     """The team's Google Drive roster sheet, for leaders/seconds: the nightly
-    sync applies sheet edits to the database and mirrors the database back."""
+    sync applies sheet edits to the database and mirrors the database back.
+    Admins may additionally point the team at a different spreadsheet."""
     ui.label("Roster spreadsheet").classes("text-lg font-medium")
+    pending = bool(team_sheet is not None and team_sheet.requested_file_id)
     if team_sheet is None or not team_sheet.file_id:
-        ui.label(
-            "The nightly sync (2:30) creates a Google Sheet for this team's "
-            "roster; the link will appear here."
-        ).classes("text-sm text-gray-500 vdb-prose")
+        with ui.row().classes("items-center gap-2"):
+            if is_admin:
+                ui.button(
+                    "Link a spreadsheet",
+                    icon="add_link",
+                    on_click=lambda: _roster_sheet_dialog(team_id, pending),
+                ).props("dense outline")
+            ui.label(
+                "The nightly sync (2:30) creates a Google Sheet for this team's "
+                "roster; the link will appear here."
+            ).classes("text-sm text-gray-500 vdb-prose")
+    else:
+        with ui.row().classes("items-center gap-2"):
+            ui.link(
+                team_sheet.file_name or "Google Sheet",
+                sheet_url(team_sheet.file_id),
+                new_tab=True,
+            )
+            if is_admin:
+                # not plain "Change": the home-page section above carries one
+                # of those, and the two sit a few lines apart
+                ui.button(
+                    "Change spreadsheet",
+                    icon="edit",
+                    on_click=lambda: _roster_sheet_dialog(team_id, pending),
+                ).props("dense flat")
+            ui.label(
+                "Edits sync into the database nightly (2:30); rows removed from "
+                "the sheet leave the roster. The same sync grants this team's "
+                "leaders and seconds edit access, at the email on their volunteer "
+                "record — Google emails an invitation the first time."
+            ).classes("text-sm text-gray-500 vdb-prose")
+    if pending:
+        with ui.row().classes("items-center gap-2"):
+            ui.link(
+                "Requested spreadsheet",
+                sheet_url(team_sheet.requested_file_id),
+                new_tab=True,
+            )
+            ui.label(
+                "Takes effect at the next sync (2:30), which checks the sheet "
+                "against the roster template first."
+                + (
+                    " Until then this team keeps the one above."
+                    if team_sheet.file_id
+                    else ""
+                )
+                + (
+                    " Its rows will be imported into the database."
+                    if team_sheet.requested_import
+                    else " It will be overwritten from the database."
+                )
+            ).classes("text-sm text-gray-500 vdb-prose")
+    if team_sheet is None:
         return
-    with ui.row().classes("items-center gap-2"):
-        ui.link(
-            team_sheet.file_name or "Google Sheet",
-            f"https://docs.google.com/spreadsheets/d/{team_sheet.file_id}",
-            new_tab=True,
-        )
-        ui.label(
-            "Edits sync into the database nightly (2:30); rows removed from "
-            "the sheet leave the roster. The same sync grants this team's "
-            "leaders and seconds edit access, at the email on their volunteer "
-            "record — Google emails an invitation the first time."
-        ).classes("text-sm text-gray-500 vdb-prose")
     if team_sheet.last_status == "error":
         ui.label(f"Last sync failed: {team_sheet.last_error}").classes(
             "text-negative text-sm"
@@ -463,6 +509,65 @@ def _sheet_section(team_sheet: TeamSheet | None) -> None:
         ui.label(f"Last synced {team_sheet.last_synced_at:%Y-%m-%d %H:%M}").classes(
             "text-sm text-gray-500"
         )
+
+
+_IMPORT_ROWS = "Import its rows into the database"
+_OVERWRITE = "Overwrite it from the database"
+
+
+def _roster_sheet_dialog(team_id: int, pending: bool) -> None:
+    """Point the team at a different roster spreadsheet. Admin only — enforced
+    server-side on save."""
+    with ui.dialog() as dialog, ui.card().classes("w-[32rem] gap-3"):
+        ui.label("Roster spreadsheet").classes("text-lg font-medium")
+        ui.label(
+            "Paste the link of a Google Sheet that lives in the parish roster "
+            "folder on Drive — a copy of the roster template, or another team's "
+            "sheet. The sync cannot see files it did not create, so a sheet made "
+            "anywhere else will be refused."
+        ).classes("text-sm text-gray-500")
+        url = ui.input("Google Sheets link").props("outlined dense").classes("w-full")
+        direction = ui.radio([_OVERWRITE, _IMPORT_ROWS], value=_OVERWRITE).props(
+            "dense"
+        )
+        direction.tooltip(
+            "Overwriting keeps the parish database as it is and rewrites the "
+            "sheet from it. Importing replaces this team's roster with the "
+            "sheet's rows, and can remove members."
+        )
+        ui.label(
+            "Nothing changes until the next sync (2:30): it checks the sheet "
+            "against the template, and reports here if it cannot."
+        ).classes("text-sm text-gray-500")
+
+        @notify_errors
+        async def save() -> None:
+            async with action_session() as (session, actor):
+                await team_service.request_roster_sheet(
+                    session,
+                    actor,
+                    team_id,
+                    url.value or "",
+                    import_rows=direction.value == _IMPORT_ROWS,
+                )
+            dialog.close()
+            ui.navigate.to(f"/teams/{team_id}")
+
+        @notify_errors
+        async def withdraw() -> None:
+            async with action_session() as (session, actor):
+                await team_service.cancel_roster_sheet_request(session, actor, team_id)
+            dialog.close()
+            ui.navigate.to(f"/teams/{team_id}")
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            if pending:
+                ui.button("Withdraw request", on_click=withdraw).props(
+                    "flat color=negative"
+                )
+            ui.button("Save", on_click=save)
+    dialog.open()
 
 
 def _home_doc_dialog(team_id: int, current: str | None) -> None:
@@ -637,7 +742,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         if can_full and at is None:
             _home_page_section(team, team_page, team_id, slug, base_url)
         if can_manage:
-            _sheet_section(team_sheet)
+            _sheet_section(team_sheet, team_id, actor.is_admin)
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")

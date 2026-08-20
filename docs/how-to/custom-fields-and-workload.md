@@ -45,8 +45,9 @@ this page is the knobs.
 3. **Bands** — ascending score thresholds with a label and color each
    (defaults: green ≤ 4, amber ≤ 8, red unbounded). The last band must be
    unbounded; labels must be unique.
-4. **Team weights** — per-team workload weight. Teams without a weight
-   count 0, so weight only the ministries that represent real load.
+4. **Team weights** — per-team workload weight. New teams start at 1;
+   clear a team's weight to put it back to 0, which excludes it from
+   workload scores altogether.
 
 Changes apply immediately (no restart): volunteer lists, the graph's
 workload coloring, and profile badges all recompute on next load.

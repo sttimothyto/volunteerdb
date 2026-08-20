@@ -3,9 +3,17 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from ..models import ROLE_LABELS, FieldType, TeamRole
+from ..sheets.common import sheet_url
 
 
 class ORMModel(BaseModel):
@@ -115,6 +123,42 @@ class HomeDocPatch(BaseModel):
     url: str | None = Field(default=None, max_length=500)
 
 
+class TeamSheetOut(ORMModel):
+    """A team's Google Drive roster sheet, and any repoint waiting on the
+    nightly sync to check it (jobs.drive_sync)."""
+
+    file_id: str | None = None
+    file_name: str | None = None
+    url: str | None = None
+    last_status: str | None = None
+    last_error: str | None = None
+    last_synced_at: datetime | None = None
+    requested_file_id: str | None = None
+    requested_url: str | None = None
+    requested_import: bool = False
+
+    @model_validator(mode="after")
+    def _links(self) -> "TeamSheetOut":
+        """Both links are derived, never stored: the Drive file id is what
+        survives the rename a team rename triggers."""
+        if self.file_id:
+            self.url = sheet_url(self.file_id)
+        if self.requested_file_id:
+            self.requested_url = sheet_url(self.requested_file_id)
+        return self
+
+
+class RosterSheetPatch(BaseModel):
+    """Body of PATCH /teams/{id}/roster-sheet. Admin-only, unlike HomeDocPatch:
+    a roster sheet carries members' addresses and phone numbers, and adopting
+    one hands it a bulk write over the roster."""
+
+    url: str | None = Field(default=None, max_length=500)  # null withdraws
+    # False regenerates the newly linked sheet from the database; True imports
+    # its rows instead, through the importer's usual removal thresholds
+    import_rows: bool = False
+
+
 class TeamWithPath(TeamOut):
     path: str
 
@@ -123,7 +167,12 @@ class TeamIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     parent_team_id: int | None = None
     description: str | None = None
-    workload_weight: float | None = Field(default=None, ge=0)
+    # A new ministry is ordinary work, not zero work: omitting the field starts
+    # the team at 1, the same default the GUI's "New team" dialog offers. An
+    # explicit null still means 0, which is how a team is excluded from
+    # workload scores (services.teams.create normalises it). Creation only —
+    # TeamPatch keeps None meaning "leave alone".
+    workload_weight: float | None = Field(default=1, ge=0)
 
 
 class TeamPatch(BaseModel):

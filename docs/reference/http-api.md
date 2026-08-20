@@ -101,10 +101,12 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | Method & path | Permission | Notes |
 |---|---|---|
 | `GET /api/teams` | signed in | Full directory with paths, `as_of=` |
-| `POST /api/teams` | admin | 201 |
+| `POST /api/teams` | admin | 201. An omitted `workload_weight` starts the team at 1; send `null` for 0 (excluded from workload scores) |
 | `GET /api/teams/{id}` | signed in | `as_of=` |
 | `PATCH /api/teams/{id}` | admin | `clear_parent`, `clear_workload_weight` flags |
 | `PATCH /api/teams/{id}/home-doc` | full roster on the team (leader/second/core, admin) | `{"url": "https://docs.google.com/document/d/…"}`, or `null` to unpublish |
+| `GET /api/teams/{id}/roster-sheet` | manage the team | The Drive roster sheet's link, last sync outcome, and any pending repoint; `null` before the sync has made one |
+| `PATCH /api/teams/{id}/roster-sheet` | admin | `{"url": "https://docs.google.com/spreadsheets/d/…", "import_rows": false}`, or `null` to withdraw. Recorded as a request — the nightly sync verifies the sheet and reports in `last_status`/`last_error` |
 | `DELETE /api/teams/{id}` | admin | 204; parent of sub-teams is protected |
 | `GET /api/teams/{id}/roster` | roster names on the team | Contact details/notes redacted per role, `as_of=` |
 | `GET /api/teams/{id}/page` | full roster on the team | Whether the public page is publishing, and when it last fetched; `null` when no doc is set. The HTML is not here — it is served to the world at `/ministries/<slug>.html` |

@@ -274,10 +274,17 @@ the kept html.
 | `last_status` | sync_status | outcome of the last sync for this team |
 | `last_error` | text | |
 | `created_at` | timestamptz | |
+| `requested_file_id` | varchar(128) | unique; a repoint an admin asked for, held *beside* `file_id` and never over it |
+| `requested_import` | boolean | NOT NULL DEFAULT false — true imports the newly linked sheet's rows, false regenerates it from the database |
 
 Identity of the team's roster spreadsheet in Google Drive, maintained by
 `jobs.drive_sync` (see the Drive roster sync how-to). A pointer to an
 external artifact — current-state only.
+
+The `requested_*` pair is how an admin repoints a team. Nothing in the app
+can reach Drive, so the link is only verified by the next nightly sync; it
+adopts the request or drops it with a reason, and either way the team keeps
+a working `file_id` throughout.
 
 (event)=
 ## `event` (not versioned)

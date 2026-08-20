@@ -241,3 +241,54 @@ itself does not need sharing with anyone.
 - **A sheet is broken beyond repair**: delete the file on Drive; the next
   sync bootstraps a fresh one from the database (the team page link
   updates to the new file id automatically).
+
+## Pointing a team at a different sheet
+
+An admin (only an admin) can repoint a team from its team page: **Roster
+spreadsheet → Change spreadsheet**, paste the link, and choose which side
+wins the first sync. Over the API it is
+`PATCH /api/teams/{id}/roster-sheet`.
+
+Two constraints, both worth saying out loud before someone pastes a link:
+
+- **The sheet must be one this system created**, and it must still be in
+  the roster folder. The rclone grant is `drive.file` — least privilege,
+  and the reason no Google review was ever needed — so a spreadsheet a
+  human made in Drive is *invisible* to the sync, however it is shared. In
+  practice the linkable sheets are another team's roster and any sheet
+  this job has made before. A copy made through Drive's own **File → Make
+  a copy** is a new, human-created file and will be refused.
+- **Nothing happens when you press Save.** The app has no Drive access at
+  all, so the link is recorded as a *request* beside the team's current
+  `file_id`, never over it, and the 02:30 sync is the first thing able to
+  check it. Until then the team keeps the sheet it has, and the team page
+  shows the pending link.
+
+What that sync does:
+
+1. Looks the file id up in the folder listing. Not there ⇒ the request is
+   dropped, the team keeps its sheet, `Last sync failed` explains why, and
+   the alert email fires. (Dropped rather than retried: the same link will
+   be just as invisible tomorrow.)
+2. Checks the exported CSV opens with the roster template's header row.
+   This runs **whichever direction was chosen** — overwriting the wrong
+   file would destroy it just as surely as importing it would corrupt a
+   roster.
+3. Parks the outgoing sheet as `<slug>-membership-list-replaced-<id>` and
+   renames the incoming one into place. The retired file stays in the
+   folder — nothing is deleted — but its name no longer ends in
+   `-membership-list`, so neither the sync nor the decorate leg touches it
+   again.
+4. Runs the direction chosen:
+   - **Overwrite it from the database** (the default): the linked sheet's
+     rows are never read; it is rewritten from the roster. Parish data
+     cannot be lost this way.
+   - **Import its rows into the database**: the sheet is applied like any
+     leader edit, through the same all-or-nothing safety net — rows naming
+     another team are refused, a sheet listing nobody cannot empty a team,
+     and removing three or more members that are over half the roster is
+     refused outright.
+
+A team that is repointed sits out that one night's sync of its old sheet,
+so the outcome — adopted, or refused and why — is the only thing reported
+against it.

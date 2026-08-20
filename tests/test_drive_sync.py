@@ -401,3 +401,156 @@ async def test_missing_listing_is_a_systemic_failure(database, tmp_path):
     workdir = _workdir(tmp_path)
     assert await drive_sync.apply(workdir) == 1
     assert await drive_sync.record(workdir) == 1
+
+
+async def _request(team_id: int, file_id: str, *, import_rows: bool = False) -> None:
+    """What an admin's "Change roster spreadsheet" does, minus the URL parsing."""
+    async with db_session() as session:
+        await teams.request_roster_sheet(
+            session,
+            None,
+            team_id,
+            f"https://docs.google.com/spreadsheets/d/{file_id}",
+            import_rows=import_rows,
+        )
+
+
+async def test_repoint_overwrites_the_new_sheet_from_the_database(choir, tmp_path):
+    """The default direction. The linked sheet's own rows are NOT imported —
+    they are replaced by the database's, which is the answer that cannot lose
+    parish data."""
+    workdir = _workdir(tmp_path)
+    _listing(workdir, [(NAME, "f123", NOW), ("choir-copy", "f999", NOW)])
+    (workdir / "in" / f"{NAME}.csv").write_bytes(
+        _sheet_csv(
+            [["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"]]
+        )
+    )
+    # a stale copy a leader had been keeping: its rows must not reach the DB
+    (workdir / "in" / "choir-copy.csv").write_bytes(
+        _sheet_csv([["", "Zoe", "Stale", "zoe@example.org", "", "", "Choir", "member"]])
+    )
+    await _request(choir["choir"], "f999")
+
+    assert await drive_sync.apply(workdir) == 0
+
+    sheet = await _sheet_row(choir["choir"])
+    assert sheet.file_id == "f999" and sheet.file_name == "choir-copy"
+    assert sheet.requested_file_id is None, "the request is spent, not standing"
+    assert sheet.last_status == "unchanged", "the DB won; nothing was imported"
+
+    async with db_session() as session:
+        roster = [v.email for _, v in await teams.roster(session, None, choir["choir"])]
+    assert sorted(roster) == ["lena@example.org", "mia@example.org"], (
+        "the linked sheet's rows never touched the roster"
+    )
+
+    renames = (workdir / "renames.txt").read_text().splitlines()
+    assert renames == [f"{NAME}\t{NAME}-replaced-f123", f"choir-copy\t{NAME}"], (
+        "the outgoing sheet is parked BEFORE the incoming one takes its name — "
+        "Drive would otherwise hold two files called the same thing"
+    )
+    out = (workdir / "out" / f"{NAME}.csv").read_bytes().decode("utf-8-sig")
+    assert "mia@example.org" in out and "zoe" not in out.lower()
+
+
+async def test_repoint_can_import_the_new_sheet_instead(choir, tmp_path):
+    workdir = _workdir(tmp_path)
+    _listing(workdir, [(NAME, "f123", NOW), ("choir-copy", "f999", NOW)])
+    (workdir / "in" / f"{NAME}.csv").write_bytes(_sheet_csv([]))
+    (workdir / "in" / "choir-copy.csv").write_bytes(
+        _sheet_csv(
+            [
+                ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
+                ["", "Mia", "Member", "mia@example.org", "", "", "Choir", "member"],
+                ["", "Nora", "New", "nora@example.org", "", "", "Choir", "member"],
+            ]
+        )
+    )
+    await _request(choir["choir"], "f999", import_rows=True)
+
+    assert await drive_sync.apply(workdir) == 0
+
+    sheet = await _sheet_row(choir["choir"])
+    assert sheet.file_id == "f999" and sheet.last_status == "applied"
+    async with db_session() as session:
+        roster = [v.email for _, v in await teams.roster(session, None, choir["choir"])]
+    assert "nora@example.org" in roster, "the linked sheet's rows were imported"
+
+
+async def test_repoint_to_an_invisible_sheet_keeps_the_current_one(choir, tmp_path):
+    """The drive.file grant sees only files this system created, so a sheet made
+    by hand anywhere else is simply absent from the listing."""
+    workdir = _workdir(tmp_path)
+    _listing(workdir, [(NAME, "f123", NOW)])
+    (workdir / "in" / f"{NAME}.csv").write_bytes(
+        _sheet_csv(
+            [["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"]]
+        )
+    )
+    async with db_session() as session:
+        session.add(TeamSheet(team_id=choir["choir"], file_id="f123"))
+    await _request(choir["choir"], "nowhere")
+
+    assert await drive_sync.apply(workdir) == 0
+
+    sheet = await _sheet_row(choir["choir"])
+    assert sheet.file_id == "f123", "the team keeps the sheet it already had"
+    assert sheet.requested_file_id is None, (
+        "dropped, not left to retry: the same link is just as invisible "
+        "tomorrow, and a standing request would alert every night"
+    )
+    assert sheet.last_status == "error" and "not in the roster folder" in (
+        sheet.last_error
+    )
+    assert "Choir" in (workdir / "alerts.txt").read_text()
+    assert not (workdir / "out" / f"{NAME}.csv").exists(), (
+        "the team sits out one night rather than syncing past its own rejection"
+    )
+    assert (workdir / "renames.txt").read_text() == ""
+
+
+async def test_repoint_to_a_sheet_that_is_not_a_roster_is_refused(choir, tmp_path):
+    """Checked even though this direction never reads the rows: overwriting the
+    parish budget spreadsheet because someone pasted the wrong link is exactly
+    what the layout check is for."""
+    workdir = _workdir(tmp_path)
+    _listing(workdir, [(NAME, "f123", NOW), ("parish-budget", "f999", NOW)])
+    (workdir / "in" / f"{NAME}.csv").write_bytes(
+        _sheet_csv(
+            [["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"]]
+        )
+    )
+    (workdir / "in" / "parish-budget.csv").write_bytes(
+        b"Month,Envelope,Loose\r\nJanuary,1200,340\r\n"
+    )
+    await _request(choir["choir"], "f999")
+
+    assert await drive_sync.apply(workdir) == 0
+
+    sheet = await _sheet_row(choir["choir"])
+    assert sheet.file_id != "f999", "not adopted"
+    assert sheet.requested_file_id is None
+    assert "header row" in sheet.last_error
+    assert not (workdir / "out" / f"{NAME}.csv").exists()
+    assert (workdir / "renames.txt").read_text() == "", (
+        "nothing on Drive is renamed for a switch that did not happen"
+    )
+
+
+async def test_repoint_for_a_team_with_no_sheet_yet(choir, tmp_path):
+    """No outgoing sheet means no parking rename — just the adoption."""
+    workdir = _workdir(tmp_path)
+    _listing(workdir, [("choir-copy", "f999", NOW)])
+    (workdir / "in" / "choir-copy.csv").write_bytes(
+        _sheet_csv(
+            [["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"]]
+        )
+    )
+    await _request(choir["choir"], "f999")
+
+    assert await drive_sync.apply(workdir) == 0
+
+    sheet = await _sheet_row(choir["choir"])
+    assert sheet.file_id == "f999"
+    assert (workdir / "renames.txt").read_text() == f"choir-copy\t{NAME}\n"

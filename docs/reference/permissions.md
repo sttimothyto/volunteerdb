@@ -18,6 +18,7 @@ GUI and the API. For the rationale, see
 | Manage roster (add/remove/change roles), their teams | ✓ | ✓ | | | |
 | Edit contact info of volunteers on their teams | ✓ | ✓ | | | |
 | Spreadsheet import/export, their teams | ✓ | ✓ | | | |
+| See the team's Drive roster sheet link, their teams | ✓ | ✓ | | | |
 | See workload scores/bands of volunteers on their teams | ✓ | ✓ | | | |
 | View full roster incl. contact details, their teams | ✓ | ✓ | ✓ | | |
 | Invite a volunteer on their teams to create an account | ✓ | ✓ | ✓ | | |
@@ -32,6 +33,7 @@ GUI and the API. For the rationale, see
 | Events: create, edit, cancel, slots, assign, attendance, their teams | ✓ | ✓ | | | |
 | Events: view listing/detail, RSVP, sign up, substitutions — own team's events | ✓† | ✓† | ✓† | ✓† | |
 | Create/edit/delete teams | ✓ | | | | |
+| Point a team at a different Drive roster sheet | ✓ | | | | |
 | Create/delete volunteers; toggle active | ✓ | | | | |
 | Parish-wide import/export | ✓ | | | | |
 | Accounts, custom fields, workload config | ✓ | | | | |
@@ -90,6 +92,14 @@ Additional rules:
   phone, notes and custom values only among volunteers the viewer may see
   unredacted. Otherwise `email LIKE 'j%'` walks an address out of a column the
   page renders as `•••`.
+- The team's **public home-page doc** and its **Drive roster sheet** look
+  alike and are gated deliberately differently. Setting the home-page doc
+  includes core members, because ministry leaders here are often elderly and
+  a public page nobody can refresh goes stale; what is at stake is what the
+  page says, under a name the parish can correct. Repointing the roster
+  sheet is admin-only and stays that way: that sheet carries every member's
+  address, phone and notes, and adopting one hands it a bulk write over the
+  roster.
 - The same rule reaches the **spreadsheet export**: a core member may export
   their team's roster, but the *Volunteer notes* column comes through blank,
   because notes need edit rights everywhere else. Exports are recorded in the

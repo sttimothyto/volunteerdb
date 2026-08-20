@@ -67,6 +67,28 @@ async def test_error_mapping_404_409_422(client, seeded):
     assert r.status_code == 422, "POST must refuse what PATCH refuses"
 
 
+async def test_new_teams_start_at_weight_one(client, seeded):
+    """A new ministry is ordinary work, not zero work. Omitting the weight
+    starts it at 1; an explicit null is still how a team is excluded, because
+    0 has always been what "unweighted" means (models.Team.workload_weight)."""
+    admin = await _token(client, "admin@example.org", "secret-pass-phrase")
+
+    r = await client.post("/api/teams", json={"name": "Sacristans"}, headers=admin)
+    assert r.status_code == 201
+    assert r.json()["workload_weight"] == 1.0, "an omitted weight means 1"
+
+    r = await client.post(
+        "/api/teams", json={"name": "Retired", "workload_weight": None}, headers=admin
+    )
+    assert r.status_code == 201
+    assert r.json()["workload_weight"] == 0, "an explicit null still means excluded"
+
+    r = await client.post(
+        "/api/teams", json={"name": "Heavy", "workload_weight": 3}, headers=admin
+    )
+    assert r.json()["workload_weight"] == 3.0, "an explicit weight still wins"
+
+
 async def test_team_cycle_maps_to_422(client, seeded):
     admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 

@@ -7,16 +7,18 @@ headcounts at all — hiding the column client-side would still ship them.
 """
 
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
-from volunteerdb.models import TeamRole
+from volunteerdb.models import TeamRole, TeamSheet
 from volunteerdb.services import memberships, teams, users, volunteers
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
+SLOW = 30  # conftest.SLOW: argon2 makes the dev-login round trip slow
 
 COUNT_FIELDS = ("leader", "second", "core", "member", "total")
 SEARCH_BOX = "Search teams…"
@@ -298,3 +300,108 @@ async def test_search_box_runs_where_filters_over_the_rows(database):
         user.find(kind=ui.input, content=SEARCH_BOX).type("total > 0")
         assert _table(user).rows == []
         await user.should_see("0 of 4 teams")
+
+
+async def test_roster_sheet_section_gated_by_role(database):
+    """The sheet IS the roster, contact details and all, so the link shows to
+    managers only — and only an admin may repoint the team at another sheet."""
+    async with db_session() as session:
+        ids = await _parish(session)
+        session.add(
+            TeamSheet(team_id=ids["liturgy"], file_id="f123", file_name="liturgy-list")
+        )
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        await user.should_see("Roster spreadsheet")
+        await user.should_see("liturgy-list")
+        await user.should_see("Change spreadsheet")
+
+        # Lena leads Liturgy: she gets the link, never the repoint control
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        await user.should_see("Roster spreadsheet")
+        await user.should_see("liturgy-list")
+        await user.should_not_see("Change spreadsheet")
+
+        # Mia is a plain member of Music: no sheet section at all
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        await user.should_see("Roster")
+        await user.should_not_see("Roster spreadsheet")
+
+
+async def test_repoint_dialog_records_a_request_without_moving_the_link(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+        session.add(
+            TeamSheet(team_id=ids["liturgy"], file_id="f123", file_name="liturgy-list")
+        )
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        user.find("Change spreadsheet", kind=ui.button).click()
+        await user.should_see("Google Sheets link")
+
+        user.find("Google Sheets link").type(
+            "https://docs.google.com/spreadsheets/d/newsheet123/edit"
+        )
+        user.find("Save", kind=ui.button).click()
+        await user.should_see("Requested spreadsheet", retries=SLOW)
+
+    async with db_session() as session:
+        sheet = await session.get(TeamSheet, ids["liturgy"])
+    assert sheet.requested_file_id == "newsheet123"
+    assert sheet.file_id == "f123", "nothing moves until a sync has seen the file"
+
+
+async def test_repoint_dialog_rejects_a_doc_link(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+        session.add(TeamSheet(team_id=ids["liturgy"], file_id="f123"))
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open(f"/teams/{ids['liturgy']}")
+        user.find("Change spreadsheet", kind=ui.button).click()
+        await user.should_see("Google Sheets link")
+        user.find("Google Sheets link").type(
+            "https://docs.google.com/document/d/abc123"
+        )
+        user.find("Save", kind=ui.button).click()
+        # notify_errors turns the service's ValueError into a toast, and leaves
+        # the dialog open on the bad value
+        await user.should_see("not a Google Sheets link", retries=SLOW)
+
+    async with db_session() as session:
+        sheet = await session.get(TeamSheet, ids["liturgy"])
+    assert sheet.requested_file_id is None
+
+
+async def test_new_team_dialog_starts_at_weight_one(database):
+    """A new ministry is ordinary work, not zero work — and 0, the old default,
+    is what excludes a team from workload scores altogether."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open("/teams")
+        user.find("New team", kind=ui.button).click()
+        await user.should_see("Workload weight")
+        weight = user.find(kind=ui.number).elements.pop()
+        assert weight.value == 1.0, "the box opens at 1, not empty"
+
+        user.find("Name").type("Sacristans")
+        user.find("Save", kind=ui.button).click()
+        # wait on the team DETAIL page the save navigates to, not on the name —
+        # the dialog's own input still shows that while the save is in flight
+        await user.should_see("Volunteer home page", retries=SLOW)
+
+    async with db_session() as session:
+        (created,) = [
+            t for t in await teams.list_all(session) if t.name == "Sacristans"
+        ]
+    assert created.workload_weight == Decimal(1)

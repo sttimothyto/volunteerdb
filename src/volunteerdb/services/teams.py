@@ -5,8 +5,9 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..history import entity, fetch
-from ..models import Event, Membership, Team, TeamRole, Volunteer
+from ..models import Event, Membership, Team, TeamRole, TeamSheet, Volunteer
 from ..permissions import Actor, require
+from ..sheets.common import extract_spreadsheet_id
 
 
 class CycleError(ValueError):
@@ -203,6 +204,103 @@ async def _check_no_cycle(
     teams = await list_all(session)
     if new_parent_id == team_id or new_parent_id in descendant_ids(teams, team_id):
         raise CycleError("a team cannot be its own ancestor")
+
+
+async def _sheet_row(session: AsyncSession, team_id: int) -> TeamSheet:
+    """The team's team_sheet row, created if the sync has not made one yet.
+    Same upsert shape as jobs.drive_sync._set_sheet_status."""
+    sheet = await session.get(TeamSheet, team_id)
+    if sheet is None:
+        sheet = TeamSheet(team_id=team_id)
+        session.add(sheet)
+    return sheet
+
+
+async def roster_sheet(
+    session: AsyncSession, actor: Actor | None, team_id: int
+) -> TeamSheet | None:
+    """The team's Drive roster sheet record, or None if the sync has not made
+    one yet. Management rights, matching what the team page already shows."""
+    require(
+        actor is None or actor.can_manage_team(team_id),
+        "see this team's roster spreadsheet",
+    )
+    return await session.get(TeamSheet, team_id)
+
+
+async def request_roster_sheet(
+    session: AsyncSession,
+    actor: Actor | None,
+    team_id: int,
+    url: str,
+    *,
+    import_rows: bool = False,
+) -> TeamSheet:
+    """Ask the nightly sync to repoint a team at the spreadsheet behind `url`.
+
+    Admin-only, and deliberately NOT widened the way pages.set_home_doc_url is:
+    that one publishes a page anybody may read, while a roster sheet carries
+    every member's address, phone and notes — and adopting one hands it a bulk
+    write over the roster.
+
+    Nothing here reaches Drive, because nothing in the app can (jobs.drive_sync:
+    rclone runs on the host, under a drive.file grant that sees only files this
+    system created). So the id is stored as a *request* against file_id rather
+    than over it. The next sync is the first code with the file in hand; it
+    either adopts the link or rejects it with a reason, and a rejected request
+    leaves the team on the sheet it already had.
+
+    `import_rows` decides that first sync: False regenerates the newly linked
+    sheet from the database — the answer that cannot lose parish data — and
+    True imports its rows, through the importer's usual layout checks and
+    removal thresholds.
+    """
+    require(actor is None or actor.is_admin, "change a team's roster spreadsheet")
+    team = await get(session, team_id)
+    if team is None:
+        raise LookupError(f"team {team_id} not found")
+    file_id = extract_spreadsheet_id(url)
+    # both columns, because a sheet already spoken for by a pending request is
+    # as taken as one already in use: two teams on one sheet would each
+    # overwrite the other's roster every night
+    clash = await session.scalar(
+        sa.select(TeamSheet).where(
+            sa.or_(
+                TeamSheet.file_id == file_id,
+                TeamSheet.requested_file_id == file_id,
+            ),
+            TeamSheet.team_id != team_id,
+        )
+    )
+    if clash is not None:
+        other = await get(session, clash.team_id)
+        raise ValueError(
+            f"that spreadsheet already belongs to "
+            f"{other.name if other else 'another team'} — a sheet syncs with "
+            "exactly one team"
+        )
+    sheet = await _sheet_row(session, team_id)
+    if sheet.file_id == file_id:
+        raise ValueError(f"{team.name} already syncs with that spreadsheet")
+    sheet.requested_file_id = file_id
+    sheet.requested_import = import_rows
+    await session.flush()
+    return sheet
+
+
+async def cancel_roster_sheet_request(
+    session: AsyncSession, actor: Actor | None, team_id: int
+) -> TeamSheet:
+    """Withdraw a pending repoint before a sync acts on it. The team keeps
+    whatever sheet it has; a request that was never adopted leaves no trace."""
+    require(actor is None or actor.is_admin, "change a team's roster spreadsheet")
+    sheet = await session.get(TeamSheet, team_id)
+    if sheet is None:
+        raise LookupError(f"team {team_id} has no roster spreadsheet")
+    sheet.requested_file_id = None
+    sheet.requested_import = False
+    await session.flush()
+    return sheet
 
 
 async def leader_emails(session: AsyncSession, team_id: int) -> list[str]:

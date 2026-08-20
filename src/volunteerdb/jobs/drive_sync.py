@@ -50,6 +50,10 @@ from ..services import users as user_service
 from ..sheets import exporter, importer
 
 SHEET_SUFFIX = "-membership-list"
+# Where a sheet an admin replaced is parked. Deliberately breaks the
+# "-membership-list" ending, so neither this job nor the host's decorate leg
+# treats the retired file as a team's roster ever again.
+REPLACED_SUFFIX = "-replaced-"
 MAX_SHEET_BYTES = 5_000_000  # a roster CSV is KBs; anything near this is wrong
 SYNC_USER_LOCALPART = "drive-sync"  # see sync_user_email()
 
@@ -117,8 +121,9 @@ async def _ensure_sync_user() -> int:
 
 
 async def _active_teams() -> tuple[list[tuple[int, str, str]], dict[int, tuple]]:
-    """(team_id, display path, expected Drive name) for active teams, plus
-    each team's stored sheet identity (file_id, last_synced_at, last_status)."""
+    """(team_id, display path, expected Drive name) for active teams, plus each
+    team's stored sheet identity (file_id, last_synced_at, last_status) and any
+    pending repoint an admin asked for (requested_file_id, requested_import)."""
     async with db_session() as session:
         all_teams = await team_service.list_all(session)
         paths = team_service.team_paths(all_teams)
@@ -136,7 +141,13 @@ async def _active_teams() -> tuple[list[tuple[int, str, str]], dict[int, tuple]]
             if t.is_active and t.id not in meta
         ]
         stored = {
-            s.team_id: (s.file_id, s.last_synced_at, s.last_status)
+            s.team_id: (
+                s.file_id,
+                s.last_synced_at,
+                s.last_status,
+                s.requested_file_id,
+                s.requested_import,
+            )
             for s in (await session.execute(sa.select(TeamSheet))).scalars()
         }
     return active, stored
@@ -171,6 +182,32 @@ async def _set_sheet_status(team_id: int, status: str, error: str | None) -> Non
         sheet.last_error = error
 
 
+async def _adopt_sheet(team_id: int, file_id: str, file_name: str) -> None:
+    """Make an admin's requested sheet the team's live one, and drop the
+    request. Called once the file has actually been found in the listing —
+    the only moment anything here knows the link was real."""
+    async with db_session() as session:
+        sheet = await session.get(TeamSheet, team_id)
+        if sheet is None:
+            sheet = TeamSheet(team_id=team_id)
+            session.add(sheet)
+        sheet.file_id = file_id
+        sheet.file_name = file_name
+        sheet.requested_file_id = None
+        sheet.requested_import = False
+
+
+async def _drop_sheet_request(team_id: int) -> None:
+    """Discard a request the listing cannot satisfy. Dropped rather than left
+    to retry: the same link will be just as invisible tomorrow, and a standing
+    request would alert every night without ever resolving."""
+    async with db_session() as session:
+        sheet = await session.get(TeamSheet, team_id)
+        if sheet is not None:
+            sheet.requested_file_id = None
+            sheet.requested_import = False
+
+
 async def apply(workdir: Path) -> int:
     init_logging()
     in_dir, out_dir = workdir / "in", workdir / "out"
@@ -194,9 +231,67 @@ async def apply(workdir: Path) -> int:
 
     matched_ids: set[str] = set()
     for team_id, path, expected in active:
-        file_id, last_synced, _ = stored.get(team_id, (None, None, None))
+        file_id, last_synced, _, requested, requested_import = stored.get(
+            team_id, (None, None, None, None, False)
+        )
+
+        # --- an admin asked to repoint this team (services.teams) ------------
+        # This is the first code that can check the link: the app never talks
+        # to Drive, so "does this file exist and can we see it?" is a question
+        # only the listing answers.
+        adopting = False
+        request_error: str | None = None
+        if requested:
+            wanted = by_id.get(requested)
+            incoming = in_dir / f"{wanted.name}.csv" if wanted else None
+            if wanted is None:
+                request_error = (
+                    f"the linked spreadsheet ({requested}) is not in the roster "
+                    "folder, or was not created by VolunteerDB — make a copy of "
+                    "the roster template in that folder and link the copy"
+                )
+            elif not incoming.exists() or incoming.stat().st_size > MAX_SHEET_BYTES:
+                request_error = (
+                    f"the linked spreadsheet ({wanted.name!r}) is listed but did "
+                    "not export as readable CSV — it may not be a Google Sheet"
+                )
+            elif not importer.is_roster_csv(incoming.read_bytes()):
+                # checked whichever way the switch runs: importing a stranger's
+                # rows would corrupt the roster, and regenerating over the file
+                # would destroy whatever it actually held
+                request_error = (
+                    f"the linked spreadsheet ({wanted.name!r}) does not carry the "
+                    "roster template's header row — link a copy of the template, "
+                    "or of another team's roster sheet"
+                )
+            if request_error is not None:
+                await _drop_sheet_request(team_id)
+            else:
+                adopting = True
+                outgoing = by_id.get(file_id) if file_id else by_name.get(expected)
+                # the outgoing sheet still holds the name the upload leg writes
+                # to, and Drive is happy to keep two files under one name — so
+                # park it BEFORE the incoming one is renamed into place. The
+                # host applies renames.txt in order, which is the whole fix.
+                if (
+                    outgoing is not None
+                    and outgoing.file_id != wanted.file_id
+                    and outgoing.name == expected
+                ):
+                    parked = f"{expected}{REPLACED_SUFFIX}{outgoing.file_id[:8]}"
+                    renames.append((outgoing.name, parked))
+                    print(f"{path}: replaced sheet parked as {parked!r}")
+                await _adopt_sheet(team_id, wanted.file_id, wanted.name)
+                file_id = wanted.file_id
+                # which side wins this one night: pretending we synced at the
+                # sheet's own ModTime makes it "unchanged", so the apply leg
+                # skips the import and the regenerate leg overwrites it
+                last_synced = None if requested_import else wanted.mod_time
+
         entry = by_id.get(file_id) if file_id else None
-        if entry is None:
+        if entry is None and not adopting:
+            # never by name while adopting: that lookup would find the sheet
+            # just replaced
             entry = by_name.get(expected)
         if entry is not None:
             matched_ids.add(entry.file_id)
@@ -205,7 +300,13 @@ async def apply(workdir: Path) -> int:
 
         status: str
         error: str | None = None
-        if entry is None:
+        if request_error is not None:
+            # the team keeps the sheet it had, and sits out one night: a
+            # rejection reported on its own is worth more than one buried
+            # under an otherwise normal sync result
+            status = SyncStatus.error
+            error = request_error
+        elif entry is None:
             status = SyncStatus.new  # no sheet yet; the regenerate leg makes one
         elif last_synced is not None and entry.mod_time <= last_synced:
             status = SyncStatus.unchanged  # nobody edited it since our last upload

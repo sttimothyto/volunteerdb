@@ -14,9 +14,11 @@ team weight × role multiplier
 ```
 
 - **Team weight** (`workload_weight`, set per team) says how demanding the
-  ministry is. It is optional — unweighted teams count 0 — so the parish
-  only quantifies the ministries that represent real load, and membership
-  in, say, a mailing-list-like team costs nothing.
+  ministry is. A team an admin creates starts at 1 — ordinary work — and is
+  adjusted up or down from there. Clearing the weight puts it back to 0,
+  which is how a team is *excluded* from workload scores, so membership in,
+  say, a mailing-list-like team can be made to cost nothing. Task-force
+  teams, whose rosters are borrowed from real ministries, are always 0.
 - **Role multiplier** says how much of that load the role carries.
   Defaults: leader ×3, second ×2, core ×1.5, member ×1 — leading a ministry
   is roughly three times the commitment of showing up for it.

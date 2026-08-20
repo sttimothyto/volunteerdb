@@ -406,3 +406,49 @@ async def test_a_pending_address_change_shows_on_your_own_account(client, seeded
     assert r.json()["pending_email"] == "later@example.org"
     assert r.json()["email_change_expires_at"] is not None
     assert "email_change_token" not in r.json(), "the token itself never leaves"
+
+
+async def test_roster_sheet_endpoint(client, seeded, token_admin, token_leader):
+    """Repointing is admin-only — unlike the home doc, which is deliberately
+    open to leaders and core members. The link is only recorded here; the
+    nightly sync is what checks the file (jobs.drive_sync)."""
+    team = seeded["team_id"]
+
+    r = await client.get(f"/api/teams/{team}/roster-sheet", headers=token_leader)
+    assert r.status_code == 200 and r.json() is None, "no sheet made yet"
+
+    r = await client.patch(
+        f"/api/teams/{team}/roster-sheet",
+        json={"url": "https://docs.google.com/spreadsheets/d/abc123"},
+        headers=token_leader,
+    )
+    assert r.status_code == 403, "a leader may not repoint their own team"
+
+    r = await client.patch(
+        f"/api/teams/{team}/roster-sheet",
+        json={"url": "https://evil.test/spreadsheets/d/abc123"},
+        headers=token_admin,
+    )
+    assert r.status_code == 422
+
+    r = await client.patch(
+        f"/api/teams/{team}/roster-sheet",
+        json={
+            "url": "https://docs.google.com/spreadsheets/d/abc123",
+            "import_rows": True,
+        },
+        headers=token_admin,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["requested_file_id"] == "abc123"
+    assert body["requested_import"] is True
+    assert body["requested_url"] == "https://docs.google.com/spreadsheets/d/abc123"
+    assert body["file_id"] is None and body["url"] is None, (
+        "the live pointer only moves once a sync has seen the file"
+    )
+
+    r = await client.patch(
+        f"/api/teams/{team}/roster-sheet", json={"url": None}, headers=token_admin
+    )
+    assert r.status_code == 200 and r.json()["requested_file_id"] is None

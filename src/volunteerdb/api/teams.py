@@ -9,10 +9,12 @@ from .deps import AsOf, CtxDep
 from .schemas import (
     HomeDocPatch,
     RosterEntry,
+    RosterSheetPatch,
     TeamIn,
     TeamOut,
     TeamPageOut,
     TeamPatch,
+    TeamSheetOut,
     TeamWithPath,
     VolunteerOut,
     role_label,
@@ -89,6 +91,41 @@ async def set_home_doc(ctx: CtxDep, team_id: int, data: HomeDocPatch) -> TeamOut
         ctx.session, ctx.actor, team_id, data.url
     )
     return TeamOut.model_validate(team)
+
+
+@router.get("/{team_id}/roster-sheet")
+async def get_roster_sheet(ctx: CtxDep, team_id: int) -> TeamSheetOut | None:
+    """The team's Google Drive roster sheet: its link, the last sync's outcome,
+    and any repoint an admin has asked for but no sync has checked yet.
+
+    Null until the nightly job has made the team a sheet. Management rights,
+    matching what the team page shows — the sheet is the roster, so who may see
+    the link is who may manage the roster."""
+    sheet = await service.roster_sheet(ctx.session, ctx.actor, team_id)
+    return None if sheet is None else TeamSheetOut.model_validate(sheet)
+
+
+@router.patch("/{team_id}/roster-sheet")
+async def set_roster_sheet(
+    ctx: CtxDep, team_id: int, data: RosterSheetPatch
+) -> TeamSheetOut:
+    """Point the team at a different roster spreadsheet, or send url=null to
+    withdraw a request no sync has acted on yet.
+
+    **Admin-only** — deliberately not the wider group that may set the team's
+    home-page doc. Nothing here reaches Drive: the app cannot, so the link is
+    recorded as a request and the next nightly sync is what verifies it, keeps
+    the team on its current sheet if the file is invisible or is not a roster,
+    and reports the outcome in `last_status`/`last_error`."""
+    if data.url is None:
+        sheet = await service.cancel_roster_sheet_request(
+            ctx.session, ctx.actor, team_id
+        )
+    else:
+        sheet = await service.request_roster_sheet(
+            ctx.session, ctx.actor, team_id, data.url, import_rows=data.import_rows
+        )
+    return TeamSheetOut.model_validate(sheet)
 
 
 @router.get("/{team_id}/roster")

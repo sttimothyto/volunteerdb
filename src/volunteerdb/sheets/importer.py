@@ -101,6 +101,29 @@ _EXTRA_COLUMNS_WARNING = (
 SYNC_REMOVAL_MIN = 3
 
 
+_HEADERS_FOLDED = [h.casefold() for h in ROSTER_HEADERS]
+
+
+def is_roster_csv(content: bytes) -> bool:
+    """Does this file open with the roster template's header row?
+
+    The cheap half of parse_roster_csv, for the caller that must decide whether
+    a spreadsheet IS a roster before doing anything to it: jobs.drive_sync
+    adopting a sheet an admin linked by hand. Both directions of that switch
+    need it — importing rows from a stranger's file would corrupt the roster,
+    and regenerating over one would destroy whatever it actually held.
+    """
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return False
+    raw_rows = list(csv.reader(StringIO(text)))
+    if not raw_rows:
+        return False
+    header = [str(c).strip().casefold() for c in raw_rows[0]]
+    return header[: len(ROSTER_HEADERS)] == _HEADERS_FOLDED
+
+
 def parse_roster_csv(content: bytes, report: ImportReport) -> list[RosterRow] | None:
     """Rows of the unified roster CSV; None (with report errors) if unreadable."""
     if content[:4] == b"PK\x03\x04":  # zip magic: .xlsx
@@ -124,7 +147,7 @@ def parse_roster_csv(content: bytes, report: ImportReport) -> list[RosterRow] | 
     raw_rows = list(csv.reader(StringIO(text)))
     n = len(ROSTER_HEADERS)
     header = [str(c).strip().casefold() for c in raw_rows[0]] if raw_rows else []
-    if header[:n] != [h.casefold() for h in ROSTER_HEADERS]:
+    if header[:n] != _HEADERS_FOLDED:
         report.errors.append(
             Issue(
                 ROSTER_SHEET,
