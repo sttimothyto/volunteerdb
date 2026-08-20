@@ -15,9 +15,10 @@ caller (the nightly job).
 Direction, and why importing never removes anybody: a sheet is a convenience
 surface that a leader edits by hand, with filters, sorted views and pasted
 blocks. Treating a missing row as a resignation makes every clumsy edit a
-data-loss event. So the import leg only adds and updates, and the write-back
-leg immediately puts anyone it did not see back into the sheet. Removing a
-member is an action in the app, where it is attributable and reversible.
+data-loss event. So the importer only adds and updates -- there is no switch
+for anything else -- and the write-back leg immediately puts anyone it did not
+see back into the sheet. Removing a member is an action in the app, where it
+is attributable and reversible.
 """
 
 import csv
@@ -160,11 +161,10 @@ async def create_for_team(token: str, team_id: int) -> str:
 async def import_sheet(
     file_id: str, team_id: int, user_id: int
 ) -> importer.ImportReport:
-    """Sheet → database. Never removes anybody (see the module docstring)."""
+    """Sheet → database. The importer cannot remove anybody at all — see the
+    module docstring for why that is the design and not a setting."""
     content = await gsheets.read_csv(file_id)
-    return await importer.run_team_sync(
-        content, team_id=team_id, user_id=user_id, remove=False
-    )
+    return await importer.run_team_sync(content, team_id=team_id, user_id=user_id)
 
 
 async def export_sheet(token: str, file_id: str, team_id: int) -> bool:
@@ -195,7 +195,7 @@ async def sync_team(
 
     IMPORT applies the sheet's rows and then writes the result back, so the
     sheet ends up showing exactly what the database now holds — including the
-    people the import declined to remove. EXPORT skips the read entirely and
+    people the sheet had dropped. EXPORT skips the read entirely and
     overwrites the sheet from the database: the answer that cannot lose parish
     data, and the right one when a leader has made a mess of the file.
 

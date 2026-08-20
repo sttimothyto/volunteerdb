@@ -27,11 +27,12 @@ back into the sheet the same night.
 
 A spreadsheet is a surface people edit by hand, with filters, sorted views
 and pasted blocks. Treating a missing row as a resignation would make every
-clumsy edit a data-loss event, and the safety thresholds that used to guard
-against it (refuse an empty sheet, refuse to drop more than half a team) were
-only ever a way of noticing the accident after the fact. Take a member off
-the roster **in the app**, where the change is attributable, reversible, and
-visible in the as-of views.
+clumsy edit a data-loss event. The importer has no removal path at all now —
+not a setting left switched off, but code that is gone, along with the safety
+thresholds (refuse an empty sheet, refuse to drop more than half a team) that
+were only ever a way of noticing the accident after the fact. Take a member
+off the roster **in the app**, where the change is attributable, reversible,
+and visible in the as-of views.
 
 ## What leaders need to know
 

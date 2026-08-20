@@ -4,7 +4,18 @@
 Run this on a machine with a browser (never the server), signed in — in the
 browser — as the parish Google account that owns the roster folder:
 
-    python scripts/sheets_authorize.py CLIENT_ID CLIENT_SECRET
+    python scripts/sheets_authorize.py CLIENT_ID CLIENT_SECRET [PORT]
+
+Reuse the OAuth client the rclone backup remote already uses. That is not
+laziness: drive.file is scoped per OAuth CLIENT per file, so only that client
+can touch the roster sheets it created. A fresh client would be unable to
+change their sharing, or to write them at all.
+
+PORT is the loopback port the consent screen redirects to (default 8765). A
+"Desktop app" client accepts any loopback port; a "Web application" one
+accepts only the redirect URIs registered against it, and answers anything
+else with redirect_uri_mismatch. rclone registers 53682, so pass that if the
+default is refused.
 
 It opens the consent URL, catches the redirect on a loopback port, exchanges
 the code, and prints the refresh token to paste into VDB_SHEETS_REFRESH_TOKEN
@@ -45,11 +56,12 @@ PORT = 8765
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         print(__doc__)
         return 2
     client_id, client_secret = sys.argv[1], sys.argv[2]
-    redirect = f"http://127.0.0.1:{PORT}/"
+    port = int(sys.argv[3]) if len(sys.argv) == 4 else PORT
+    redirect = f"http://127.0.0.1:{port}/"
     state = secrets.token_urlsafe(16)
     consent = (
         AUTH_URL
@@ -89,7 +101,7 @@ def main() -> int:
     print("Opening the consent screen; sign in as the parish account.")
     print(f"If no browser opens, visit:\n\n  {consent}\n")
     webbrowser.open(consent)
-    with http.server.HTTPServer(("127.0.0.1", PORT), Catcher) as server:
+    with http.server.HTTPServer(("127.0.0.1", port), Catcher) as server:
         while not code:
             server.handle_request()
 

@@ -1,7 +1,7 @@
 """Roster import: all-or-nothing, non-destructive, dry-run capable.
 
 - One CSV, one row per membership (common.ROSTER_HEADERS); the same format
-  serves manual imports and the nightly Drive sync.
+  serves manual imports and the nightly roster-sheet sync.
 - A row carrying an ID (exports always write it) is pinned to that exact
   volunteer — an unknown ID is an error, never a create — so editing an email
   next to an ID corrects the address instead of duplicating the person.
@@ -10,12 +10,12 @@
   email that matches nobody does not then try the name, it creates a volunteer
   (with a warning if that name already exists). Only a row with a blank email
   matches by name.
-- Manual imports (run_import) only add and update; rows never delete existing
-  memberships. The Drive sync (run_team_sync) treats a team's sheet as that
-  team's complete roster: memberships absent from the sheet are removed (the
-  history tables retain them) and a volunteer losing their last membership
-  anywhere is archived. In either mode, a row that puts an archived volunteer
-  on a team reactivates them — joining implies active.
+- Nothing here ever removes. Both entry points (run_import, run_team_sync)
+  only add and update, and a blank cell never clears a field — so a row
+  missing from a file is not a departure, and the sync's write-back leg puts
+  that person back into the sheet. Memberships end in the app. A row that puts
+  an archived volunteer on a team does reactivate them: joining implies
+  active.
 - Any error rolls the whole import back; the report lists every issue.
 """
 
@@ -48,8 +48,6 @@ class ImportReport:
     volunteers_updated: int = 0
     memberships_created: int = 0
     memberships_updated: int = 0
-    memberships_removed: int = 0  # sync mode only
-    volunteers_archived: int = 0  # sync mode only
     volunteers_reactivated: int = 0  # membership created for an archived volunteer
     errors: list[Issue] = field(default_factory=list)
     warnings: list[Issue] = field(default_factory=list)
@@ -63,12 +61,6 @@ class ImportReport:
     @property
     def has_errors(self) -> bool:
         return bool(self.errors)
-
-    @property
-    def churn_suspected(self) -> bool:
-        """Created and removed people in the same run: the signature of an
-        edited email cell or a deleted-and-retyped row duplicating a person."""
-        return bool(self.volunteers_created and self.memberships_removed)
 
 
 class _Abort(Exception):
@@ -94,12 +86,6 @@ class RosterRow:
 _EXTRA_COLUMNS_WARNING = (
     "extra columns (custom fields) are ignored — custom values are not imported yet"
 )
-
-# Sync-mode circuit breaker: a truncated or half-filled sheet must not wipe a
-# roster. Removals are refused when they would drop more than half the team
-# and at least this many memberships.
-SYNC_REMOVAL_MIN = 3
-
 
 _HEADERS_FOLDED = [h.casefold() for h in ROSTER_HEADERS]
 
@@ -220,23 +206,21 @@ async def run_team_sync(
     team_id: int,
     user_id: int | None,
     dry_run: bool = False,
-    remove: bool = False,
 ) -> ImportReport:
     """Apply one team's roster sheet to the database. All-or-nothing: any
     error rolls the whole team back.
 
-    `remove` is False by design, and that is the rule the whole feature is
-    built on: a sheet only ever adds and updates. Somebody in the database but
-    missing from the sheet is not a departure — it is a row a leader deleted,
-    a filtered view, or a botched paste — so the write-back leg puts them back
-    into the sheet instead. Members leave a team in the app, where the change
-    is attributable and reversible.
+    Adds and updates only, like every other path through this module. Somebody
+    in the database but missing from the sheet is not a departure — it is a row
+    a leader deleted, a filtered view, or a botched paste — so the sync's
+    write-back leg puts them back into the sheet instead. Members leave a team
+    in the app, where the change is attributable and reversible.
 
     Scoped to the one team, not unrestricted. A sheet is edited by whoever
-    holds its Drive share and applied overnight with nobody looking, so it runs
-    under an actor that owns exactly this team: rows for anywhere else are
-    already refused below, and the contact columns of anyone not already on the
-    roster are refused by apply_rows (see the granted_ids note there)."""
+    holds its link and applied overnight with nobody looking, so it runs under
+    an actor that owns exactly this team: rows for anywhere else are already
+    refused below, and the contact columns of anyone not already on the roster
+    are refused by apply_rows (see the granted_ids note there)."""
     report = ImportReport()
     rows = parse_roster_csv(content, report)
     if rows is None:
@@ -251,14 +235,7 @@ async def run_team_sync(
     )
     try:
         async with db_session(user_id) as session:
-            await apply_rows(
-                session,
-                rows,
-                report,
-                sheet_actor,
-                sync_team_id=team_id,
-                remove=remove,
-            )
+            await apply_rows(session, rows, report, sheet_actor, sync_team_id=team_id)
             if dry_run or report.has_errors:
                 raise _Abort()
             report.applied = True
@@ -272,8 +249,6 @@ async def run_team_sync(
         volunteers_updated=report.volunteers_updated,
         memberships_created=report.memberships_created,
         memberships_updated=report.memberships_updated,
-        memberships_removed=report.memberships_removed,
-        volunteers_archived=report.volunteers_archived,
         volunteers_reactivated=report.volunteers_reactivated,
         errors=len(report.errors),
     )
@@ -287,15 +262,12 @@ async def apply_rows(
     actor=None,
     *,
     sync_team_id: int | None = None,
-    remove: bool = True,
 ) -> None:
     """Upsert volunteers and memberships from parsed rows.
 
     actor None runs unrestricted; a non-admin actor is scoped row-by-row to
-    the teams they manage. sync_team_id switches on sync mode: blank Team
-    cells default to that team, rows for any other team are errors, and
-    memberships of that team absent from the rows are removed afterwards
-    (never when any row errored — an unparsable row must not read as absent).
+    the teams they manage. sync_team_id switches on sync mode: blank Team cells
+    default to that team, and rows naming any other team are errors.
     """
     volunteers = list((await session.execute(sa.select(Volunteer))).scalars())
     by_id: dict[int, Volunteer] = {}
@@ -352,19 +324,13 @@ async def apply_rows(
 
     restricted = actor is not None and not actor.is_admin
 
-    # every current membership in one query: the upsert loop, the restricted
-    # scope check and the sync removal pass all read from this map instead of
-    # issuing per-row lookups
+    # every current membership in one query: the upsert loop and the
+    # restricted scope check both read from this map instead of issuing
+    # per-row lookups
     membership_by_pair: dict[tuple[int, int], Membership] = {
         (m.volunteer_id, m.team_id): m
         for m in (await session.execute(sa.select(Membership))).scalars()
     }
-    presync_members: dict[int, Membership] = {
-        vol_id: m
-        for (vol_id, team_id), m in membership_by_pair.items()
-        if team_id == sync_team_id
-    }
-
     tree = await team_service.tree(session)
     paths = tree.paths
     team_by_path = {p.lower(): tid for tid, p in paths.items()}
@@ -391,13 +357,13 @@ async def apply_rows(
     # volunteer's creation (granted_new_keys). Scope is pre-import state only.
     #
     # A SYNC sheet does not hand out granted_ids. In an interactive import the
-    # leader typed the file and the reviewer sees the diff; a team's Drive
-    # sheet is edited by whoever holds the share, unattended and overnight, so
+    # leader typed the file and the reviewer sees the diff; a team's roster
+    # sheet is edited by whoever holds the link, unattended and overnight, so
     # letting a pasted ID license that person's address would make the quietest
     # surface in the app the best place to redirect somebody's mail (and then
     # ask for their invite). A sync sheet may still add people — new rows and
-    # memberships — but it may only rewrite the contact details of people who
-    # were already on the team, which presync_members already knows.
+    # memberships — but it may only rewrite the contact details of people
+    # already on the team, which membership_by_pair already knows.
     granted_ids: set[int] = set()
     granted_new_keys: set[str] = set()
     teams_by_volunteer: dict[int, set[int]] = {}
@@ -432,8 +398,6 @@ async def apply_rows(
                 # uninteresting targets — they cannot be invited at all — so
                 # the exception costs nothing the rule was protecting.
                 granted_ids.add(found.id)
-
-    kept_volunteer_ids: set[int] = set()
 
     for r in rows:
         if not any((r.volunteer_id, r.first, r.last, r.email, r.team, r.role)):
@@ -605,82 +569,10 @@ async def apply_rows(
             membership_by_pair[(target.id, team_id)] = membership
             report.memberships_created += 1
             if not target.is_active:
-                # joining a team implies active — the mirror of the sync
-                # auto-archive below. Creation only: re-importing an export
-                # that still lists an archived member must not resurrect them.
+                # joining a team implies active. Creation only: re-importing an
+                # export that still lists an archived member must not
+                # resurrect them.
                 target.is_active = True
                 report.volunteers_reactivated += 1
         elif before != membership.role:
             report.memberships_updated += 1
-        if sync_team_id is not None:
-            kept_volunteer_ids.add(target.id)
-
-    # --- sync mode: absence means removal, only when the caller asks -------
-    # run_team_sync passes remove=False (see its docstring): a roster sheet
-    # never removes anybody. The block below is kept for callers that do mean
-    # "this file is the complete roster", and its safety rails with it.
-    if sync_team_id is None or not remove or report.has_errors:
-        return
-    if not kept_volunteer_ids and presync_members:
-        # Stronger than the percentage breaker below: a header-only download
-        # (or a sheet emptied by accident) must never wipe a team, however
-        # small the team is.
-        report.errors.append(
-            Issue(
-                ROSTER_SHEET,
-                0,
-                f"the sheet lists nobody, but {paths[sync_team_id]!r} has "
-                f"{len(presync_members)} member(s) — refusing to empty the "
-                "team. If this is intentional, remove them in the app instead.",
-            )
-        )
-        return
-    to_remove = [
-        m for vid, m in presync_members.items() if vid not in kept_volunteer_ids
-    ]
-    if len(to_remove) >= SYNC_REMOVAL_MIN and len(to_remove) * 2 > len(presync_members):
-        report.errors.append(
-            Issue(
-                ROSTER_SHEET,
-                0,
-                f"refusing to remove {len(to_remove)} of "
-                f"{len(presync_members)} members — over the safety threshold. "
-                "If this is intentional, remove them in the app instead.",
-            )
-        )
-        return
-    removed_ids: list[int] = []
-    for m in to_remove:
-        removed_ids.append(m.volunteer_id)
-        await membership_service.remove(session, None, m.id)  # scope checked above
-        report.memberships_removed += 1
-    # archive volunteers left with no membership at all: one grouped query
-    # over everyone just removed (remove() flushed the deletes, so this sees
-    # the post-removal state) instead of a COUNT per removal
-    still_serving = set(
-        await session.scalars(
-            sa.select(Membership.volunteer_id)
-            .where(Membership.volunteer_id.in_(removed_ids))
-            .distinct()
-        )
-    )
-    to_archive = [vid for vid in removed_ids if vid not in still_serving]
-    if to_archive:
-        for volunteer in await session.scalars(
-            sa.select(Volunteer).where(Volunteer.id.in_(to_archive))
-        ):
-            volunteer.is_active = False
-            report.volunteers_archived += 1
-        await session.flush()
-    if report.churn_suspected:
-        report.warnings.append(
-            Issue(
-                ROSTER_SHEET,
-                0,
-                f"this sync both created {report.volunteers_created} "
-                f"volunteer(s) and removed {report.memberships_removed} "
-                "member(s) — if an email was edited or a row deleted and "
-                "re-typed, the same person may now exist twice. Check the "
-                "roster for duplicates.",
-            )
-        )

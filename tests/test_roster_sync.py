@@ -144,7 +144,6 @@ async def test_a_sync_never_removes_and_puts_the_missing_row_back(choir, fake):
         choir["team"], direction=service.IMPORT, user_id=None
     )
     assert not outcome.failed
-    assert outcome.report.memberships_removed == 0
     assert await _roster_names(choir["team"]) == {"Lena", "Mia"}
     assert "Mia" in fake.written[0][1].decode("utf-8-sig")
 

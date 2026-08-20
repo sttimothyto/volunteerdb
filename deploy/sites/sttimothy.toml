@@ -32,9 +32,11 @@ retain_local_days = 14
 retain_remote_days = 730
 
 [sheets]
-# Drive folder id new roster sheets are created in. The OAuth credentials that
-# go with it are secrets, kept in the remote env file (see deploy/steps/secrets).
-folder_id = ""
+# Drive folder id new roster sheets are created in -- the same
+# volunteerdb-spreadsheets folder the retired rclone sync used, so new sheets
+# land beside the 67 that are already there. The OAuth credentials that go with
+# it are secrets, kept in the remote env file (see deploy/steps/secrets).
+folder_id = "1-YTh3Edj-s8fk7l7q9t9gn7sPlYanYPf"
 
 [schedule]
 # Parish-local (see [site] timezone). The backup runs first so its dump is a

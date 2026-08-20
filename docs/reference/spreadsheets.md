@@ -90,10 +90,10 @@ carries their ID (any export has it), or set it in the app (or via
 
 ## Import semantics
 
-- **Add and update only** — an import never deletes volunteers or
-  memberships, and this now holds for the nightly
-  [roster sync](../how-to/roster-spreadsheets.md) too: a row deleted from a
-  team's sheet is restored by the write-back leg, not treated as a
+- **Add and update only** — no path through the importer deletes a volunteer
+  or a membership, the nightly
+  [roster sync](../how-to/roster-spreadsheets.md) included: a row deleted from
+  a team's sheet is restored by the write-back leg, not treated as a
   resignation. Members leave a team in the app.
 - **All-or-nothing** — any error rejects the entire file; nothing is
   written. The response is a row-by-row report of issues.
