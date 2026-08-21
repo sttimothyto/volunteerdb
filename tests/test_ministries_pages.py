@@ -536,6 +536,11 @@ async def test_public_index_lists_only_published_active_teams(real_app_client):
     assert "Closed Ministry" not in body, "inactive teams are unpublished"
     assert "No Page Team" not in body
     assert "/static/theme.css" in body, "public pages wear the app theme"
+    assert '<a class="signin" href="/login">Sign in</a>' in body, (
+        "the way in, offered to every reader alike: the page is cached once for "
+        "the whole crowd, so a reader who already holds a session is sent on by "
+        "/login itself (ui/login.py)"
+    )
 
 
 async def test_public_team_page_serves_cached_html(real_app_client):

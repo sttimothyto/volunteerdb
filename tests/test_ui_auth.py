@@ -7,6 +7,7 @@ from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
 from volunteerdb.services import mail, users
+from volunteerdb.ui.context import clear_session
 
 from .conftest import SLOW, mail_to
 
@@ -43,6 +44,12 @@ async def test_anonymous_redirect_and_login_guards(database):
         user.find(kind=ui.input, content="Password (optional)").trigger("keydown.enter")
         await user.should_see("0 volunteers", retries=SLOW)  # the /volunteers list
 
+        # out again first: /login sends a browser that already holds a session
+        # straight on, so the guard below has to be checked on the path that
+        # actually runs it — a fresh sign-in through the form
+        with user.client:
+            clear_session()
+
         # open-redirect guard: a scheme-relative target is ignored -> dashboard
         await user.open("/login?redirect_to=//evil.example")
         user.find(kind=ui.input, content="Email").type("admin@example.org")
@@ -51,6 +58,37 @@ async def test_anonymous_redirect_and_login_guards(database):
         )
         user.find(kind=ui.input, content="Password (optional)").trigger("keydown.enter")
         await user.should_see("Find volunteers or teams…", retries=SLOW)
+
+
+async def test_a_signed_in_browser_is_sent_on_from_the_login_page(real_app_client):
+    """The public ministries header offers "Sign in" to every reader, because
+    those pages are cached once for the whole crowd and cannot know who is
+    reading. A reader who already holds a session must not be shown the card
+    again: /login itself puts them where the link meant to take them."""
+    async with db_session() as session:
+        user, _ = await users.create(session, "cantor@example.org")
+        user_id = user.id
+
+    anonymous = await real_app_client.get("/login", follow_redirects=False)
+    assert anonymous.status_code == 200, "a browser with no session gets the card"
+
+    await real_app_client.get(f"/login-dev/{user_id}", follow_redirects=False)
+
+    signed_in = await real_app_client.get("/login", follow_redirects=False)
+    assert signed_in.status_code in (302, 307)
+    assert signed_in.headers["location"] == "/", "the dashboard, by default"
+
+    onward = await real_app_client.get(
+        "/login?redirect_to=/volunteers", follow_redirects=False
+    )
+    assert onward.headers["location"] == "/volunteers", "a link with a target keeps it"
+
+    evil = await real_app_client.get(
+        "/login?redirect_to=//evil.example", follow_redirects=False
+    )
+    assert evil.headers["location"] == "/", (
+        "the open-redirect guard covers this door too, not just the form's"
+    )
 
 
 async def test_invite_redemption_flow(database, monkeypatch):

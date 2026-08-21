@@ -546,7 +546,7 @@ def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -
         ui.label(
             "Edits sync into the database nightly (2:30), and the sheet is "
             "rewritten to match. Nobody is ever removed by a sync — take a "
-            "member off the roster below instead. Anyone holding this link "
+            "member off the roster above instead. Anyone holding this link "
             "can edit the sheet, so keep it among the people who help run "
             "this team."
         ).classes("text-sm text-gray-500 vdb-prose")

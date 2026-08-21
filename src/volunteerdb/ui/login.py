@@ -1,21 +1,39 @@
 import structlog
 from fastapi import Request
 from nicegui import ui
+from starlette.responses import RedirectResponse
 
 from .. import passwords, throttle
 from ..db import db_session
 from ..log import audit_log
 from ..services import mail
 from ..services import users as user_service
-from .context import establish_session
+from .context import establish_session, session_user_id
 from .logo_dialog import logo_img
 from .theme import apply_theme
 
 logger = structlog.get_logger(__name__)
 
 
+def _safe_target(redirect_to: str) -> str:
+    """Where a `redirect_to` query parameter is allowed to send a browser: a
+    path on this site and nothing else. "//host" and "/\\host" are
+    scheme-relative URLs, not same-origin paths."""
+    safe = redirect_to.startswith("/") and not redirect_to.startswith(("//", "/\\"))
+    return redirect_to if safe else "/"
+
+
 @ui.page("/login")
 def login_page(request: Request, redirect_to: str = "/"):
+    # Already signed in: the card has nothing to offer. The public ministries
+    # header offers "Sign in" to every reader — those pages are cached once for
+    # the whole crowd, so they cannot know who is reading — and this is where
+    # that link lands, so send the reader on to where it meant to take them.
+    # A NiceGUI page builder may return a Response instead of building a page;
+    # doing it here rather than over the websocket costs no round trip.
+    if session_user_id() is not None:
+        return RedirectResponse(_safe_target(redirect_to))
+
     apply_theme()
 
     pending_email = ""
@@ -23,9 +41,7 @@ def login_page(request: Request, redirect_to: str = "/"):
 
     def finish(user_id: int, method: str) -> None:
         establish_session(user_id, remember=remember.value, method=method)
-        # "//host" and "/\host" are scheme-relative URLs, not same-origin paths
-        safe = redirect_to.startswith("/") and not redirect_to.startswith(("//", "/\\"))
-        ui.navigate.to(redirect_to if safe else "/")
+        ui.navigate.to(_safe_target(redirect_to))
 
     async def submit() -> None:
         addr = (email.value or "").strip()
