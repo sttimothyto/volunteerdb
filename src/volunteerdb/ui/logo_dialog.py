@@ -39,9 +39,18 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
         ui.label(
             "Shown in this header, above the login box, and on the public "
             "ministries pages. A wide wordmark is fine — the image is scaled "
-            "to fit, never cropped, and transparency is kept."
+            "to fit, never cropped. Transparency is kept, and a logo on a flat "
+            "white card has that card made transparent for you."
         ).classes("text-sm text-gray-500")
-        preview = logo_img(LOGO_URL, "h-24 w-auto self-center object-contain")
+        # on the header's own terracotta, because that is the background the
+        # transparency has to look right against — a preview on the dialog's
+        # white card would hide exactly the problem the cut exists to fix
+        with (
+            ui.element("div")
+            .classes("self-center rounded p-2")
+            .style("background: var(--vdb-header-bg)")
+        ):
+            preview = logo_img(LOGO_URL, "h-24 w-auto object-contain")
 
         @notify_errors
         async def on_upload(e: events.UploadEventArguments) -> None:
@@ -54,7 +63,7 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
             preview.update()
 
         ui.upload(
-            label="Drop a logo here (stored as PNG, at most 512×512)",
+            label="Drop a logo here (stored as PNG, at most 1000×1000)",
             on_upload=on_upload,
             auto_upload=True,
             max_file_size=branding.MAX_UPLOAD_BYTES,
