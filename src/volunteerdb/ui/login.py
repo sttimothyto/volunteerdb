@@ -180,8 +180,8 @@ def login_page(request: Request, redirect_to: str = "/"):
             'outline no-caps href="/ministries/"'
         ).classes("w-80")
         ui.label(
-            "No password? None needed — we'll email you a code. "
-            "Received an invite link? Open it to finish setup."
+            "Invite link is sent from no-reply@sttimothyto.org "
+            "Open it to finish setup."
         ).classes("text-sm text-gray-500 max-w-80 text-center")
 
 
