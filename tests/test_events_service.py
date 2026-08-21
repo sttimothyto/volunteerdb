@@ -804,8 +804,9 @@ async def test_substitute_hands_the_slot_over(database):
         )
         assert assignment.kind == "sub"
         handed_over_id = assignment.id
-        assert assignment.notify_7d and assignment.notify_24h, (
-            "prefs reset to defaults — the incoming volunteer never chose"
+        assert (assignment.notify_7d, assignment.notify_24h) == (False, True), (
+            "prefs reset to the app's defaults — the incoming volunteer never "
+            "chose, and the outgoing one's choices were not about them"
         )
         open_call = await session.get(EventSubRequest, sub_id)
         assert open_call.status == SubRequestStatus.cancelled.value, (

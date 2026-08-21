@@ -4,6 +4,7 @@ from datetime import datetime
 from nicegui import ui
 
 from ..permissions import Actor
+from ..services import mail_quota
 from .context import asof_banner, asof_picker, clear_session
 from .logo_dialog import site_logo
 from .photo_dialog import photo_avatar
@@ -79,7 +80,75 @@ def frame(
         ui.label(title).classes("text-2xl vdb-page-title")
         if as_of is not None and asof_path is not None:
             asof_banner(as_of, asof_path)
+        _mail_quota_banner(actor)
         yield
+
+
+def _mail_quota_banner(actor: Actor) -> None:
+    """The "this instance is running out of email" strip — admins only, and
+    only when the counters say so.
+
+    The mail provider allows 200 messages a day and 1,000 a month, and the app
+    finds out it has spent them by a send simply failing: a sign-in code that
+    never arrives, an event cancellation nobody reads. Nothing in the app can
+    buy more, which is exactly why the banner exists and why it names a person
+    rather than offering a button — the fix is a bigger plan or less sending,
+    and both belong to whoever set the instance up.
+
+    `Actor.mail_quota` is None for everybody else and for an instance that is
+    comfortably inside its allowance (permissions.load_actor), so this draws
+    nothing at all on a normal page for a normal user. Non-admins are not shown
+    it deliberately: a volunteer can neither raise the plan nor stop the
+    nightly digests, and a warning you cannot act on is just noise on the page
+    you came to read.
+    """
+    quota = actor.mail_quota
+    if quota is None or not actor.is_admin:  # belt and braces: the gate is here too
+        return
+    critical = quota.level == "critical"
+    # Literal class strings per branch, never f-string interpolation into a
+    # Tailwind name: a class assembled at runtime is invisible to any tool that
+    # scans the source for the classes to keep. asof_banner beside this does
+    # the same.
+    if critical:
+        box, ink, faint, icon = (
+            "bg-red-100",
+            "text-red-900",
+            "text-red-800",
+            "mark_email_unread",
+        )
+        headline = "Email sending is over its limit"
+    else:
+        box, ink, faint, icon = (
+            "bg-amber-100",
+            "text-amber-900",
+            "text-amber-800",
+            "outgoing_mail",
+        )
+        headline = "Email sending is heading over its limit"
+    contact = mail_quota.support_contact()
+    reach = (
+        f" Contact the administrator who set up this website ({contact})."
+        if contact
+        else " Contact the administrator who set up this website."
+    )
+    with (
+        ui.row()
+        .classes(f"w-full {box} rounded p-2 items-start gap-2")
+        .mark("mail-quota-banner")
+    ):
+        ui.icon(icon).classes(f"{ink} mt-1")
+        with ui.column().classes("gap-0"):
+            ui.label(headline).classes(f"{ink} font-medium")
+            ui.label(
+                f"This site can send {mail_quota.DAILY_CAP} emails a day and "
+                f"{mail_quota.MONTHLY_CAP:,} a month — {quota.reason}. Past "
+                "that, messages stop going out, including sign-in codes." + reach
+            ).classes(f"text-sm {ink} vdb-prose")
+            ui.label(
+                f"So far: {quota.today:,} today, {quota.month_to_date:,} this "
+                f"month (on course for about {quota.projected_month:,})."
+            ).classes(f"text-xs {faint}")
 
 
 def _own_email(actor: Actor) -> None:

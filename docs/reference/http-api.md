@@ -171,7 +171,7 @@ leaders, seconds and core members create an account for one of their own people.
 | `GET /api/export/parish.csv` | admin | Full roster export, `as_of=` |
 | `GET /api/export/team/{team_id}.csv` | full roster on the team | Roster export (sub-teams included), `as_of=`. The **Volunteer notes** column comes through blank unless the caller may read notes (admin or leader/second of the team) — everywhere else `notes` needs `can_edit_volunteer`, and the column stays in place so the file still round-trips |
 | `GET /api/export/my-teams.csv` | leads/seconds any team | Union of managed teams, `as_of=`. The GUI's *Export team(s)* button on `/teams` covers the same ground, widened to core members |
-| `POST /api/import` | admin or leader/second (rows scoped) | Multipart `file=` (roster `.csv`); `dry_run=`; all-or-nothing; 10 MB cap. A row that **redirects** an existing address mails the mailbox it moved away from |
+| `POST /api/import` | admin or leader/second (rows scoped) | Multipart `file=` (roster `.csv`); `dry_run=`; all-or-nothing; 10 MB cap. Sends no mail: a redirect used to notify the mailbox it moved away from, but one pass over a messy sheet fires dozens at once against a 200-message day, mostly at the dead addresses being fixed. Redirects still land in `volunteer_history` |
 
 Column layout: see the [spreadsheet format](spreadsheets.md).
 

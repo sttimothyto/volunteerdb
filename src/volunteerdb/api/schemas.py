@@ -546,7 +546,7 @@ class EventAssignmentOut(ORMModel):
     volunteer_name: str = ""
     kind: str  # signup/assigned/sub — provenance only
     sub_requested: bool = False  # an open substitution call exists
-    notify_7d: bool = True  # reminder-stage preferences (see EventAssignIn)
+    notify_7d: bool = False  # reminder-stage preferences (see EventAssignIn)
     notify_24h: bool = True
 
 
@@ -593,9 +593,12 @@ class EventAssignIn(BaseModel):
     volunteer_id: int | None = None  # omitted: sign yourself up
     # self sign-ups only: copy the sign-up onto later weeks of the series
     repeat_series: bool = False
-    # reminder-stage preferences for self sign-ups (manager assignments
-    # keep the defaults — the volunteer never chose)
-    notify_7d: bool = True
+    # Reminder-stage preferences for self sign-ups (manager assignments keep
+    # the defaults — the volunteer never chose). The 7-day stage is off by
+    # default: it restates the "you have been scheduled" notice, and on a
+    # 200-message/day mail allowance that made it a third of all event mail
+    # for nothing. Opt in per assignment; the stage itself is unchanged.
+    notify_7d: bool = False
     notify_24h: bool = True
 
 

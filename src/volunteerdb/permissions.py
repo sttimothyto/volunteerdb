@@ -16,6 +16,7 @@ Rules (team roles cascade down to sub-teams):
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +30,9 @@ from .models import (
     Volunteer,
     VolunteerPhoto,
 )
+
+if TYPE_CHECKING:  # the shape belongs to services.mail_quota; importing it here
+    from .services.mail_quota import Projection  # would close a cycle at import
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,12 @@ class Actor:
     # page already receives the actor.
     volunteer_name: str | None = None
     photo_at: datetime | None = None
+    # How much of the mail provider's monthly/daily allowance this instance has
+    # spent, filled for ADMINS ONLY and only when it is worth saying: the
+    # header banner is the one place the app can warn somebody who can act on
+    # it before a sign-in code silently fails to send. Same reason it rides
+    # here as the two fields above — frame() is sync and holds no session.
+    mail_quota: "Projection | None" = None
 
     @property
     def is_admin(self) -> bool:
@@ -208,6 +218,16 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
     names_view |= full_view & meta_ids
     full_view -= meta_ids
 
+    # Admins only: nobody else can raise the plan or cut the sending, so
+    # nobody else is shown it. Memoised for a minute inside the service, so
+    # this costs one small query a minute however many pages an admin opens.
+    quota = None
+    if user.is_admin:
+        from .services import mail_quota as quota_service
+
+        projection = await quota_service.projection()
+        quota = projection if projection.alarming else None
+
     return Actor(
         user=user,
         volunteer_id=user.volunteer_id,
@@ -218,6 +238,7 @@ async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
         voter_proposal_ids=voter_proposal_ids,
         volunteer_name=volunteer_name,
         photo_at=photo_at,
+        mail_quota=quota,
     )
 
 

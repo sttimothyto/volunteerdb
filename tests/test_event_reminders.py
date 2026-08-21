@@ -66,7 +66,13 @@ async def _event(team_id: int, days_ahead: int, title: str = "Mass") -> int:
         return created[0].id
 
 
-async def _assign(event_id: int, volunteer_id: int) -> int:
+async def _assign(event_id: int, volunteer_id: int, *, notify_7d: bool = False) -> int:
+    """Manager assignment, landing on the app's own defaults — week stage off.
+
+    `assign` takes no preferences by design (the volunteer never chose), so a
+    test that wants the week stage sets it on the row, which is what opting in
+    later amounts to.
+    """
     async with db_session() as session:
         view = await event_service.detail(session, None, event_id)
         a = await event_service.assign(
@@ -76,13 +82,16 @@ async def _assign(event_id: int, volunteer_id: int) -> int:
             volunteer_id=volunteer_id,
             assigned_by=None,
         )
+        if notify_7d:
+            a.notify_7d = True
         return a.id
 
 
 async def test_scheduled_notice_then_staged_reminders_then_silence(database, sent_mail):
+    """All three stages, for a volunteer who asked for all three."""
     team_id, vids = await _team()
     event_id = await _event(team_id, days_ahead=10)
-    await _assign(event_id, vids[1])
+    await _assign(event_id, vids[1], notify_7d=True)
 
     await event_reminders.main(today=date.today())
     assert len(sent_mail) == 1
@@ -218,7 +227,11 @@ async def test_exclusions(database, sent_mail):
     async with db_session() as session:
         view = await event_service.detail(session, None, signup_id)
         await event_service.sign_up(
-            session, None, slot_id=view.slots[0].slot.id, volunteer_id=vids[2]
+            session,
+            None,
+            slot_id=view.slots[0].slot.id,
+            volunteer_id=vids[2],
+            notify_7d=True,  # opted in; off by default since the mail budget
         )
 
     await event_reminders.main(today=date.today())
@@ -246,3 +259,28 @@ async def test_link_only_with_public_base_url(database, sent_mail, monkeypatch):
     monkeypatch.setattr(event_reminders, "settings", lambda: patched)
     await event_reminders.main(today=date.today())
     assert "https://vdb.example.org/events" in sent_mail[0][2]
+
+
+async def test_the_week_stage_is_off_unless_asked_for(database, sent_mail):
+    """The default that keeps this instance inside its mail allowance.
+
+    Three notices per assignment, batched one email a night, is what a weekend
+    roster multiplies into ~1,300 messages a month against a 1,000 cap. The
+    middle one restates the scheduling notice, so it now has to be asked for —
+    and the two that carry new information still arrive on their own.
+    """
+    team_id, vids = await _team()
+    event_id = await _event(team_id, days_ahead=10)
+    await _assign(event_id, vids[1])  # no notify_7d: the app's default
+
+    await event_reminders.main(today=date.today())
+    assert len(sent_mail) == 1
+    assert "You have been scheduled" in sent_mail[0][2]
+
+    sent_mail.clear()
+    await event_reminders.main(today=date.today() + timedelta(days=3))
+    assert sent_mail == [], "seven days out, and silent: the week stage is opt-in"
+
+    await event_reminders.main(today=date.today() + timedelta(days=9))
+    assert len(sent_mail) == 1, "the notice that changes a day still arrives"
+    assert "Tomorrow — you are serving" in sent_mail[0][2]

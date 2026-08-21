@@ -14,8 +14,12 @@ the first tick after the gap.
 
 Failures (nonzero exit or an exception) log at ERROR, email
 settings().alert_email if set, and retry after RETRY_DELAY up to
-MAX_ATTEMPTS_PER_DAY attempts per parish day. The attempt counter is
-in-memory on purpose: a restart resets it, and a redeploy is often the fix.
+MAX_ATTEMPTS_PER_DAY attempts per parish day. The mail is once per job per
+parish day even though the retries are not: three identical alerts for one
+broken job is not three times the information, and the mail allowance this
+instance runs on is 1,000 a month (services/mail_quota.py). The attempt
+counter is in-memory on purpose: a restart resets it, and a redeploy is
+often the fix.
 Jobs are per-person idempotent (NULL-stamp pattern), so retries and even
 double runs are safe. Each run holds the jobs.job_lock advisory lock, so a
 manually launched one-shot job container can never overlap the scheduler.
@@ -25,8 +29,9 @@ due whenever the interval has passed since the last attempt — attempt, not
 success, so a failing job retries at its own cadence rather than
 hot-looping, and MAX_ATTEMPTS_PER_DAY does not apply. last_attempt_at is
 hydrated from job_run at startup so a crash-looping container cannot hammer
-an external API, and a persistent failure alerts at most once per parish
-day (a 30-minute job failing all day must not send 48 emails).
+an external API. (The once-a-day alert rule started here — a 30-minute job
+failing all day must not send 48 emails — and now covers the nightly jobs
+too.)
 """
 
 import asyncio
@@ -97,7 +102,7 @@ class JobState:
     attempts_on: date | None = None
     attempts: int = 0
     last_attempt_at: datetime | None = None
-    alerted_on: date | None = None  # interval jobs: one failure alert per day
+    alerted_on: date | None = None  # one failure alert per job per parish day
 
 
 _task: asyncio.Task | None = None
@@ -180,7 +185,10 @@ async def _alert(name: str, exit_code: int, attempt: int) -> None:
         f"[volunteerdb] nightly {name} FAILED",
         f"Job {name} failed (exit {exit_code}, attempt "
         f"{attempt}/{MAX_ATTEMPTS_PER_DAY}) at {local_now():%Y-%m-%d %H:%M %Z}.\n"
-        f"It retries after {RETRY_DELAY // timedelta(minutes=1)} minutes.\n"
+        f"It retries after {RETRY_DELAY // timedelta(minutes=1)} minutes, up to "
+        f"{MAX_ATTEMPTS_PER_DAY} times a day.\n"
+        "This is the only alert for this job today — a further failure will "
+        "log, not mail.\n"
         "Details: journalctl -u volunteerdb-app\n",
     )
 
@@ -236,11 +244,17 @@ async def _run_job(job: Job, now: datetime) -> None:
             attempt=st.attempts,
             ms=ms,
         )
-        if job.every is None:
-            await _alert(job.name, code, st.attempts)
-        elif st.alerted_on != now.date():
+        # One alert per job per parish day, whichever kind of job it is. A
+        # nightly job retries MAX_ATTEMPTS_PER_DAY times, and alerting on each
+        # sent three identical messages for one broken job — a week of that is
+        # 21, out of a 1,000-a-month allowance, spent saying the same thing.
+        # The retries still happen and still log; only the mail is deduplicated.
+        if st.alerted_on != now.date():
             st.alerted_on = now.date()
-            await _alert_interval(job.name, code, job.every)
+            if job.every is None:
+                await _alert(job.name, code, st.attempts)
+            else:
+                await _alert_interval(job.name, code, job.every)
 
 
 def _job_due(job: Job, now: datetime) -> bool:

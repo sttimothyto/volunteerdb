@@ -207,7 +207,14 @@ async def test_failure_records_alerts_and_retries(
     assert len(calls) == 3
     await scheduler._tick(_now(TODAY, 6, 0))  # budget spent for the day
     assert len(calls) == 3
-    assert len(sent_mail) == 3
+    assert len(sent_mail) == 1, (
+        "three retries, one alert: the second and third say nothing the first "
+        "did not, and this instance sends on a 1,000-a-month allowance"
+    )
+
+    await scheduler._tick(_now(TODAY + timedelta(days=1), 4, 0))
+    assert len(calls) == 4
+    assert len(sent_mail) == 2, "a new parish day alerts afresh"
 
 
 async def test_failure_without_alert_email_sends_nothing(

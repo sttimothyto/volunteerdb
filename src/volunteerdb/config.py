@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     # Where scheduler job failures are emailed; empty: they only log (ERROR).
     alert_email: str = ""
+    # Who an admin is told to contact when the mail-allowance banner fires
+    # (services/mail_quota.py) — whoever set this instance up and can raise
+    # the plan or cut the sending. Empty falls back to alert_email, which is
+    # already that person on every instance that set it; empty both ways and
+    # the banner simply names nobody rather than inventing an address.
+    support_contact: str = ""
     # Parish-local (VDB_TIMEZONE) times the nightly jobs run, kept clear of
     # 02:00 when the host's backup timer fires. Setting one a couple of
     # minutes ahead is the way to watch a job fire in dev.

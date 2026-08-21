@@ -112,12 +112,20 @@ ignored. Copy `.env.example` as a starting point.
   See [CLI and jobs](cli.md).
 
 `VDB_ALERT_EMAIL`
-: Where the scheduler emails when a nightly job fails (after each failed
-  attempt; a job retries every 30 minutes, at most 3 attempts per parish
-  day). Default: empty — failures only log at ERROR. Production sets the
-  same address the host backup/sync wrappers alert. Some jobs run on a
-  fixed interval rather than at a nightly time; those keep retrying on
-  their own cadence and alert this address at most once per parish day.
+: Where the scheduler emails when a nightly job fails. Default: empty —
+  failures only log at ERROR. Production sets the same address the host
+  backup/sync wrappers alert. **One alert per job per parish day**, however
+  many times it fails: a nightly job retries every 30 minutes up to 3 times,
+  and an interval job keeps retrying on its own cadence, but the second and
+  third messages say nothing the first did not and the instance sends on a
+  1,000-a-month allowance. The retries still happen and still log.
+
+`VDB_SUPPORT_CONTACT`
+: Who the mail-allowance banner tells an admin to contact — whoever set the
+  instance up and can raise the plan or cut the sending. Default: empty,
+  falling back to `VDB_ALERT_EMAIL`; with both empty the banner still
+  appears and simply names nobody. See
+  [Architecture](../explanation/architecture.md).
 
 `VDB_ROSTER_SYNC_AT`, `VDB_FETCH_PAGES_AT`, `VDB_PROPOSAL_DIGEST_AT`, `VDB_EVENT_REMINDERS_AT`
 : Parish-local (`VDB_TIMEZONE`) times the in-app scheduler runs each

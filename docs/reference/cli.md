@@ -111,7 +111,11 @@ fetches in its own transaction, so one bad doc cannot block the rest.
 `roster_sync` reconciles every team's roster with its Google Sheet (see
 [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md));
 each team syncs independently, so one unshared sheet cannot stop the rest,
-and unconfigured it exits 0 with "not configured". `proposal_digest` emails each proposal voter one nightly
+and unconfigured it exits 0 with "not configured". It sends no mail: a pass
+over a messy sheet can redirect dozens of addresses at once, and mailing
+each of the old mailboxes — usually the broken ones being fixed — spent a
+noticeable slice of a 200-message day for nothing. The redirects still land
+in `volunteer_history`. `proposal_digest` emails each proposal voter one nightly
 digest of what needs their input; `event_reminders` emails each volunteer
 their event notices (scheduled by a manager, serving this week, serving
 tomorrow — the reminder stages honour the per-sign-up preferences). Both

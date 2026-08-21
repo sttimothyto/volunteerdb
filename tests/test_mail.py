@@ -76,6 +76,55 @@ async def test_send_email_network_error_returns_false(monkeypatch):
     assert await mail.send_email("to@example.org", "s", "b") is False
 
 
+async def test_a_sent_message_counts_itself_against_the_allowance(monkeypatch):
+    """The provider stops delivering at 200 a day / 1,000 a month and tells
+    nobody in advance; counting our own sends is the only warning there is."""
+    _fake_settings(monkeypatch)
+    _mock_transport(
+        monkeypatch,
+        lambda request: httpx.Response(200, json={"data": {"succeeded": 1}}),
+    )
+    counted: list[object] = []
+    monkeypatch.setattr(mail.mail_quota, "record_send", lambda *a: _record(counted, *a))
+
+    assert await mail.send_email("to@example.org", "s", "b") is True
+    assert len(counted) == 1
+
+
+async def test_a_rejected_message_is_not_counted(monkeypatch):
+    """It consumed no allowance. A ledger that counted attempts would shout
+    loudest exactly when nothing was getting through."""
+    _fake_settings(monkeypatch)
+    _mock_transport(
+        monkeypatch, lambda request: httpx.Response(500, json={"error": "boom"})
+    )
+    counted: list[object] = []
+    monkeypatch.setattr(mail.mail_quota, "record_send", lambda *a: _record(counted, *a))
+
+    assert await mail.send_email("to@example.org", "s", "b") is False
+    assert counted == []
+
+
+async def test_an_unconfigured_instance_counts_nothing(monkeypatch):
+    """No API key means nothing left the building — dev, tests, the verify
+    harness. The allowance is untouched, and the ledger must not need a
+    database on a path that never reaches one."""
+    monkeypatch.setattr(
+        mail,
+        "settings",
+        lambda: SimpleNamespace(smtp2go_api_key="", debug_mail=True, reload=False),
+    )
+    counted: list[object] = []
+    monkeypatch.setattr(mail.mail_quota, "record_send", lambda *a: _record(counted, *a))
+
+    assert await mail.send_email("to@example.org", "s", "b") is True
+    assert counted == []
+
+
+async def _record(sink: list, *args) -> None:
+    sink.append(args)
+
+
 def test_ttl_window_renders_whole_days_as_days():
     assert mail.ttl_window(24) == "24 hours"
     assert mail.ttl_window(36) == "36 hours"

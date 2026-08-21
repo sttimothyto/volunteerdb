@@ -7,11 +7,13 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+import sqlalchemy as sa
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
+from volunteerdb import throttle
 from volunteerdb.db import db_session
-from volunteerdb.models import TeamRole
+from volunteerdb.models import EventSubRequest, SubRequestStatus, TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import mail, memberships, teams, users, volunteers
 
@@ -175,9 +177,10 @@ async def test_sub_request_claim_flow_with_mail(database, sent_mail):
         user.find("Take this slot", kind=ui.button).click()
         await user.should_see("The slot is yours", retries=30)
 
-        # asker + leader are told
-        assert {m[0] for m in sent_mail} == {"mia@example.org", "lena@example.org"}
-        assert all("Substitute found" in m[1] for m in sent_mail)
+        # the asker alone is told — the leaders were copied once and had
+        # nothing to do with it, at three messages a claim on this roster
+        assert [m[0] for m in sent_mail] == ["mia@example.org"]
+        assert "Substitute found" in sent_mail[0][1]
         assert "Noor Member" in sent_mail[0][2]
 
         await user.open(f"/events/{event_id}")
@@ -347,7 +350,9 @@ async def test_signup_notification_prefs_persist(database):
         await user.should_see("Email me a reminder")
         week = user.find(kind=ui.checkbox, content="7 days").elements.pop()
         day = user.find(kind=ui.checkbox, content="24 hours").elements.pop()
-        assert week.value and day.value, "both stages pre-checked"
+        assert not week.value, "the 7-day stage is opt-in, not pre-checked"
+        assert day.value, "the 24-hour stage is the one that ships on"
+        week.value = True
         day.value = False
         user.find(marker="signup-confirm").click()
         await user.should_see("You're on the list", retries=30)
@@ -390,6 +395,52 @@ async def test_series_signup_repeats_across_weeks(database):
         for week_id in week_ids:
             d = await event_service.detail(session, None, week_id)
             assert any(v.id == ids["mia"] for sv in d.slots for _, v in sv.entries)
+
+
+async def test_a_teams_substitute_calls_are_capped_for_the_day(database, sent_mail):
+    """The widest fan-out in the app: one click mails every teammate not
+    already serving, and the biggest roster here is 28 people. Past the day's
+    allowance the request is still posted — it is simply not announced, which
+    is the difference between rationing mail and breaking the feature."""
+    async with db_session() as session:
+        ids = await _parish(session)
+    event_id = await _seed_event(ids["liturgy"])
+    async with db_session() as session:
+        view = await event_service.detail(session, None, event_id)
+        await event_service.sign_up(
+            session, None, slot_id=view.slots[0].slot.id, volunteer_id=ids["mia"]
+        )
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        # imported in here, never at module scope: importing a page module
+        # outside the simulation's reset context registers its @ui.page routes
+        # against the old app and every route in this file 404s (ui_sim_main).
+        from volunteerdb.ui import events_page
+
+        # the team has already spent today's calls
+        for _ in range(events_page.SUB_REQUESTS_PER_TEAM_PER_DAY):
+            throttle.hit(f"sub-req:{ids['liturgy']}")
+
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open("/events")
+        await user.should_see("Your upcoming duties")
+        user.find("Need a sub", kind=ui.button).click()
+        await user.should_see("Ask for a substitute")
+        user.find("Ask the team", kind=ui.button).click()
+        await user.should_see("nobody was mailed", retries=30)
+
+        assert sent_mail == [], "the blast is what the cap withholds"
+
+    # ...and the request itself still stands for a teammate to find
+    async with db_session() as session:
+        open_calls = (
+            await session.scalars(
+                sa.select(EventSubRequest).where(
+                    EventSubRequest.status == SubRequestStatus.open.value
+                )
+            )
+        ).all()
+    assert len(open_calls) == 1, "capped mail, not a capped feature"
 
 
 async def test_handoff_and_self_removal_flows_with_mail(database, sent_mail):

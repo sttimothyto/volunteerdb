@@ -53,9 +53,13 @@ class ImportReport:
     warnings: list[Issue] = field(default_factory=list)
     applied: bool = False
     # (was, now) for every existing address a row redirected — filling a blank
-    # one does not count. The caller mails the old address after the commit:
-    # a redirected address is the first step of an account takeover, and a
-    # sheet is the quietest place to do it. See services.mail.address_edited_email.
+    # one does not count. Reported, never mailed: a redirect IS the first step
+    # of an account takeover and a sheet is the quietest place to do it, but a
+    # single pass over a messy sheet redirects dozens at once, and mailing each
+    # of those old mailboxes — usually the dead ones being fixed — spent a real
+    # slice of a 200-message day (services/mail_quota.py). The volunteer_history
+    # row is the durable record; the deliberate single edit still mails, from
+    # the volunteer page and PATCH /api/volunteers/{id}.
     addresses_replaced: list[tuple[str, str]] = field(default_factory=list)
 
     @property

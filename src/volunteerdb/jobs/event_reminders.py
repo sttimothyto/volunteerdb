@@ -5,8 +5,11 @@ Three notices exist, batched into ONE email per person per night no matter
 how many events it covers: (a) a manager scheduled you for an event ("you
 have been scheduled"), (b) an event you serve at is within 7 parish days
 ("coming up this week"), (c) it starts tomorrow. The week and day stages
-are per-assignment PREFERENCES chosen at sign-up (notify_7d / notify_24h,
-both pre-checked); an opted-out stage simply never fires. Self sign-ups
+are per-assignment PREFERENCES chosen at sign-up (notify_7d / notify_24h);
+an opted-out stage simply never fires. Only the 24-hour one is on by
+default: the week notice restates the scheduling notice a volunteer already
+had, and on the 200-message/day mail allowance that made it a third of all
+event mail for nothing (services/mail_quota.py). Self sign-ups
 and substitution claims never get notice (a) — that stage is recorded as
 already sent when the row is created, because the person acted themselves.
 A row pending several notices at once is listed once, under the strongest,

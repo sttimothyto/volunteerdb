@@ -1,15 +1,7 @@
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    HTTPException,
-    Request,
-    Response,
-    UploadFile,
-)
+from fastapi import APIRouter, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from ..permissions import require
-from ..services import mail as mail_service
 from ..sheets import exporter, importer
 from .deps import AsOf, CtxDep
 
@@ -81,29 +73,24 @@ class ImportReportOut(BaseModel):
 async def import_roster(
     ctx: CtxDep,
     file: UploadFile,
-    request: Request,
-    background: BackgroundTasks,
     dry_run: bool = False,
 ) -> ImportReportOut:
     """Upload a filled-in roster .csv. All-or-nothing; use dry_run=true to
     preview. Non-admin leaders/seconds are scoped to the teams they manage
     (out-of-scope rows come back as errors).
 
-    A row that *redirects* an address mails the mailbox it moved away from
-    (services.mail.address_edited_email) — the one message this route sends,
-    for the same reason the invite route sends one."""
+    Sends no mail. A row that redirects an address used to notify the mailbox
+    it moved away from, but one pass over a messy sheet could fire dozens of
+    those at once — a real dent in a 200-message day — mostly at the dead
+    addresses the pass was fixing. The redirects still come back in the report
+    and still land in volunteer_history; the single-volunteer edit door
+    (PATCH /volunteers/{id}) still mails, because that one is deliberate."""
     content = await file.read(MAX_IMPORT_BYTES + 1)
     if len(content) > MAX_IMPORT_BYTES:
         raise HTTPException(413, "file larger than 10 MB")
     report = await importer.run_import(
         content, dry_run=dry_run, user_id=ctx.actor.user.id
     )
-    if report.applied and report.addresses_replaced:
-        background.add_task(
-            mail_service.notify_replaced_addresses,
-            report.addresses_replaced,
-            f"{str(request.base_url).rstrip('/')}/login",
-        )
     return ImportReportOut(
         applied=report.applied,
         volunteers_created=report.volunteers_created,

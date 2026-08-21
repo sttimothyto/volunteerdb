@@ -4,6 +4,12 @@ With no API key configured (local dev, tests, the verify harness) messages are
 printed to stdout instead of sent, so OTP codes and invite links stay readable.
 Callers should invoke send_email as a module attribute (``mail.send_email``)
 so tests can monkeypatch it.
+
+Every message that actually leaves is counted into `mail_quota` (see
+services/mail_quota.py): the free tier allows 200 a day and 1,000 a month, and
+the app has no way to notice it has run out except by a send failing. That
+ledger is also the reason the copy below batches so hard — one digest a night
+per person, never one message per event.
 """
 
 from dataclasses import dataclass
@@ -14,6 +20,7 @@ import httpx
 import structlog
 
 from ..config import settings
+from . import mail_quota
 
 API_URL = "https://api.smtp2go.com/v3/email/send"
 
@@ -64,7 +71,11 @@ async def send_email(to: str, subject: str, text_body: str) -> bool:
         log.error(
             "mail.send_failed", to=to, status=resp.status_code, body=resp.text[:500]
         )
-    return ok
+        return False
+    # Successes only: a rejected message consumed none of the allowance, and a
+    # ledger that counted attempts would shout loudest when nothing was sent.
+    await mail_quota.record_send()  # never raises
+    return True
 
 
 def ttl_window(hours: int) -> str:
@@ -220,21 +231,6 @@ def email_change_done_email(new_address: str, login_url: str) -> tuple[str, str]
     )
 
 
-async def notify_replaced_addresses(
-    pairs: list[tuple[str, str]], login_url: str | None
-) -> None:
-    """Mail every address a bulk edit moved a volunteer away from.
-
-    For the importer and the Drive sync, which redirect addresses in bulk and
-    are the quietest place in the app to do it. Call it *after* the commit —
-    a dead mail provider must not roll an import back. `login_url` is None when
-    no public base URL is configured (the cron Drive sync): the notice still
-    goes out, just without a sign-in link."""
-    for was, now in pairs:
-        if was and now and was != now:
-            await send_email(was, *address_edited_email(now, login_url))
-
-
 def address_edited_email(
     new_address: str, login_url: str | None = None
 ) -> tuple[str, str]:
@@ -247,7 +243,13 @@ def address_edited_email(
     point a volunteer's address at your own, ask for their invite, redeem it.
     The independent-channel notice of SP 800-63B §4.1.2 is what turns a silent
     redirect into one the volunteer can see and report, so it goes out even
-    though the old address is often the broken one; a bounce costs nothing."""
+    though the old address is often the broken one; a bounce costs nothing.
+
+    One deliberate edit, one message. The importer and the roster-sheet sync
+    used to send this in bulk too, and a single cleanup pass over a messy sheet
+    could fire dozens at once — mostly at the dead addresses it was fixing.
+    That path is gone: a sheet redirect is still recorded (ImportReport
+    .addresses_replaced, and volunteer_history), it is simply not mailed."""
     sign_in = f" — sign in at {login_url}" if login_url else ""
     return (
         "Your VolunteerDB address was changed",
@@ -394,8 +396,13 @@ def sub_request_email(
 def sub_claimed_email(
     title: str, slot: str, when: str, claimant_name: str, asker_name: str
 ) -> tuple[str, str]:
-    """Sent to the person who asked AND the team's leaders once a
-    substitution is claimed."""
+    """Sent to the person who asked, once a substitution is claimed.
+
+    The team's leaders used to be copied. They were the only recipients with
+    nothing to do — the message tells them the gap they never had to fill has
+    been filled — and on a team with three leaders that was four messages
+    where one was actionable. The roster on the event page is the same fact,
+    live, for anyone who wants it."""
     return (
         f"Substitute found: {title}",
         f"{claimant_name} has taken over {asker_name}'s {slot} slot at "

@@ -101,7 +101,13 @@ paths lead off a slot, all self-serve:
   claim takes over — the assignment row itself moves to the claimant, in
   the same transaction as the guarded status flip that decides the race. A
   partial unique index allows one open request per assignment, so repeat
-  clicks cannot re-mail the team.
+  clicks cannot re-mail the team. This is the widest fan-out in the app —
+  one click, a whole roster — so it is also the one action limited by
+  *volume*: a team may broadcast six calls in a rolling day
+  (`SUB_REQUESTS_PER_TEAM_PER_DAY`), after which the request is still posted
+  on **/events** for teammates to find, it is simply not announced, and the
+  asker is told so. The claim notice goes to the asker alone; the team's
+  leaders were copied once and were the only recipients with nothing to do.
 - **Hand off** — the direct version: the assignee picks the teammate
   themselves, who takes the slot immediately and is emailed. Any open call
   on the assignment is cancelled with it, and the hand-off lands in the
@@ -132,7 +138,13 @@ The in-app scheduler is the one clock the app owns. Its 04:00 job
 one email per night: events a manager scheduled them for, plus two staged
 reminders — "coming up this week" once the event is 7 parish days out, and
 "tomorrow" the morning before. The stages are per-assignment *preferences*
-chosen at sign-up (pre-checked; unticking one silences just that stage).
+chosen at sign-up (ticking one enables just that stage). **Only "tomorrow"
+is on by default.** The week notice restates the "you have been scheduled"
+message the volunteer already had, while the 24-hour one is what actually
+changes their day — and on a weekend roster that middle notice was a third
+of all event mail against a 200-a-day allowance
+([architecture](architecture.md)). It is still there for anyone who plans a
+week out; it just has to be asked for.
 Day-granularity is deliberate: reminders arrive with the one nightly
 digest, not at a computed instant. Idempotency is the proposal-digest
 pattern, and now literally the same table: a row in `notification` per

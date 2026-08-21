@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from nicegui import ui
 from starlette.requests import Request
 
-from .. import query_lang
+from .. import query_lang, throttle
 from ..config import settings
 from ..log import audit_log
 from ..models import (
@@ -47,6 +47,16 @@ from .context import action_session, notify_errors, page_session
 from .date_input import date_input
 from .layout import frame
 from .volunteer_panel import VolunteerPanel, volunteer_link
+
+# Substitute calls a single team may broadcast in a rolling day. Every one of
+# them mails the whole roster minus the people already serving — up to 28
+# messages a click on the largest team here — which makes this the one place a
+# handful of clicks can eat a day's mail allowance (services/mail_quota.py).
+# Six leaves an ordinary weekend's worth of genuine asks untouched; past that
+# the request is still posted on /events, it is simply not announced.
+# In-process and sliding, like every other throttle here: a restart forgives,
+# and at parish scale that is the right trade for keeping this out of the db.
+SUB_REQUESTS_PER_TEAM_PER_DAY = 6
 
 
 def _tz() -> ZoneInfo:
@@ -134,7 +144,12 @@ def _share_event(base_url: str, event_id: int) -> None:
 
 
 async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
-    """Open a substitution call and mail the teammates who could take it."""
+    """Open a substitution call and mail the teammates who could take it.
+
+    This is the widest fan-out in the app — one click mails every teammate not
+    already serving, and the largest roster here is 28 people — so it is the
+    one action rate-limited by volume rather than by abuse: see
+    SUB_REQUESTS_PER_TEAM_PER_DAY."""
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label("Ask for a substitute").classes("text-lg font-medium")
         ui.label(
@@ -171,12 +186,25 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
                 asker = await session.get(Volunteer, assignment.volunteer_id)
                 slot = await session.get(EventSlot, assignment.slot_id)
                 paths = (await team_service.tree(session)).paths
-                audience = await event_service.member_emails(
-                    session,
-                    event.team_id,
-                    exclude_volunteer_ids=await event_service.assigned_volunteer_ids(
-                        session, event.id
-                    ),
+                # The request itself is never refused — it belongs on the
+                # events page whether or not it is announced — but the blast is
+                # capped. A team that has already sent its allowance today gets
+                # the row and no mail, and the asker is told so plainly.
+                capped = throttle.blocked(
+                    f"sub-req:{event.team_id}", SUB_REQUESTS_PER_TEAM_PER_DAY, 86_400
+                )
+                audience = (
+                    []
+                    if capped
+                    else await event_service.member_emails(
+                        session,
+                        event.team_id,
+                        exclude_volunteer_ids=(
+                            await event_service.assigned_volunteer_ids(
+                                session, event.id
+                            )
+                        ),
+                    )
                 )
                 message = mail.sub_request_email(
                     event.title,
@@ -187,13 +215,26 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
                     sub.note,
                     f"{base_url}/events",
                 )
+            if not capped:
+                throttle.hit(f"sub-req:{event.team_id}")
             for address in audience:  # after commit; send_email never raises
                 await mail.send_email(address, *message)
             dialog.close()
-            ui.notify(
-                f"Asked {len(audience)} teammate(s) for a substitute",
-                color="positive",
-            )
+            if capped:
+                ui.notify(
+                    "Your request is posted on the Events page, but this team "
+                    f"has already sent its {SUB_REQUESTS_PER_TEAM_PER_DAY} "
+                    "substitute emails for today — nobody was mailed. Ask a "
+                    "teammate directly, or try again tomorrow.",
+                    color="warning",
+                    multi_line=True,
+                    timeout=10000,
+                )
+            else:
+                ui.notify(
+                    f"Asked {len(audience)} teammate(s) for a substitute",
+                    color="positive",
+                )
             ui.navigate.reload()
 
         with ui.row().classes("justify-end w-full gap-2"):
@@ -354,11 +395,14 @@ async def _claim_sub(sub_request_id: int) -> None:
             claimant.full_name if claimant else "A teammate",
             asker.full_name,
         )
-        recipients = set(await team_service.leader_emails(session, event.team_id))
-        if asker.email:
-            recipients.add(asker.email)
-    for address in sorted(recipients):  # after commit
-        await mail.send_email(address, *message)
+        # The asker only. The team's leaders were copied here once and were the
+        # only recipients with nothing to do — the message says a gap they
+        # never had to fill has been filled — which on a three-leader team was
+        # four messages for one useful one. The event page carries the same
+        # fact, live, for whoever wants it.
+        recipient = asker.email
+    if recipient:  # after commit
+        await mail.send_email(recipient, *message)
     ui.notify("The slot is yours — thank you!", color="positive")
     ui.navigate.reload()
 
@@ -920,7 +964,10 @@ def _edit_slot_dialog(
             .mark("slot-edit-capacity")
         )
         description = (
-            ui.input("Description (optional)", value=description_now or "")
+            ui.input(
+                "Description (optional) i.e. Google Doc w/ details",
+                value=description_now or "",
+            )
             .props("outlined dense")
             .classes("w-full")
             .mark("slot-edit-description")
@@ -1242,7 +1289,10 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
                 "Weeks already full, or where you already serve, are skipped."
             ).classes("text-sm text-gray-500")
         ui.label("Email me a reminder:").classes("text-sm text-gray-500")
-        week = ui.checkbox("7 days before", value=True).props("dense")
+        # 7 days unticked by default: it restates the notice that told you you
+        # were scheduled, and the 24-hour one is what actually changes a day.
+        # Still offered — some people plan a week out (models.EventAssignment).
+        week = ui.checkbox("7 days before", value=False).props("dense")
         day = ui.checkbox("24 hours before", value=True).props("dense")
 
         @notify_errors

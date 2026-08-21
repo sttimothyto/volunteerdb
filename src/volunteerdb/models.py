@@ -622,7 +622,12 @@ class EventAssignment(Base):
     # Declared after the overrides because the revision that added them appended
     # them there; see AppUser's docstring for why declaration order is kept
     # honest against the deployed order.
-    notify_7d: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
+    # The 24h reminder is the one that changes what somebody does; the 7-day
+    # one restates a "you have been scheduled" notice they already had, and on
+    # a 200-message/day mail allowance that middle notice is a third of all
+    # event mail for nothing (services/mail_quota.py). Off by default,
+    # opt-in per assignment — the stage itself is untouched.
+    notify_7d: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     notify_24h: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
 
 
@@ -1041,6 +1046,30 @@ class JobRun(Base):
     # Kept deliberately — a nightly job's last exit code costs one integer and
     # is the first thing a postmortem wants.
     last_exit_code: Mapped[int | None] = mapped_column(sa.Integer)
+
+
+class MailQuota(Base):
+    """One row per parish day, counting the messages that actually left.
+
+    The mail provider's free tier allows 200 a day and 1,000 a month, and the
+    app finds out it has run out only by a send failing — which on this
+    instance is a sign-in code that never arrives. Counting our own sends is
+    what lets `services/mail_quota.py` warn an admin before that happens.
+
+    A counter, not a log: no address, no subject, nothing that would turn the
+    ledger into a second copy of who was mailed what. `sent` is bumped by a
+    Core ON CONFLICT upsert from the one success path in `mail.send_email`.
+
+    Not system-versioned: infrastructure bookkeeping, not parish data —
+    the same call `JobRun` above makes.
+    """
+
+    __tablename__ = "mail_quota"
+
+    day: Mapped[date] = mapped_column(sa.Date, primary_key=True)  # parish date
+    sent: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default=sa.text("0")
+    )
 
 
 def _make_history_table(live: sa.Table) -> sa.Table:

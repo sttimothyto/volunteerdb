@@ -107,6 +107,15 @@ twins ([History and time travel](history.md)).
 - **Email** (`services/mail.py`) degrades gracefully: without an SMTP2GO
   key it logs messages instead of sending, which keeps development and the
   [test suite](../how-to/run-tests.md) offline.
+- **The mail allowance is finite and the app counts it** (`mail_quota`,
+  `services/mail_quota.py`). The provider's free tier is 200 messages a day
+  and 1,000 a month; past either, a send simply fails, which on a parish
+  instance means a sign-in code that never arrives. Every message that
+  actually leaves increments one row per parish day — a counter, never a log
+  of who was mailed what — and admins (only) get a header banner once the
+  trailing week says a day or the month is on course to cross a cap. The same
+  budget is why notifications batch the way they do: one digest a night per
+  person, never one message per event.
 - **Spreadsheets** (`sheets/`) are an alternative bulk interface to the
   same services, with the same all-or-nothing transactional behavior.
 

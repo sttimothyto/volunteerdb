@@ -2,15 +2,19 @@
 on the pages that can time-travel — the as-of date picker. The address is the
 way to your own record, and the headshot beside it is how you change it."""
 
+from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 from PIL import Image
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from volunteerdb.db import db_session
-from volunteerdb.services import photos, teams, users, volunteers
+from volunteerdb.models import MailQuota
+from volunteerdb.services import mail_quota, photos, teams, users, volunteers
 
 from .conftest import SLOW
 
@@ -141,3 +145,88 @@ async def test_the_header_avatar_and_the_profile_avatar_are_addressed_apart(data
         await user.should_see("Maria Alvarez")
         assert len(user.find(marker="photo-avatar").elements) == 1
         assert len(user.find(marker="header-avatar").elements) == 1
+
+
+# --- the mail-allowance banner ------------------------------------------------
+#
+# The mail provider allows 200 messages a day and 1,000 a month, and the app
+# spends them without asking (nightly digests, sign-in codes). The banner is
+# the one place it can warn somebody who can act — so the thing worth pinning
+# is that "somebody" means an admin and nobody else.
+
+
+async def _spend(day_offset: int, messages: int) -> None:
+    day = mail_quota.local_today() - timedelta(days=day_offset)
+    async with db_session() as session:
+        await session.execute(
+            pg_insert(MailQuota)
+            .values(day=day, sent=messages)
+            .on_conflict_do_update(index_elements=["day"], set_={"sent": messages})
+        )
+    mail_quota.clear_cache()
+
+
+async def test_the_mail_allowance_banner_is_for_admins_only(database):
+    """A volunteer can neither raise the plan nor stop the nightly digests, so
+    a warning they cannot act on is noise on the page they came to read."""
+    async with db_session() as session:
+        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        member, _ = await users.create(session, "member@example.org")
+        admin_id, member_id = admin.id, member.id
+
+    # One day past the 200/day cap, yesterday. Deliberately one and not a
+    # week: seven of them would also blow the 1,000/month cap and read as
+    # "critical", and this test is about who sees the banner, not how loud it
+    # is. One day lands on "warning" wherever in the month it is run.
+    await _spend(1, 250)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{member_id}")
+        await user.open("/volunteers")
+        await user.should_see("Volunteers")
+        await user.should_not_see(marker="mail-quota-banner")
+
+        await user.open(f"/login-dev/{admin_id}")
+        await user.open("/volunteers")
+        await user.should_see(marker="mail-quota-banner")
+        await user.should_see("heading over its limit")
+        await user.should_see("administrator who set up this website")
+
+
+async def test_a_comfortable_instance_shows_no_banner_even_to_an_admin(database):
+    async with db_session() as session:
+        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        admin_id = admin.id
+
+    for day in range(1, 8):
+        await _spend(day, 4)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{admin_id}")
+        await user.open("/volunteers")
+        await user.should_see("Volunteers")
+        await user.should_not_see(marker="mail-quota-banner")
+
+
+async def test_a_spent_day_reads_louder_than_one_merely_projected(database):
+    async with db_session() as session:
+        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        admin_id = admin.id
+
+    await _spend(0, mail_quota.DAILY_CAP)  # today's allowance already gone
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{admin_id}")
+        await user.open("/volunteers")
+        await user.should_see(marker="mail-quota-banner")
+        await user.should_see("is over its limit")
+        await user.should_see("including sign-in codes")
+
+
+@pytest.fixture(autouse=True)
+def _no_leaking_quota_memo():
+    """The projection is memoised for a minute; a test must not read the
+    previous one's numbers."""
+    mail_quota.clear_cache()
+    yield
+    mail_quota.clear_cache()

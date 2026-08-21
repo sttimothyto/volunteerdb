@@ -1008,7 +1008,7 @@ async def _join_slot(
     volunteer_id: int,
     kind: AssignmentKind,
     assigned_by: int | None,
-    notify_7d: bool = True,
+    notify_7d: bool = False,
     notify_24h: bool = True,
 ) -> EventAssignment:
     # FOR UPDATE: a counted capacity has no unique-index backstop, so the two
@@ -1061,7 +1061,7 @@ async def sign_up(
     *,
     slot_id: int,
     volunteer_id: int | None,
-    notify_7d: bool = True,
+    notify_7d: bool = False,
     notify_24h: bool = True,
 ) -> EventAssignment:
     if volunteer_id is None:
@@ -1093,7 +1093,7 @@ async def sign_up_series(
     *,
     slot_id: int,
     volunteer_id: int | None,
-    notify_7d: bool = True,
+    notify_7d: bool = False,
     notify_24h: bool = True,
 ) -> tuple[EventAssignment, SeriesSignupResult]:
     """Sign up on the given slot, then copy the sign-up onto every later
@@ -1286,8 +1286,9 @@ async def claim_sub(
         raise ValueError("someone else already claimed this slot")
     assignment.volunteer_id = vid
     assignment.kind = AssignmentKind.sub.value
-    # the new person still needs the reminders, on default preferences
-    assignment.notify_7d = assignment.notify_24h = True
+    # the new person still needs the reminders, on the app's defaults — not
+    # the outgoing volunteer's choices, which were theirs and not this one's
+    assignment.notify_7d, assignment.notify_24h = False, True
     await session.flush()
     await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
     await _reset_reminders(session, assignment.id)  # the claimant has had none
@@ -1347,8 +1348,9 @@ async def substitute(
     assignment.volunteer_id = vid
     assignment.kind = AssignmentKind.sub.value
     assignment.assigned_by = acted_by
-    # the new person still needs the reminders, on default preferences
-    assignment.notify_7d = assignment.notify_24h = True
+    # the new person still needs the reminders, on the app's defaults — not
+    # the outgoing volunteer's choices, which were theirs and not this one's
+    assignment.notify_7d, assignment.notify_24h = False, True
     await session.flush()
     if caller_notifies:
         # the caller mails the incoming volunteer right after commit, so the

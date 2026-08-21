@@ -483,9 +483,7 @@ def _home_page_section(
         ).classes("text-sm text-gray-500")
 
 
-def _sheet_section(
-    team_sheet: TeamSheet | None, team_id: int, is_admin: bool
-) -> None:
+def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -> None:
     """The team's roster spreadsheet, for leaders/seconds (and admins).
 
     Everything to do with getting rosters in and out of a spreadsheet lives

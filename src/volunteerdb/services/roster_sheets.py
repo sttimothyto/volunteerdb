@@ -32,7 +32,7 @@ from ..db import db_session
 from ..log import audit_log
 from ..models import AppUser, SyncStatus, TeamSheet
 from ..permissions import load_actor, require
-from ..services import gsheets, mail
+from ..services import gsheets
 from ..services import pages as page_service
 from ..services import teams as team_service
 from ..services import users as user_service
@@ -245,10 +245,6 @@ async def sync_team(
                 )
                 await record_status(team_id, SyncStatus.error, message)
                 return SyncOutcome(SyncStatus.error, message, report)
-            base = settings().public_base_url.rstrip("/")
-            await mail.notify_replaced_addresses(
-                report.addresses_replaced, f"{base}/login" if base else None
-            )
         token = await gsheets.mint_token()
         wrote = await export_sheet(token, file_id, team_id)
         await gsheets.decorate(token, file_id, await team_dropdown_values(team_id))
