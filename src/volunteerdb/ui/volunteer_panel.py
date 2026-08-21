@@ -33,6 +33,23 @@ def format_custom(defn: CustomFieldDef, value, missing: str = "—") -> str:
             return str(value)
 
 
+def volunteer_link(
+    name: str, volunteer_id: int, panel: "VolunteerPanel", *, classes: str = ""
+) -> ui.label:
+    """A volunteer's name, clickable to open the side panel beside it.
+
+    The idiom lived inline in the team roster until the events pages needed it
+    in four more places. ui.label has no on_click parameter, so the generic
+    .on() is the way (same as photo_dialog.photo_avatar)."""
+    return (
+        ui.label(name)
+        .classes(
+            f"font-medium cursor-pointer text-primary hover:underline {classes}".rstrip()
+        )
+        .on("click", lambda _, vid=volunteer_id: panel.open(vid))
+    )
+
+
 class VolunteerPanel:
     def __init__(self, as_of: str = "", base_url: str = "") -> None:
         self.at = parse_as_of(as_of)

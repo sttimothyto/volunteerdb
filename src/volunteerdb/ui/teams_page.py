@@ -31,7 +31,7 @@ from .context import (
     parse_as_of,
 )
 from .layout import frame
-from .volunteer_panel import VolunteerPanel
+from .volunteer_panel import VolunteerPanel, volunteer_link
 
 ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
@@ -484,7 +484,7 @@ def _home_page_section(
 
 
 def _sheet_section(
-    team_sheet: TeamSheet | None, team_id: int, base_url: str, is_admin: bool
+    team_sheet: TeamSheet | None, team_id: int, is_admin: bool
 ) -> None:
     """The team's roster spreadsheet, for leaders/seconds (and admins).
 
@@ -567,7 +567,7 @@ def _sheet_section(
             ui.label(f"Last synced {team_sheet.last_synced_at:%Y-%m-%d %H:%M}").classes(
                 "text-sm text-gray-500"
             )
-    _sheet_import_block(base_url, is_admin)
+    _sheet_import_block(is_admin)
 
 
 @notify_errors
@@ -590,7 +590,7 @@ async def _sync_sheet(team_id: int, direction: str) -> None:
     ui.navigate.to(f"/teams/{team_id}")
 
 
-def _sheet_import_block(base_url: str, is_admin: bool) -> None:
+def _sheet_import_block(is_admin: bool) -> None:
     """The .csv import, moved here from the retired /import page.
 
     Deliberately still importer.run_import, unchanged: it scopes rows to the
@@ -686,11 +686,6 @@ def _sheet_import_block(base_url: str, is_admin: bool) -> None:
         await render_report(report)
         if report.applied:
             ui.notify(f"Imported {state['filename']}", color="positive")
-            # after the commit: a row that redirected somebody's address
-            # tells the mailbox it moved away from (services/mail.py)
-            await mail.notify_replaced_addresses(
-                report.addresses_replaced, f"{base_url}/login"
-            )
 
     ui.upload(
         label="Drop a .csv file here (validated before anything is written)",
@@ -950,44 +945,6 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                     f'dense outline href="/ministries/{slug}.html"'
                 )
 
-        # core members included on purpose: leaders are often elderly and a
-        # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
-        if can_full and at is None:
-            _home_page_section(team, team_page, team_id, slug, base_url)
-        if can_manage:
-            _sheet_section(team_sheet, team_id, base_url, actor.is_admin)
-
-        if children:
-            ui.label("Sub-teams").classes("text-lg font-medium")
-            with ui.row().classes("gap-2"):
-                for child in children:
-                    ui.button(child.name).props(
-                        f'outline dense href="/teams/{child.id}"'
-                    )
-
-        if upcoming_events:
-            ui.label("Upcoming events").classes("text-lg font-medium")
-            with ui.column().classes("w-full gap-1"):
-                for s in upcoming_events[:5]:
-                    with ui.row().classes(
-                        "w-full items-center gap-2 p-2 rounded bg-gray-50"
-                    ):
-                        ui.link(s.event.title, f"/events/{s.event.id}").classes(
-                            "font-medium"
-                        )
-                        ui.label(
-                            mail.event_when(s.event.starts_at, s.event.ends_at)
-                        ).classes("text-sm text-gray-600")
-                        ui.space()
-                        cap = "∞" if s.capacity is None else s.capacity
-                        ui.label(f"{s.filled}/{cap} filled").classes(
-                            "text-sm text-gray-600"
-                        )
-                if len(upcoming_events) > 5:
-                    ui.link(
-                        f"All {len(upcoming_events)} upcoming events", "/events"
-                    ).classes("text-sm")
-
         if anniversaries:
             summary = "; ".join(
                 f"{a.volunteer.full_name}: {a.years} "
@@ -1005,6 +962,38 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                 "from that import."
             ).classes("text-xs text-gray-500 vdb-prose")
 
+        # core members included on purpose: leaders are often elderly and a
+        # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
+        if can_full and at is None:
+            _home_page_section(team, team_page, team_id, slug, base_url)
+
+        if can_manage:
+            ui.label("Add member").classes("text-lg font-medium")
+            with ui.row().classes("items-center gap-2"):
+                who = (
+                    ui.select(volunteer_options, label="Volunteer", with_input=True)
+                    .props("outlined dense")
+                    .classes("w-64")
+                )
+                role = (
+                    ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
+                    .props("outlined dense")
+                    .classes("w-52")
+                )
+
+                @notify_errors
+                async def add() -> None:
+                    if not who.value:
+                        ui.notify("Pick a volunteer", color="warning")
+                        return
+                    async with action_session() as (session, actor):
+                        await membership_service.assign(
+                            session, actor, who.value, team_id, TeamRole(role.value)
+                        )
+                    ui.navigate.reload()
+
+                ui.button("Add", icon="person_add", on_click=add).props("dense")
+
         ui.label("Roster").classes("text-lg font-medium")
         if not can_names:
             ui.label(
@@ -1017,9 +1006,9 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                 with ui.row().classes(
                     "w-full items-center gap-3 p-2 rounded hover:bg-gray-100"
                 ):
-                    ui.label(volunteer.full_name).classes(
-                        "font-medium w-48 cursor-pointer text-primary hover:underline"
-                    ).on("click", lambda _, vid=volunteer.id: panel.open(vid))
+                    volunteer_link(
+                        volunteer.full_name, volunteer.id, panel, classes="w-48"
+                    )
                     if can_manage:
                         role_select = ui.select(
                             ROLE_OPTIONS, value=membership.role.value
@@ -1064,31 +1053,38 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                         ).props("dense flat color=negative").tooltip("Remove from team")
 
         if can_manage:
-            ui.label("Add member").classes("text-lg font-medium")
-            with ui.row().classes("items-center gap-2"):
-                who = (
-                    ui.select(volunteer_options, label="Volunteer", with_input=True)
-                    .props("outlined dense")
-                    .classes("w-64")
-                )
-                role = (
-                    ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
-                    .props("outlined dense")
-                    .classes("w-52")
-                )
+            _sheet_section(team_sheet, team_id, actor.is_admin)
 
-                @notify_errors
-                async def add() -> None:
-                    if not who.value:
-                        ui.notify("Pick a volunteer", color="warning")
-                        return
-                    async with action_session() as (session, actor):
-                        await membership_service.assign(
-                            session, actor, who.value, team_id, TeamRole(role.value)
+        if children:
+            ui.label("Sub-teams").classes("text-lg font-medium")
+            with ui.row().classes("gap-2"):
+                for child in children:
+                    ui.button(child.name).props(
+                        f'outline dense href="/teams/{child.id}"'
+                    )
+
+        if upcoming_events:
+            ui.label("Upcoming events").classes("text-lg font-medium")
+            with ui.column().classes("w-full gap-1"):
+                for s in upcoming_events[:5]:
+                    with ui.row().classes(
+                        "w-full items-center gap-2 p-2 rounded bg-gray-50"
+                    ):
+                        ui.link(s.event.title, f"/events/{s.event.id}").classes(
+                            "font-medium"
                         )
-                    ui.navigate.reload()
-
-                ui.button("Add", icon="person_add", on_click=add).props("dense")
+                        ui.label(
+                            mail.event_when(s.event.starts_at, s.event.ends_at)
+                        ).classes("text-sm text-gray-600")
+                        ui.space()
+                        cap = "∞" if s.capacity is None else s.capacity
+                        ui.label(f"{s.filled}/{cap} filled").classes(
+                            "text-sm text-gray-600"
+                        )
+                if len(upcoming_events) > 5:
+                    ui.link(
+                        f"All {len(upcoming_events)} upcoming events", "/events"
+                    ).classes("text-sm")
 
 
 async def _change_role(membership_id: int, role_value: str) -> None:

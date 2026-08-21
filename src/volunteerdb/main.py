@@ -32,6 +32,9 @@ UNRESTRICTED_PREFIXES = (
     "/static/",
     "/favicon",
     "/ministries",  # public ministry home pages (ui/ministries_routes.py)
+    # the parish logo: the login page and the ministries shell both show it,
+    # and neither has a session (ui/logo_route.py)
+    "/logo",
 )
 # /photos/ is cookie-authed but asset-like: skipping the session re-issue keeps
 # its long-lived Cache-Control effective (a Set-Cookie per image defeats caching)
@@ -42,10 +45,18 @@ ASSET_PREFIXES = (
     "/api/",
     "/photos/",
     "/ministries/img/",
+    "/logo",
 )
 # Request-log lines for these drop to DEBUG (unlike ASSET_PREFIXES, /api/ stays
 # at INFO — API calls are exactly the traffic worth seeing).
-QUIET_PREFIXES = ("/_nicegui", "/static/", "/favicon", "/photos/", "/ministries/img/")
+QUIET_PREFIXES = (
+    "/_nicegui",
+    "/static/",
+    "/favicon",
+    "/photos/",
+    "/ministries/img/",
+    "/logo",
+)
 
 # Paths whose LAST segment is a bearer credential. The request line records the
 # path, so at INFO these would write live invite and address-change links into

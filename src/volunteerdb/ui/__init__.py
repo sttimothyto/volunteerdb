@@ -8,6 +8,7 @@ def register_pages() -> None:
         events_page,
         fields_admin_page,
         login,
+        logo_route,
         ministries_routes,
         photos_route,
         teams_page,
@@ -19,3 +20,4 @@ def register_pages() -> None:
     # test harness wipes app routes between simulations while this module
     # stays cached, so import-time decorators would fire only once
     ministries_routes.register()
+    logo_route.register()

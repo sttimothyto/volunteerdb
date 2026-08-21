@@ -8,6 +8,21 @@ seam: no route answers an anonymous caller, and the real app still routes.
 """
 
 import re
+from io import BytesIO
+from pathlib import Path
+
+from PIL import Image
+
+import volunteerdb.ui.logo_route
+from volunteerdb.db import db_session
+from volunteerdb.services import branding
+
+
+def _logo_png() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGBA", (400, 200), (176, 125, 43, 255)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
 
 # Path-item keys that are operations; the rest ("parameters", "summary", ...)
 # describe the path itself.
@@ -109,6 +124,16 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
         "an unknown ministry image is a 404, not a login redirect"
     )
 
+    # the login page and the ministries shell both render the logo, and neither
+    # has a session — bouncing it would put a broken image on the way in
+    response = await real_app_client.get("/logo", follow_redirects=False)
+    assert response.status_code == 200, (
+        "/logo must serve anonymous browsers (main.UNRESTRICTED_PREFIXES)"
+    )
+    assert response.headers["content-type"].startswith("image/"), (
+        f"/logo served {response.headers.get('content-type')!r}, not an image"
+    )
+
     # the address-confirmation link is opened from whatever browser reads the
     # new mailbox, days later, signed out — bouncing it to /login would ask
     # the reader to sign in at the address they are trying to replace
@@ -119,6 +144,49 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
         "/confirm-email/ must render for anonymous browsers "
         "(main.UNRESTRICTED_PREFIXES); a dead token is a message, not a redirect"
     )
+
+
+async def test_the_logo_revalidates_so_an_upload_is_seen_at_once(real_app_client):
+    """A fixed max-age would have been wrong here.
+
+    ui.navigate.reload() after an upload does not bypass the browser cache for
+    a subresource, so under a plain max-age the admin who just uploaded a logo
+    would keep seeing the old one until it expired. no-cache + ETag means the
+    browser asks every time, gets a cheap 304 almost always, and sees a new
+    logo the moment it is saved.
+    """
+    first = await real_app_client.get("/logo")
+    assert first.status_code == 200
+    assert first.headers["cache-control"] == "no-cache", (
+        "a fixed lifetime would hide a fresh upload from the admin who made it"
+    )
+    placeholder_etag = first.headers["etag"]
+    assert (
+        first.content
+        == (
+            Path(volunteerdb.ui.logo_route.STATIC_DIR) / "logo-placeholder.svg"
+        ).read_bytes()
+    ), "with no logo uploaded, /logo serves the shipped placeholder"
+
+    revalidated = await real_app_client.get(
+        "/logo", headers={"If-None-Match": placeholder_etag}
+    )
+    assert revalidated.status_code == 304, "an unchanged logo costs no body"
+
+    async with db_session() as session:
+        await branding.set_logo(session, None, _logo_png())
+
+    after = await real_app_client.get(
+        "/logo", headers={"If-None-Match": placeholder_etag}
+    )
+    assert after.status_code == 200, "the stale validator must not win"
+    assert after.headers["etag"] != placeholder_etag
+    assert after.headers["content-type"] == "image/png"
+
+    async with db_session() as session:
+        await branding.delete_logo(session, None)
+    back = await real_app_client.get("/logo")
+    assert back.headers["etag"] == placeholder_etag, "removal restores the placeholder"
 
 
 async def test_the_login_page_hands_out_a_fresh_session_id(real_app_client):

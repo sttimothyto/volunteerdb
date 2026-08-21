@@ -46,6 +46,7 @@ from . import column_order
 from .context import action_session, notify_errors, page_session
 from .date_input import date_input
 from .layout import frame
+from .volunteer_panel import VolunteerPanel, volunteer_link
 
 
 def _tz() -> ZoneInfo:
@@ -548,6 +549,9 @@ async def events_page(request: Request, past: str = "", team: str = ""):
     if show_past:
         summaries = list(reversed(summaries))  # most recent past first
 
+    # drawers must be direct children of page content, so build it before
+    # entering frame (see ui/volunteer_panel.py)
+    panel = VolunteerPanel("", base_url)
     with frame("Events", actor):
         if duties:
             ui.label("Your upcoming duties").classes("text-lg font-medium")
@@ -588,7 +592,7 @@ async def events_page(request: Request, past: str = "", team: str = ""):
                     with ui.row().classes(
                         "w-full items-center gap-2 p-2 rounded bg-amber-50"
                     ):
-                        ui.label(c.volunteer.full_name).classes("font-medium")
+                        volunteer_link(c.volunteer.full_name, c.volunteer.id, panel)
                         ui.label(f"needs a {c.slot.name} at").classes("text-sm")
                         ui.link(c.event.title, f"/events/{c.event.id}")
                         ui.label(
@@ -1101,13 +1105,15 @@ def _availability_card(event_id: int, my_rsvp: EventRsvp | None) -> None:
             ).props("dense outline")
 
 
-def _availability_answers(rsvps: list[tuple[EventRsvp, Volunteer]]) -> None:
+def _availability_answers(
+    rsvps: list[tuple[EventRsvp, Volunteer]], panel: VolunteerPanel
+) -> None:
     """The pool a manager assigns from."""
     ui.label("Availability answers").classes("text-lg font-medium mt-2")
     with ui.column().classes("w-full gap-1"):
         for rsvp, volunteer in rsvps:
             with ui.row().classes("w-full items-center gap-2 p-1"):
-                ui.label(volunteer.full_name)
+                volunteer_link(volunteer.full_name, volunteer.id, panel)
                 ui.badge(
                     "available" if rsvp.available else "not available",
                     color="positive" if rsvp.available else "grey",
@@ -1143,6 +1149,7 @@ def _subs_wanted_section(
 def _attendance_section(
     event: Event,
     attendance: list[tuple[EventAssignment, EventSlot, Volunteer]],
+    panel: VolunteerPanel,
 ) -> None:
     """Recorded after the event ends. Attendance is derived, so this section
     exists only to correct it: a row with no override shows the automatic
@@ -1191,7 +1198,7 @@ def _attendance_section(
             or assignment.hours_override is not None
         )
         with ui.row().classes("w-full items-center gap-3 p-1"):
-            ui.label(volunteer.full_name).classes("w-48")
+            volunteer_link(volunteer.full_name, volunteer.id, panel, classes="w-48")
             ui.badge(slot.name)
             box = ui.checkbox("attended", value=attended).props("dense")
             hrs = (
@@ -1435,6 +1442,7 @@ async def event_detail_page(request: Request, event_id: int):
         suffix = {0: " · available", 1: "", 2: " · UNAVAILABLE"}
         return {v.id: f"{v.full_name}{suffix[rank(v.id)]}" for _, v in entries}
 
+    panel = VolunteerPanel("", base_url)
     with frame(event.title, actor):
         with ui.row().classes("w-full items-center gap-2"):
             ui.link(view.path, f"/teams/{event.team_id}").classes("font-medium")
@@ -1511,7 +1519,7 @@ async def event_detail_page(request: Request, event_id: int):
                     with ui.row().classes(
                         "w-full items-center gap-2 p-1 rounded hover:bg-gray-100"
                     ):
-                        ui.label(volunteer.full_name)
+                        volunteer_link(volunteer.full_name, volunteer.id, panel)
                         if assignment.kind == "sub":
                             ui.badge("substitute", color="secondary")
                         rsvp = rsvp_by_vid.get(volunteer.id)
@@ -1579,7 +1587,7 @@ async def event_detail_page(request: Request, event_id: int):
             ).props("dense flat no-caps")
 
         if can_manage and view.rsvps:
-            _availability_answers(view.rsvps)
+            _availability_answers(view.rsvps, panel)
 
         eligible_subs = [
             (sub, a)
@@ -1593,4 +1601,4 @@ async def event_detail_page(request: Request, event_id: int):
             _subs_wanted_section(eligible_subs, view.slots)
 
         if attendance is not None:
-            _attendance_section(event, attendance)
+            _attendance_section(event, attendance, panel)

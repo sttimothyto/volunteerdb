@@ -382,6 +382,37 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                         ),
                     ).props("dense flat color=negative").tooltip("Remove from team")
 
+        if assignable:
+            ui.label("Add to team").classes("text-lg font-medium")
+            with ui.row().classes("items-center gap-2"):
+                team_select = (
+                    ui.select(assignable, label="Team", with_input=True)
+                    .props("outlined dense")
+                    .classes("w-64")
+                )
+                role_select = (
+                    ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
+                    .props("outlined dense")
+                    .classes("w-52")
+                )
+
+                @notify_errors
+                async def add() -> None:
+                    if not team_select.value:
+                        ui.notify("Pick a team", color="warning")
+                        return
+                    async with action_session() as (session, actor):
+                        await membership_service.assign(
+                            session,
+                            actor,
+                            volunteer_id,
+                            team_select.value,
+                            TeamRole(role_select.value),
+                        )
+                    ui.navigate.reload()
+
+                ui.button("Add", icon="group_add", on_click=add).props("dense")
+
         ui.label("Service timeline").classes("text-lg font-medium")
         timeline_chart(spells, paths, dark=app.storage.user.get("dark_mode", False))
 
@@ -435,37 +466,6 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                             ui.badge("Candidate", color="primary").props("outline")
                     if inv.as_voter:
                         ui.badge("Voting member").props("outline")
-
-        if assignable:
-            ui.label("Add to team").classes("text-lg font-medium")
-            with ui.row().classes("items-center gap-2"):
-                team_select = (
-                    ui.select(assignable, label="Team", with_input=True)
-                    .props("outlined dense")
-                    .classes("w-64")
-                )
-                role_select = (
-                    ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
-                    .props("outlined dense")
-                    .classes("w-52")
-                )
-
-                @notify_errors
-                async def add() -> None:
-                    if not team_select.value:
-                        ui.notify("Pick a team", color="warning")
-                        return
-                    async with action_session() as (session, actor):
-                        await membership_service.assign(
-                            session,
-                            actor,
-                            volunteer_id,
-                            team_select.value,
-                            TeamRole(role_select.value),
-                        )
-                    ui.navigate.reload()
-
-                ui.button("Add", icon="group_add", on_click=add).props("dense")
 
 
 def _custom_widget(defn: CustomFieldDef, value):
@@ -552,7 +552,7 @@ def _edit_dialog(
     the volunteer row onto it — no confirmation, because there is nothing to
     confirm — which is the only way to fill a linked record whose email is
     blank (own_login / own_user_id name that signed-in account)."""
-    with ui.dialog() as dialog, ui.card().classes("w-[32rem] gap-3"):
+    with ui.dialog() as dialog, ui.card().classes("w-[34rem] gap-3"):
         ui.label(f"Edit {volunteer.full_name}").classes("text-lg font-medium")
         first = (
             ui.input("First name", value=volunteer.first_name)

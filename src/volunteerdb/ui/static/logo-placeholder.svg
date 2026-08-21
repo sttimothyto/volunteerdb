@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"
+     aria-label="Parish logo placeholder">
+  <!-- Shown until an admin uploads a real logo (services/branding.py). One
+       flat colour on a transparent ground: this mark sits on the terracotta
+       app header (#a5573e) AND the parchment login page (#fdf6e3), and an
+       img element cannot inherit currentColor, so the fill is baked in. The
+       muted gold is the theme's vdb-graph-leader token, legible on both. -->
+  <g fill="#b07d2b">
+    <path d="M30.5 4h3v14h-3z"/>
+    <path d="M27 8.5h10v3H27z"/>
+    <path d="M32 16 51 33H13z"/>
+    <path fill-rule="evenodd" d="M16 33h32v25H16zm10 25V45a6 6 0 0 1 12 0v13z"/>
+  </g>
+</svg>

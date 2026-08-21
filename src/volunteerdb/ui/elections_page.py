@@ -180,8 +180,16 @@ async def elections_page():
         dialog.open()
 
     with frame("Elections", actor):
+        if open_rows:
+            ui.label("Open proposals").classes("text-lg font-medium")
+            with ui.column().classes("w-full gap-1"):
+                for s in open_rows:
+                    summary_row(s)
+        elif not can_create:
+            ui.label("No open proposals need you right now.").classes("text-gray-500")
+
         if can_create:
-            ui.label("Vacancies").classes("text-lg font-medium")
+            ui.label("Vacancies").classes("text-lg font-medium mt-4")
             if not vacancy_rows:
                 ui.label("Every team has a leader and a second-in-command. 🎉").classes(
                     "text-positive"
@@ -207,14 +215,6 @@ async def elections_page():
                                 create_dialog(tid, path, role)
                             ),
                         ).props("dense outline")
-
-        if open_rows:
-            ui.label("Open proposals").classes("text-lg font-medium mt-4")
-            with ui.column().classes("w-full gap-1"):
-                for s in open_rows:
-                    summary_row(s)
-        elif not can_create:
-            ui.label("No open proposals need you right now.").classes("text-gray-500")
 
         if decided_rows:
             ui.label("Recently decided").classes("text-lg font-medium mt-4")

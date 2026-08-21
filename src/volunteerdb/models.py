@@ -923,6 +923,32 @@ class VolunteerPhoto(Base):
     )
 
 
+class SiteLogo(Base):
+    """The parish's own mark: shown in the app header, on the login page and on
+    the public ministries shell, uploaded by an admin (services/branding.py).
+
+    A single row — `id` is pinned to 1 by a CHECK so an upload replaces the
+    logo rather than accumulating them. Not system-versioned, like the two
+    image tables below it: branding is current-state only, and an as-of view of
+    a past logo would be a curiosity, not a record.
+    """
+
+    __tablename__ = "site_logo"
+    __table_args__ = (sa.CheckConstraint("id = 1", name="ck_site_logo_singleton"),)
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, default=1)
+    image: Mapped[bytes] = mapped_column(sa.LargeBinary)
+    content_type: Mapped[str] = mapped_column(
+        sa.String(50), default="image/png", server_default="image/png"
+    )
+    uploaded_by: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    uploaded_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    )
+
+
 class TeamPage(Base):
     """Sanitized HTML of the team's public Google Doc, fetched nightly (and on
     demand) by jobs.fetch_pages and served at /ministries/<slug>.html.

@@ -29,9 +29,14 @@ CACHE_HEADERS = {"Cache-Control": "public, max-age=300"}
 # body--dark class, which never exists on this plain-HTML surface).
 _SHELL_CSS = """
   body { margin: 0; }
-  header.vdb-header { padding: 0.7rem 1.2rem; }
+  header.vdb-header { padding: 0.7rem 1.2rem; display: flex;
+          align-items: center; justify-content: space-between; gap: 1rem; }
   header.vdb-header a { color: white; font-size: 1.1rem; }
   header.vdb-header a:hover { border-bottom: none; }
+  header.vdb-header .brand { display: flex; align-items: center; gap: 0.5rem; }
+  header.vdb-header img.logo { height: 1.9rem; width: auto; object-fit: contain; }
+  /* the way in for a volunteer who arrived at a public page and needs the app */
+  header.vdb-header a.signin { font-size: 0.95rem; white-space: nowrap; }
   main { max-width: 52rem; margin: 0 auto; padding: 1.5rem 1.2rem 3rem; }
   h1.vdb-page-title { font-size: 1.7rem; margin: 0.5rem 0 0.8rem; }
   .meta { color: var(--vdb-heading); opacity: 0.75; font-size: 0.85rem;
@@ -57,7 +62,9 @@ def _shell(title: str, body: str) -> str:
         f'<link rel="stylesheet" href="{static_url("theme.css")}">\n'
         f"<style>{_SHELL_CSS}</style></head>\n"
         '<body><header class="vdb-header">'
-        '<a class="vdb-brand" href="/ministries/">⛪ Ministries</a></header>\n'
+        '<a class="vdb-brand brand" href="/ministries/">'
+        '<img class="logo" src="/logo" alt=""> Ministries</a>'
+        '<a class="signin" href="/login">Sign in</a></header>\n'
         f"<main>{body}</main></body></html>\n"
     )
 

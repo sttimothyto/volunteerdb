@@ -5,6 +5,7 @@ from nicegui import ui
 
 from ..permissions import Actor
 from .context import asof_banner, asof_picker, clear_session
+from .logo_dialog import site_logo
 from .photo_dialog import photo_avatar
 from .theme import apply_theme
 
@@ -40,6 +41,9 @@ def frame(
             ("Workload", "/admin/workload"),
         ]
     with ui.header().classes("items-center text-white px-4 vdb-header"):
+        # the parish's own mark, ahead of the brand word it belongs to;
+        # clickable for an admin, which is how a logo gets replaced
+        site_logo(actor, classes="h-8 w-auto mr-2")
         ui.link("Dash", "/").classes("text-lg vdb-brand vdb-quiet")
         # the nav cluster sits against the brand, split from it by a double rule
         # echoing the header's own bottom border; only the spacer below the nav

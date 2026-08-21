@@ -8,6 +8,7 @@ from ..log import audit_log
 from ..services import mail
 from ..services import users as user_service
 from .context import establish_session
+from .logo_dialog import logo_img
 from .theme import apply_theme
 
 logger = structlog.get_logger(__name__)
@@ -105,6 +106,9 @@ def login_page(request: Request, redirect_to: str = "/"):
         code_step.set_visibility(step is code_step)
 
     with ui.column().classes("absolute-center items-center gap-4"):
+        # the parish's mark above its name; /logo serves the placeholder until
+        # an admin uploads one, and this page has no session to gate on
+        logo_img("/logo", "h-16 w-auto object-contain")
         ui.label("Volunteer Database (VDB)").classes("text-2xl vdb-brand")
         with ui.card().classes("w-80 gap-3"):
             with ui.column().classes("w-full gap-3") as credentials_step:
