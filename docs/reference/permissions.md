@@ -173,6 +173,10 @@ credential) and static assets are exempt.
 | `/calendar/parish.ics` | iCalendar feed of every team's scheduled events — title, time, location, description | public (the public Google calendar carries the same) |
 | `/calendar/mine/{token}.ics` | iCalendar feed of the events the account holds a slot at | public path; the token is the credential (`app_user.calendar_token`, rotated from the subscribe panel) |
 | `/calendar/mine.ics` | The same, as a downloadable file | signed in |
+| `/export/teams.csv` | The parish CSV (admin) or the union of the reader's full-roster teams | signed in; admin, or full-roster rights on at least one team |
+| `/teams/{id}/roster.csv` | One team's roster CSV; `?as_of=` for a snapshot | full-roster rights on that team (the exporter checks) |
+| `/export/roster-template.csv` | The empty roster template | signed in |
+| `/teams/{id}/qr.png` | QR code of the team's public page | signed in; 404 unless the page is published |
 | `POST /calendar/mine/reset` | A new personal feed address; the old one stops working | signed in |
 | `/events/{id}` | One event: slots (add, rename, re-capacity, remove), sign-up, RSVP, substitutions, attendance | roster-names rights on the owning team |
 | `/elections` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |

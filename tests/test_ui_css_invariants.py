@@ -96,3 +96,32 @@ def test_every_vdb_class_is_defined_in_the_theme():
         f"these classes are used but never defined in {THEME_CSS.name}, so they style "
         "nothing:\n  " + "\n  ".join(undefined)
     )
+
+
+def _ui_input_labels() -> list[tuple[Path, int, str]]:
+    """The label of every ``ui.input("...")`` call under ui/."""
+    found = []
+    for path in sorted(UI_DIR.rglob("*.py")):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            ):
+                continue
+            if node.func.attr != "input" or getattr(node.func.value, "id", "") != "ui":
+                continue
+            if node.args and isinstance(node.args[0], ast.Constant):
+                found.append((path, node.lineno, str(node.args[0].value)))
+    return found
+
+
+def test_every_date_or_time_field_offers_a_picker():
+    """A field whose label asks for YYYY-MM-DD or HH:MM is a date_input /
+    time_input (ui/date_input.py), never a bare ui.input: the picker is what
+    keeps the format from being the reader's problem."""
+    offenders = [
+        f"{path.name}:{line} {label!r}"
+        for path, line, label in _ui_input_labels()
+        if path.name != "date_input.py" and ("YYYY-MM-DD" in label or "HH:MM" in label)
+    ]
+    assert not offenders, "date/time fields typed by hand:\n" + "\n".join(offenders)

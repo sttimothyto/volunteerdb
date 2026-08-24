@@ -713,6 +713,15 @@ body.body--dark .vdb-seg a[aria-current="page"] {
   }
 }
 
+/* ---------- the filled-slots meter on /events ---------- */
+
+.vdb-meter {
+  width: 3.25rem;
+  height: 0.55rem;
+  vertical-align: middle;
+  margin-right: 0.35rem;
+}
+
 /* ---------- subscribe panel: a native popover (ui/calendar_panel.py) ---------- */
 
 .vdb-popover {

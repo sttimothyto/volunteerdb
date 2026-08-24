@@ -162,17 +162,17 @@ def asof_banner(as_of: datetime, base_path: str) -> None:
 
 def asof_picker(as_of: datetime | None, base_path: str) -> None:
     """Date picker for the header settings menu; clearing it returns to now."""
-    date_input = (
-        ui.input("View as of (YYYY-MM-DD)")
-        .props("dense outlined clearable")
-        .classes("w-full")
-    )
-    if as_of is not None:
-        date_input.value = as_of.date().isoformat()
+    from .date_input import date_input  # date_input imports a11y, which is ui-only
+
+    field = date_input(
+        "View as of (YYYY-MM-DD)",
+        value=as_of.date().isoformat() if as_of is not None else "",
+        clearable=True,
+    ).classes("w-full")
 
     def go() -> None:
-        value = (date_input.value or "").strip()
+        value = (field.value or "").strip()
         ui.navigate.to(f"{base_path}?as_of={value}" if value else base_path)
 
-    date_input.on("keydown.enter", go)
+    field.on("keydown.enter", go)
     ui.button("View", on_click=go).props("dense outline")

@@ -66,7 +66,7 @@ EDGE_ALLOWLIST = {
     ("api/elections.py", "volunteer_id is not None"),
     # scope comes FROM the actor, so there is no argument for a service to check
     ("api/io.py", "people_team_ids"),
-    ("ui/teams_page.py", "full_view_team_ids"),
+    ("ui/team_files_route.py", "full_view_team_ids"),
     # dashboard tiers: reports.coverage answers admins and leaders differently
     ("api/reports.py", "managed_team_ids"),
     # "archived too" widens a query rather than naming an object

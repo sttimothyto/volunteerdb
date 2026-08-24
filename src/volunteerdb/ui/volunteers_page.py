@@ -20,6 +20,7 @@ from ..services import workload as workload_service
 from . import column_order, invites
 from .account_status import invitable, last_login_text
 from .context import action_session, notify_errors, page_session
+from .date_input import date_input, time_input
 from .elections_page import phase_badge
 from .layout import frame
 from .login import confirm_email_url
@@ -503,10 +504,12 @@ def _custom_widget(defn: CustomFieldDef, value):
                 .classes("w-full")
             )
         case FieldType.date:
-            return (
-                ui.input(defn.label, value=value or "", placeholder="YYYY-MM-DD")
-                .props("outlined dense clearable")
-                .classes("w-full")
+            return date_input(defn.label, value=value or "", clearable=True).classes(
+                "w-full"
+            )
+        case FieldType.time:
+            return time_input(defn.label, value=value or "", clearable=True).classes(
+                "w-full"
             )
         case FieldType.checkbox:
             return ui.switch(defn.label, value=bool(value))
@@ -520,7 +523,6 @@ def _custom_widget(defn: CustomFieldDef, value):
             FieldType.decimal
             | FieldType.timestamp
             | FieldType.timestamptz
-            | FieldType.time
             | FieldType.interval
             | FieldType.uuid
         ) as ft:
@@ -529,7 +531,6 @@ def _custom_widget(defn: CustomFieldDef, value):
                 FieldType.decimal: "e.g. 12.50",
                 FieldType.timestamp: "YYYY-MM-DD HH:MM",
                 FieldType.timestamptz: "YYYY-MM-DD HH:MM+02:00",
-                FieldType.time: "HH:MM",
                 FieldType.interval: "P1DT2H30M (ISO 8601 duration)",
                 FieldType.uuid: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
             }

@@ -10,7 +10,6 @@ from nicegui import events, ui
 from .. import query_lang
 from ..config import settings
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
-from ..permissions import require
 from ..services import elections as elections_service
 from ..services import events as event_service
 from ..services import mail, roster_sheets
@@ -20,7 +19,7 @@ from ..services import reports as report_service
 from ..services import teams as team_service
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
-from ..sheets import exporter, importer
+from ..sheets import importer
 from ..sheets.common import sheet_url
 from . import column_order, invites
 from .account_status import roster_account
@@ -197,31 +196,12 @@ async def teams_page(as_of: str = ""):
             # exporter authorizes every id in the scope anyway, so this only
             # decides whether an unusable button is on screen.
             if actor.is_admin or actor.full_view_team_ids:
-
-                @notify_errors
-                async def export_teams() -> None:
-                    """Parish for admins; every team you lead or sit on the
-                    core of, in one file, for everybody else."""
-                    async with action_session() as (session, actor):
-                        # re-derived inside the session, like export_roster on
-                        # the detail page: the rendered gate is not the gate
-                        if actor.is_admin:
-                            scope, name = None, "parish"
-                        else:
-                            # full_view_team_ids, not people_team_ids: core
-                            # members may export too, and load_actor has
-                            # already taken the task forces out of it (a
-                            # borrowed roster is not yours to export)
-                            require(bool(actor.full_view_team_ids), "export your teams")
-                            scope, name = actor.full_view_team_ids, "my-teams"
-                        content = await exporter.export_csv(
-                            session, actor, team_ids=scope
-                        )
-                    ui.download(content, f"volunteerdb-{name}.csv")
-
-                ui.button(
-                    "Export team(s)", icon="download", on_click=export_teams
-                ).props("dense outline")
+                # a link to a route (ui/team_files_route.py), not a handler:
+                # the route re-derives the scope inside its own session, as
+                # the handler did, and the file is right-click-saveable
+                ui.button("Export team(s)", icon="download").props(
+                    'dense outline href="/export/teams.csv"'
+                )
         columns = [
             {
                 "name": "team",
@@ -450,14 +430,9 @@ def _home_page_section(
         ui.link("Google Doc", team.home_doc_url, new_tab=True)
         if published and slug:
             ui.link("Public page", f"/ministries/{slug}.html", new_tab=True)
-            ui.button(
-                "Download QR Code to Public page",
-                icon="qr_code_2",
-                on_click=lambda: ui.download(
-                    page_service.qr_png(f"{base_url}/ministries/{slug}.html"),
-                    f"{slug}-qr.png",
-                ),
-            ).props("dense outline")
+            ui.button("Download QR Code to Public page", icon="qr_code_2").props(
+                f'dense outline href="/teams/{team_id}/qr.png"'
+            )
         ui.button(
             "Fetch now",
             icon="refresh",
@@ -535,13 +510,9 @@ def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -
                 f'outline dense href="{settings().template_sheet_url}" target="_blank"'
             )
         else:  # dev fallback: no Drive template configured
-            ui.button(
-                "Empty template",
-                icon="description",
-                on_click=lambda: ui.download(
-                    exporter.template_csv(), "volunteerdb-template.csv"
-                ),
-            ).props("outline dense")
+            ui.button("Empty template", icon="description").props(
+                'outline dense href="/export/roster-template.csv"'
+            )
     if linked:
         ui.label(
             "Edits sync into the database nightly (2:30), and the sheet is "
@@ -896,23 +867,13 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                     "Delete", icon="delete", on_click=lambda: _delete_team(team_id)
                 ).props("dense outline color=negative")
             if can_full:
-                csv_stem = team.name.lower().replace(" ", "-")
-
-                @notify_errors
-                async def export_roster() -> None:
-                    # The actor is re-derived inside the session and the
-                    # exporter checks it, so a tab left open across a demotion
-                    # stops exporting — this handler used to take the rendered
-                    # gate as the gate, the only one on the page that did.
-                    async with action_session() as (session, actor):
-                        content = await exporter.export_csv(
-                            session, actor, team_id=team_id, at=at
-                        )
-                    ui.download(content, f"{csv_stem}.csv")
-
-                ui.button(
-                    "Export roster (.csv)", icon="download", on_click=export_roster
-                ).props("dense outline")
+                # a link to a route (ui/team_files_route.py); the exporter
+                # re-checks the actor there, so a tab left open across a
+                # demotion stops exporting just as the handler did
+                roster_suffix = f"?as_of={as_of}" if as_of else ""
+                ui.button("Export roster (.csv)", icon="download").props(
+                    f'dense outline href="/teams/{team_id}/roster.csv{roster_suffix}"'
+                )
 
                 # roster emails are already shown to can_full viewers, so the
                 # buttons add convenience, not exposure; live view only — no

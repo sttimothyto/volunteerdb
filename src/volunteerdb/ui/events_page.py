@@ -46,7 +46,7 @@ from ..services import users as user_service
 from . import calendar_grid, column_order
 from .calendar_panel import subscribe_panel
 from .context import action_session, notify_errors, page_session
-from .date_input import date_input
+from .date_input import date_input, time_input
 from .layout import frame
 from .volunteer_panel import VolunteerPanel, volunteer_link
 
@@ -147,26 +147,42 @@ def _wire_search(
     search.on_value_change(apply)
 
 
-def _share_event(base_url: str, event_id: int) -> None:
-    """Copy the event link, then say what the recipients will need.
+def _share_panel(base_url: str, event_id: int) -> None:
+    """A "Share" button and the panel it opens: the event's link, and the
+    caveat that the link asks for a sign-in, so a leader texting it out has
+    to make sure everyone on the list has an account first.
 
-    The copy happens up front (the click IS the intent); the dialog exists for
-    the caveat — the link asks for a sign-in, so a leader texting it out has to
-    make sure everyone on the list has an account first.
+    A native popover, not a dialog. Only the Copy button needs the
+    websocket, and it is a convenience on top of an address anybody can
+    select and copy by hand — so the panel opens, reads and closes on a page
+    whose connection has dropped. The button is a QBtn like its neighbours;
+    `popovertarget` falls through to its <button>, and the panel is
+    addressed by the id NiceGUI gives every element.
     """
     url = f"{base_url}/events/{event_id}"
-    ui.clipboard.write(url)
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("Event link copied").classes("text-lg font-medium")
-        ui.input(value=url).props("readonly outlined dense").classes("w-full")
+    with (
+        ui.element("div")
+        .props('popover="auto" role="dialog" aria-label="Share this event"')
+        .classes("vdb-popover") as panel
+    ):
+        ui.label("Event link").classes("text-lg font-medium")
+        ui.input(value=url).props(
+            'readonly outlined dense aria-label="Event link"'
+        ).classes("w-full").mark("share-url")
         ui.label(
             "Before you email or text this link out, make sure every "
             "volunteer has a VolunteerDB account — opening it asks for a "
             "sign-in, and the event is shown only to members of its team."
         ).classes("text-sm text-gray-500")
         with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Close", on_click=dialog.close).props("flat dense")
-    dialog.open()
+            copy = ui.button("Copy", icon="content_copy").props("dense flat")
+            copy.on_click(lambda: (ui.clipboard.write(url), copy.set_text("Copied")))
+            ui.button("Close").props(
+                f'dense flat popovertarget="c{panel.id}" popovertargetaction="hide"'
+            )
+    ui.button("Share", icon="share").props(
+        f'dense outline popovertarget="c{panel.id}"'
+    ).mark("share-event")
 
 
 async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
@@ -478,16 +494,8 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
         tomorrow = date.today() + timedelta(days=1)
         with ui.row().classes("w-full gap-2"):
             day = date_input("Date (YYYY-MM-DD)", value=str(tomorrow)).classes("grow")
-            start = (
-                ui.input("Starts (HH:MM)", value="10:00")
-                .props("outlined dense")
-                .classes("w-28")
-            )
-            end = (
-                ui.input("Ends (HH:MM)", value="12:00")
-                .props("outlined dense")
-                .classes("w-28")
-            )
+            start = time_input("Starts (HH:MM)", value="10:00").classes("w-36")
+            end = time_input("Ends (HH:MM)", value="12:00").classes("w-36")
         location = (
             ui.input("Location (optional)").props("outlined dense").classes("w-full")
         )
@@ -884,7 +892,13 @@ async def events_page(
             )
             table.add_slot(
                 "body-cell-filled",
-                '<q-td key="filled" :props="props">{{ props.row.filled }}</q-td>',
+                # a <meter> where the capacity is finite: the fill reads at a
+                # glance and as a value to a screen reader; ∞ stays words
+                '<q-td key="filled" :props="props">'
+                '<meter v-if="props.row.capacity_n !== null" class="vdb-meter" min="0" '
+                ':max="props.row.capacity_n" :value="props.row.filled_n" '
+                ":aria-label=\"props.row.filled + ' filled'\"></meter>"
+                "{{ props.row.filled }}</q-td>",
             )
             table.on("rowClick", lambda e: ui.navigate.to(f"/events/{e.args[1]['id']}"))
             count = ui.label(_event_count(len(rows))).classes("text-sm text-gray-500")
@@ -915,16 +929,10 @@ def _edit_event_dialog(event) -> None:
             day = date_input(
                 "Date (YYYY-MM-DD)", value=str(local_start.date())
             ).classes("grow")
-            start = (
-                ui.input("Starts (HH:MM)", value=f"{local_start:%H:%M}")
-                .props("outlined dense")
-                .classes("w-28")
+            start = time_input("Starts (HH:MM)", value=f"{local_start:%H:%M}").classes(
+                "w-36"
             )
-            end = (
-                ui.input("Ends (HH:MM)", value=f"{local_end:%H:%M}")
-                .props("outlined dense")
-                .classes("w-28")
-            )
+            end = time_input("Ends (HH:MM)", value=f"{local_end:%H:%M}").classes("w-36")
         location = (
             ui.input("Location", value=event.location or "")
             .props("outlined dense")
@@ -1575,11 +1583,7 @@ async def event_detail_page(request: Request, event_id: int):
             if event.location:
                 ui.label(f"· {event.location}").classes("text-sm text-gray-600")
             ui.space()
-            ui.button(
-                "Share",
-                icon="share",
-                on_click=lambda: _share_event(base_url, event_id),
-            ).props("dense outline").mark("share-event")
+            _share_panel(base_url, event_id)
             if can_manage and event.status == EventStatus.scheduled.value:
                 ui.button(
                     "Edit", icon="edit", on_click=lambda: _edit_event_dialog(event)

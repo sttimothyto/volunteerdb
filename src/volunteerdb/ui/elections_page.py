@@ -20,6 +20,7 @@ from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from ..star import StarResult
 from .context import action_session, notify_errors, page_session
+from .date_input import date_input
 from .layout import frame
 
 ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
@@ -53,15 +54,11 @@ def phase_badge(proposal, phase: Phase | None) -> None:
 
 
 def _deadline_inputs(d1_default: date, d2_default: date) -> tuple[ui.input, ui.input]:
-    d1 = (
-        ui.input("Nominations close (YYYY-MM-DD)", value=str(d1_default))
-        .props("outlined dense")
-        .classes("w-full")
+    d1 = date_input("Nominations close (YYYY-MM-DD)", value=str(d1_default)).classes(
+        "w-full"
     )
-    d2 = (
-        ui.input("Voting closes (YYYY-MM-DD)", value=str(d2_default))
-        .props("outlined dense")
-        .classes("w-full")
+    d2 = date_input("Voting closes (YYYY-MM-DD)", value=str(d2_default)).classes(
+        "w-full"
     )
     return d1, d2
 

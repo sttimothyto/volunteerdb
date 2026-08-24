@@ -12,6 +12,7 @@ def register_pages() -> None:
         logo_route,
         ministries_routes,
         photos_route,
+        team_files_route,
         teams_page,
         volunteers_page,
         workload_admin_page,
@@ -23,3 +24,4 @@ def register_pages() -> None:
     ministries_routes.register()
     logo_route.register()
     calendar_routes.register()
+    team_files_route.register()

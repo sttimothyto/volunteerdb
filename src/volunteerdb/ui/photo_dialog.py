@@ -110,8 +110,10 @@ def photo_avatar(
     `marker` names the element for the user-simulation tests: the app bar and
     the profile below it can both show one, and a test needs to say which."""
     if photo_at is not None:
-        element = ui.image(photo_service.photo_url(volunteer_id, photo_at)).classes(
-            "w-9 h-9 rounded-full object-cover"
+        element = (
+            ui.image(photo_service.photo_url(volunteer_id, photo_at))
+            .props('loading="lazy"')
+            .classes("w-9 h-9 rounded-full object-cover")
         )
     else:
         element = ui.icon("person").classes("text-2xl")

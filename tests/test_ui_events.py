@@ -327,14 +327,17 @@ async def test_share_button_and_date_pickers(database):
     event_id = await _seed_event(ids["liturgy"])
 
     async with user_simulation(main_file=SIM_MAIN) as user:
-        # any viewer can share; the dialog carries the accounts caveat
+        # any viewer can share; the panel (a native popover, rendered with
+        # the page rather than opened by a handler) carries the accounts caveat
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open(f"/events/{event_id}")
-        user.find(marker="share-event").click()
-        await user.should_see("Event link copied")
+        share = user.find(marker="share-event").elements.pop()
+        assert share.props.get("popovertarget"), "the button opens the panel natively"
         await user.should_see("make sure every")
-        url_box = user.find(kind=ui.input, content=f"/events/{event_id}")
-        assert url_box.elements, "the copied link is shown for hand-copying"
+        url_box = user.find(marker="share-url").elements.pop()
+        assert url_box.value.endswith(f"/events/{event_id}"), (
+            "the link is shown for hand-copying"
+        )
 
         # both date fields of the create dialog carry popup calendars
         await user.open(f"/login-dev/{ids['lena_u']}")
