@@ -1,4 +1,4 @@
-"""The deploy in five ordered steps.
+"""The deploy in four ordered steps.
 
 Each is a @deploy-decorated function that deploy.py imports once and *calls*.
 That distinction is load-bearing, and the reason this package does not simply

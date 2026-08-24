@@ -4,12 +4,13 @@ deploy/siteconf.py is stdlib-only precisely so this can import it: pyinfra is
 not a dependency of the app, and a mistake in a site file should be caught by
 `make test` rather than by a half-applied deploy.
 
-The failure these guard against is quiet. A missing key leaves a template
-variable unset, and Jinja renders an unset variable as the empty string — so a
-typo in a site file becomes an `OnCalendar=` with no time in it, or a
-`PublishPort=` with no port, installed and reloaded without complaint.
+The failure these guard against is late rather than quiet: pyinfra renders
+with StrictUndefined, so a missing key surfaces as a template error halfway
+through a deploy, after the source sync and the env file, with the host
+half-updated. A site-file mistake should be caught here instead.
 """
 
+import re
 import sys
 from datetime import time
 from pathlib import Path
@@ -83,11 +84,12 @@ def test_example_and_the_real_sites_have_identical_key_sets():
 
 
 def test_a_missing_key_is_rejected(tmp_path, monkeypatch):
-    """Rather than rendering an empty string into a systemd unit."""
-    broken = (
-        (siteconf.SITES_DIR / "example.toml")
-        .read_text()
-        .replace("listen_port = 8090", "")
+    """At `make test`, rather than halfway through a deploy."""
+    broken = re.sub(
+        r"^listen_port = \d+\n",
+        "",
+        (siteconf.SITES_DIR / "example.toml").read_text(),
+        flags=re.M,
     )
     (tmp_path / "broken.toml").write_text(broken)
     monkeypatch.setattr(siteconf, "SITES_DIR", tmp_path)
@@ -99,10 +101,11 @@ def test_a_typo_names_both_halves(tmp_path, monkeypatch):
     """A misspelled key is simultaneously an unknown key and a missing one.
     Reporting only the missing half leaves you hunting for a value that is
     right there in the file, spelled wrong."""
-    broken = (
-        (siteconf.SITES_DIR / "example.toml")
-        .read_text()
-        .replace("listen_port =", "lisen_port =")
+    broken = re.sub(
+        r"^listen_port =",
+        "lisen_port =",
+        (siteconf.SITES_DIR / "example.toml").read_text(),
+        flags=re.M,
     )
     (tmp_path / "broken.toml").write_text(broken)
     monkeypatch.setattr(siteconf, "SITES_DIR", tmp_path)
@@ -277,12 +280,10 @@ def test_the_looped_templates_all_exist():
 
 @pytest.mark.parametrize("path", TEMPLATES, ids=lambda p: p.name)
 def test_template_variables_are_all_supplied(path):
-    """The failure this exists for is silent.
-
-    Jinja renders an undefined variable as the empty string, so a variable
-    added to a template without a matching keyword at the call site becomes
-    `PublishPort=127.0.0.1::8080`, or an `OnCalendar=` with no time in it —
-    written, installed and daemon-reloaded without a word of complaint.
+    """A variable added to a template without a matching keyword at the call
+    site is a StrictUndefined error the first time pyinfra renders it — which
+    is halfway through a deploy, after the source sync and the env file. Here
+    it is a failing test.
 
     Reading deploy.py with ast is cruder than importing it, but importing it
     needs pyinfra and a live host to gather facts from.
@@ -309,3 +310,208 @@ def test_template_variables_are_all_supplied(path):
         f"{path.name} uses {sorted(needed - supplied)}, which the deploy does "
         "not pass — they would render as empty strings"
     )
+
+
+# --- values TOML types for us, and the loader has to check -------------------
+
+
+def _example_with(pattern: str, replacement: str) -> str:
+    text = (siteconf.SITES_DIR / "example.toml").read_text()
+    changed = re.sub(pattern, replacement, text, count=1, flags=re.M)
+    assert changed != text, f"{pattern!r} did not match example.toml"
+    return changed
+
+
+@pytest.mark.parametrize(
+    "pattern, replacement, complaint",
+    [
+        (r"^caddy = true$", 'caddy = "true"', "proxy_caddy must be a TOML bool"),
+        (r"^listen_port = \d+$", 'listen_port = "8090"', "host_listen_port must be"),
+        (r'^public_ip = ".*"$', 'public_ip = "not an address"', "host_public_ip"),
+        (r'^rclone_remote = ".*"$', 'rclone_remote = ""', 'write "none"'),
+    ],
+    ids=["bool-as-string", "int-as-string", "ip", "empty-remote"],
+)
+def test_a_wrongly_typed_or_shaped_value_is_rejected(
+    tmp_path, monkeypatch, pattern, replacement, complaint
+):
+    """TOML is typed and a frozen dataclass does not check, so `caddy = "true"`
+    would otherwise load as a string that is truthy — and `listen_port =
+    "8090"` would render, which is worse."""
+    (tmp_path / "example.toml").write_text(_example_with(pattern, replacement))
+    monkeypatch.setattr(siteconf, "SITES_DIR", tmp_path)
+    with pytest.raises(SystemExit, match=re.escape(complaint)):
+        siteconf.load("example")
+
+
+def test_a_local_only_backup_has_no_drive_leg(tmp_path, monkeypatch):
+    (tmp_path / "example.toml").write_text(
+        _example_with(r'^rclone_remote = ".*"$', 'rclone_remote = "none"')
+    )
+    monkeypatch.setattr(siteconf, "SITES_DIR", tmp_path)
+    site = siteconf.load("example")
+    assert not site.offsite_backup
+    assert site.rclone_dest == "" and site.rclone_crypt_remote == ""
+
+
+# --- what the templates render, checked without a host ----------------------
+
+
+def _render(template: Path, **data) -> str:
+    """Render the way pyinfra does: an undefined variable is an error, and the
+    trailing newline is kept."""
+    import jinja2
+
+    env = jinja2.Environment(
+        undefined=jinja2.StrictUndefined, keep_trailing_newline=True
+    )
+    return env.from_string(template.read_text()).render(**data)
+
+
+def _caddyfile(site) -> str:
+    # Mirrors the keywords steps/proxy.py passes; a drift fails loudly here.
+    return _render(
+        DEPLOY / "templates" / "Caddyfile.j2",
+        marker=siteconf.MANAGED_MARKER,
+        site_name=site.site_name,
+        domain=site.host_domain,
+        listen_port=site.host_listen_port,
+        extra=site.proxy_extra,
+    )
+
+
+def _directives(text: str) -> list[str]:
+    return [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+@pytest.mark.parametrize("name", SITE_NAMES)
+def test_the_caddyfile_renders_for_every_site(name):
+    """The block Caddy has to have, the marker the proxy step greps for, and
+    whatever the site put in [proxy] extra — with its braces balanced, since
+    an unbalanced one is the likeliest way to hand `caddy validate` a failure."""
+    site = siteconf.load(name)
+    text = _caddyfile(site)
+    assert text.startswith(f"# {siteconf.MANAGED_MARKER}")
+    assert "encode zstd gzip" in text
+    assert f"reverse_proxy 127.0.0.1:{site.host_listen_port}" in text
+    assert f"{site.host_domain} {{" in text.splitlines()
+    assert text.count("{") == text.count("}"), f"{name}: unbalanced braces"
+    if site.proxy_extra.strip():
+        assert site.proxy_extra.strip() in text
+        assert f"{site.host_domain} {{" not in site.proxy_extra, (
+            f"{name}: [proxy] extra repeats the app's own site block"
+        )
+
+
+def test_the_example_caddyfile_is_the_managed_block():
+    """deploy/examples/Caddyfile is what a `caddy = false` site copies by hand.
+    It must stay the block the deploy writes for everyone else, directive for
+    directive; only the comments may differ."""
+    example = siteconf.load("example")
+    assert not example.proxy_extra
+    rendered = _caddyfile(example)
+    copied = (DEPLOY / "examples" / "Caddyfile").read_text()
+    assert _directives(copied) == _directives(rendered)
+
+
+def test_the_managed_marker_is_shared():
+    """The proxy step greps the live Caddyfile for the marker to decide
+    whether to snapshot it; the files the deploy already owns carry the same
+    first line, so one grep tells them all apart from a hand-written file."""
+    assert "siteconf.MANAGED_MARKER" in (DEPLOY / "steps" / "proxy.py").read_text()
+    for name in ("env.j2", "volunteerdb-backup.sh.j2"):
+        head = (DEPLOY / "templates" / name).read_text().splitlines()[:2]
+        assert any(siteconf.MANAGED_MARKER in line for line in head), name
+
+
+def _backup_script(site) -> str:
+    # Mirrors the keywords steps/backup.py passes.
+    return _render(
+        DEPLOY / "templates" / "volunteerdb-backup.sh.j2",
+        db_container=siteconf.DB_CONTAINER,
+        db_user=siteconf.DB_USER,
+        db_name=siteconf.DB_NAME,
+        backup_dir=siteconf.BACKUP_DIR,
+        rclone_conf=siteconf.RCLONE_CONF,
+        rclone_dest=site.rclone_dest,
+        retain_local_days=site.backup_retain_local_days,
+        retain_remote_days=site.backup_retain_remote_days,
+        alert_email=site.mail_alert_email,
+        env_file=siteconf.ENV_FILE,
+        mail_from=site.mail_from_address,
+        mail_from_name=site.mail_from_name,
+    )
+
+
+def test_the_backup_script_drops_the_drive_leg_without_a_remote(tmp_path, monkeypatch):
+    with_drive = _backup_script(siteconf.load("example"))
+    rclone_lines = [d for d in _directives(with_drive) if d.startswith("rclone ")]
+    assert any(" copy " in d for d in rclone_lines)
+    assert any(" delete " in d for d in rclone_lines)
+    assert "LOCAL ONLY" not in with_drive
+
+    (tmp_path / "example.toml").write_text(
+        _example_with(r'^rclone_remote = ".*"$', 'rclone_remote = "none"')
+    )
+    monkeypatch.setattr(siteconf, "SITES_DIR", tmp_path)
+    local_only = _backup_script(siteconf.load("example"))
+    assert not [d for d in _directives(local_only) if d.startswith("rclone ")]
+    assert "LOCAL ONLY" in local_only
+    # the dump, the size floor and the local prune are all still there
+    for kept in ("pg_dump", "MIN_BYTES", "RETAIN_LOCAL_DAYS"):
+        assert kept in local_only
+
+
+# --- the parish is configuration, not source ---------------------------------
+
+# Everything that is mechanism. deploy/sites/ is where a parish belongs, and
+# the tests keep their fixtures; nothing else may name one.
+MECHANISM = ("src", "deploy", ".github", "Makefile", "Containerfile", "compose.yaml")
+
+
+def test_no_parish_is_named_in_the_mechanism():
+    """docs/explanation/deployment.md promises that nothing about a particular
+    parish is compiled in. This is that promise as a test."""
+    offenders = []
+    for top in MECHANISM:
+        root = REPO / top
+        paths = [root] if root.is_file() else sorted(root.rglob("*"))
+        for path in paths:
+            if not path.is_file() or "__pycache__" in path.parts:
+                continue
+            if siteconf.SITES_DIR in path.parents:
+                continue
+            if "sttimothy" in path.read_text(errors="ignore").lower():
+                offenders.append(str(path.relative_to(REPO)))
+    assert not offenders, f"a parish is named in the mechanism: {offenders}"
+
+    # The manual may cite the real instance, but its copy-paste commands
+    # must not deploy it.
+    docs = [
+        str(p.relative_to(REPO))
+        for p in (REPO / "docs").rglob("*.md")
+        if "_build" not in p.parts and "SITE=sttimothy" in p.read_text()
+    ]
+    assert not docs, f"a manual page hard-codes the site: {docs}"
+
+
+def test_the_pyinfra_pin_is_written_twice_and_agrees():
+    """`make deploy` and CI must run the same pyinfra: the Makefile holds the
+    pin the manual points people at, CI repeats it because a runner has no
+    make target to call with --ssh-key, and the manual itself never carries a
+    version to go stale."""
+    pin = re.compile(r"uvx pyinfra==(\S+)")
+    make = pin.search((REPO / "Makefile").read_text())
+    ci = pin.search((REPO / ".github" / "workflows" / "ci.yml").read_text())
+    assert make and ci, "the pin is missing from the Makefile or ci.yml"
+    assert make.group(1) == ci.group(1), "Makefile and ci.yml pin different pyinfras"
+    stale = [
+        str(p.relative_to(REPO))
+        for p in (REPO / "docs").rglob("*.md")
+        if "_build" not in p.parts and re.search(r"pyinfra==\d", p.read_text())
+    ]
+    assert not stale, f"a manual page carries its own pyinfra pin: {stale}"

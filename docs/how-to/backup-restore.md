@@ -23,7 +23,8 @@ podman exec <db-container> pg_dump -U volunteerdb volunteerdb > backup.sql
 
 ## Scheduled backups
 
-Production backs itself up nightly. At **02:00 America/Toronto**, the
+Production backs itself up nightly. At `[schedule] backup_at` in the site's
+time zone — **02:00 America/Toronto** for the example site — the
 `volunteerdb-backup.timer` systemd unit (installed by the deploy;
 `Persistent=true` makes up a missed night at boot) runs
 `/usr/local/bin/volunteerdb-backup`, which:
@@ -57,6 +58,12 @@ failure, an alert email is sent to the site's `[mail] alert_email` via SMTP2GO
 time). The schedule, retention windows and alert address all come from your
 site file — see [`[backup]` and `[schedule]`](../reference/site-config.md) —
 so change them there and redeploy.
+
+A site with `[backup] rclone_remote = "none"` skips step 2 and the Drive half
+of step 3: the dump is still taken, checked and pruned on the server, nothing
+leaves it, and every deploy prints a reminder. A lost disk then loses the
+database and its backups together, so treat it as a stopgap until the Drive
+setup below is done.
 
 Run a backup on demand with:
 

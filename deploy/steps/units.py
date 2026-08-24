@@ -1,8 +1,8 @@
-"""Shared by the two host-side timer steps.
+"""Installs a host-side timer/service pair.
 
-The backup and the Drive sync stay host-side — rclone config, podman exec and
-the /sync work dir all live here — but fire from systemd timers rather than
-cron. Units get their own journal names, so the wrappers need no systemd-cat.
+The backup stays host-side — rclone config and podman exec live here — but
+fires from a systemd timer rather than cron. Units get their own journal
+names, so the wrapper needs no systemd-cat.
 """
 
 import siteconf

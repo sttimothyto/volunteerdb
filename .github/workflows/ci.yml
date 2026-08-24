@@ -93,21 +93,37 @@ jobs:
 
   deploy:
     needs: [lint, test, docs]
-    if: github.ref == 'refs/heads/main'
+    # Which deploy/sites/*.toml to deploy is the VDB_SITE *repository* variable
+    # (Settings -> Secrets and variables -> Actions -> Variables). It cannot be
+    # an environment variable: a job-level `if` is evaluated before the
+    # environment is chosen, so those are invisible to it. A repository that
+    # has not set one -- a fork, by default -- runs lint, the tests and the
+    # docs build, and stops here.
+    if: github.ref == 'refs/heads/main' && vars.VDB_SITE != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
       name: production
       # Only the link GitHub shows beside the deployment; nothing reads it.
-      # Actions cannot interpolate from the site file, so it is the one place
-      # the domain is repeated — keep it equal to [host] domain.
-      url: https://vdb.sttimothyto.org
+      # Taken from the site file below, so the domain is written once.
+      url: ${{ steps.site.outputs.url }}
     concurrency:
       group: deploy-production
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Read the site file
+        id: site
+        env:
+          VDB_SITE: ${{ vars.VDB_SITE }}
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'EOF'
+          import os, tomllib
+          with open(f"deploy/sites/{os.environ['VDB_SITE']}.toml", "rb") as f:
+              print(f"url=https://{tomllib.load(f)['host']['domain']}")
+          EOF
 
       # Secrets go through env, never interpolated into the shell body: ${{ }}
       # expands before bash parses the script.
@@ -122,13 +138,13 @@ jobs:
           chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
 
       # Pinned: an unpinned `uvx pyinfra` could take a new major into a
-      # production deploy. deploy.py smoke-tests /login itself and exits
-      # non-zero if the app does not come back, so this step is the gate.
+      # production deploy. The same pin is in the Makefile (`make deploy`), and
+      # a test keeps the two equal. deploy.py smoke-tests /login itself and
+      # exits non-zero if the app does not come back, so this step is the gate.
       - name: pyinfra deploy
         env:
-          # Which deploy/sites/*.toml to deploy. Everything specific to this
-          # parish lives in that file.
-          VDB_SITE: sttimothy
+          # Everything specific to this parish lives in deploy/sites/<VDB_SITE>.toml.
+          VDB_SITE: ${{ vars.VDB_SITE }}
           # Overrides the site file's [host] ssh_host, which is an ssh_config
           # alias that means nothing on a runner. It also has to keep matching
           # whatever DEPLOY_KNOWN_HOSTS pins, so the two stay set together.

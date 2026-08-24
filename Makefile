@@ -15,13 +15,21 @@ DB_USER := volunteerdb
 # Extra arguments for `make test`, e.g. make test ARGS="-k roster -x"
 ARGS ?=
 
-.PHONY: help db down clean migrate seed dev serve test lint format docs fresh
+# Production deploy: pyinfra, through uvx so it is never a project dependency.
+# The pin is here and in .github/workflows/ci.yml, and a test keeps the two
+# equal -- an unpinned uvx would take a new major into production.
+PYINFRA ?= uvx pyinfra==3.10.0
+# Which deploy/sites/<name>.toml to deploy: make deploy SITE=<name>
+SITE ?=
+
+.PHONY: help db down clean migrate seed dev serve test lint format docs fresh \
+        deploy-dry deploy
 
 help: ## list these targets
 	@echo "VolunteerDB developer tasks"
 	@echo
 	@grep -hE '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) | sort \
-	  | awk -F':.*?## ' '{printf "  \033[1m%-8s\033[0m %s\n", $$1, $$2}'
+	  | awk -F':.*?## ' '{printf "  \033[1m%-10s\033[0m %s\n", $$1, $$2}'
 	@echo
 	@echo "First time here: make seed && make dev"
 
@@ -84,3 +92,13 @@ down: ## stop the containers, keeping the data volume
 
 clean: ## stop the containers AND delete the database volume
 	$(COMPOSE) down -v
+
+# The site is required, never defaulted: on a repository that can deploy more
+# than one parish, guessing which is a way to deploy the wrong one.
+deploy-dry: ## preview the production deploy: make deploy-dry SITE=<name>
+	@test -n "$(SITE)" || { echo "usage: make deploy-dry SITE=<name>   (a file in deploy/sites/)" >&2; exit 2; }
+	VDB_SITE=$(SITE) $(PYINFRA) deploy/inventory.py deploy/deploy.py --dry
+
+deploy: ## apply it: make deploy SITE=<name> (VDB_ADMIN_PASSWORD etc. pass through)
+	@test -n "$(SITE)" || { echo "usage: make deploy SITE=<name>   (a file in deploy/sites/)" >&2; exit 2; }
+	VDB_SITE=$(SITE) $(PYINFRA) deploy/inventory.py deploy/deploy.py -y

@@ -32,7 +32,9 @@ ignored. Copy `.env.example` as a starting point.
   sign-in links in emails, the admin backup-link dialog) come out `http://`.
   In the production container, Caddy's connections arrive from the podman
   gateway address, so the deploy template sets `*`; that is safe because the
-  container port is published on the host loopback only.
+  container port is published on the host loopback only. Behind a proxy other
+  than Caddy, make sure it sets `X-Forwarded-Proto` itself
+  (`deploy/examples/nginx.conf` does).
 
 `VDB_HOST`
 : Bind address. Default: `0.0.0.0`.

@@ -1,9 +1,9 @@
 # Template for a new instance. Copy to deploy/sites/<yourname>.toml, fill in
-# every value, and commit it — then deploy with VDB_SITE=<yourname>.
+# every value, and commit it — then deploy with `make deploy SITE=<yourname>`.
 #
-# The walkthrough that puts this in order (DNS, Caddy, mail, Google Drive,
-# the first deploy) is docs/how-to/new-instance.md. The per-key reference is
-# docs/reference/site-config.md.
+# The walkthrough that puts this in order (DNS, the reverse proxy, mail,
+# Google Drive, the first deploy) is docs/how-to/new-instance.md. The per-key
+# reference is docs/reference/site-config.md.
 #
 # No secrets belong in this file. The deploy generates the session secret and
 # the database password on its first run and reads them back from
@@ -12,7 +12,7 @@
 # committed.
 
 [site]
-# Must equal this file's name, so that VDB_SITE=x always deploys x.
+# Must equal this file's name, so that SITE=x always deploys x.
 name = "example"
 # Appears in outbound mail: "Your VolunteerDB account at <org_name>". Write it
 # the way you would say it — "St. Peter's", "Holy Family Parish".
@@ -26,13 +26,36 @@ timezone = "America/Toronto"
 ssh_host = "example-prod"
 # The deploy installs packages and writes to /etc, so it needs root.
 ssh_user = "root"
-# Recorded for the DNS A record; no operation reads it.
+# The server's public address. With [proxy] caddy = true the deploy refuses to
+# touch Caddy until `domain` resolves to it; nothing else reads it.
 public_ip = "203.0.113.10"
 # Public hostname. Caddy serves TLS for it; the app builds email links from it.
 domain = "vdb.example.org"
-# Host loopback port the app publishes on, and that Caddy proxies to. Change
-# it only if something else on the box already uses it.
+# Host loopback port the app publishes on, and that the reverse proxy sends
+# to. Change it only if something else on the box already uses it.
 listen_port = 8090
+
+[proxy]
+# true:  the deploy installs Caddy from its upstream apt repository, OWNS
+#        /etc/caddy/Caddyfile outright (a hand-written one is copied aside once
+#        as Caddyfile.bak-pre-managed-<date>), validates it, opens http/https in
+#        firewalld if that is running, and reloads Caddy. For a server whose
+#        only public service is VolunteerDB, plus whatever you put in `extra`.
+#        Assumes the server sits on its own public address (any VPS): the
+#        deploy checks that `domain` resolves to `public_ip` before touching
+#        Caddy, then fetches https://<domain>/login from the server itself.
+# false: the deploy never touches Caddy or the firewall. Terminate TLS yourself
+#        from deploy/examples/Caddyfile or deploy/examples/nginx.conf.
+caddy = true
+# Verbatim Caddyfile text appended after the VolunteerDB site block: other
+# sites this Caddy should keep serving. Ignored when caddy = false. For more
+# than one line use a multi-line literal string:
+#   extra = '''
+#   www.example.org, example.org {
+#       redir https://new.example.org/ permanent
+#   }
+#   '''
+extra = ""
 
 [mail]
 # MUST be on a domain your mail provider is authorised to send for, or
@@ -53,11 +76,14 @@ contact_email = "admin@example.org"
 [backup]
 # Name of the rclone remote you provision by hand (docs/how-to/backup-restore.md).
 # The encrypting wrapper is this name + "-crypt"; the deploy asserts both exist.
+# "none" keeps the nightly dumps on this server ONLY -- no off-site copy, so a
+# lost disk loses the database and its backups together, and the deploy says
+# so on every run. Provisioning Drive is strongly recommended.
 rclone_remote = "volunteerdb-gdrive-backup"
 # Plaintext dumps kept on the server; root-only, on the same host as the live
 # database.
 retain_local_days = 14
-# Encrypted copies kept on Drive.
+# Encrypted copies kept on Drive (ignored with rclone_remote = "none").
 retain_remote_days = 730
 
 [sheets]

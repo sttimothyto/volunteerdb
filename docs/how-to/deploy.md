@@ -10,9 +10,10 @@ parts this script deliberately does not automate.
 
 **Prerequisites:** a site file in `deploy/sites/` naming the host (see the
 [site configuration reference](../reference/site-config.md)), SSH access to
-it, and `uv` locally. For nightly backups, the rclone Google Drive remote
-**and its encrypting crypt wrapper** must have been provisioned once —
-[one-time Drive setup](backup-restore.md#one-time-drive-setup).
+it, and `uv` locally. For off-site nightly backups, the rclone Google Drive
+remote **and its encrypting crypt wrapper** must have been provisioned once —
+[one-time Drive setup](backup-restore.md#one-time-drive-setup) — unless the
+site file says `[backup] rclone_remote = "none"`.
 
 ## Deploy from CI (normal path)
 
@@ -42,14 +43,15 @@ gh workflow run ci.yml --ref main -f dry_run=true   # runs pyinfra --dry
 The break-glass path, and what CI runs under the hood:
 
 ```sh
-export VDB_SITE=sttimothy   # a file in deploy/sites/
-uvx pyinfra deploy/inventory.py deploy/deploy.py --dry   # preview
-uvx pyinfra deploy/inventory.py deploy/deploy.py -y      # apply
+make deploy-dry SITE=<your-site>   # preview; a file in deploy/sites/
+make deploy SITE=<your-site>       # apply
 ```
 
-`VDB_SITE` has no default: on a repository that can deploy more than one
-parish, guessing which is a way to deploy the wrong one. The inventory reads
-the host from the same file.
+Both are `VDB_SITE=<site> uvx pyinfra==<pin> deploy/inventory.py
+deploy/deploy.py` with `--dry` or `-y`; the pin lives in the Makefile. `SITE`
+has no default: on a repository that can deploy more than one parish, guessing
+which is a way to deploy the wrong one. The inventory reads the host from the
+same file.
 
 ```{warning}
 A hand-run deploy syncs your **working tree**, not a commit: uncommitted edits
@@ -102,18 +104,29 @@ seconds, but run such a deploy attended and at a quiet hour, or stop
 `volunteerdb-app.service` first and let the deploy bring it back.
 :::
 
-**Nightly backup** and **Drive roster sync.** Each installs its wrapper
-script and its systemd timer. They come last deliberately: the backup step
-asserts the one-time rclone remotes exist, and on an instance where they do
-not, the deploy fails there — with the application already fully deployed.
-The remaining nightly jobs run inside the app itself (see
+**Reverse proxy (Caddy).** Only with `[proxy] caddy = true`; otherwise it
+prints a note and does nothing. Asserts `[host] domain` resolves to
+`[host] public_ip` from the server, installs Caddy from its upstream apt
+repository, renders `/etc/caddy/Caddyfile` to a candidate file and runs
+`caddy validate` on it *before* installing it over the live one (a
+hand-written file is copied aside once as `Caddyfile.bak-pre-managed-<date>`),
+opens `http`/`https` in firewalld if that is running, reloads Caddy — a reload
+keeps its certificates, so no issuance and no downtime — and fetches
+`https://<domain>/login` until it answers 200.
+
+**Nightly backup.** Installs the wrapper script and its systemd timer. It
+comes last deliberately: it asserts the one-time rclone remotes exist, and on
+an instance where they do not, the deploy fails there — with the application
+and the proxy already fully deployed. With `[backup] rclone_remote = "none"`
+there is no Drive leg to assert and the step prints a reminder instead. The
+remaining nightly jobs run inside the app itself (see
 [CLI and jobs](../reference/cli.md)).
 
-TLS and the public hostname are **outside this repository**: Caddy on the host
-terminates HTTPS and reverse-proxies to the loopback port, and DNS has an A
-record to the server. `deploy/examples/Caddyfile` is the site block to copy;
-note that it must carry `encode zstd gzip`, because the app serves no
-compressed responses itself. See
+With `[proxy] caddy = false`, TLS and the public hostname are **yours**: your
+proxy terminates HTTPS and reverse-proxies to the loopback port, and
+`deploy/examples/Caddyfile` or `deploy/examples/nginx.conf` is the block to
+copy. Either way the block must compress (`encode zstd gzip`), because the app
+serves no compressed responses itself. See
 [Production deployment architecture](../explanation/deployment.md).
 
 ## One-time: a database that predates the migration squash
@@ -194,7 +207,7 @@ Break-glass, if CI is unavailable:
 
 ```sh
 git checkout <known-good-commit>
-VDB_SITE=sttimothy uvx pyinfra deploy/inventory.py deploy/deploy.py -y
+make deploy SITE=<your-site>
 git checkout main
 ```
 
@@ -203,4 +216,11 @@ one, restore the database from a [backup](backup-restore.md) or run a
 reviewed `alembic downgrade` as a one-shot container. Note that `0001` is now
 the base revision: downgrading it drops every table, so for anything below the
 current head, restore from backup instead.
+
+The managed Caddyfile rolls back with the code: the older commit's site file
+renders the older configuration. The hand-written file that the first managed
+deploy replaced is still on the server as
+`/etc/caddy/Caddyfile.bak-pre-managed-<date>`; copying it back and
+`systemctl reload caddy` restores it at once — then set `[proxy] caddy =
+false`, or the next deploy overwrites it again.
 

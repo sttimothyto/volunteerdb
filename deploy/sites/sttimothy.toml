@@ -19,6 +19,18 @@ public_ip = "91.99.133.210"
 domain = "vdb.sttimothyto.org"
 listen_port = 8090
 
+[proxy]
+caddy = true
+# The parish website moved to the Archdiocese; Caddy still terminates TLS for
+# the apex and www hosts (it holds certificates for both) so the 301 works.
+extra = '''
+# The parish website has moved to the Archdiocese of Toronto site; the apex
+# and www hosts are permanently (301) redirected there.
+www.sttimothyto.org, sttimothyto.org {
+	redir https://sttimothyto.archtoronto.org/ permanent
+}
+'''
+
 [mail]
 from_address = "no-reply@sttimothyto.org"
 from_name = "VolunteerDB"

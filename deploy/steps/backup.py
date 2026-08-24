@@ -1,5 +1,9 @@
 """Nightly backup: pg_dump -> gzip -> rclone crypt -> Google Drive.
 
+The Drive leg exists only when [backup] rclone_remote names a remote. With
+"none" the dump is still made and pruned on the host, nothing leaves it, and
+every deploy says so.
+
 Called after the application stack so that a Drive problem can never block the
 app deploy: pyinfra runs operations in order and stops at the first failure,
 and on a fresh instance the rclone assertion below is *expected* to fail until
@@ -41,17 +45,25 @@ def deploy_backup(site, *, here, unit_vars) -> None:
     # rclone.conf whenever it refreshes, so this deploy must NEVER write that
     # file — templating it would clobber a live token. It only asserts the
     # remotes exist.
-    plain, crypt = site.backup_rclone_remote, site.rclone_crypt_remote
-    server.shell(
-        name=f"Assert rclone remotes {plain} + {crypt} are provisioned",
-        commands=[
-            f"for r in {plain} {crypt}; do "
-            f'grep -qxF "[$r]" {siteconf.RCLONE_CONF} 2>/dev/null || '
-            '{ echo "ERROR: rclone remote $r not configured on this host. '
-            "Run the one-time Drive setup in docs/how-to/backup-restore.md, "
-            'then re-run the deploy."; exit 1; }; done'
-        ],
-    )
+    if site.offsite_backup:
+        plain, crypt = site.backup_rclone_remote, site.rclone_crypt_remote
+        server.shell(
+            name=f"Assert rclone remotes {plain} + {crypt} are provisioned",
+            commands=[
+                f"for r in {plain} {crypt}; do "
+                f'grep -qxF "[$r]" {siteconf.RCLONE_CONF} 2>/dev/null || '
+                '{ echo "ERROR: rclone remote $r not configured on this host. '
+                "Run the one-time Drive setup in docs/how-to/backup-restore.md, "
+                'then re-run the deploy."; exit 1; }; done'
+            ],
+        )
+    else:
+        print(
+            f'NOTE: [backup] rclone_remote = "{siteconf.LOCAL_ONLY}" - nightly dumps '
+            f"stay on THIS HOST ONLY ({siteconf.BACKUP_DIR}, "
+            f"{site.backup_retain_local_days} days). A lost disk takes them with the "
+            "database. docs/how-to/backup-restore.md provisions Drive."
+        )
     # Checked once, here, because it is a property of the host rather than of
     # either timer: tz-suffixed OnCalendar needs systemd >= 235, and without
     # it both timers would fire on UTC instead of parish time.

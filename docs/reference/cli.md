@@ -162,12 +162,15 @@ app quadlet's `HealthCmd`; not normally run by hand.
 ## `pyinfra` — production deploy
 
 ```sh
-VDB_SITE=<site> uvx pyinfra deploy/inventory.py deploy/deploy.py -y
+make deploy-dry SITE=<site>   # preview
+make deploy SITE=<site>       # apply
 ```
 
-Deploys/updates the whole containerized stack on the server. Optional
-environment: `VDB_ADMIN_PASSWORD` (runs the admin bootstrap),
-`VDB_SMTP2GO_API_KEY` (sets/rotates the mail key). Add `--dry` to preview.
+Runs `VDB_SITE=<site> uvx pyinfra==<pin> deploy/inventory.py deploy/deploy.py`
+with `--dry` or `-y`, the pin held in the Makefile. Deploys/updates the whole
+containerized stack on the server, and the reverse proxy when the site file
+asks for it. Optional environment: `VDB_ADMIN_PASSWORD` (runs the admin
+bootstrap), `VDB_SMTP2GO_API_KEY` (sets/rotates the mail key).
 See [Deploy and upgrade production](../how-to/deploy.md).
 
 ## `pytest` — test suite

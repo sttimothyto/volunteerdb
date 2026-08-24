@@ -3,7 +3,7 @@
 Two layers live here, and the split is the point:
 
   * ``Site`` — loaded from ``deploy/sites/<name>.toml``. Everything a second
-    parish has to change, and nothing else. Eleven or so keys, in a file an
+    parish has to change, and nothing else. Two dozen keys, in a file an
     operator can read without knowing Python.
   * The module constants below — paths, image and network names, the
     container UID. Identical on every instance; a developer changes them when
@@ -17,6 +17,7 @@ pyinfra execs the deploy file without putting its directory on ``sys.path``,
 so importers must ``sys.path.insert(0, str(HERE))`` first — see deploy.py.
 """
 
+import ipaddress
 import tomllib
 from dataclasses import dataclass, fields
 from datetime import time
@@ -53,6 +54,20 @@ PG_TUNING = (
 BACKUP_SCRIPT = "/usr/local/bin/volunteerdb-backup"
 BACKUP_DIR = "/var/backups/volunteerdb"
 RCLONE_CONF = "/root/.config/rclone/rclone.conf"
+# [backup] rclone_remote = "none": nightly dumps stay on the host, no Drive leg.
+LOCAL_ONLY = "none"
+
+# The reverse proxy, when [proxy] caddy = true. Caddy comes from its upstream
+# apt repository (Debian stable carries a 2022 release); deploy/files/ holds a
+# byte-for-byte copy of Cloudsmith's canonical .list, so a host that installed
+# Caddy by hand from the same instructions sees no change.
+CADDYFILE = "/etc/caddy/Caddyfile"
+CADDY_KEYRING = "/usr/share/keyrings/caddy-stable-archive-keyring.gpg"
+CADDY_KEY_URL = "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
+CADDY_APT_LIST = "/etc/apt/sources.list.d/caddy-stable.list"
+# First line of every file the deploy owns outright. The proxy step greps for
+# it to tell a hand-written Caddyfile (snapshot it once) from its own.
+MANAGED_MARKER = "Managed by volunteerdb deploy/deploy.py"
 
 # What files.sync ships to APP_DIR, which is also the podman build context.
 # Kept separate from .containerignore on purpose: the glob semantics differ
@@ -144,9 +159,13 @@ class Site:
     # [host]
     host_ssh_host: str  # pyinfra inventory name or address
     host_ssh_user: str
-    host_public_ip: str  # documentation/DNS only; no operation reads it
+    host_public_ip: str  # the proxy step asserts `domain` resolves to it
     host_domain: str  # public hostname Caddy serves
     host_listen_port: int  # host loopback port Caddy proxies to
+
+    # [proxy]
+    proxy_caddy: bool  # the deploy installs Caddy and owns /etc/caddy/Caddyfile
+    proxy_extra: str  # verbatim Caddyfile text appended after the app's block
 
     # [mail]
     mail_from_address: str
@@ -156,7 +175,7 @@ class Site:
     mail_contact_email: str  # footer of the built manual
 
     # [backup]
-    backup_rclone_remote: str  # the crypt wrapper's name is this + "-crypt"
+    backup_rclone_remote: str  # + "-crypt" is the encrypting wrapper; or LOCAL_ONLY
     backup_retain_local_days: int
     backup_retain_remote_days: int
 
@@ -171,15 +190,21 @@ class Site:
     schedule_event_reminders_at: str
 
     @property
+    def offsite_backup(self) -> bool:
+        """False when [backup] rclone_remote is "none": the nightly dump is
+        made and pruned on the host, and nothing leaves it."""
+        return self.backup_rclone_remote != LOCAL_ONLY
+
+    @property
     def rclone_crypt_remote(self) -> str:
         """Encrypts the Drive leg: dump contents and names are ciphertext
         before upload. The plain remote stays in use for the roster sheets,
-        which leaders edit in the Drive UI."""
-        return f"{self.backup_rclone_remote}-crypt"
+        which leaders edit in the Drive UI. Empty when there is no Drive leg."""
+        return f"{self.backup_rclone_remote}-crypt" if self.offsite_backup else ""
 
     @property
     def rclone_dest(self) -> str:
-        return f"{self.rclone_crypt_remote}:"
+        return f"{self.rclone_crypt_remote}:" if self.offsite_backup else ""
 
     @property
     def public_base_url(self) -> str:
@@ -239,9 +264,33 @@ def load(name: str | None = None) -> Site:
         raise SystemExit(f"{path}: " + "; ".join(parts))
 
     site = Site(**flat)
+    # TOML is typed and a dataclass does not check, so caddy = "true" or
+    # listen_port = "8090" would load as strings and render as such. bool is
+    # a subclass of int: checked first, and refused where an int is due.
+    for f in fields(Site):
+        wanted = {"bool": bool, "int": int, "str": str}[
+            getattr(f.type, "__name__", f.type)
+        ]
+        value = getattr(site, f.name)
+        if not isinstance(value, wanted) or (wanted is int and isinstance(value, bool)):
+            raise SystemExit(
+                f"{path}: {f.name} must be a TOML {wanted.__name__}, "
+                f"not {type(value).__name__} ({value!r})"
+            )
     if site.site_name != name:
         raise SystemExit(
             f"{path}: [site] name is {site.site_name!r} but the file is {name}.toml"
+        )
+    try:
+        ipaddress.ip_address(site.host_public_ip)
+    except ValueError:
+        raise SystemExit(
+            f"{path}: host_public_ip is not an IP address: {site.host_public_ip!r}"
+        ) from None
+    if not site.backup_rclone_remote:
+        raise SystemExit(
+            f"{path}: backup_rclone_remote is empty. Name the rclone remote, or write "
+            f'"{LOCAL_ONLY}" to keep nightly dumps on the server only (no off-site copy).'
         )
     for field_name in (
         "schedule_backup_at",

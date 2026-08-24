@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     mail_from: str = "no-reply@example.invalid"
     mail_from_name: str = "VolunteerDB"
     # Absolute origin for links in nightly-job emails (e.g.
-    # https://vdb.sttimothyto.org). UI-sent mail derives links from the live
+    # https://vdb.example.org). UI-sent mail derives links from the live
     # request instead; empty means job emails simply carry no link.
     public_base_url: str = ""
     # In-app scheduler (volunteerdb.scheduler) driving the nightly jobs

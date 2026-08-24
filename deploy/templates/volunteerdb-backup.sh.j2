@@ -1,7 +1,12 @@
 #!/bin/bash
 # Managed by volunteerdb deploy/deploy.py - do not edit by hand.
+{% if rclone_dest %}
 # Nightly: pg_dump | gzip -> {{ backup_dir }} -> rclone copy via crypt remote
 # (contents + names encrypted client-side) -> Google Drive.
+{% else %}
+# Nightly: pg_dump | gzip -> {{ backup_dir }}. LOCAL ONLY: [backup] rclone_remote
+# is "none", so nothing leaves this host.
+{% endif %}
 set -Eeuo pipefail
 
 DB_CONTAINER='{{ db_container }}'
@@ -58,9 +63,15 @@ gzip -t "$TMP"
 mv "$TMP" "$OUT"
 TMP=""
 
+{% if rclone_dest %}
 rclone --config "$RCLONE_CONF" copy "$OUT" "$RCLONE_DEST/"
+{% endif %}
 
 find "$BACKUP_DIR" -name 'volunteerdb-*.sql.gz' -mtime +"$RETAIN_LOCAL_DAYS" -delete
+{% if rclone_dest %}
 rclone --config "$RCLONE_CONF" delete --min-age "${RETAIN_REMOTE_DAYS}d" "$RCLONE_DEST/"
 
 echo "backup OK: $OUT ($size bytes) uploaded to $RCLONE_DEST"
+{% else %}
+echo "backup OK: $OUT ($size bytes) - LOCAL ONLY, no off-site copy ([backup] rclone_remote is none)"
+{% endif %}

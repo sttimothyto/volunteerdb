@@ -1,24 +1,27 @@
-# Example Caddy site block for a VolunteerDB instance.
+# The Caddy site block for a VolunteerDB instance.
 #
-# NOT installed by the deploy, on purpose. Caddy on the host may serve other
-# sites, and it owns a TLS certificate lifecycle that a redeploy has no
-# business restarting. Copy the block into /etc/caddy/Caddyfile yourself,
+# With [proxy] caddy = true in your site file, the deploy writes this block
+# itself (from deploy/templates/Caddyfile.j2), owns /etc/caddy/Caddyfile, and
+# there is nothing to copy. This file is for [proxy] caddy = false — a server
+# whose Caddy serves other sites you would rather keep by hand, or that the
+# deploy should not touch. Copy the block into /etc/caddy/Caddyfile,
 # substitute the two values, and `systemctl reload caddy`.
 #
 #   vdb.example.org   -> [host] domain      in deploy/sites/<yours>.toml
 #   127.0.0.1:8090    -> [host] listen_port in the same file
 #
 # The app publishes on the loopback address only, so Caddy is the sole way in.
+# Another reverse proxy entirely: see nginx.conf beside this file.
 
 vdb.example.org {
 	# REQUIRED, not an optimisation. The app serves nothing compressed
-	# itself, so without this every response crosses the wire uncompressed —
+	# itself, so without this every response crosses the wire uncompressed -
 	# including the full volunteers table and the public ministry pages.
 	encode zstd gzip
 
-	# Must match [host] listen_port. Caddy's default X-Forwarded-* headers
-	# are what FORWARDED_ALLOW_IPS=* in the app's env file exists to trust,
-	# and are how the app knows to write https:// into emailed links.
+	# [host] listen_port. Caddy's default X-Forwarded-* headers are what
+	# FORWARDED_ALLOW_IPS=* in the app's env file exists to trust, and are how
+	# the app knows to write https:// into emailed links.
 	reverse_proxy 127.0.0.1:8090
 }
 

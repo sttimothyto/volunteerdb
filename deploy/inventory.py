@@ -1,6 +1,6 @@
 """pyinfra inventory: the one host named by $VDB_SITE's file.
 
-    VDB_SITE=sttimothy uvx pyinfra deploy/inventory.py deploy/deploy.py --dry
+    VDB_SITE=<your-site> uvx pyinfra deploy/inventory.py deploy/deploy.py --dry
 
 Kept separate from deploy.py because pyinfra loads the inventory first and
 independently. DEPLOY_HOST overrides the site file's ssh_host, which is how CI

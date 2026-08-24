@@ -5,10 +5,10 @@ a single file, `deploy/sites/<name>.toml`. The deploy renders it into systemd
 units, the two wrapper scripts, and the application's environment file; nothing
 else in the repository holds a site's values.
 
-Choose a site with `VDB_SITE`:
+Choose a site with `SITE` (`VDB_SITE`, under the hood):
 
 ```sh
-VDB_SITE=sttimothy uvx pyinfra deploy/inventory.py deploy/deploy.py --dry
+make deploy-dry SITE=<your-site>
 ```
 
 There is no default. On a repository that can deploy more than one parish,
@@ -47,11 +47,11 @@ and is checked against the real sites by the test suite, so it cannot fall
 behind. The ordered walkthrough — DNS, Caddy, mail, Google Drive, the first
 deploy — is [Stand up a new instance](../how-to/new-instance.md).
 
-Missing keys, unknown keys, and a `[site] name` that disagrees with the
-filename are all rejected when the file loads, before any operation runs.
-That strictness is deliberate: Jinja renders an undefined variable as the
-empty string, so a typo would otherwise become an `OnCalendar=` with no time
-in it, installed and reloaded without complaint.
+Missing keys, unknown keys, a value of the wrong TOML type (`caddy = "true"`,
+`listen_port = "8090"`), an unparsable `public_ip`, and a `[site] name` that
+disagrees with the filename are all rejected when the file loads, before any
+operation runs — at `make test`, rather than as a template error halfway
+through a deploy.
 
 ## `[site]`
 
@@ -84,7 +84,9 @@ in it, installed and reloaded without complaint.
 : The deploy installs packages and writes under `/etc`, so `root`.
 
 `public_ip`
-: Recorded for the DNS A record. No operation reads it.
+: The server's public address, where the DNS A record points. With
+  `[proxy] caddy = true` the proxy step asserts `domain` resolves to it from
+  the server before touching Caddy; nothing else reads it.
 
 `domain`
 : The public hostname. Caddy serves TLS for it, and it is the default for
@@ -92,9 +94,32 @@ in it, installed and reloaded without complaint.
   which have no live request to derive one from.
 
 `listen_port`
-: Host loopback port the app publishes on and Caddy proxies to. Change it
-  only if something else on the machine already uses it; it must match the
-  `reverse_proxy` line in your Caddyfile.
+: Host loopback port the app publishes on and the reverse proxy sends to.
+  Change it only if something else on the machine already uses it. With
+  `[proxy] caddy = true` the deploy writes it into the Caddyfile; otherwise it
+  must match the `reverse_proxy` (or `proxy_pass`) line in yours.
+
+## `[proxy]`
+
+`caddy`
+: `true`: the deploy installs Caddy from its upstream apt repository, owns
+  `/etc/caddy/Caddyfile` outright, validates each new version before
+  installing it, opens `http`/`https` in firewalld if that is running, and
+  reloads Caddy. A hand-written Caddyfile already on the server is copied
+  aside once as `Caddyfile.bak-pre-managed-<date>`. Assumes the server sits
+  on its own public address: the step checks DNS first and then fetches
+  `https://<domain>/login` from the server itself.
+  `false`: the deploy never touches Caddy or the firewall; terminate TLS
+  yourself from `deploy/examples/`. The reasoning is in
+  [Production deployment architecture](../explanation/deployment.md#the-reverse-proxy-managed-or-yours).
+
+`extra`
+: Verbatim Caddyfile text appended after the VolunteerDB site block — other
+  sites the same Caddy should keep serving. A multi-line literal string
+  (`'''…'''`) keeps its tabs. Ignored when `caddy = false`. The test suite
+  renders it and refuses unbalanced braces, but only `caddy validate` on the
+  server knows whether it is a valid Caddyfile — and the deploy runs that
+  before the file goes live.
 
 ## `[mail]`
 
@@ -126,14 +151,16 @@ in it, installed and reloaded without complaint.
 : Name of the rclone remote you provision by hand
   ([Back up and restore](../how-to/backup-restore.md)). The encrypting
   wrapper is this name plus `-crypt`; the deploy asserts both exist and fails
-  with a pointer if they do not.
+  with a pointer if they do not. `"none"` keeps the nightly dumps on the server
+  only: no Drive leg, no assertion, and a reminder on every deploy. Empty is
+  rejected, so nobody lands there by omission.
 
 `retain_local_days`
 : How long plaintext dumps stay on the server. They are root-only files on
   the same host as the live database, so encrypting them would add nothing.
 
 `retain_remote_days`
-: How long encrypted copies stay on Drive.
+: How long encrypted copies stay on Drive. Ignored with `rclone_remote = "none"`.
 
 ## `[sheets]`
 

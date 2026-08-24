@@ -87,8 +87,7 @@ and later deploys read it back, exactly like the SMTP2GO key
 ([Rotate secrets](rotate-secrets.md)):
 
 ```bash
-VDB_SITE=sttimothy VDB_SHEETS_REFRESH_TOKEN=... \
-  uvx pyinfra deploy/inventory.py deploy/deploy.py -y
+VDB_SHEETS_REFRESH_TOKEN=... make deploy SITE=<your-site>
 ```
 
 On an instance that has never had the sheet sync, pass

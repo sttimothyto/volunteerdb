@@ -1,0 +1,20 @@
+# {{ marker }} - do not edit by hand.
+# Rendered from deploy/templates/Caddyfile.j2 with deploy/sites/{{ site_name }}.toml.
+# To add or change anything, edit [proxy] extra in that file and redeploy. The
+# hand-written file this replaced, if there was one, is Caddyfile.bak-pre-managed-*.
+
+{{ domain }} {
+	# REQUIRED, not an optimisation. The app serves nothing compressed
+	# itself, so without this every response crosses the wire uncompressed -
+	# including the full volunteers table and the public ministry pages.
+	encode zstd gzip
+
+	# [host] listen_port. Caddy's default X-Forwarded-* headers are what
+	# FORWARDED_ALLOW_IPS=* in the app's env file exists to trust, and are how
+	# the app knows to write https:// into emailed links.
+	reverse_proxy 127.0.0.1:{{ listen_port }}
+}
+{% if extra %}
+# --- [proxy] extra, verbatim from the site file -----------------------------
+{{ extra.strip() }}
+{% endif %}

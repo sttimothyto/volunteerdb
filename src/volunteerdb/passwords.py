@@ -295,9 +295,9 @@ def _org_terms(org_name: str, mail_from: str, public_base_url: str) -> frozenset
     "name of the service" that depends on who is running it.
 
     Derived rather than configured, so that a new parish gets its own terms
-    blocked without having to think about it. For "St. Timothy's" at
-    sttimothyto.org this yields sttimothys, sttimothy, sainttimothys,
-    sainttimothy and sttimothyto — which is what the list used to hardcode,
+    blocked without having to think about it. For "St. Peter's" at
+    stpetersparish.org this yields stpeters, stpeter, saintpeters, saintpeter
+    and stpetersparish — the shape the list used to hardcode for one parish,
     plus the mail domain it did not.
     """
     terms: set[str] = set()
@@ -309,8 +309,8 @@ def _org_terms(org_name: str, mail_from: str, public_base_url: str) -> frozenset
             spelled = "saint" + folded[2:]
             terms |= {spelled, spelled.removesuffix("s")}
     for source in (mail_from, public_base_url):
-        # Every label of the host except the public suffix: sttimothyto.org
-        # contributes sttimothyto, vdb.example.org contributes vdb and example.
+        # Every label of the host except the public suffix: stpetersparish.org
+        # contributes stpetersparish, vdb.example.org contributes vdb and example.
         host = source.rsplit("@", 1)[-1].split("//")[-1].split("/")[0]
         labels = host.split(".")
         terms |= {_fold(label) for label in labels[:-1]}

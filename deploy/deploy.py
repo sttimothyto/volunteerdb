@@ -7,8 +7,11 @@ Usage — VDB_SITE names a file in deploy/sites/, which holds everything
 specific to that parish; deploy/siteconf.py holds what is the same on all of
 them. The inventory reads the host from the same file:
 
-    VDB_SITE=sttimothy uvx pyinfra deploy/inventory.py deploy/deploy.py --dry
-    VDB_SITE=sttimothy VDB_ADMIN_PASSWORD='...' uvx pyinfra deploy/inventory.py deploy/deploy.py -y
+    make deploy-dry SITE=<your-site>
+    VDB_ADMIN_PASSWORD='...' make deploy SITE=<your-site>
+
+(`make deploy` is `VDB_SITE=<site> uvx pyinfra==<pin> deploy/inventory.py
+deploy/deploy.py -y`; the pin lives in the Makefile and in CI.)
 
 Optional environment: VDB_ADMIN_PASSWORD runs the admin bootstrap (required
 on a brand-new instance — it is the only way in); VDB_SMTP2GO_API_KEY sets or
@@ -40,6 +43,7 @@ from steps import secrets as secrets_step  # noqa: E402
 from steps.app import deploy_app  # noqa: E402
 from steps.backup import deploy_backup  # noqa: E402
 from steps.base import install_base  # noqa: E402
+from steps.proxy import deploy_proxy  # noqa: E402
 
 # Everything specific to this parish; everything else is a siteconf constant.
 site = siteconf.load()
@@ -80,10 +84,12 @@ secrets = secrets_step.resolve(
 # this file once per host, and an imported module's body would run only for
 # the first of them. See deploy/steps/__init__.py.
 #
-# Backup and Drive sync come last so that a missing rclone remote cannot block
-# the app deploy — pyinfra stops at the first failure, and on a fresh instance
-# the rclone assertion is expected to fail until the one-time provisioning is
-# done. By then the app itself is already up.
+# The proxy follows the app, so Caddy's first reload finds something answering
+# on the loopback port. The backup comes last so that a missing rclone remote
+# cannot block either — pyinfra stops at the first failure, and on a fresh
+# instance the rclone assertion is expected to fail until the one-time
+# provisioning is done. By then the app is up and, if the site file asks for
+# it, so is TLS.
 
 install_base()
 
@@ -95,5 +101,7 @@ deploy_app(
     unit_vars=UNIT_VARS,
     admin_password=os.environ.get("VDB_ADMIN_PASSWORD"),
 )
+
+deploy_proxy(site, here=HERE)
 
 deploy_backup(site, here=HERE, unit_vars=UNIT_VARS)

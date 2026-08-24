@@ -200,11 +200,13 @@ from a sheet is simply restored by the write-back.
 ## Running your own instance
 
 Everything specific to a parish lives in one file, `deploy/sites/<name>.toml` —
-the host, the domain, the mail addresses, the nightly schedule. Copy
-`deploy/sites/example.toml`, fill it in, and follow
-[docs/how-to/new-instance.md](docs/how-to/new-instance.md), which covers the
-parts the deploy deliberately does not automate: DNS, Caddy, a mail sending
-domain, and the Google Cloud project the backups and roster sheets share.
+the host, the domain, the mail addresses, the nightly schedule, whether the
+deploy owns the reverse proxy. Copy `deploy/sites/example.toml`, fill it in,
+and follow [docs/how-to/new-instance.md](docs/how-to/new-instance.md), which
+covers the parts the deploy deliberately does not automate: DNS, a mail
+sending domain, the Google Cloud project the backups and roster sheets share —
+and Caddy, if you keep your own reverse proxy rather than letting the deploy
+install and manage it. `make deploy SITE=<name>` does the rest.
 
 ## License
 

@@ -11,8 +11,9 @@ checklist; this page is the *why*.
 
 The deploy is mechanism only. Everything that distinguishes one parish's
 deployment from another's is in a single declarative file,
-`deploy/sites/<name>.toml` — the host, the domain, the port, the five mail
-addresses, the rclone remote, the retention windows, the five nightly times.
+`deploy/sites/<name>.toml` — the host, the domain, the port, whether the
+deploy owns the reverse proxy, the five mail addresses, the rclone remote, the
+retention windows, the five nightly times.
 `deploy/siteconf.py` holds what is identical everywhere: paths, image and
 network names, the container UID. `deploy/deploy.py` holds neither; it is
 the running order and nothing else.
@@ -21,9 +22,10 @@ The split is what makes a second instance possible without editing Python,
 and it is enforced rather than encouraged. The site loader rejects unknown
 and missing keys, a test renders every template and fails if any variable is
 unsupplied, and another test holds the five nightly times to their required
-order. That strictness earns its keep because the failure mode is quiet:
-Jinja renders an undefined variable as the empty string, so a typo becomes an
-`OnCalendar=` with no time in it, installed and reloaded without complaint.
+order, and the loader checks that TOML gave each key the type the templates
+expect. That strictness earns its keep because the alternative is late: a
+typo would otherwise surface as pyinfra refusing a template halfway through a
+deploy, with the host half-updated, rather than as a failing test.
 
 It also drew a useful line through the application. Anything the app needs to
 know about the parish — its name, its time zone, the address it sends from —
@@ -114,14 +116,43 @@ Three deliberate choices:
   ([Back up and restore](../how-to/backup-restore.md)) and the deploy
   merely asserts both remotes exist.
 
+## The reverse proxy: managed, or yours
+
+Caddy terminates HTTPS with automatic Let's Encrypt certificates and proxies
+to the site's loopback port; the app just trusts that TLS happened
+(`VDB_COOKIE_SECURE=true`, `FORWARDED_ALLOW_IPS=*`). Whether the deploy owns
+that Caddy is the site file's choice, `[proxy] caddy`.
+
+With `caddy = true` the deploy owns `/etc/caddy/Caddyfile` outright — the
+same whole-file, generated, do-not-edit contract as the env file and the
+quadlets — and other sites the same Caddy should serve go into
+`[proxy] extra`, verbatim. Three details carry the weight:
+
+- **Validate, then install.** The file is rendered to a candidate beside the
+  live one and `caddy validate`d there; only a valid candidate is installed.
+  A typo in `extra` stops the deploy with the old configuration still on disk
+  and still being served — never an invalid Caddyfile at rest, which Caddy
+  would survive until its next restart and then not.
+- **Reload, never restart.** Caddy keeps its certificate cache across a
+  reload, so a deploy costs no issuance and no downtime.
+- **DNS first.** The step refuses to touch Caddy until `[host] domain`
+  resolves to `[host] public_ip` from the server. A name that does not yet
+  resolve would send Caddy into Let's Encrypt's failed-validation backoff,
+  which is measured in hours.
+
+That mode assumes a server on its own public address, which is any VPS. With
+`caddy = false` the deploy never touches Caddy or the firewall, and the proxy
+is yours: a Caddy serving other sites you would rather keep by hand, an nginx
+already there, a host behind NAT or a CDN. `deploy/examples/` holds the block
+for either.
+
 ## What is deliberately outside the repo
 
-- **TLS and the public name.** Caddy (configured in `/etc/caddy/Caddyfile`
-  on the host) terminates HTTPS with automatic Let's Encrypt certificates
-  and proxies to the site's loopback port; DNS points its domain at the
-  server. The app just trusts that TLS happened (`VDB_COOKIE_SECURE=true`).
+- **DNS.** The A record is yours; the deploy only checks it.
 - **The rclone Google Drive credentials** (OAuth token + backup-encryption
-  password) — see [Nightly backups](#nightly-backups).
+  password) — see [Nightly backups](#nightly-backups). A site that sets
+  `[backup] rclone_remote = "none"` has no Drive leg at all: the nightly dump
+  stays on the host, and every deploy says so.
 
 ## Known gaps (honesty section)
 

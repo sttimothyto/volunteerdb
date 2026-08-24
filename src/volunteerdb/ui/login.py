@@ -4,6 +4,7 @@ from nicegui import ui
 from starlette.responses import RedirectResponse
 
 from .. import passwords, throttle
+from ..config import settings
 from ..db import db_session
 from ..log import audit_log
 from ..services import mail
@@ -178,7 +179,7 @@ def login_page(request: Request, redirect_to: str = "/"):
             'outline no-caps href="/ministries/"'
         ).classes("w-80")
         ui.label(
-            "Invite link is sent from no-reply@sttimothyto.org Open it to finish setup."
+            f"Invite link is sent from {settings().mail_from}. Open it to finish setup."
         ).classes("text-sm text-gray-500 max-w-80 text-center")
 
 

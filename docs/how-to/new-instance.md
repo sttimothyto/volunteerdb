@@ -14,9 +14,11 @@ noted where they do.
 
 ## 0. What you need first
 
-- **A server.** Debian 13, root SSH access, at least 4 GB RAM, 2 vCPU and
-  20 GB of disk. The deploy uses `apt` and installs podman; nothing else needs
-  to be on the machine beforehand except Caddy (step 3).
+- **A server.** Debian 13 on its own public address (any VPS), root SSH
+  access, at least 4 GB RAM, 2 vCPU and 20 GB of disk, ports 80 and 443
+  reachable. The deploy uses `apt` and installs podman and — unless you keep
+  your own reverse proxy (step 3) — Caddy; nothing needs to be on the machine
+  beforehand.
 - **A domain** you control, and the ability to add an A record.
 - **A Google account** to own the roster spreadsheets and the backups. A
   parish account, not a person's — people leave.
@@ -35,37 +37,44 @@ Fill in every key — each carries a comment, and the
 one reaches. Then commit it. Nothing in it is secret; that is why it is
 committed.
 
-From here on, `VDB_SITE=myparish` selects it.
+From here on, `SITE=myparish` selects it: `make deploy SITE=myparish`.
 
 ## 2. DNS
 
 Add an A record for `[host] domain` pointing at `[host] public_ip`. Do this
-before step 3: Caddy cannot obtain a certificate for a name that does not yet
-resolve to it.
+before the first deploy: Caddy cannot obtain a certificate for a name that
+does not yet resolve to it, and with `[proxy] caddy = true` the deploy checks
+the record from the server and refuses to touch Caddy until it is right.
 
 ```sh
 dig +short vdb.myparish.org      # should print your server's address
 ```
 
-## 3. Caddy
+## 3. Reverse proxy
 
-Install Caddy on the server, then copy the site block from
-`deploy/examples/Caddyfile` into `/etc/caddy/Caddyfile`, substituting your
-domain and `[host] listen_port`.
+Decide who owns it, in `[proxy]` of the site file.
 
-```sh
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy
-```
+`caddy = true` (what `example.toml` ships with)
+: The deploy installs Caddy from its upstream apt repository, writes
+  `/etc/caddy/Caddyfile`, validates it, opens `http`/`https` in firewalld if
+  that is running, and reloads Caddy. There is nothing to do in this step.
+  Other sites the same Caddy should serve go into `[proxy] extra`, verbatim.
+  A hand-written Caddyfile already on the server is copied aside once, as
+  `Caddyfile.bak-pre-managed-<date>`, before the deploy takes the file over.
 
-The deploy does **not** install, template or reload Caddy. Caddy on your
-server may serve other sites, and it owns a certificate lifecycle that a
-redeploy has no business restarting. TLS needs nothing further: Caddy obtains
-and renews a Let's Encrypt certificate on its own once DNS resolves.
+`caddy = false`
+: The deploy never touches Caddy or the firewall. Install your own reverse
+  proxy and terminate TLS from `deploy/examples/Caddyfile` or
+  `deploy/examples/nginx.conf`, substituting your domain and
+  `[host] listen_port`. Choose this when Caddy on the server already serves
+  sites you would rather keep by hand, when another proxy is already there, or
+  when the server is not on its own public address (behind NAT, or fronted by
+  a CDN): the managed mode checks DNS and then fetches
+  `https://<domain>/login` from the server itself, and neither works there.
 
-There is nothing to browse to yet — the application is not deployed. Caddy
-will answer with a 502 until step 6, which is the expected result at this
-point.
+Either way, TLS needs nothing further — Caddy obtains and renews a Let's
+Encrypt certificate on its own once DNS resolves — and the block must carry
+`encode zstd gzip`, because the app serves nothing compressed itself.
 
 ## 4. Outbound mail
 
@@ -102,8 +111,7 @@ this is set up once.
 ## 6. First deploy
 
 ```sh
-VDB_SITE=myparish VDB_ADMIN_PASSWORD='…' VDB_SMTP2GO_API_KEY='api-…' \
-  uvx pyinfra==3.10.0 deploy/inventory.py deploy/deploy.py -y
+VDB_ADMIN_PASSWORD='…' VDB_SMTP2GO_API_KEY='api-…' make deploy SITE=myparish
 ```
 
 :::{warning}
@@ -122,12 +130,14 @@ The account it creates is `[mail] admin_email`.
 ERROR: rclone remote … not configured on this host.
 ```
 
-That is the intended order. The application is fully deployed by that point —
-the failure is the backup step refusing to install a timer for a destination
-that does not exist yet. Step 7 provisions it.
+That is the intended order. The application — and, with `caddy = true`, TLS —
+is fully deployed by that point; the failure is the backup step refusing to
+install a timer for a destination that does not exist yet. Step 7 provisions
+it. (A site file with `[backup] rclone_remote = "none"` is green here, and
+keeps its nightly dumps on the server only.)
 
-Preview any deploy with `--dry` instead of `-y`; it connects and reports what
-would change without changing anything.
+Preview any deploy with `make deploy-dry SITE=myparish`; it connects and
+reports what would change without changing anything.
 
 ## 7. Backups
 
@@ -142,10 +152,15 @@ the scenario Drive backups exist for, and it is also the scenario in which the
 only on-server copy of that password is gone.
 :::
 
+Without a Google account at all, set `[backup] rclone_remote = "none"`: the
+nightly dump is still taken and pruned on the server, nothing leaves it, and
+every deploy reminds you. A lost disk then loses the database and its backups
+together, so treat it as a stopgap.
+
 ## 8. Deploy again
 
 ```sh
-VDB_SITE=myparish uvx pyinfra==3.10.0 deploy/inventory.py deploy/deploy.py -y
+make deploy SITE=myparish
 ```
 
 Green this time, through the backup step.
@@ -165,10 +180,10 @@ anyone with the link), then run `scripts/google_authorize.py` as the parish
 Google account and pass the results on one deploy:
 
 ```sh
-VDB_SITE=myparish VDB_TEMPLATE_SHEET_URL='https://docs.google.com/…' \
+VDB_TEMPLATE_SHEET_URL='https://docs.google.com/…' \
   VDB_SHEETS_CLIENT_ID='…' VDB_SHEETS_CLIENT_SECRET='…' \
   VDB_SHEETS_REFRESH_TOKEN='…' \
-  uvx pyinfra==3.10.0 deploy/inventory.py deploy/deploy.py -y
+  make deploy SITE=myparish
 ```
 
 Like the mail key, they are read back from the server on later runs, so you
@@ -197,9 +212,15 @@ build. Create a `production` GitHub Environment with:
   `ssh_config` alias that means nothing on a runner. Whatever you put here has
   to match what `DEPLOY_KNOWN_HOSTS` pins.
 
-Then set `VDB_SITE` in the workflow's deploy job to your site's name. Adding a
-required reviewer to the environment turns the deploy into a manual approval
-without touching the workflow.
+Then name the site in a **repository** variable `VDB_SITE` (Settings →
+Secrets and variables → Actions → Variables) — not an environment variable:
+the deploy job's `if` runs before the environment is chosen, so it can only
+see repository variables. Until it is set, a push to `main` runs lint, the
+tests and the docs build and skips the deploy, which is also what a fork of
+this repository gets by default. Nothing in the workflow file is edited; the
+link GitHub shows beside each deployment is read from the site file. Adding a
+required reviewer to the environment turns the deploy into a manual approval,
+again without touching the workflow.
 
 ## Verify
 

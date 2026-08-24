@@ -9,7 +9,7 @@ reads back on every run — so most rotations are "change the value, redeploy".
 Passing the key on the command line always wins over the stored value:
 
 ```sh
-VDB_SMTP2GO_API_KEY='api-NEWKEY' uvx pyinfra deploy/inventory.py deploy/deploy.py -y
+VDB_SMTP2GO_API_KEY='api-NEWKEY' make deploy SITE=<your-site>
 ```
 
 Verify: trigger a passwordless (OTP) sign-in on the production site and
@@ -18,7 +18,7 @@ confirm the code arrives by email.
 ## Admin password
 
 ```sh
-VDB_ADMIN_PASSWORD='new-password' uvx pyinfra deploy/inventory.py deploy/deploy.py -y
+VDB_ADMIN_PASSWORD='new-password' make deploy SITE=<your-site>
 ```
 
 This re-runs the idempotent bootstrap for the site's `[mail] admin_email` —
@@ -78,7 +78,7 @@ Then redeploy, which rewrites `VDB_DATABASE_URL` to match and restarts the
 app:
 
 ```sh
-VDB_SITE=<your-site> uvx pyinfra deploy/inventory.py deploy/deploy.py -y
+make deploy SITE=<your-site>
 ```
 
 The app is briefly unable to reach the database between the `ALTER ROLE` and
