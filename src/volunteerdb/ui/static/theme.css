@@ -42,7 +42,7 @@
   --vdb-graph-team-label: #fdf6e3;
   --vdb-graph-node: #9e9e9e;
   --vdb-graph-label: #333333;
-  --vdb-graph-edge: #d8c9a3;
+  --vdb-graph-edge: #8a8072; /* 3.6:1 on the page; the rule tone was 1.5:1 */
   --vdb-graph-leader: #b07d2b;
   --vdb-graph-hier: #8a7550;
   --vdb-graph-selected: #2e5e7e;
@@ -65,9 +65,9 @@ body.body--dark {
 
   --vdb-graph-team: #c97b5d;
   --vdb-graph-team-label: #1c1917;
-  --vdb-graph-node: #78716c;
+  --vdb-graph-node: #5c5650; /* ink labels read 5.4:1 on it */
   --vdb-graph-label: #e8e0ce;
-  --vdb-graph-edge: #4a443c;
+  --vdb-graph-edge: #6f675c; /* 3.2:1 on the dark page */
   --vdb-graph-leader: #d9a662;
   --vdb-graph-hier: #a8916b;
   --vdb-graph-selected: #9dc1d9;
@@ -79,9 +79,10 @@ body.body--dark {
   --q-secondary: #a8916b !important;
   --q-accent: #d9c48f !important;
   --q-positive: #7e9c5b !important;
-  --q-negative: #c25b49 !important;
+  --q-negative: #d9755f !important;
   --q-warning: #d9a662 !important;
   --q-info: #6e93a8 !important;
+  --q-muted: #a89e8f !important;
 }
 
 /* ---------- base typography & readability ---------- */
@@ -98,15 +99,55 @@ body {
   background: var(--vdb-selection);
 }
 
+/* Two-tone, so the ring shows on a terracotta button as well as on the
+   page: a parchment halo first, the terracotta ring outside it (2.4.7). */
 :focus-visible {
-  outline: 2px solid var(--vdb-heading);
+  outline: 3px solid var(--vdb-heading);
   outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--vdb-bg);
 }
 
+/* Somebody who asked their OS for less motion gets none of Quasar's
+   transitions either (2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* the first thing a keyboard reaches; invisible until it has focus (2.4.1) */
+.vdb-skip {
+  position: absolute;
+  left: 0.5rem;
+  top: -100px;
+  z-index: 10000;
+  padding: 0.5rem 0.9rem;
+  border-radius: 4px;
+  background-color: var(--vdb-bg);
+  color: var(--vdb-ink);
+  text-decoration: underline;
+}
+
+.vdb-skip:focus-visible {
+  top: 0.5rem;
+}
+
+/* Underlined, because colour alone cannot carry a link here: the link ink
+   and the body ink are 1.6:1 apart, and no blue passes 4.5:1 on parchment
+   while also standing 3:1 from #333 (WCAG 1.4.1, G183). Kept thin and soft
+   so a line of links does not turn into a grille. */
 a,
 .nicegui-link {
   color: var(--vdb-link);
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
 }
 
 /* Every page runs the full window width (see ui/layout.py frame()), which is
@@ -120,7 +161,7 @@ a,
 
 a:hover,
 .nicegui-link:hover {
-  border-bottom: 1px dotted currentColor;
+  text-decoration-color: currentColor;
 }
 
 /* Widgets rendered as real <a> tags (Quasar href prop, so right-click →
@@ -130,12 +171,7 @@ a.q-btn,
 a.q-item,
 a.vdb-quiet {
   color: inherit;
-}
-
-a.q-btn:hover,
-a.q-item:hover,
-a.vdb-quiet:hover {
-  border-bottom: none;
+  text-decoration: none;
 }
 
 /* ---------- display faces ---------- */
@@ -314,12 +350,12 @@ a.vdb-quiet .vdb-stat:hover {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #6b6255;
+  color: var(--vdb-muted);
 }
 
 .vdb-stat-sub {
   font-size: 12px;
-  color: #8a8072;
+  color: var(--vdb-muted);
   min-height: 1.2em; /* reserved even when empty, so tiles share a baseline */
 }
 
@@ -341,14 +377,6 @@ a.vdb-quiet .vdb-stat:hover {
 
 a.vdb-quiet .vdb-stat-chip:hover {
   background-color: var(--vdb-row-hover);
-}
-
-body.body--dark .vdb-stat-caption {
-  color: #a89e8f;
-}
-
-body.body--dark .vdb-stat-sub {
-  color: #8a8072;
 }
 
 /* ---------- clickable table rows (mark the table with .vdb-clickable-rows) ---------- */
@@ -426,9 +454,37 @@ body.body--dark .vdb-stat-sub {
   white-space: nowrap;
 }
 
+/* ---------- readability remaps for fixed Tailwind tints ----------
+   Tailwind's greys were chosen for white. On parchment gray-500 is 4.48:1
+   and gray-400 2.35:1, and gray-500 is the app's secondary text at ~90
+   sites — so the classes stay and their colour is remapped here, on both
+   grounds. tests/test_theme_contrast.py reads these back. */
+
+.text-gray-400 { color: #6b6255; }
+.text-gray-500 { color: #5f574c; }
+
+/* the outline Quasar gives a field is rgba(0,0,0,.24): 1.9:1 on parchment,
+   below the 3:1 a control's boundary needs (1.4.11) */
+.q-field--outlined .q-field__control:before {
+  border-color: #8a8072;
+}
+
+/* the name cell of a clickable table row: a real button, so the row is
+   reachable by keyboard (2.1.1); the click bubbles to the row as before */
+.vdb-rowbtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: inherit;
+}
+
 /* ---------- dark-mode remaps for fixed Tailwind tints ---------- */
 
-body.body--dark .text-gray-400 { color: #8a8072; }
+body.body--dark .text-gray-400 { color: #a89e8f; }
 body.body--dark .text-gray-500 { color: #a89e8f; }
 body.body--dark .text-gray-600 { color: #c4b9a8; }
 body.body--dark .text-gray-700 { color: #d6cdbf; }
@@ -515,6 +571,12 @@ body.body--dark .bg-blue-50 { background-color: #26303a; }
 .vdb-seg a[aria-current="page"]:hover {
   background-color: var(--vdb-heading);
   color: #fff;
+}
+
+/* the dark heading tint is too light for white text (3.2:1): ink, like
+   every other dark-mode fill */
+body.body--dark .vdb-seg a[aria-current="page"] {
+  color: #1c1917;
 }
 
 .vdb-cal-wrap {
@@ -730,4 +792,36 @@ body.body--dark .bg-blue-50 { background-color: #26303a; }
   font-size: 13px;
   padding-top: 0.5rem;
   border-top: 1px solid var(--vdb-rule);
+}
+
+/* ---------- dark mode: fills carry ink labels ----------
+   Every dark brand tint is chosen to read as TEXT on the dark page (5:1 and
+   up), which puts it too light for white text on a fill (2.2–4.3:1). One
+   colour cannot do both, so in dark mode a filled button, badge or toast
+   gets ink text instead. Quasar's .text-white is !important and sits in a
+   layer this sheet cannot outrank, so the button rule targets the label
+   element inside it; a badge's own colour is a plain declaration. */
+body.body--dark .q-btn.bg-primary > .q-btn__content,
+body.body--dark .q-btn.bg-secondary > .q-btn__content,
+body.body--dark .q-btn.bg-accent > .q-btn__content,
+body.body--dark .q-btn.bg-positive > .q-btn__content,
+body.body--dark .q-btn.bg-negative > .q-btn__content,
+body.body--dark .q-btn.bg-warning > .q-btn__content,
+body.body--dark .q-btn.bg-info > .q-btn__content,
+body.body--dark .q-btn.bg-muted > .q-btn__content,
+body.body--dark .q-notification.bg-primary .q-notification__message,
+body.body--dark .q-notification.bg-positive .q-notification__message,
+body.body--dark .q-notification.bg-negative .q-notification__message,
+body.body--dark .q-notification.bg-warning .q-notification__message,
+body.body--dark .q-notification.bg-info .q-notification__message,
+body.body--dark .q-badge.bg-primary,
+body.body--dark .q-badge.bg-secondary,
+body.body--dark .q-badge.bg-accent,
+body.body--dark .q-badge.bg-positive,
+body.body--dark .q-badge.bg-negative,
+body.body--dark .q-badge.bg-warning,
+body.body--dark .q-badge.bg-info,
+body.body--dark .q-badge.bg-muted {
+  color: #1c1917;
+  text-shadow: none;
 }

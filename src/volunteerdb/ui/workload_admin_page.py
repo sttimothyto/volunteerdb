@@ -11,6 +11,28 @@ from .context import action_session, notify_errors, page_session
 from .layout import frame
 
 
+def _contrast_note(color: ui.color_input) -> None:
+    """Beside each band colour: the ratio its badge text will read at. The
+    label colour is picked per band (ink or white), and a band no text reads
+    on is refused on save — this is the same arithmetic, shown up front."""
+    note = ui.label().classes("text-sm text-gray-500 w-36")
+
+    def show() -> None:
+        try:
+            ratio = workload_service.contrast_with_label(color.value or "")
+        except ValueError:
+            note.set_text("not a colour")
+            return
+        floor = workload_service.MIN_LABEL_CONTRAST
+        note.set_text(
+            f"badge text {ratio:.1f}:1"
+            + ("" if ratio >= floor else f" — below {floor}:1")
+        )
+
+    color.on_value_change(lambda _: show())
+    show()
+
+
 @ui.page("/admin/workload")
 async def workload_page():
     async with page_session() as (session, actor):
@@ -61,6 +83,7 @@ async def workload_page():
                         .props("dense")
                         .classes("w-36")
                     )
+                    _contrast_note(color)
                     if is_last:
                         upper = None
                         ui.label("everything above").classes("text-sm text-gray-500")

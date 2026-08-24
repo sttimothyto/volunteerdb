@@ -41,7 +41,7 @@ async def fields_page():
                 if defn.show_in_list:
                     ui.badge("in list", color="info")
                 if not defn.is_active:
-                    ui.badge("inactive", color="grey")
+                    ui.badge("inactive", color="muted")
                 ui.space()
                 ui.button(
                     icon="edit", on_click=lambda _, d=defn: _field_dialog(d)

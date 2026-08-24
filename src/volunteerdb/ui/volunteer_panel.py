@@ -16,6 +16,7 @@ from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from . import invites
+from .a11y import icon_button
 from .account_status import invitable, last_login_text
 from .context import action_session, notify_errors, parse_as_of
 from .photo_dialog import photo_avatar
@@ -112,17 +113,18 @@ class VolunteerPanel:
                 )
                 ui.label(volunteer.full_name).classes("text-lg font-medium")
                 ui.space()
-                ui.button(icon="close", on_click=self.drawer.hide).props(
+                icon_button("close", "Close", on_click=self.drawer.hide).props(
                     "flat dense round"
                 )
             if not volunteer.is_active or volunteer_id in wl:
                 with ui.row().classes("items-center gap-2"):
                     if not volunteer.is_active:
-                        ui.badge("inactive", color="grey")
+                        ui.badge("inactive", color="muted")
                     if volunteer_id in wl:
                         score, band = wl[volunteer_id]
                         ui.badge(f"workload: {band.label} · {float(score):g}").style(
-                            f"background-color: {band.color}"
+                            f"background-color: {band.color}; "
+                            f"color: {workload_service.text_colour(band.color)}"
                         ).tooltip(
                             "Workload score: team weights × role multipliers, all ministries"
                         )

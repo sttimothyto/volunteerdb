@@ -247,7 +247,7 @@ def invite_control(
     # volunteer record says after a relink — invite the address that will be used.
     address = (account.email if account is not None else email) or ""
     if not address:
-        ui.badge("no account", color="grey").props("outline").tooltip(
+        ui.badge("no account", color="muted").props("outline").tooltip(
             "No email address on file — add one before they can be invited."
         )
         return
@@ -296,6 +296,6 @@ def invite_control(
         )
     ):
         with ui.element("span").classes("vdb-invite-idle"):
-            ui.badge(idle_text, color="grey").props("outline")
+            ui.badge(idle_text, color="muted").props("outline")
             ui.icon("mail").classes("vdb-invite-hint")
         ui.label(action_text).classes("vdb-invite-action text-xs")

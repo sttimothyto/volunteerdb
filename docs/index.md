@@ -71,6 +71,7 @@ explanation/workload
 explanation/elections
 explanation/events
 explanation/deployment
+explanation/accessibility
 ```
 
 ```{toctree}

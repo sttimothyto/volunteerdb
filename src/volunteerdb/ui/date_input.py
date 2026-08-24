@@ -8,6 +8,8 @@ calendar is a convenience layered on top, not a new value format.
 
 from nicegui import ui
 
+from .a11y import icon_button
+
 
 def date_input(label: str, *, value: str = "", clearable: bool = False) -> ui.input:
     """A ``ui.input`` whose appended calendar icon opens a ``ui.date`` picker.
@@ -20,5 +22,9 @@ def date_input(label: str, *, value: str = "", clearable: bool = False) -> ui.in
         with ui.menu().props("no-parent-event") as menu:
             ui.date().bind_value(field).on_value_change(menu.close)
         with field.add_slot("append"):
-            ui.icon("edit_calendar").on("click", menu.open).classes("cursor-pointer")
+            # a real button, not an icon with a click handler: focusable,
+            # named, and 32px to hit (WCAG 2.1.1, 4.1.2, 2.5.8)
+            icon_button("edit_calendar", "Choose a date", on_click=menu.open).props(
+                "flat dense round"
+            )
     return field

@@ -332,7 +332,7 @@ async def test_workload_flow(client, seeded):
         "multipliers": {"leader": 2, "second": 2, "core": 1, "member": 1},
         "bands": [
             {"label": "ok", "color": "#4caf50", "upper": 6},
-            {"label": "over", "color": "#e53935", "upper": None},
+            {"label": "over", "color": "#c62828", "upper": None},
         ],
     }
     r = await client.put("/api/workload/config", json=good, headers=member)
@@ -343,6 +343,12 @@ async def test_workload_flow(client, seeded):
     bad = {**good, "bands": [{"label": "only", "color": "#000", "upper": 5}]}
     r = await client.put("/api/workload/config", json=bad, headers=admin)
     assert r.status_code == 422
+
+    # a band no text can read on — neither ink nor white reaches 4.5:1 on
+    # #e53935 — is refused, not painted
+    glare = {**good, "bands": [{"label": "glare", "color": "#e53935", "upper": None}]}
+    r = await client.put("/api/workload/config", json=glare, headers=admin)
+    assert r.status_code == 422 and "4.5:1" in r.text
 
     # new config applies: 3 × 2 = 6 -> "ok" band now
     r = await client.get("/api/workload/scores", headers=admin)

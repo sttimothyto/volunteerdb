@@ -282,11 +282,11 @@ async def teams_page(as_of: str = ""):
             """
             <q-td key="team" :props="props"
                   :style="{paddingLeft: (16 + props.row.depth * 22) + 'px'}">
-                <span v-if="props.row.depth" class="text-grey-5 q-mr-xs">└</span>
+                <span v-if="props.row.depth" class="text-gray-500 q-mr-xs">└</span>
                 <a :href="props.row.href" class="vdb-quiet" @click.stop>
                     {{ props.row.name }}
                 </a>
-                <q-badge v-if="props.row.inactive" color="grey" class="q-ml-sm">
+                <q-badge v-if="props.row.inactive" color="muted" class="q-ml-sm">
                     inactive
                 </q-badge>
                 <q-tooltip v-if="props.row.depth">{{ props.row.path }}</q-tooltip>
@@ -882,7 +882,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         if team.description:
             ui.label(team.description).classes("text-gray-600")
         if not team.is_active:
-            ui.badge("inactive", color="grey")
+            ui.badge("inactive", color="muted")
 
         with ui.row().classes("gap-2 w-full items-center"):
             if actor.is_admin and at is None:

@@ -27,7 +27,7 @@ async def test_config_default_and_roundtrip(database):
     custom = _config(
         bands=[
             workload.Band("ok", "#4caf50", Decimal("5")),
-            workload.Band("busy", "#e53935", None),
+            workload.Band("busy", "#c62828", None),
         ]
     )
     async with db_session() as session:

@@ -230,16 +230,21 @@ def create_app() -> None:
                 status_code=404,
             )
 
+    # Every brand colour is painted two ways — as a fill under white text and
+    # as text on parchment — and each passes WCAG AA (4.5:1) both ways;
+    # tests/test_theme_contrast.py holds them to it. `muted` is the grey the
+    # "inactive"/"Cancelled" badges wear: Quasar's own grey is 2.7:1.
     app.colors(
         primary="#A5573E",
-        secondary="#8A7550",
+        secondary="#766240",
         accent="#B08D57",
         dark="#2A2622",
         dark_page="#1C1917",
-        positive="#5F7A3D",
+        positive="#527037",
         negative="#9B3B30",
-        warning="#B07D2B",
+        warning="#8F6218",
         info="#4C7086",
+        muted="#6B6255",
     )
     ui.add_head_html(
         '<link rel="preload" href="/static/fonts/cinzel-v11-latin-regular.woff2" '
@@ -282,6 +287,7 @@ def run() -> None:
         port=s.port,
         title="VolunteerDB",
         favicon="⛪",
+        language="en",  # <html lang="en"> on every page (WCAG 3.1.1)
         storage_secret=secret,
         session_middleware_kwargs={
             "max_age": SESSION_COOKIE_MAX_AGE,

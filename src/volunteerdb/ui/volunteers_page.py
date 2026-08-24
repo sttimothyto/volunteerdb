@@ -164,6 +164,11 @@ async def volunteers_page(request: Request, q: str = "", band: str = ""):
                 score_band = wl.get(v.id)
                 row["workload"] = score_band[1].label if score_band else ""
                 row["workload_color"] = score_band[1].color if score_band else ""
+                row["workload_text"] = (
+                    workload_service.text_colour(score_band[1].color)
+                    if score_band
+                    else ""
+                )
                 row["workload_score"] = (
                     f"{float(score_band[0]):g}" if score_band else ""
                 )
@@ -181,13 +186,20 @@ async def volunteers_page(request: Request, q: str = "", band: str = ""):
             columns=columns, rows=rows, row_key="id", pagination=20
         ).classes("w-full vdb-clickable-rows")
         column_order.make_draggable(table, "volunteers")
+        # a real button in the name cell, so the row opens from the keyboard
+        # too; its click bubbles to the row, which is what opens the panel
+        table.add_slot(
+            "body-cell-name",
+            '<q-td key="name" :props="props"><button type="button" '
+            'class="vdb-rowbtn">{{ props.row.name }}</button></q-td>',
+        )
         if shows_workload:
             table.add_slot(
                 "body-cell-workload",
                 """
                 <q-td key="workload" :props="props">
                     <q-badge v-if="props.row.workload"
-                             :style="{backgroundColor: props.row.workload_color}">
+                             :style="{backgroundColor: props.row.workload_color, color: props.row.workload_text}">
                         {{ props.row.workload }} · {{ props.row.workload_score }}
                     </q-badge>
                 </q-td>
@@ -282,11 +294,12 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                 )
                 ui.label(volunteer.full_name).classes("text-lg font-medium")
                 if not volunteer.is_active:
-                    ui.badge("inactive", color="grey")
+                    ui.badge("inactive", color="muted")
                 if volunteer_id in wl:
                     score, band = wl[volunteer_id]
                     ui.badge(f"workload: {band.label} · {float(score):g}").style(
-                        f"background-color: {band.color}"
+                        f"background-color: {band.color}; "
+                        f"color: {workload_service.text_colour(band.color)}"
                     ).tooltip(
                         "Workload score: team weights × role multipliers, all ministries"
                     )

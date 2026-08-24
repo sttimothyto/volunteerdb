@@ -4,6 +4,7 @@ from nicegui import ui
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from . import invites
+from .a11y import icon_button
 from .context import action_session, notify_errors, page_session
 from .layout import frame
 
@@ -152,7 +153,7 @@ async def users_page(request: Request):
                     ui.label(linked).classes("text-xs text-gray-500")
                 ui.space()
                 if not account.is_active:
-                    ui.badge("disabled", color="grey")
+                    ui.badge("disabled", color="muted")
                 elif user_service.invite_live(account):
                     # No link on offer: only its digest is stored
                     # (services.users._issue_invite), so handing one over again
@@ -168,7 +169,7 @@ async def users_page(request: Request):
                         f"Invite link, usable until {account.invite_expires_at:%Y-%m-%d %H:%M}"
                     )
                 elif account.invite_token:
-                    ui.badge("invite expired", color="grey").tooltip(
+                    ui.badge("invite expired", color="muted").tooltip(
                         "The link has run out. They can still sign in with an "
                         "emailed code; re-invite to hand out a fresh link."
                     )
@@ -244,20 +245,19 @@ async def users_page(request: Request):
                     sent = await email_invite(addr, token)
                     show_invite(token, addr, sent)
 
-                ui.button(icon="link", on_click=relink_dialog).props("dense flat").mark(
-                    f"relink-{account.id}"
-                ).tooltip("Change linked volunteer")
-                ui.button(
-                    icon="key_off" if account.is_admin else "key", on_click=toggle_admin
-                ).props("dense flat").tooltip(
-                    "Revoke admin" if account.is_admin else "Make admin"
-                )
-                ui.button(
-                    icon="block" if account.is_active else "check_circle",
+                icon_button(
+                    "link", "Change linked volunteer", on_click=relink_dialog
+                ).props("dense flat").mark(f"relink-{account.id}")
+                icon_button(
+                    "key_off" if account.is_admin else "key",
+                    "Revoke admin" if account.is_admin else "Make admin",
+                    on_click=toggle_admin,
+                ).props("dense flat")
+                icon_button(
+                    "block" if account.is_active else "check_circle",
+                    "Disable" if account.is_active else "Enable",
                     on_click=toggle_active,
-                ).props("dense flat").tooltip(
-                    "Disable" if account.is_active else "Enable"
-                )
-                ui.button(icon="mail", on_click=reinvite).props("dense flat").tooltip(
-                    "New invite link (resets password)"
-                )
+                ).props("dense flat")
+                icon_button(
+                    "mail", "New invite link (resets password)", on_click=reinvite
+                ).props("dense flat")

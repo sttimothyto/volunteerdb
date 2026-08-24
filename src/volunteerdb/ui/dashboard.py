@@ -10,6 +10,7 @@ from ..services import stats as stats_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
+from .a11y import icon_button
 from .assets import static_url
 from .context import action_session, page_session, parse_as_of
 from .cytoscape_element import CytoscapeGraph
@@ -139,9 +140,11 @@ async def dashboard(request: Request, as_of: str = ""):
             )
 
             team_filter.on_value_change(refresh_graph)
-            ui.button(icon="fit_screen", on_click=lambda: graph.fit()).props(
-                "dense flat"
-            ).tooltip("Fit the whole graph in view")
+            icon_button(
+                "fit_screen",
+                "Fit the whole graph in view",
+                on_click=lambda: graph.fit(),
+            ).props("dense flat")
             chip_holder = ui.row().classes("items-center")
             ui.space()
             with ui.row().classes("items-center gap-3 flex-wrap"):

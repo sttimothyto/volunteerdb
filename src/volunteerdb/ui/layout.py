@@ -5,6 +5,7 @@ from nicegui import ui
 
 from ..permissions import Actor
 from ..services import mail_quota
+from .a11y import heading, icon_button
 from .context import asof_banner, asof_picker, clear_session
 from .logo_dialog import site_logo
 from .photo_dialog import photo_avatar
@@ -42,6 +43,8 @@ def frame(
             ("Workload", "/admin/workload"),
         ]
     with ui.header().classes("items-center text-white px-4 vdb-header"):
+        # the first thing a keyboard reaches: past the header, into the page
+        ui.html('<a class="vdb-skip" href="#main">Skip to content</a>', sanitize=False)
         # the parish's own mark, ahead of the brand word it belongs to;
         # clickable for an admin, which is how a logo gets replaced
         site_logo(actor, classes="h-8 w-auto mr-2")
@@ -54,14 +57,18 @@ def frame(
         # Use Quasar's gt-sm/lt-md helpers, never Tailwind's `hidden md:flex`:
         # Quasar ships `.hidden{display:none!important}`, which beats Tailwind's
         # plain `display:flex` and hides the row at every width.
-        with ui.row().classes("items-center gap-0 gt-sm"):
+        with (
+            ui.element("nav")
+            .props('aria-label="Main"')
+            .classes("flex items-center gap-0 gt-sm")
+        ):
             for label, target in nav_items:
                 # href renders the QBtn as a real <a>: right-click / middle-click
                 # open-in-new-tab work, left click still navigates in place
                 ui.button(label).props(f'flat color=white dense href="{target}"')
         with (
             ui.button(icon="menu")
-            .props("flat color=white dense round")
+            .props('flat color=white dense round aria-label="Menu"')
             .classes("lt-md")
         ):
             with ui.menu():
@@ -71,13 +78,18 @@ def frame(
         _own_email(actor)
         _own_avatar(actor)
         _settings_menu(dark, as_of, asof_path)
-        ui.button(icon="logout", on_click=_logout).props(
+        icon_button("logout", "Sign out", on_click=_logout).props(
             "flat color=white dense"
-        ).tooltip("Sign out")
+        )
     # p-4 keeps a gutter and lines the content up with the header's own px-4
     # instead of running into the window edge
-    with ui.column().classes("w-full p-4 gap-4"):
-        ui.label(title).classes("text-2xl vdb-page-title")
+    # the skip link's target. Not a <main>: NiceGUI's page container already
+    # is one, and a second main landmark is a finding of its own
+    with (
+        ui.element("div").props('id="main" tabindex="-1"').classes("w-full"),
+        ui.column().classes("w-full p-4 gap-4"),
+    ):
+        heading(title).classes("text-2xl vdb-page-title")
         if as_of is not None and asof_path is not None:
             asof_banner(as_of, asof_path)
         _mail_quota_banner(actor)
@@ -159,7 +171,7 @@ def _own_email(actor: Actor) -> None:
     label: there is no page to send them to. Same null check _own_avatar makes
     below, for the same reason. vdb-quiet keeps the header's own face — an
     anchor here should read as the address it already was."""
-    classes = "text-sm opacity-80 gt-sm"
+    classes = "text-sm gt-sm"  # at 80% opacity the address read 3.7:1
     if actor.volunteer_id is None:
         ui.label(actor.user.email).classes(classes).mark("header-email")
         return
@@ -199,7 +211,7 @@ def _settings_menu(
     """Everything that changes how you're reading the app, under one gear:
     dark mode, the manual, and (where the page supports it) the as-of date."""
     with ui.button(icon="settings").props(
-        f"flat dense round color={'warning' if as_of else 'white'}"
+        f'flat dense round color={"warning" if as_of else "white"} aria-label="Settings"'
     ):
         # to the left: the menu drops straight down over anything below the gear
         ui.tooltip("Settings").props('anchor="center left" self="center right"')

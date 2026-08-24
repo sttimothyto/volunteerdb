@@ -67,7 +67,7 @@ def _tz() -> ZoneInfo:
 
 def _status_badge(event) -> None:
     if event.status == EventStatus.cancelled.value:
-        ui.badge("Cancelled", color="grey")
+        ui.badge("Cancelled", color="muted")
     elif event_service.is_past(event):
         ui.badge("Past", color="purple")
     else:
@@ -875,6 +875,13 @@ async def events_page(
                 pagination=20 if show_past else 0,
             ).classes("w-full vdb-clickable-rows")
             column_order.make_draggable(table, "events")
+            # a real link in the title cell (the teams page idiom), so the row
+            # is reachable by keyboard; the row click stays for the mouse
+            table.add_slot(
+                "body-cell-title",
+                '<q-td key="title" :props="props"><a :href="\'/events/\' + props.row.id" '
+                'class="vdb-quiet" @click.stop>{{ props.row.title }}</a></q-td>',
+            )
             table.add_slot(
                 "body-cell-filled",
                 '<q-td key="filled" :props="props">{{ props.row.filled }}</q-td>',

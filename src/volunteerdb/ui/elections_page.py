@@ -43,13 +43,13 @@ def phase_badge(proposal, phase: Phase | None) -> None:
     if phase is Phase.nominating:
         ui.badge(f"Nominating until {proposal.nomination_deadline}", color="primary")
     elif phase is Phase.voting:
-        ui.badge(f"Voting until {proposal.voting_deadline}", color="orange")
+        ui.badge(f"Voting until {proposal.voting_deadline}", color="warning")
     elif phase is Phase.concluded:
         ui.badge("Awaiting decision", color="purple")
     elif proposal.status == ProposalStatus.appointed.value:
         ui.badge("Appointed", color="positive")
     else:
-        ui.badge("Cancelled", color="grey")
+        ui.badge("Cancelled", color="muted")
 
 
 def _deadline_inputs(d1_default: date, d2_default: date) -> tuple[ui.input, ui.input]:
@@ -550,7 +550,8 @@ async def proposal_detail(proposal_id: int):
                     if cv.volunteer.id in wl:
                         score, band = wl[cv.volunteer.id]
                         ui.badge(f"{band.label} · {float(score):g}").style(
-                            f"background-color: {band.color}"
+                            f"background-color: {band.color}; "
+                            f"color: {workload_service.text_colour(band.color)}"
                         ).tooltip("Current workload")
                     ui.space()
                     if cv.nominator_email:

@@ -241,11 +241,9 @@ def icon_button(page: Page, icon: str) -> Locator:
     """The header's icon-only buttons — settings, sign out, the narrow-window
     menu — located by the icon they carry.
 
-    They have no accessible name to ask for: Quasar renders a material icon as
-    an <i> whose text is the ligature ("logout") and marks it aria-hidden, and
-    the NiceGUI .tooltip() beside it is a QTooltip, not an aria-label. So the
-    ligature text is the only handle, and a screen reader announces these
-    buttons as "button" — worth fixing in the app, not worth faking here.
+    They carry aria-labels now (ui/a11y.py: icon_button), so get_by_role would
+    find them; the icon is kept as the handle here because it is the part of
+    the control that never changes wording.
     """
     return page.locator(f"button:has(i.q-icon:text-is('{icon}'))")
 

@@ -48,7 +48,7 @@ DEFAULT_CONFIG = WorkloadConfig(
     bands=[
         Band("green", "#4caf50", Decimal("4")),
         Band("amber", "#ffb300", Decimal("8")),
-        Band("red", "#e53935", None),
+        Band("red", "#c62828", None),
     ],
 )
 
@@ -86,7 +86,54 @@ def _from_json(value: dict) -> WorkloadConfig:
     return WorkloadConfig(multipliers=multipliers, bands=bands or DEFAULT_CONFIG.bands)
 
 
+# Admin-picked band colours are painted as badges, so each carries whichever
+# label — ink or white — reads better on it, and a colour neither reads on
+# is refused: a badge nobody can read is not a colour band.
+INK = "#1c1917"
+WHITE = "#ffffff"
+MIN_LABEL_CONTRAST = 4.5  # WCAG 2.2 AA, 1.4.3
+
+
+def _luminance(colour: str) -> float:
+    hex6 = colour.strip().lstrip("#")
+    if len(hex6) == 3:
+        hex6 = "".join(ch * 2 for ch in hex6)
+    if len(hex6) != 6:
+        raise ValueError(f"not a colour: {colour!r}")
+    r, g, b = (int(hex6[i : i + 2], 16) / 255 for i in (0, 2, 4))
+
+    def channel(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def contrast(a: str, b: str) -> float:
+    la, lb = _luminance(a), _luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def text_colour(colour: str) -> str:
+    """Ink or white, whichever stands out more against `colour`."""
+    return INK if contrast(INK, colour) >= contrast(WHITE, colour) else WHITE
+
+
+def contrast_with_label(colour: str) -> float:
+    return contrast(text_colour(colour), colour)
+
+
 def validate_config(config: WorkloadConfig) -> None:
+    for band in config.bands:
+        try:
+            ratio = contrast_with_label(band.color)
+        except ValueError as exc:
+            raise ValueError(f"band {band.label!r}: {exc}") from exc
+        if ratio < MIN_LABEL_CONTRAST:
+            raise ValueError(
+                f"band {band.label!r}: no text reads on {band.color} "
+                f"({ratio:.1f}:1; {MIN_LABEL_CONTRAST}:1 is the floor)"
+            )
     if set(config.multipliers) != set(TeamRole):
         raise ValueError("multipliers must cover all four roles")
     if any(m < 0 for m in config.multipliers.values()):

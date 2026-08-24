@@ -119,7 +119,7 @@ def search_box(
                     ui.item_section(volunteer.full_name)
                     if not volunteer.is_active:
                         with ui.item_section().props("side"):
-                            ui.badge("inactive", color="grey")
+                            ui.badge("inactive", color="muted")
             if not team_hits and not found:
                 ui.item("Nothing found")
             else:

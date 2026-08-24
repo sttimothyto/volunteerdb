@@ -84,11 +84,11 @@ def roster_account(
     if action is not None and invitable(account):
         action()
     elif account is None:
-        ui.badge("no account", color="grey").props("outline").tooltip(
+        ui.badge("no account", color="muted").props("outline").tooltip(
             "Not registered on VolunteerDB — they cannot sign in."
         )
     elif not account.is_active:
-        ui.badge("disabled", color="grey").tooltip(
+        ui.badge("disabled", color="muted").tooltip(
             "Registered, but the account has been switched off."
         )
     elif outstanding:
@@ -102,7 +102,7 @@ def roster_account(
             else "An invite link is outstanding."
         )
     elif lapsed:
-        ui.badge("invite expired", color="grey").tooltip(
+        ui.badge("invite expired", color="muted").tooltip(
             "The invite link ran out unused. They can still sign in with an "
             "emailed code."
         )
