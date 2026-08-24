@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""One-time Google authorization for the roster-spreadsheet sync.
+"""One-time Google authorization for the parish token.
 
 Run this on a machine with a browser (never the server), signed in — in the
-browser — as the parish Google account that owns the roster folder:
+browser — as the parish Google account:
 
-    python scripts/sheets_authorize.py CLIENT_ID CLIENT_SECRET [PORT]
+    python scripts/google_authorize.py CLIENT_ID CLIENT_SECRET [PORT]
 
 Reuse the OAuth client the rclone backup remote already uses. That is not
-laziness: drive.file is scoped per OAuth CLIENT per file, so only that client
-can touch the roster sheets it created. A fresh client would be unable to
-change their sharing, or to write them at all.
+laziness: drive.file and calendar.app.created are both scoped per OAuth
+CLIENT per file, so only that client can touch the roster sheets it created
+or the parish calendar it made. A fresh client would be unable to change
+their sharing, or to write them at all.
 
 PORT is the loopback port the consent screen redirects to (default 8765). A
 "Desktop app" client accepts any loopback port; a "Web application" one
@@ -19,21 +20,30 @@ default is refused.
 
 It opens the consent URL, catches the redirect on a loopback port, exchanges
 the code, and prints the refresh token to paste into VDB_SHEETS_REFRESH_TOKEN
-(docs/how-to/roster-spreadsheets.md). Stdlib only, like scripts/gcal_authorize:
-no google client libraries anywhere in the project.
+(docs/how-to/roster-spreadsheets.md, docs/how-to/google-calendar-sync.md).
+Stdlib only: no google client libraries anywhere in the project.
 
-Two scopes, and the split matters:
+Four scopes, and each one is the narrowest that does its job:
 
-    spreadsheets  read and write the cells of any sheet this account can
-                  reach. "Anyone with the link can edit" is what puts a
-                  leader's own sheet in that set — it is the whole reason a
-                  roster no longer has to live in a folder we own.
-    drive.file    create a sheet in the roster folder and set its sharing,
-                  limited to files this client itself created.
+    spreadsheets          read and write the cells of any sheet this account
+                          can reach. "Anyone with the link can edit" is what
+                          puts a leader's own sheet in that set — it is the
+                          whole reason a roster no longer has to live in a
+                          folder we own.
+    drive.file            create a sheet in the roster folder and set its
+                          sharing, limited to files this client itself created.
+    calendar.app.created  make secondary calendars and read and write the
+                          events on them, limited to calendars this client
+                          itself created — the parish calendar, and nothing
+                          the parish account keeps for itself.
+    calendar.acls         read and set a calendar's sharing: how the parish
+                          calendar is made public, and how every sync run
+                          checks that it still is and that nobody else may
+                          write to it.
 
-Deliberately NOT the full drive scope: nothing here needs to enumerate, read
-or delete the account's other files, and the sync never opens a sheet it was
-not handed the id of.
+Deliberately NOT the full drive or calendar scope: nothing here needs to
+enumerate, read or delete the account's other files or calendars, and the
+syncs never open a sheet or a calendar they were not handed the id of.
 """
 
 import http.server
@@ -48,6 +58,8 @@ SCOPE = " ".join(
     (
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/calendar.app.created",
+        "https://www.googleapis.com/auth/calendar.acls",
     )
 )
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"

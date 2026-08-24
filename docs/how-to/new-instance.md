@@ -161,7 +161,7 @@ Only if you want the nightly two-way sync with Google Sheets. Read
 
 Create the Drive folder new roster sheets go in and put its id in
 `[sheets] folder_id`, make the roster template sheet (shared read-only to
-anyone with the link), then run `scripts/sheets_authorize.py` as the parish
+anyone with the link), then run `scripts/google_authorize.py` as the parish
 Google account and pass the results on one deploy:
 
 ```sh

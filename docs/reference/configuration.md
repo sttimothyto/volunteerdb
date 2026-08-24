@@ -159,27 +159,25 @@ ignored. Copy `.env.example` as a starting point.
   [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md).
 
 `VDB_SHEETS_CLIENT_ID`, `VDB_SHEETS_CLIENT_SECRET`, `VDB_SHEETS_REFRESH_TOKEN`, `VDB_SHEETS_FOLDER_ID`
-: Roster spreadsheet sync: the OAuth client and refresh token authorised as
-  the parish Google account (`scripts/sheets_authorize.py`), and the id of the
-  Drive folder new roster sheets are created in. With all four set, the in-app
-  scheduler syncs every team's roster with its sheet nightly and a team page
-  can sync one on demand. Defaults: empty — the job exits "not configured" and
-  the team page says so. Only the *write* leg needs these: reading a sheet
-  shared "anyone with the link can edit" takes no credentials at all. The
-  deploy writes them and reads them back on later runs, like
-  `VDB_TEMPLATE_SHEET_URL`; set them once after the one-time authorization.
-  See [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md).
+: The parish Google token — the OAuth client and refresh token authorised as
+  the parish Google account (`scripts/google_authorize.py`) — and the id of
+  the Drive folder new roster sheets are created in. Named for the roster
+  sheets, which came first, but the token serves both Google integrations:
 
-`VDB_GCAL_CLIENT_ID`, `VDB_GCAL_CLIENT_SECRET`, `VDB_GCAL_REFRESH_TOKEN`, `VDB_GCAL_CALENDAR_ID`
-: Google Calendar sync: the OAuth client and refresh token authorised as
-  the parish Google account, and the id of the public calendar it owns.
-  With all four set, the in-app scheduler reconciles upcoming events onto
-  that calendar every 30 minutes (one-way, VolunteerDB → Google; an edit
-  reaches the calendar within half an hour) and the **/events** page embeds
-  it. Defaults: empty — the sync exits "not configured" and nothing embeds.
-  The deploy writes them and reads them back on later runs, like
+  * **Roster spreadsheets** need all four. The in-app scheduler then syncs
+    every team's roster with its sheet nightly and a team page can sync one
+    on demand. Only the *write* leg needs a token: reading a sheet shared
+    "anyone with the link can edit" takes no credentials at all. See
+    [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md).
+  * **The parish calendar** needs the first three. The in-app scheduler
+    then creates a public Google Calendar for the parish (remembering its id
+    in the `app_setting` table — there is nothing to configure) and
+    reconciles upcoming events onto it every 30 minutes, one-way. See
+    [Publish events to a Google Calendar](../how-to/google-calendar-sync.md).
+
+  Defaults: empty — each job exits "not configured" and the team page says
+  so. The deploy writes them and reads them back on later runs, like
   `VDB_TEMPLATE_SHEET_URL`; set them once after the one-time authorization.
-  See [Publish events to a Google Calendar](../how-to/google-calendar-sync.md).
 
 `VDB_DOCS_DIR`
 : Directory of built documentation HTML served at `/manual` (signed-in

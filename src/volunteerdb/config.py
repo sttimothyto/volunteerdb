@@ -92,26 +92,21 @@ class Settings(BaseSettings):
     # copies it inherits the dropdowns, hidden ID column and header warning.
     # Empty (dev): the section falls back to a plain CSV download.
     template_sheet_url: str = ""
-    # Google Sheets roster sync (jobs/roster_sync.py): OAuth client + refresh
-    # token authorised as the parish Google account, and the id of the Drive
-    # folder new roster sheets are created in. All four set: rosters sync with
-    # their sheets nightly and the team page can sync one on demand. Any empty:
-    # the job exits "not configured" and the section says so. Provisioning
-    # walkthrough: docs/how-to/roster-spreadsheets.md.
+    # The parish Google token: an OAuth client + refresh token authorised as
+    # the parish Google account (scripts/google_authorize.py). Named for the
+    # roster sheets, which came first, but it serves both Google integrations:
+    #   * Sheets roster sync (jobs/roster_sync.py) -- needs the folder id too,
+    #     the Drive folder new roster sheets are created in. All four set:
+    #     rosters sync with their sheets nightly and the team page can sync
+    #     one on demand. Provisioning: docs/how-to/roster-spreadsheets.md.
+    #   * Calendar sync (jobs/calendar_sync.py) -- the first three alone: the
+    #     job creates the parish calendar itself and keeps its id in
+    #     app_setting. Provisioning: docs/how-to/google-calendar-sync.md.
+    # Any of the three empty: both jobs exit "not configured".
     sheets_client_id: str = ""
     sheets_client_secret: str = ""
     sheets_refresh_token: str = ""
     sheets_folder_id: str = ""
-    # Google Calendar sync (jobs/calendar_sync.py): OAuth client + refresh
-    # token authorised as the parish Google account, and the id of the public
-    # calendar it owns. All four set: upcoming events reconcile onto that
-    # calendar every 30 minutes and /events embeds it. Any empty: the sync
-    # exits "not configured" and no embed renders. Provisioning walkthrough:
-    # docs/how-to/google-calendar-sync.md.
-    gcal_client_id: str = ""
-    gcal_client_secret: str = ""
-    gcal_refresh_token: str = ""
-    gcal_calendar_id: str = ""
     # Built HTML manual served at /manual (signed-in users). Relative paths
     # resolve against the cwd (repo root in dev); the container bakes the
     # docs in and sets VDB_DOCS_DIR=/app/docs-html.

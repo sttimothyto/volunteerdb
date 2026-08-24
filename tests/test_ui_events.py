@@ -221,8 +221,9 @@ async def test_leader_creates_event_via_dialog(database):
         assert len(picnics) == 2, "day 1 and day 8"
 
 
-async def test_calendar_embed_follows_configuration(database, monkeypatch):
-    from volunteerdb.config import settings
+async def test_calendar_embed_follows_the_remembered_calendar(database):
+    """The embed needs only the id the sync remembered in app_setting — no
+    setting names a calendar any more, because the sync makes its own."""
     from volunteerdb.services import gcal
 
     async with db_session() as session:
@@ -233,10 +234,8 @@ async def test_calendar_embed_follows_configuration(database, monkeypatch):
         await user.open("/events")
         await user.should_not_see(marker="gcal-embed")
 
-    cfg = settings().model_copy(
-        update={"gcal_calendar_id": "parish@group.calendar.google.com"}
-    )
-    monkeypatch.setattr(gcal, "settings", lambda: cfg)
+    async with db_session() as session:
+        await gcal.remember(session, "parish@group.calendar.google.com", created=True)
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open("/events")

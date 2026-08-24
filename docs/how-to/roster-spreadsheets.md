@@ -162,7 +162,7 @@ The read leg needs nothing. The write leg needs a one-time authorization on a
 machine with a browser, signed in as the parish Google account:
 
 ```sh
-python scripts/sheets_authorize.py CLIENT_ID CLIENT_SECRET
+python scripts/google_authorize.py CLIENT_ID CLIENT_SECRET
 ```
 
 It prints `VDB_SHEETS_REFRESH_TOKEN`. Set that alongside
@@ -171,10 +171,13 @@ It prints `VDB_SHEETS_REFRESH_TOKEN`. Set that alongside
 [configuration](../reference/configuration.md). The deploy reads them back on
 later runs, so they are set once.
 
-The scopes are `spreadsheets` (read and write any sheet the account can
-reach) and `drive.file` (create a sheet in the folder and set its sharing,
-limited to files this client created). Deliberately **not** full `drive`:
-nothing here enumerates or deletes the account's other files.
+The scopes the sheets use are `spreadsheets` (read and write any sheet the
+account can reach) and `drive.file` (create a sheet in the folder and set
+its sharing, limited to files this client created). Deliberately **not**
+full `drive`: nothing here enumerates or deletes the account's other files.
+The same token also carries the two calendar scopes the
+[parish calendar](google-calendar-sync.md) needs — one authorization serves
+both, which is why the script asks for all four at once.
 
 With the settings empty the job exits "not configured" and the team page says
 so — which is the normal state in development.

@@ -581,6 +581,7 @@ async def events_page(request: Request, past: str = "", team: str = ""):
             include_cancelled=show_past,
         )
         visible_teams = {s.event.team_id: s.path for s in summaries}
+        calendar = await gcal.stored_calendar(session)
         managed_options: dict[int, str] = {}
         if actor.can_create_events:
             tree = await team_service.tree(session)
@@ -653,7 +654,7 @@ async def events_page(request: Request, past: str = "", team: str = ""):
 
         # the public parish calendar, when one is configured — Google serves
         # the embed itself, so this costs the page nothing but the iframe
-        embed = gcal.embed_url()
+        embed = gcal.embed_url(calendar["calendar_id"]) if calendar else None
         if embed and not show_past:
             ui.element("iframe").props(f'src="{embed}"').classes(
                 "w-full rounded mt-4"
