@@ -569,6 +569,39 @@ async def issue_api_token(session: AsyncSession, user_id: int) -> str:
     return token
 
 
+async def ensure_calendar_token(session: AsyncSession, user_id: int) -> str:
+    """The account's personal feed address, minted on first request and then
+    stable — a subscription is only worth having if it keeps working."""
+    user = await get(session, user_id)
+    if user is None:
+        raise LookupError(f"user {user_id} not found")
+    if user.calendar_token is None:
+        user.calendar_token = new_token()
+        await session.flush()
+    return user.calendar_token
+
+
+async def reset_calendar_token(session: AsyncSession, user_id: int) -> str:
+    """A new address; every client subscribed to the old one goes dark."""
+    user = await get(session, user_id)
+    if user is None:
+        raise LookupError(f"user {user_id} not found")
+    user.calendar_token = new_token()
+    await session.flush()
+    return user.calendar_token
+
+
+async def by_calendar_token(session: AsyncSession, token: str) -> AppUser | None:
+    """The active account behind a feed address, or None."""
+    if not token:
+        return None
+    return await session.scalar(
+        sa.select(AppUser).where(
+            AppUser.calendar_token == token, AppUser.is_active.is_(True)
+        )
+    )
+
+
 async def set_flags(
     session: AsyncSession,
     user_id: int,

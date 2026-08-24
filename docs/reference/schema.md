@@ -97,6 +97,7 @@ team. This is the central relationship — who serves where, in what role.
 | `pending_email` | varchar(255) | an address waiting on its own confirmation link; deliberately **not** unique — two people may ask, only the first to confirm gets it |
 | `email_change_token` | varchar(64) | unique; the link that confirms `pending_email` |
 | `email_change_expires_at` | timestamptz | set and cleared with the two above; 24 h (`users.EMAIL_CHANGE_TTL`) |
+| `calendar_token` | varchar(64) | unique; the personal calendar feed's address, `/calendar/mine/<token>.ics`. Kept in **clear** (it has to be re-shown), rotated from the subscribe panel; NULL until first asked for |
 | `otp_hash`, `otp_sent_at`, `otp_expires_at`, `otp_attempts` | | active email OTP (argon2 hash) |
 | `is_active` | boolean | inactive accounts cannot sign in |
 | `last_login_at`, `created_at` | timestamptz | |

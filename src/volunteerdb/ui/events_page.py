@@ -42,7 +42,9 @@ from ..services import events as event_service
 from ..services import gcal, mail
 from ..services import task_force as task_force_service
 from ..services import teams as team_service
-from . import column_order
+from ..services import users as user_service
+from . import calendar_grid, column_order
+from .calendar_panel import subscribe_panel
 from .context import action_session, notify_errors, page_session
 from .date_input import date_input
 from .layout import frame
@@ -86,6 +88,30 @@ def _event_count(shown: int, total: int | None = None) -> str:
     if total is None or shown == total:
         return f"{shown} event{'s' if shown != 1 else ''}"
     return f"{shown} of {total} events"
+
+
+def _events_href(
+    show_past: bool,
+    team_filter: int | None,
+    *,
+    view: str | None = None,
+    month: date | None = None,
+) -> str:
+    """/events with only the parameters that differ from the defaults, so the
+    plain page stays the plain address. Every control on the page navigates
+    through here — the past/upcoming toggle, the team filter, the calendar's
+    view switch and month links — so each keeps the others' state."""
+    parts = [
+        p
+        for p in (
+            "past=1" if show_past else "",
+            f"team={team_filter}" if team_filter else "",
+            f"view={view}" if view and view != "mine" else "",
+            f"month={month:%Y-%m}" if month else "",
+        )
+        if p
+    ]
+    return "/events?" + "&".join(parts) if parts else "/events"
 
 
 def _wire_search(
@@ -556,14 +582,20 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
 
 
 @ui.page("/events")
-async def events_page(request: Request, past: str = "", team: str = ""):
+async def events_page(
+    request: Request, past: str = "", team: str = "", view: str = "", month: str = ""
+):
     """The listing had two hardcoded modes — upcoming, or past-and-cancelled —
     while the API took a free `team_id`. `?team=` narrows to one ministry (and
     its sub-teams are separate rows, as they are separate teams), which is what
-    a leader of several wants when they are looking at one of them."""
+    a leader of several wants when they are looking at one of them.
+
+    `?view=` picks the calendar's scope (mine, the default, or parish) and
+    `?month=YYYY-MM` the month it shows; both are links, not widgets."""
     base_url = str(request.base_url).rstrip("/")
     show_past = past == "1"
     team_filter = int(team) if team.isdigit() else None
+    cal_view = view if view in dict(calendar_grid.VIEWS) else "mine"
     async with page_session() as (session, actor):
         duties = (
             await event_service.my_upcoming(session, actor.volunteer_id)
@@ -582,6 +614,17 @@ async def events_page(request: Request, past: str = "", team: str = ""):
         )
         visible_teams = {s.event.team_id: s.path for s in summaries}
         calendar = await gcal.stored_calendar(session)
+        cal_month = calendar_grid.parse_month(month, now.date())
+        cal_from, cal_to = calendar_grid.window(cal_month, _tz())
+        entries = await event_service.calendar_entries(
+            session, actor, scope=cal_view, from_=cal_from, to=cal_to
+        )
+        # the personal feed address, minted the first time it is shown
+        feed_token = (
+            await user_service.ensure_calendar_token(session, actor.user.id)
+            if cal_view == "mine"
+            else None
+        )
         managed_options: dict[int, str] = {}
         if actor.can_create_events:
             tree = await team_service.tree(session)
@@ -652,13 +695,44 @@ async def events_page(request: Request, past: str = "", team: str = ""):
                             on_click=lambda _, sid=c.sub.id: _claim_sub(sid),
                         ).props("dense outline")
 
-        # the public parish calendar, when one is configured — Google serves
-        # the embed itself, so this costs the page nothing but the iframe
-        embed = gcal.embed_url(calendar["calendar_id"]) if calendar else None
-        if embed and not show_past:
-            ui.element("iframe").props(f'src="{embed}"').classes(
-                "w-full rounded mt-4"
-            ).style("height: 24rem; border: 0").mark("gcal-embed")
+        # the calendar: my duties or the whole parish, a month at a time.
+        # Server-rendered HTML (ui/calendar_grid.py): a link changes the month
+        # or the view, so it needs neither JavaScript nor the websocket
+        def _cal_href(v: str, m: date) -> str:
+            return _events_href(show_past, team_filter, view=v, month=m)
+
+        with ui.row().classes("w-full items-center gap-3 flex-wrap mt-4"):
+            ui.html(
+                calendar_grid.view_switch(
+                    cal_view,
+                    {v: _cal_href(v, cal_month) for v, _ in calendar_grid.VIEWS},
+                ),
+                sanitize=False,
+            ).mark("calendar-views")
+            ui.space()
+            subscribe_panel(
+                view=cal_view,
+                base_url=base_url,
+                token=feed_token,
+                calendar=calendar,
+                is_admin=actor.is_admin,
+            )
+        ui.html(
+            calendar_grid.month_grid(
+                entries,
+                cal_month,
+                today=now.date(),
+                tz=_tz(),
+                prev_href=_cal_href(cal_view, calendar_grid.shift_month(cal_month, -1)),
+                next_href=_cal_href(cal_view, calendar_grid.shift_month(cal_month, 1)),
+                empty_note=(
+                    "Nothing you are signed up for this month."
+                    if cal_view == "mine"
+                    else "No events this month."
+                ),
+            ),
+            sanitize=False,
+        ).classes("w-full").mark("calendar-grid")
 
         rows = []
         for s in summaries:
@@ -719,15 +793,11 @@ async def events_page(request: Request, past: str = "", team: str = ""):
                 def _go(team_id: int | None) -> None:
                     """Keep the past/upcoming mode while the team changes, and
                     vice versa — the two controls are independent."""
-                    parts = [
-                        p
-                        for p in (
-                            "past=1" if show_past else "",
-                            f"team={team_id}" if team_id else "",
+                    ui.navigate.to(
+                        _events_href(
+                            show_past, team_id or None, view=cal_view, month=cal_month
                         )
-                        if p
-                    ]
-                    ui.navigate.to("/events?" + "&".join(parts) if parts else "/events")
+                    )
 
                 ui.select(
                     options,
@@ -739,14 +809,8 @@ async def events_page(request: Request, past: str = "", team: str = ""):
             ui.button(
                 "Show upcoming" if show_past else "Show past",
                 on_click=lambda: ui.navigate.to(
-                    "/events?"
-                    + "&".join(
-                        p
-                        for p in (
-                            "" if show_past else "past=1",
-                            f"team={team_filter}" if team_filter else "",
-                        )
-                        if p
+                    _events_href(
+                        not show_past, team_filter, view=cal_view, month=cal_month
                     )
                 ),
             ).props("dense flat no-caps")

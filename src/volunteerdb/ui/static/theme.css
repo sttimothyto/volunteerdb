@@ -34,6 +34,9 @@
      so a flagged figure separates from an ordinary one without leaving the
      palette */
   --vdb-warn: #a33a28;
+  /* secondary text: captions, timestamps, the day numbers of the month
+     before — AA against every light surface (5.6:1 on --vdb-bg) */
+  --vdb-muted: #6b6255;
 
   --vdb-graph-team: #a5573e;
   --vdb-graph-team-label: #fdf6e3;
@@ -58,6 +61,7 @@ body.body--dark {
   --vdb-selection: #3a4a5a;
   --vdb-header-bg: #2a2622;
   --vdb-warn: #e08a72;
+  --vdb-muted: #a89e8f;
 
   --vdb-graph-team: #c97b5d;
   --vdb-graph-team-label: #1c1917;
@@ -437,3 +441,293 @@ body.body--dark .text-amber-700 { color: #d9a662; }
 body.body--dark .text-amber-900 { color: #e5c08a; }
 body.body--dark .bg-red-50 { background-color: #362222; }
 body.body--dark .bg-blue-50 { background-color: #26303a; }
+
+/* ---------- utilities ---------- */
+
+/* read by assistive technology, invisible otherwise (the calendar's caption,
+   the skip link until it has focus) */
+.vdb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.vdb-muted {
+  color: var(--vdb-muted);
+}
+
+/* a plain <button> or a form's submit dressed like a Quasar outline button,
+   for the places a QBtn cannot go: inside server-rendered HTML */
+.vdb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vdb-heading);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.vdb-btn:hover {
+  background-color: var(--vdb-row-hover);
+}
+
+.vdb-inline {
+  display: inline;
+}
+
+/* ---------- calendar views (ui/calendar_grid.py) ---------- */
+
+/* two links dressed as a segmented control; aria-current marks the live one */
+.vdb-seg {
+  display: inline-flex;
+  border: 1px solid var(--vdb-rule);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.vdb-seg a {
+  padding: 0.35rem 1rem;
+  color: var(--vdb-ink);
+  font-family: var(--vdb-display);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+}
+
+.vdb-seg a:hover {
+  border-bottom: none;
+  background-color: var(--vdb-row-hover);
+}
+
+.vdb-seg a[aria-current="page"],
+.vdb-seg a[aria-current="page"]:hover {
+  background-color: var(--vdb-heading);
+  color: #fff;
+}
+
+.vdb-cal-wrap {
+  width: 100%;
+}
+
+.vdb-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.25rem 0 0.4rem;
+}
+
+.vdb-cal-month {
+  font-family: var(--vdb-display);
+  font-size: 1.15rem;
+  letter-spacing: 0.05em;
+  color: var(--vdb-heading);
+}
+
+.vdb-cal {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  background-color: var(--vdb-surface);
+  border: 1px solid var(--vdb-rule);
+}
+
+.vdb-cal th {
+  font-family: var(--vdb-display);
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: var(--vdb-heading);
+  text-align: left;
+  padding: 0.35rem 0.4rem;
+  border-bottom: 2px solid var(--vdb-rule);
+}
+
+.vdb-cal th abbr {
+  text-decoration: none;
+}
+
+.vdb-cal td {
+  vertical-align: top;
+  height: 5.5rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--vdb-rule);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.vdb-cal td.vdb-cal-out {
+  background-color: var(--vdb-bg);
+}
+
+.vdb-cal td.vdb-cal-out > time {
+  color: var(--vdb-muted);
+}
+
+.vdb-cal td[aria-current="date"] {
+  box-shadow: inset 0 0 0 2px var(--vdb-heading);
+}
+
+.vdb-cal td > time {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+.vdb-cal ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vdb-cal li {
+  margin: 0 0 0.3rem;
+}
+
+.vdb-cal li time {
+  font-variant-numeric: tabular-nums;
+  color: var(--vdb-muted);
+  margin-right: 0.25rem;
+}
+
+.vdb-cal-meta {
+  display: block;
+  font-size: 11.5px;
+  color: var(--vdb-muted);
+}
+
+.vdb-cal-note {
+  margin: 0.5rem 0 0;
+  color: var(--vdb-muted);
+}
+
+/* the weekday rides inside each day's number, shown only when the header
+   row is gone */
+.vdb-cal-dow {
+  display: none;
+}
+
+/* narrow screens: the table becomes a list of the days that have something */
+@media (max-width: 40rem) {
+  .vdb-cal thead {
+    display: none;
+  }
+
+  .vdb-cal,
+  .vdb-cal tbody,
+  .vdb-cal tr,
+  .vdb-cal td {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .vdb-cal td.vdb-cal-empty,
+  .vdb-cal td.vdb-cal-out {
+    display: none;
+  }
+
+  .vdb-cal td {
+    border-width: 0 0 1px;
+  }
+
+  .vdb-cal-dow {
+    display: inline;
+    margin-right: 0.4rem;
+    color: var(--vdb-muted);
+    font-weight: 400;
+  }
+}
+
+/* ---------- subscribe panel: a native popover (ui/calendar_panel.py) ---------- */
+
+.vdb-popover {
+  /* the UA sheet centres a popover with inset:0 + margin:auto; Tailwind's
+     preflight zeroes every margin and wins on origin, so say it again */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
+  max-width: min(30rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--vdb-rule);
+  border-radius: 6px;
+  background-color: var(--vdb-surface);
+  color: var(--vdb-ink);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+}
+
+.vdb-popover::backdrop {
+  background: rgba(28, 25, 23, 0.4);
+}
+
+.vdb-popover h3 {
+  font-family: var(--vdb-display);
+  font-weight: 400;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  color: var(--vdb-heading);
+  margin: 0 0 0.5rem;
+}
+
+.vdb-popover p,
+.vdb-popover li {
+  margin: 0 0 0.5rem;
+}
+
+.vdb-popover ul {
+  padding-left: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+.vdb-popover-close {
+  float: right;
+  margin-top: 0.25rem;
+}
+
+.vdb-feed-label {
+  display: block;
+  font-size: 12px;
+  color: var(--vdb-muted);
+  margin-top: 0.25rem;
+}
+
+.vdb-feed-url {
+  display: block;
+  width: 100%;
+  margin-top: 0.15rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--vdb-rule);
+  border-radius: 4px;
+  background-color: var(--vdb-bg);
+  color: var(--vdb-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.vdb-feed-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.vdb-cal-admin {
+  font-size: 13px;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--vdb-rule);
+}

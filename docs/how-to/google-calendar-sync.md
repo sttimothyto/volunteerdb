@@ -117,6 +117,31 @@ account owns it* plus *anyone may read it*. Open the calendar's public link
 `https://calendar.google.com/calendar/embed?src=<calendar id>`) in a private
 browser window to see what the public sees.
 
+## Subscribing from your own calendar
+
+The **Events** page shows the parish's events as a month grid in two views —
+*My duties* (the events you hold a slot at, the default) and *Whole parish*
+— and beside the view switch an **Add to your calendar** button opens a
+panel for the view you are on:
+
+- **Subscribe** (Apple Calendar, Outlook, Thunderbird): a `webcal://` link
+  that opens the subscription dialog. The calendar then refreshes itself,
+  about hourly, from the feed.
+- **Google Calendar**: for the parish view, *Add to Google Calendar* opens
+  Google with the parish calendar ready to add. For your own duties Google
+  offers no one-click route, so the panel shows the feed address to paste
+  into *Other calendars → + → From URL*.
+- **Download a .ics file**: a one-time copy to import anywhere; it does not
+  update.
+
+The feeds are served by VolunteerDB itself, straight from the database —
+they need no Google calendar at all and never lag it. The parish feed is
+public, like the Google calendar. Your personal feed's address carries a
+private token: anyone holding the address can read your duties, so if it
+gets out, **Reset the address** in the same panel (also on *Your account*)
+and subscribe again. The token is stored in clear so it can be shown again
+every time you open the panel; it unlocks your duty list and nothing else.
+
 ## How the sync stays honest
 
 **It checks the sharing before every write.** Each run lists the calendar's

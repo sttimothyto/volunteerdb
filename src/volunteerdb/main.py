@@ -35,6 +35,11 @@ UNRESTRICTED_PREFIXES = (
     # the parish logo: the login page and the ministries shell both show it,
     # and neither has a session (ui/logo_route.py)
     "/logo",
+    # calendar feeds: the parish one is public (it is what the public Google
+    # calendar shows), the personal one carries its own credential in the
+    # path (ui/calendar_routes.py)
+    "/calendar/parish.ics",
+    "/calendar/mine/",
 )
 # /photos/ is cookie-authed but asset-like: skipping the session re-issue keeps
 # its long-lived Cache-Control effective (a Set-Cookie per image defeats caching)
@@ -46,6 +51,7 @@ ASSET_PREFIXES = (
     "/photos/",
     "/ministries/img/",
     "/logo",
+    "/calendar/",
 )
 # Request-log lines for these drop to DEBUG (unlike ASSET_PREFIXES, /api/ stays
 # at INFO — API calls are exactly the traffic worth seeing).
@@ -56,6 +62,7 @@ QUIET_PREFIXES = (
     "/photos/",
     "/ministries/img/",
     "/logo",
+    "/calendar/",  # a calendar client polls its feed every hour
 )
 
 # Paths whose LAST segment is a bearer credential. The request line records the
@@ -64,7 +71,7 @@ QUIET_PREFIXES = (
 # kept (it is the useful half: which flow was exercised) and the token is
 # replaced. Redaction rather than QUIET_PREFIXES: a redemption attempt is
 # exactly the traffic worth seeing, it is just the token that must not be in it.
-SECRET_PATH_PREFIXES = ("/invite/", "/confirm-email/")
+SECRET_PATH_PREFIXES = ("/invite/", "/confirm-email/", "/calendar/mine/")
 
 
 def redact_path(path: str) -> str:

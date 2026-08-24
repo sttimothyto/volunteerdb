@@ -155,7 +155,9 @@ Additional rules:
 ## GUI page index
 
 Anonymous browsers are redirected to `/login`; only `/login`,
-`/invite/{token}`, `/api/`, and static assets are exempt.
+`/invite/{token}`, `/confirm-email/{token}`, `/api/`, the public ministry
+pages, the parish calendar feed, the personal feed (its token is the
+credential) and static assets are exempt.
 
 | Route | Page | Minimum access |
 |---|---|---|
@@ -167,7 +169,11 @@ Anonymous browsers are redirected to `/login`; only `/login`,
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export, the **Roster spreadsheet** section (link, sync, template, .csv import), invite a member; archive/reactivate the ministry | signed in; roster per matrix; invite needs full-roster rights; archiving is admin-only, like every other team edit |
 | `/volunteers` | Volunteer + team search; workload column/filter for admins and leaders/seconds | signed in; fields redacted per matrix |
 | `/volunteers/{id}` | Profile, timeline, impact report, invite | signed in; contact details, notes and the impact report per matrix. The **service timeline** and sign-in status are shown to every viewer, like the roster's account badge — who served where, and when, is parish-wide the way the directory and graph already are |
-| `/events` | Duties, claimable substitutions, searchable event table; `?team=` narrows to one ministry, `?past=1` shows past and cancelled | signed in; listings scoped per matrix ("New event": admin or leader/second) |
+| `/events` | Duties, claimable substitutions, the month calendar (`?view=mine`, the default, or `?view=parish`; `?month=YYYY-MM`) with its subscribe panel, searchable event table; `?team=` narrows to one ministry, `?past=1` shows past and cancelled | signed in; listings and the *mine* view scoped per matrix; the *parish* view lists every team's events but links only those the reader may open ("New event": admin or leader/second) |
+| `/calendar/parish.ics` | iCalendar feed of every team's scheduled events — title, time, location, description | public (the public Google calendar carries the same) |
+| `/calendar/mine/{token}.ics` | iCalendar feed of the events the account holds a slot at | public path; the token is the credential (`app_user.calendar_token`, rotated from the subscribe panel) |
+| `/calendar/mine.ics` | The same, as a downloadable file | signed in |
+| `POST /calendar/mine/reset` | A new personal feed address; the old one stops working | signed in |
 | `/events/{id}` | One event: slots (add, rename, re-capacity, remove), sign-up, RSVP, substitutions, attendance | roster-names rights on the owning team |
 | `/elections` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |
 | `/elections/{id}` | One proposal: candidates, roll, ballot form, tally, appoint; deadlines and notes are editable while it is open | managers of that team or its voting members |

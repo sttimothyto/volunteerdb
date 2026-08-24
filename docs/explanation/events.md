@@ -158,6 +158,19 @@ goes out immediately from the GUI after the transaction commits. The API
 sends no mail at all (the repo-wide rule); an API-created assignment still
 reaches its volunteer through the digest.
 
+## The calendar views and feeds
+
+`/events` renders its own month calendar — server-side HTML, no script —
+in two views: the reader's duties (the events they hold a slot at; the
+default) and the whole parish (every team's scheduled events, linked only
+where the reader may open them). Both are also iCalendar feeds
+(`services/ics.py`, a stdlib RFC 5545 writer): a public parish feed, and a
+personal feed whose address carries a per-account token stored in clear on
+`app_user.calendar_token` — it must be re-showable to be worth subscribing
+to, and it unlocks a duty list, not a sign-in. The subscribe panel is a
+native `popover`; rotating the address is a plain form POST, so none of it
+needs the websocket.
+
 ## The public calendar
 
 With the parish Google token provisioned

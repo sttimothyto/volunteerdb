@@ -3,6 +3,7 @@ def register_pages() -> None:
     from . import (  # noqa: F401
         account_page,
         admin_page,
+        calendar_routes,
         dashboard,
         elections_page,
         events_page,
@@ -21,3 +22,4 @@ def register_pages() -> None:
     # stays cached, so import-time decorators would fire only once
     ministries_routes.register()
     logo_route.register()
+    calendar_routes.register()

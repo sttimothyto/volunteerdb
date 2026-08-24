@@ -221,27 +221,67 @@ async def test_leader_creates_event_via_dialog(database):
         assert len(picnics) == 2, "day 1 and day 8"
 
 
-async def test_calendar_embed_follows_the_remembered_calendar(database):
-    """The embed needs only the id the sync remembered in app_setting — no
-    setting names a calendar any more, because the sync makes its own."""
-    from volunteerdb.services import gcal
-
+async def test_calendar_views_default_to_my_duties(database):
+    """The month grid: "mine" (the default) holds only what the reader signed
+    up for; "parish" holds every team's events, linked only where the reader
+    may open them. Both are server-rendered HTML — the assertions read the
+    markup, since there is no widget tree to find labels in."""
     async with db_session() as session:
         ids = await _parish(session)
-
-    async with user_simulation(main_file=SIM_MAIN) as user:
-        await user.open(f"/login-dev/{ids['mia_u']}")
-        await user.open("/events")
-        await user.should_not_see(marker="gcal-embed")
-
+    liturgy_event = await _seed_event(ids["liturgy"])
+    choir_event = await _seed_event(ids["choir"], title="Choir practice")
     async with db_session() as session:
-        await gcal.remember(session, "parish@group.calendar.google.com", created=True)
+        detail = await event_service.detail(session, None, liturgy_event)
+        await event_service.sign_up(
+            session, None, slot_id=detail.slots[0].slot.id, volunteer_id=ids["mia"]
+        )
+    month = f"month={_next_week(10):%Y-%m}"
+
+    def grid(user) -> str:
+        return user.find(marker="calendar-grid").elements.pop().content
+
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['mia_u']}")
-        await user.open("/events")
-        await user.should_see(marker="gcal-embed")
-        await user.open("/events?past=1")
-        await user.should_not_see(marker="gcal-embed")
+        await user.open(f"/events?{month}")
+        await user.should_see(marker="calendar-grid")
+        mine = grid(user)
+        assert "Sunday Mass" in mine and "Choir practice" not in mine
+        assert f'href="/events/{liturgy_event}"' in mine
+        assert "Volunteers" in mine, "the slot held rides under the title"
+        switch = user.find(marker="calendar-views").elements.pop().content
+        assert 'aria-current="page">My duties' in switch
+        assert f"view=parish&amp;{month}" in switch or f"view=parish&{month}" in switch
+        await user.should_see(marker="subscribe-mine")
+
+        await user.open(f"/events?view=parish&{month}")
+        await user.should_see(marker="calendar-grid")
+        parish = grid(user)
+        assert "Sunday Mass" in parish and "Choir practice" in parish
+        assert f'href="/events/{liturgy_event}"' in parish
+        assert f'href="/events/{choir_event}"' not in parish, (
+            "Mia is not in the choir: the title shows, the link does not"
+        )
+        assert "Choir" in parish, "the team path rides under the title"
+        await user.should_see(marker="subscribe-parish")
+
+
+async def test_calendar_month_links_and_bad_input(database):
+    async with db_session() as session:
+        ids = await _parish(session)
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['mia_u']}")
+        await user.open("/events?month=2026-03&view=parish")
+        await user.should_see(marker="calendar-grid")
+        html = user.find(marker="calendar-grid").elements.pop().content
+        assert "March 2026" in html
+        assert 'href="/events?view=parish&amp;month=2026-02"' in html
+        assert 'href="/events?view=parish&amp;month=2026-04"' in html
+        assert "No events this month." in html
+        await user.open("/events?month=garbage")
+        await user.should_see(marker="calendar-grid")
+        assert f"{date.today():%B %Y}" in (
+            user.find(marker="calendar-grid").elements.pop().content
+        ), "a bad month falls back to the current one"
 
 
 async def test_events_table_search_sort_and_column_drag(database):

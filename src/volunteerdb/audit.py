@@ -33,6 +33,7 @@ REDACTED_COLUMNS = {
     "api_token",
     "invite_token",
     "email_change_token",
+    "calendar_token",
     "score",
 }
 _MAX_VALUE_LEN = 120  # verbosity vs. one-line readability (notes/custom get truncated)

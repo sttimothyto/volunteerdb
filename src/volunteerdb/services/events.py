@@ -610,6 +610,81 @@ async def list_events(
     ]
 
 
+@dataclass(frozen=True)
+class CalendarEntry:
+    """One event as a calendar shows it: its public fields, the slot the reader
+    holds at it (the "mine" scope), the team path, and whether the reader may
+    open it — the parish-wide scope lists every team's events, so a reader
+    off a team sees that event's title and time (what the public Google
+    calendar shows anyone) without a link into a page that would refuse them."""
+
+    event: Event
+    slot_name: str | None
+    path: str
+    visible: bool
+
+
+async def calendar_entries(
+    session: AsyncSession,
+    actor: Actor | None,
+    *,
+    scope: str,
+    from_: datetime,
+    to: datetime,
+) -> list[CalendarEntry]:
+    """Scheduled events starting in [from_, to), oldest first.
+
+    scope="mine": the events the reader holds a slot at — the same rows as
+    my_upcoming, windowed instead of "not yet over". Nobody signed in, or
+    an account with no volunteer, has no duties.
+    scope="parish": every team's scheduled events; visibility only decides
+    the link. Anonymous callers (the public feed) get no links at all.
+    """
+    if scope not in ("mine", "parish"):
+        raise ValueError(f"unknown calendar scope {scope!r}")
+    window = (
+        Event.status == EventStatus.scheduled.value,
+        Event.starts_at >= from_,
+        Event.starts_at < to,
+    )
+    paths = (await team_service.tree(session)).paths
+    if scope == "mine":
+        if actor is None or actor.volunteer_id is None:
+            return []
+        rows = (
+            await session.execute(
+                sa.select(Event, EventSlot.name)
+                .join(EventAssignment, EventAssignment.event_id == Event.id)
+                .join(EventSlot, EventSlot.id == EventAssignment.slot_id)
+                .where(EventAssignment.volunteer_id == actor.volunteer_id, *window)
+                .order_by(Event.starts_at, Event.id)
+            )
+        ).all()
+        visible = visible_team_ids(actor)
+        return [
+            CalendarEntry(
+                event=e,
+                slot_name=slot,
+                path=paths.get(e.team_id, f"team {e.team_id}"),
+                visible=visible is None or e.team_id in visible,
+            )
+            for e, slot in rows
+        ]
+    events = await session.scalars(
+        sa.select(Event).where(*window).order_by(Event.starts_at, Event.id)
+    )
+    visible = visible_team_ids(actor) if actor is not None else set()
+    return [
+        CalendarEntry(
+            event=e,
+            slot_name=None,
+            path=paths.get(e.team_id, f"team {e.team_id}"),
+            visible=visible is None or e.team_id in visible,
+        )
+        for e in events
+    ]
+
+
 # similarity floor for the double-booking warning: "Parish Hall" still hits
 # "parish  hall" or "Parish hall (main)", while "Rectory" stays clear of it
 SIMILARITY_THRESHOLD = 0.6

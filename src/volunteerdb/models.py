@@ -868,6 +868,16 @@ class AppUser(Base):
     email_change_expires_at: Mapped[datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True)
     )
+    # The address of this account's personal calendar feed,
+    # /calendar/mine/<token>.ics. Kept in CLEAR, unlike the three digests
+    # above, on purpose: the address has to be shown again every time the
+    # reader opens the subscribe panel (a feed that breaks whenever the page
+    # is closed is no feed), and what it unlocks is the reader's own duty
+    # list — not a sign-in, not the API. Rotated from the same panel; NULL
+    # until first asked for. Still redacted from the audit log.
+    # keep this the LAST column -- ADD COLUMN appends, and
+    # test_schema_invariants compares declared order against physical order
+    calendar_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
 
 
 class CustomFieldDef(Base):

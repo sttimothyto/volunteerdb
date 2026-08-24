@@ -998,3 +998,78 @@ async def test_sign_up_series_on_a_standalone_event_is_just_a_sign_up(database):
         )
         assert first.volunteer_id == vids[1]
         assert result == event_service.SeriesSignupResult(0, 0, 0)
+
+
+# --- calendar entries ---------------------------------------------------------
+
+
+async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
+    team_id, vids = await _team_with_members(2)
+    async with db_session() as session:
+        other_team = (await teams.create(session, None, "Choir")).id
+    start = _at(date.today() + timedelta(days=7), 10)
+    mine = await _one_event(team_id, start=start)
+    theirs = await _one_event(team_id, start=start + timedelta(days=1))
+    elsewhere = await _one_event(other_team, start=start + timedelta(days=2))
+    async with db_session() as session:
+        await event_service.sign_up(
+            session, None, slot_id=await _first_slot(mine), volunteer_id=vids[1]
+        )
+        await event_service.cancel_event(session, None, elsewhere, cancelled_by=None)
+    async with db_session() as session:
+        member, _ = await users.create(session, "m@example.org", volunteer_id=vids[1])
+        actor = await load_actor(session, member)
+        window = dict(from_=start - timedelta(days=1), to=start + timedelta(days=30))
+        got = await event_service.calendar_entries(
+            session, actor, scope="mine", **window
+        )
+        assert [(e.event.id, e.slot_name, e.visible) for e in got] == [
+            (mine, "Volunteers", True)
+        ]
+        parish = await event_service.calendar_entries(
+            session, actor, scope="parish", **window
+        )
+        assert [e.event.id for e in parish] == [mine, theirs], (
+            "every team's scheduled events; the cancelled one is gone"
+        )
+        assert all(e.visible for e in parish) and parish[0].path == "Altar Servers"
+
+        # the other team's event, uncancelled: listed but not linkable
+        await event_service.create_event(
+            session,
+            None,
+            team_id=other_team,
+            title="Vespers",
+            starts_at=start + timedelta(days=3),
+            ends_at=start + timedelta(days=3, hours=1),
+            created_by=None,
+        )
+        parish = await event_service.calendar_entries(
+            session, actor, scope="parish", **window
+        )
+        assert [(e.event.title, e.visible) for e in parish][-1] == ("Vespers", False)
+
+        # anonymous (the public feed): everything listed, nothing linkable
+        public = await event_service.calendar_entries(
+            session, None, scope="parish", **window
+        )
+        assert len(public) == 3 and not any(e.visible for e in public)
+        assert (
+            await event_service.calendar_entries(session, None, scope="mine", **window)
+            == []
+        )
+
+        # the window bounds starts_at
+        late = await event_service.calendar_entries(
+            session,
+            actor,
+            scope="parish",
+            from_=start + timedelta(days=1),
+            to=window["to"],
+        )
+        assert [e.event.id for e in late][0] == theirs
+    with pytest.raises(ValueError):
+        async with db_session() as session:
+            await event_service.calendar_entries(
+                session, None, scope="everything", **window
+            )

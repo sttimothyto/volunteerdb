@@ -25,6 +25,7 @@ from ..auth import async_verify_password
 from ..log import audit_log
 from ..services import mail
 from ..services import users as user_service
+from .calendar_panel import subscribe_panel
 from .context import action_session, notify_errors, page_session, session_auth_method
 from .layout import frame
 from .login import confirm_email_url
@@ -50,6 +51,7 @@ async def account_page(request: Request):
         # the forgotten password.
         proved_by_email = session_auth_method() in ("otp", "invite")
         must_retype = has_password and not proved_by_email
+        feed_token = await user_service.ensure_calendar_token(session, user_id)
 
     @notify_errors
     async def request_email_change() -> None:
@@ -178,6 +180,21 @@ async def account_page(request: Request):
                     "Setting a password is optional — the emailed code works "
                     "forever. It is only needed to use the JSON API."
                 ).classes("text-sm text-gray-500")
+
+        with ui.card().classes("w-full max-w-xl gap-2"):
+            ui.label("Your duties in your own calendar").classes("font-medium")
+            ui.label(
+                "Subscribe your phone or desktop calendar to the events you are "
+                "signed up for; it stays current as you sign up and withdraw. The "
+                "same panel is on the Events page."
+            ).classes("text-sm text-gray-500")
+            subscribe_panel(
+                view="mine",
+                base_url=base_url,
+                token=feed_token,
+                calendar=None,
+                is_admin=False,
+            )
 
         with ui.card().classes("w-full max-w-xl gap-3"):
             ui.label("Change your email address")
