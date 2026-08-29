@@ -105,6 +105,10 @@ class EventCancelled:
     emails: tuple[str, ...]
 
 
+# --- sign-in and the account: the edge states the request's own facts (an
+# address, a method, a source IP) and the service states what it changed
+
+
 @dataclass(frozen=True, slots=True)
 class InviteIssued:
     user_id: int
@@ -114,15 +118,62 @@ class InviteIssued:
 
 
 @dataclass(frozen=True, slots=True)
+class InviteRedeemed:
+    user_id: int
+    email: str
+    has_password: bool
+
+
+@dataclass(frozen=True, slots=True)
+class OtpRequested:
+    """A code was asked for -- charged and logged whether or not the
+    address has an account, so the answer never says which."""
+
+    email: str
+    ip: str
+
+
+@dataclass(frozen=True, slots=True)
 class OtpIssued:
     email: str
     code: str
 
 
 @dataclass(frozen=True, slots=True)
+class SignInFailed:
+    method: str
+    email: str
+    ip: str
+
+
+@dataclass(frozen=True, slots=True)
+class SignedIn:
+    user_id: int
+    email: str
+    method: str
+    ip: str
+
+
+@dataclass(frozen=True, slots=True)
+class ApiTokenIssued:
+    user_id: int
+    email: str
+    ip: str
+
+
+@dataclass(frozen=True, slots=True)
 class PasswordChanged:
+    user_id: int
     email: str
     removed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EmailChangeAttempted:
+    """Asked, before the answer: the budget is charged on every attempt so
+    a refused address cannot be probed for free."""
+
+    user_id: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +182,20 @@ class EmailChangeRequested:
     old_email: str
     new_email: str
     token: str
+    ttl_hours: int
+
+
+@dataclass(frozen=True, slots=True)
+class EmailChangeCancelled:
+    user_id: int
+    email: str
+
+
+@dataclass(frozen=True, slots=True)
+class EmailChanged:
+    user_id: int
+    was: str
+    now: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,9 +218,17 @@ type DomainEvent = (
     | SelfRemoved
     | EventCancelled
     | InviteIssued
+    | InviteRedeemed
+    | OtpRequested
     | OtpIssued
+    | SignInFailed
+    | SignedIn
+    | ApiTokenIssued
     | PasswordChanged
+    | EmailChangeAttempted
     | EmailChangeRequested
+    | EmailChangeCancelled
+    | EmailChanged
     | AddressReplaced
     | RosterImported
 )

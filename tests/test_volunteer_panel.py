@@ -16,24 +16,20 @@ from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
-from volunteerdb.services import mail, memberships, teams, users, volunteers
+from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
 from .conftest import SLOW, mail_to
 from tests import mint
+from tests.fakes import SIM_MAILER
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatch):
-    sent: list[tuple[str, str, str]] = []
-
-    async def fake_send(to: str, subject: str, body: str) -> bool:
-        sent.append((to, subject, body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake_send)
+    SIM_MAILER.sent.clear()
+    sent = SIM_MAILER.sent
 
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))

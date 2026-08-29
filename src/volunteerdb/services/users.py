@@ -23,6 +23,15 @@ from ..auth import (
     async_verify_password,
     needs_rehash,
 )
+from ..domain import (
+    EmailChangeCancelled,
+    EmailChanged,
+    EmailChangeRequested,
+    InviteRedeemed,
+    OtpIssued,
+    Outcome,
+    PasswordChanged,
+)
 from ..errors import (
     BadCredentials,
     DomainError,
@@ -273,8 +282,10 @@ async def set_password(
     password: str,
     *,
     site_terms: frozenset[str] = frozenset(),
-) -> Result[None, DomainError]:
+) -> Result[Outcome[None], DomainError]:
     """Bind a password to an account (WeakPassword if it fails the policy).
+    The PasswordChanged event is the account's notice -- mailed and logged by
+    the policy, on a channel the session making the change cannot suppress.
 
     Also spends any outstanding invite link: whoever set this password is in
     possession of the account, and a reset link left armed behind them would
@@ -287,12 +298,12 @@ async def set_password(
     user.password_hash = await async_hash_password(password)
     _clear_invite(user)
     await session.flush()
-    return Ok(None)
+    return Ok(Outcome(None, (PasswordChanged(user.id, user.email, removed=False),)))
 
 
 async def clear_password(
     session: AsyncSession, user_id: int
-) -> Result[None, DomainError]:
+) -> Result[Outcome[None], DomainError]:
     """Drop back to email-code-only sign-in. The API token goes with it —
     tokens are issued against a password, so keeping one alive would leave a
     credential the account can no longer re-issue or reason about."""
@@ -302,7 +313,7 @@ async def clear_password(
     user.password_hash = None
     user.api_token = None
     await session.flush()
-    return Ok(None)
+    return Ok(Outcome(None, (PasswordChanged(user.id, user.email, removed=True),)))
 
 
 async def reissue_invite(
@@ -410,9 +421,10 @@ async def redeem_invite(
     agreed_to_confidentiality: bool,
     now: datetime,
     site_terms: frozenset[str] = frozenset(),
-) -> Result[AppUser, DomainError]:
+) -> Result[Outcome[AppUser], DomainError]:
     """Complete account setup. The password is optional: without one the
     account stays passwordless and signs in with emailed one-time codes.
+    The InviteRedeemed event is the welcome the policy mails and logs.
 
     Redemption requires accepting the confidentiality notice — agreeing not
     to disclose volunteers' personal information without their consent. The
@@ -440,18 +452,23 @@ async def redeem_invite(
     user.confidentiality_agreed_at = now
     _clear_invite(user)
     await session.flush()
-    return Ok(user)
+    return Ok(
+        Outcome(
+            user, (InviteRedeemed(user.id, user.email, has_password=bool(password)),)
+        )
+    )
 
 
 async def start_otp_login(
     session: AsyncSession, email: str, *, now: datetime, code: str
-) -> Result[tuple[AppUser, str | None], NotFound]:
+) -> Result[Outcome[AppUser], NotFound]:
     """Begin an email one-time-code login.
 
     NotFound for an unknown or inactive account (callers stay neutral to
-    avoid enumeration), Ok((user, None)) when a live code was sent moments
-    ago (throttled — don't resend), or Ok((user, code)) with the fresh code
-    the edge minted, to email. Only the argon2 hash of the code is stored."""
+    avoid enumeration); an Outcome with no event when a live code was sent
+    moments ago (throttled — don't resend); an Outcome carrying OtpIssued
+    with the fresh code the edge minted, for the policy to mail. Only the
+    argon2 hash of the code is stored."""
     user = await get_by_email(session, email)
     if user is None or not user.is_active:
         return not_found("account")
@@ -461,13 +478,13 @@ async def start_otp_login(
         and user.otp_expires_at is not None
         and user.otp_expires_at > now
     ):
-        return Ok((user, None))
+        return Ok(Outcome(user))
     user.otp_hash = await async_hash_password(code)
     user.otp_sent_at = now
     user.otp_expires_at = now + OTP_TTL
     user.otp_attempts = 0
     await session.flush()
-    return Ok((user, code))
+    return Ok(Outcome(user, (OtpIssued(user.email, code),)))
 
 
 async def verify_otp(
@@ -517,10 +534,11 @@ async def start_email_change(
     *,
     now: datetime,
     token: str,
-) -> Result[tuple[AppUser, str], DomainError]:
+) -> Result[Outcome[tuple[AppUser, str]], DomainError]:
     """Stage an address change and arm the link that confirms it. Returns the
-    account and the token to mail *to the new address* — nothing on file moves
-    until confirm_email_change redeems it.
+    account and the token; the EmailChangeRequested event carries what the
+    policy mails *to the new address* (the proof) and to the old one (the
+    warning) — nothing on file moves until confirm_email_change redeems it.
 
     Asking again simply replaces the pending address and its token: the old
     link dies with it, so a typo is corrected by retyping rather than by
@@ -546,19 +564,32 @@ async def start_email_change(
     user.email_change_token = _token_digest(token)  # digest only, like invite_token
     user.email_change_expires_at = now + EMAIL_CHANGE_TTL
     await session.flush()
-    return Ok((user, token))
+    return Ok(
+        Outcome(
+            (user, token),
+            (
+                EmailChangeRequested(
+                    user_id=user.id,
+                    old_email=user.email,
+                    new_email=addr,
+                    token=token,
+                    ttl_hours=int(EMAIL_CHANGE_TTL.total_seconds() // 3600),
+                ),
+            ),
+        )
+    )
 
 
 async def cancel_email_change(
     session: AsyncSession, user_id: int
-) -> Result[AppUser, DomainError]:
+) -> Result[Outcome[AppUser], DomainError]:
     """Drop a pending change, killing its link."""
     user = await get(session, user_id)
     if user is None:
         return not_found("user", user_id)
     _clear_email_change(user)
     await session.flush()
-    return Ok(user)
+    return Ok(Outcome(user, (EmailChangeCancelled(user.id, user.email),)))
 
 
 async def pending_email_change(
@@ -584,11 +615,11 @@ async def pending_email_change(
 
 async def confirm_email_change(
     session: AsyncSession, token: str, *, now: datetime
-) -> Result[tuple[AppUser, str], DomainError]:
+) -> Result[Outcome[tuple[AppUser, str]], DomainError]:
     """Redeem the link: the address moves, and moves everywhere. Returns the
-    account and the address it moved *away* from — that old mailbox is owed the
-    §4.1.2 receipt, and this instance is mutated in place, so the caller cannot
-    recover the old address afterwards.
+    account and the address it moved *away* from; the EmailChanged event is
+    the §4.1.2 receipt the policy sends that old mailbox (this instance is
+    mutated in place, so nothing downstream could recover the old address).
 
     The account's login address and the volunteer record behind it are set
     together — one person, one address. That is what carries the change into
@@ -624,7 +655,9 @@ async def confirm_email_change(
             volunteer.email = addr
     _clear_email_change(user)
     await session.flush()
-    return Ok((user, previous))
+    return Ok(
+        Outcome((user, previous), (EmailChanged(user.id, was=previous, now=addr),))
+    )
 
 
 async def issue_api_token(

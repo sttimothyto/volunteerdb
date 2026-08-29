@@ -25,7 +25,8 @@ from volunteerdb.services import mail, memberships, teams, users, volunteers
 
 from .conftest import SLOW, mail_to
 from tests import mint
-from tests.fp_helpers import ok, refused
+from tests.fakes import SIM_MAILER
+from tests.fp_helpers import done, ok, otp_started, refused
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -46,7 +47,7 @@ async def test_requesting_moves_nothing_and_confirming_moves_both(database):
         volunteer_id, user_id = volunteer.id, account.id
 
     async with db_session() as session:
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session,
                 user_id,
@@ -54,7 +55,7 @@ async def test_requesting_moves_nothing_and_confirming_moves_both(database):
                 now=mint.now(),
                 token=mint.token(),
             )
-        )
+        ).value
 
     async with db_session() as session:
         account = await users.get(session, user_id)
@@ -65,7 +66,9 @@ async def test_requesting_moves_nothing_and_confirming_moves_both(database):
         ), "nor has the roster address"
 
     async with db_session() as session:
-        confirmed = ok(await users.confirm_email_change(session, token, now=mint.now()))
+        confirmed = done(
+            await users.confirm_email_change(session, token, now=mint.now())
+        ).value
         assert confirmed is not None
 
     async with db_session() as session:
@@ -96,7 +99,7 @@ async def test_the_address_reaches_every_active_membership(database):
         user_id = account.id
 
     async with db_session() as session:
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session,
                 user_id,
@@ -104,7 +107,7 @@ async def test_the_address_reaches_every_active_membership(database):
                 now=mint.now(),
                 token=mint.token(),
             )
-        )
+        ).value
     async with db_session() as session:
         assert (
             await users.confirm_email_change(session, token, now=mint.now())
@@ -122,11 +125,11 @@ async def test_a_link_works_once(database):
         _v, account = await _volunteer_with_account(session)
         user_id = account.id
     async with db_session() as session:
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session, user_id, "once@example.org", now=mint.now(), token=mint.token()
             )
-        )
+        ).value
     async with db_session() as session:
         assert (
             await users.confirm_email_change(session, token, now=mint.now())
@@ -142,11 +145,11 @@ async def test_an_expired_link_is_refused_exactly_like_an_unknown_one(database):
         _v, account = await _volunteer_with_account(session)
         user_id = account.id
     async with db_session() as session:
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session, user_id, "late@example.org", now=mint.now(), token=mint.token()
             )
-        )
+        ).value
         account = await users.get(session, user_id)
         account.email_change_expires_at = datetime.now(UTC) - timedelta(minutes=1)
 
@@ -169,17 +172,17 @@ async def test_asking_again_replaces_the_pending_address_and_kills_the_old_link(
         _v, account = await _volunteer_with_account(session)
         user_id = account.id
     async with db_session() as session:
-        _user, typo = ok(
+        _user, typo = done(
             await users.start_email_change(
                 session, user_id, "typo@example.org", now=mint.now(), token=mint.token()
             )
-        )
+        ).value
     async with db_session() as session:
-        _user, good = ok(
+        _user, good = done(
             await users.start_email_change(
                 session, user_id, "good@example.org", now=mint.now(), token=mint.token()
             )
-        )
+        ).value
 
     async with db_session() as session:
         assert (
@@ -195,7 +198,7 @@ async def test_cancelling_kills_the_link(database):
         _v, account = await _volunteer_with_account(session)
         user_id = account.id
     async with db_session() as session:
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session,
                 user_id,
@@ -203,9 +206,9 @@ async def test_cancelling_kills_the_link(database):
                 now=mint.now(),
                 token=mint.token(),
             )
-        )
+        ).value
     async with db_session() as session:
-        ok(await users.cancel_email_change(session, user_id))
+        done(await users.cancel_email_change(session, user_id))
     async with db_session() as session:
         assert (
             await users.confirm_email_change(session, token, now=mint.now())
@@ -243,7 +246,7 @@ async def test_an_address_claimed_between_request_and_confirmation_is_refused(da
         _v, account = await _volunteer_with_account(session)
         user_id = account.id
     async with db_session() as session:
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session,
                 user_id,
@@ -251,7 +254,7 @@ async def test_an_address_claimed_between_request_and_confirmation_is_refused(da
                 now=mint.now(),
                 token=mint.token(),
             )
-        )
+        ).value
     async with db_session() as session:
         ok(
             await users.create(
@@ -311,14 +314,14 @@ async def test_a_code_in_flight_dies_with_the_address_that_earned_it(database):
         _v, account = await _volunteer_with_account(session)
         user_id = account.id
     async with db_session() as session:
-        started = ok(
+        started = otp_started(
             await users.start_otp_login(
                 session, "maria@example.org", now=mint.now(), code=mint.code()
             )
         )
         assert started is not None and started[1] is not None
         code = started[1]
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session,
                 user_id,
@@ -326,7 +329,7 @@ async def test_a_code_in_flight_dies_with_the_address_that_earned_it(database):
                 now=mint.now(),
                 token=mint.token(),
             )
-        )
+        ).value
     async with db_session() as session:
         assert (
             await users.confirm_email_change(session, token, now=mint.now())
@@ -344,7 +347,7 @@ async def test_a_deactivated_account_cannot_confirm(database):
         _v, account = await _volunteer_with_account(session)
         user_id = account.id
     async with db_session() as session:
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session,
                 user_id,
@@ -352,7 +355,7 @@ async def test_a_deactivated_account_cannot_confirm(database):
                 now=mint.now(),
                 token=mint.token(),
             )
-        )
+        ).value
         ok(await users.set_flags(session, user_id, is_active=False))
     async with db_session() as session:
         assert (
@@ -367,7 +370,7 @@ async def test_looking_at_a_link_does_not_spend_it(database):
         _v, account = await _volunteer_with_account(session)
         user_id = account.id
     async with db_session() as session:
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session,
                 user_id,
@@ -375,7 +378,7 @@ async def test_looking_at_a_link_does_not_spend_it(database):
                 now=mint.now(),
                 token=mint.token(),
             )
-        )
+        ).value
 
     async with db_session() as session:
         peeked = await users.pending_email_change(session, token, now=mint.now())
@@ -400,7 +403,7 @@ async def test_an_account_with_no_volunteer_record_still_changes_its_login(datab
         )
         user_id = account.id
     async with db_session() as session:
-        _user, token = ok(
+        _user, token = done(
             await users.start_email_change(
                 session,
                 user_id,
@@ -408,7 +411,7 @@ async def test_an_account_with_no_volunteer_record_still_changes_its_login(datab
                 now=mint.now(),
                 token=mint.token(),
             )
-        )
+        ).value
     async with db_session() as session:
         assert (
             await users.confirm_email_change(session, token, now=mint.now())
@@ -422,13 +425,8 @@ async def test_an_account_with_no_volunteer_record_still_changes_its_login(datab
 async def test_editing_your_own_profile_defers_the_address_but_saves_the_rest(
     database, monkeypatch
 ):
-    sent: list[tuple[str, str, str]] = []
-
-    async def fake_send(to: str, subject: str, body: str) -> bool:
-        sent.append((to, subject, body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake_send)
+    SIM_MAILER.sent.clear()
+    sent = SIM_MAILER.sent
 
     async with db_session() as session:
         volunteer, account = await _volunteer_with_account(session)

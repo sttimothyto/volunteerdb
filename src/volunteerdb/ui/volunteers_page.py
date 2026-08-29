@@ -22,11 +22,10 @@ from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from . import column_order, invites
 from .account_status import invitable, last_login_text
-from .context import action_session, notify_errors, page_session
+from .context import PageCtx, action_session, notify_errors, page_session, run_command
 from .date_input import date_input, time_input
 from .elections_page import phase_badge
 from .layout import frame
-from .login import confirm_email_url
 from .photo_dialog import photo_avatar
 from .search_box import search_box
 from .timeline_chart import timeline_chart
@@ -683,7 +682,7 @@ def _edit_dialog(
                         )
                     ).unwrap()
             if staged:
-                await _stage_own_email(staged, base_url)
+                await _stage_own_email(staged)
             elif replaced:
                 await _notify_replaced_address(volunteer.id, replaced, typed, base_url)
             dialog.close()
@@ -717,43 +716,31 @@ async def _notify_replaced_address(
     await mail.send_email(was, *mail.address_edited_email(now, f"{base_url}/login"))
 
 
-async def _stage_own_email(address: str, base_url: str) -> None:
-    """Arm the confirmation link for the signed-in account, mail it to the
-    address being claimed, and warn the one being replaced. Same flow as the
-    /account page; both messages go out after the commit."""
-    async with action_session() as (session, actor):
-        account, token = (
-            await user_service.start_email_change(
-                session,
-                actor.user.id,
-                address,
-                now=current().clock.now(),
-                token=current().rng.token(),
-            )
-        ).unwrap()
-        target, user_id, was = account.pending_email, actor.user.id, actor.user.email
-    audit_log("auth.email_change_requested", user=f"{user_id}:{was}", to=target)
-    hours = int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600)
-    await mail.send_email(
-        target,
-        *mail.email_change_email(
-            confirm_email_url(base_url, token),
-            target,
-            hours,
-            ctx=current_env().mail_context(),
-        ),
-    )
-    # and the address being replaced hears about it while it can still say no
-    await mail.send_email(
-        was, *mail.email_change_requested_email(target, f"{base_url}/account", hours)
-    )
-    ui.notify(
-        f"Confirmation sent to {target}. Your address changes when you open "
-        "the link in it.",
-        color="positive",
-        multi_line=True,
-        timeout=8000,
-    )
+async def _stage_own_email(address: str) -> None:
+    """Arm the confirmation link for the signed-in account; the policy mails
+    the address being claimed and warns the one being replaced, after the
+    commit. Same flow as the /account page."""
+
+    async def command(ctx: PageCtx):
+        return await user_service.start_email_change(
+            ctx.session,
+            ctx.actor.user.id,
+            address,
+            now=ctx.now,
+            token=ctx.env.rng.token(),
+        )
+
+    def done(value, _effects) -> None:
+        account, _token = value
+        ui.notify(
+            f"Confirmation sent to {account.pending_email}. Your address changes "
+            "when you open the link in it.",
+            color="positive",
+            multi_line=True,
+            timeout=8000,
+        )
+
+    await run_command(command, on_ok=done, reload=False)
 
 
 async def _unassign(membership_id: int) -> None:

@@ -6,11 +6,12 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
-from volunteerdb.services import mail, users
+from volunteerdb.services import users
 from volunteerdb.ui.context import clear_session
 
 from .conftest import SLOW, mail_to
 from tests import mint
+from tests.fakes import SIM_MAILER
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -104,13 +105,8 @@ async def test_a_signed_in_browser_is_sent_on_from_the_login_page(real_app_clien
 
 
 async def test_invite_redemption_flow(database, monkeypatch):
-    sent: list[tuple[str, str, str]] = []
-
-    async def fake_send(to: str, subject: str, body: str) -> bool:
-        sent.append((to, subject, body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake_send)
+    SIM_MAILER.sent.clear()
+    sent = SIM_MAILER.sent
 
     async with db_session() as session:
         invitee, token = ok(

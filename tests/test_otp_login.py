@@ -9,7 +9,7 @@ from volunteerdb.services import mail, users
 from volunteerdb.ui.context import session_expired
 
 from tests import mint
-from tests.fp_helpers import ok
+from tests.fp_helpers import done, ok, otp_started
 
 
 async def test_start_otp_login_unknown_or_inactive(database):
@@ -35,7 +35,7 @@ async def test_otp_round_trip_throttle_and_invite_clear(database):
         ok(
             await users.create(session, "otp@example.org", invite=mint.fresh_invite())
         )  # no password -> invite token
-        user, code = ok(
+        user, code = otp_started(
             await users.start_otp_login(
                 session, "otp@example.org", now=mint.now(), code=mint.code()
             )
@@ -50,7 +50,7 @@ async def test_otp_round_trip_throttle_and_invite_clear(database):
         )
 
         old_hash = user.otp_hash
-        again_user, again_code = ok(
+        again_user, again_code = otp_started(
             await users.start_otp_login(
                 session, "otp@example.org", now=mint.now(), code=mint.code()
             )
@@ -79,7 +79,7 @@ async def test_otp_round_trip_throttle_and_invite_clear(database):
 async def test_otp_lockout_then_fresh_code(database):
     async with db_session() as session:
         ok(await users.create(session, "lock@example.org", invite=mint.fresh_invite()))
-        user, code = ok(
+        user, code = otp_started(
             await users.start_otp_login(
                 session, "lock@example.org", now=mint.now(), code=mint.code()
             )
@@ -99,7 +99,7 @@ async def test_otp_lockout_then_fresh_code(database):
 
         user.otp_sent_at = None  # skip the resend throttle
         await session.flush()
-        user2, code2 = ok(
+        user2, code2 = otp_started(
             await users.start_otp_login(
                 session, "lock@example.org", now=mint.now(), code=mint.code()
             )
@@ -113,7 +113,7 @@ async def test_otp_lockout_then_fresh_code(database):
 async def test_otp_expired_code_rejected(database):
     async with db_session() as session:
         ok(await users.create(session, "exp@example.org", invite=mint.fresh_invite()))
-        user, code = ok(
+        user, code = otp_started(
             await users.start_otp_login(
                 session, "exp@example.org", now=mint.now(), code=mint.code()
             )
@@ -136,11 +136,11 @@ async def test_redeem_invite_password_optional(database):
             )
         )
 
-        ra = ok(
+        ra = done(
             await users.redeem_invite(
                 session, a_token, None, agreed_to_confidentiality=True, now=mint.now()
             )
-        )
+        ).value
         assert ra.password_hash is None and ra.invite_token is None  # OTP-only account
         assert (
             await users.authenticate(
@@ -148,7 +148,7 @@ async def test_redeem_invite_password_optional(database):
             )
         ).is_err()
 
-        rb = ok(
+        rb = done(
             await users.redeem_invite(
                 session,
                 b_token,
@@ -156,7 +156,7 @@ async def test_redeem_invite_password_optional(database):
                 agreed_to_confidentiality=True,
                 now=mint.now(),
             )
-        )
+        ).value
         assert rb.password_hash is not None
         assert (
             await users.authenticate(

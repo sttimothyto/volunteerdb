@@ -39,3 +39,13 @@ def done[T](r: Ok[Outcome[T]] | Err) -> Outcome[T]:
     outcome = ok(r)
     assert isinstance(outcome, Outcome), f"not an Outcome: {outcome!r}"
     return outcome
+
+
+def otp_started[T](r: Ok[Outcome[T]] | Err) -> tuple[T, str | None]:
+    """users.start_otp_login as the tests read it: the account, and the fresh
+    code the OtpIssued event carries -- None when a live code was not resent."""
+    from volunteerdb.domain import OtpIssued
+
+    outcome = done(r)
+    code = next((e.code for e in outcome.events if isinstance(e, OtpIssued)), None)
+    return outcome.value, code

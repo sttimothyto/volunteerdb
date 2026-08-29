@@ -2,13 +2,12 @@ import structlog
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ..auth import async_verify_password
-from ..db import db_session
+from ..db import transaction
+from ..domain import ApiTokenIssued, EmailChangeAttempted, SignInFailed
 from ..errors import NotFound, message
 from ..fp import Err
-from ..log import audit_log
-from ..services import mail
 from ..services import users as service
-from .deps import CtxDep, env_of
+from .deps import CtxDep, dispatch, env_of, perform, throttled
 from .schemas import (
     EmailChangeConfirmIn,
     EmailChangeIn,
@@ -32,22 +31,27 @@ async def login(data: LoginIn, request: Request) -> TokenOut:
     ip = request.client.host if request.client else "unknown"
     env = env_of(request)
     now = env.clock.now()
-    keys = (f"pw:{data.email.strip().lower()}", f"pw-ip:{ip}")
-    if env.throttle.blocked(keys[0], now) or env.throttle.blocked(keys[1], now):
+    base_url = str(request.base_url).rstrip("/")
+    addr = data.email.strip().lower()
+    if throttled(env, f"pw:{addr}", f"pw-ip:{ip}", now=now):
         logger.warning("auth.throttled", method="api", email=data.email, ip=ip)
         raise HTTPException(429, "too many failed attempts; try again in a few minutes")
-    async with db_session() as session:
+    async with transaction(env, None) as session:
         signed = await service.authenticate(session, data.email, data.password, now=now)
         if isinstance(signed, Err):
-            for key in keys:
-                env.throttle.hit(key, now)
-            logger.warning("auth.login_failed", method="api", email=data.email, ip=ip)
-            raise HTTPException(401, "invalid credentials")
-        user = signed.value
-        token = (
-            await service.issue_api_token(session, user.id, token=env.rng.token())
-        ).unwrap()
-        audit_log("auth.api_token_issued", user=f"{user.id}:{user.email}", ip=ip)
+            await session.rollback()
+        else:
+            user = signed.value
+            token = (
+                await service.issue_api_token(session, user.id, token=env.rng.token())
+            ).unwrap()
+    if isinstance(signed, Err):
+        logger.warning("auth.login_failed", method="api", email=data.email, ip=ip)
+        await perform(env, [SignInFailed("api", addr, ip)], base_url=base_url, now=now)
+        raise HTTPException(401, "invalid credentials")
+    await perform(
+        env, [ApiTokenIssued(user.id, user.email, ip)], base_url=base_url, now=now
+    )
     return TokenOut(token=token)
 
 
@@ -89,26 +93,23 @@ async def set_own_password(
     # both buckets, exactly as POST /auth/login charges them: the per-account
     # limit and the per-IP flood limit, so a spray of current-password guesses
     # across many accounts from one IP is throttled at the IP too.
-    keys = (f"pw:{email.lower()}", f"pw-ip:{ip}")
     env, now = ctx.env, ctx.now
-    if env.throttle.blocked(keys[0], now) or env.throttle.blocked(keys[1], now):
+    if throttled(env, f"pw:{email.lower()}", f"pw-ip:{ip}", now=now):
         raise HTTPException(429, "too many failed attempts; try again in a few minutes")
     if user.password_hash is None or not await async_verify_password(
         user.password_hash, data.current_password
     ):
-        for key in keys:
-            env.throttle.hit(key, now)
         logger.warning("auth.password_change_denied", email=email, via="api")
+        await perform(
+            env, [SignInFailed("api", email, ip)], base_url=ctx.base_url, now=now
+        )
         raise HTTPException(403, "that is not your current password")
-    (
+    dispatch(
+        ctx,
+        background,
         await service.set_password(
             ctx.session, user.id, data.new_password, site_terms=env.password_terms
-        )
-    ).unwrap()
-    audit_log("auth.password_set", user=f"{user.id}:{email}", via="api")
-    base_url = str(request.base_url).rstrip("/")
-    background.add_task(
-        ctx.env.mailer.send, email, *mail.password_changed_email(f"{base_url}/login")
+        ),
     )
 
 
@@ -120,15 +121,8 @@ async def clear_own_password(
 
     This also revokes the API token making the call — it was issued against the
     password being removed — so it is the last request that token serves."""
-    user = ctx.actor.user
-    email = user.email
-    (await service.clear_password(ctx.session, user.id)).unwrap()
-    audit_log("auth.password_cleared", user=f"{user.id}:{email}", via="api")
-    base_url = str(request.base_url).rstrip("/")
-    background.add_task(
-        ctx.env.mailer.send,
-        email,
-        *mail.password_changed_email(f"{base_url}/login", removed=True),
+    dispatch(
+        ctx, background, await service.clear_password(ctx.session, ctx.actor.user.id)
     )
 
 
@@ -144,54 +138,34 @@ async def request_email_change(
     The throttle is on *sends*: what is worth abusing here is the parish's
     sender, one address at a time."""
     user = ctx.actor.user
-    was = user.email
-    key = f"email-change:{user.id}"
     env, now = ctx.env, ctx.now
-    if env.throttle.blocked(key, now):
+    if throttled(env, f"email-change:{user.id}", now=now):
         raise HTTPException(429, "too many address changes requested; try again later")
     # charge the budget on every attempt, before the service can reveal whether
     # the address exists: a probe that fails ("another account already signs in
     # with that address") must count too, or the budget is only on successful
     # sends and this is an unthrottled account-existence oracle.
-    env.throttle.hit(key, now)
-    account, token = (
+    await perform(env, [EmailChangeAttempted(user.id)], base_url=ctx.base_url, now=now)
+    account, _token = dispatch(
+        ctx,
+        background,
         await service.start_email_change(
             ctx.session, user.id, data.new_email, now=now, token=env.rng.token()
-        )
-    ).unwrap()
-    target = account.pending_email
-    audit_log("auth.email_change_requested", user=f"{user.id}:{was}", to=target)
-    hours = int(service.EMAIL_CHANGE_TTL.total_seconds() // 3600)
-    base_url = str(request.base_url).rstrip("/")
-    background.add_task(
-        ctx.env.mailer.send,
-        target,
-        *mail.email_change_email(
-            f"{base_url}/confirm-email/{token}",
-            target,
-            hours,
-            ctx=ctx.env.mail_context(),
         ),
     )
-    background.add_task(
-        ctx.env.mailer.send,
-        was,
-        *mail.email_change_requested_email(target, f"{base_url}/account", hours),
-    )
     return PendingEmailOut(
-        pending_email=target,
+        pending_email=account.pending_email,
         email_change_expires_at=account.email_change_expires_at,
     )
 
 
 @router.delete("/email-change", status_code=204)
-async def cancel_email_change(ctx: CtxDep) -> None:
+async def cancel_email_change(ctx: CtxDep, background: BackgroundTasks) -> None:
     """Call off a pending address change, killing its link. Idempotent."""
-    (await service.cancel_email_change(ctx.session, ctx.actor.user.id)).unwrap()
-    audit_log(
-        "auth.email_change_cancelled",
-        user=f"{ctx.actor.user.id}:{ctx.actor.user.email}",
-        via="api",
+    dispatch(
+        ctx,
+        background,
+        await service.cancel_email_change(ctx.session, ctx.actor.user.id),
     )
 
 
@@ -207,29 +181,22 @@ async def confirm_email_change(
     unknown, expired or already-spent link answers 404 the same way, saying
     nothing about which it was."""
     env = env_of(request)
-    async with db_session() as session:
-        result = await service.confirm_email_change(
-            session, data.token, now=env.clock.now()
-        )
+    now = env.clock.now()
+    async with transaction(env, None) as session:
+        result = await service.confirm_email_change(session, data.token, now=now)
         match result:
             case Err(NotFound()):
                 raise HTTPException(404, "that link is not valid any more")
             case Err(err):
                 raise HTTPException(422, message(err))
-        user, was = result.value
+        user, _was = result.value.value
         out = UserOut.model_validate(user)
         out.has_password = user.password_hash is not None
         out.invite_token = out.invite_expires_at = None
-        user_id, now = user.id, user.email
-    audit_log("auth.email_changed", user=f"{user_id}:{now}", via="api")
-    base_url = str(request.base_url).rstrip("/")
-    # the receipt goes to the mailbox the account moved AWAY from (§4.1.2): that
-    # address is owed the last word, and on a hijacked-session takeover it is the
-    # only independent channel that can surface it. `now` names the new address.
-    background.add_task(
-        env.mailer.send,
-        was,
-        *mail.email_change_done_email(now, f"{base_url}/login"),
+    # after the commit: the receipt to the mailbox the account moved AWAY from
+    # (§4.1.2) is the policy's, from the EmailChanged event
+    await perform(
+        env, result.value.events, base_url=str(request.base_url).rstrip("/"), now=now
     )
     return out
 
@@ -249,13 +216,14 @@ async def redeem_invite(
     The API mints invite tokens (POST /volunteers/{id}/invite, POST /users) but
     until now nothing could spend one."""
     env = env_of(request)
-    async with db_session() as session:
+    now = env.clock.now()
+    async with transaction(env, None) as session:
         redeemed = await service.redeem_invite(
             session,
             data.token,
             data.password,
             agreed_to_confidentiality=data.agreed_to_confidentiality,
-            now=env.clock.now(),
+            now=now,
             site_terms=env.password_terms,
         )
         match redeemed:
@@ -263,21 +231,12 @@ async def redeem_invite(
                 raise HTTPException(404, "that link is not valid any more")
             case Err(err):
                 raise HTTPException(422, message(err))
-        user = redeemed.value
+        user = redeemed.value.value
         out = UserOut.model_validate(user)
         out.has_password = user.password_hash is not None
         out.invite_token = out.invite_expires_at = None
-        addr, has_password = user.email, user.password_hash is not None
-        audit_log(
-            "auth.invite_redeemed",
-            user=f"{user.id}:{addr}",
-            confidentiality_agreed=True,
-            via="api",
-        )
-    base_url = str(request.base_url).rstrip("/")
-    background.add_task(
-        env.mailer.send,
-        addr,
-        *mail.welcome_email(f"{base_url}/login", has_password=has_password),
+    # after the commit: the welcome, from the InviteRedeemed event
+    await perform(
+        env, redeemed.value.events, base_url=str(request.base_url).rstrip("/"), now=now
     )
     return out

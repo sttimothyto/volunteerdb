@@ -9,7 +9,7 @@ from volunteerdb.services import users, volunteers
 from volunteerdb.services.users import _token_digest
 
 from tests import mint
-from tests.fp_helpers import ok, refused
+from tests.fp_helpers import done, ok, otp_started, refused
 
 
 async def test_bulk_provision_dedupes_and_skips(database):
@@ -279,7 +279,7 @@ async def test_reissue_invite_invalidates_password(database):
             )
         ).is_err()
 
-        redeemed = ok(
+        redeemed = done(
             await users.redeem_invite(
                 session,
                 invite,
@@ -287,7 +287,7 @@ async def test_reissue_invite_invalidates_password(database):
                 agreed_to_confidentiality=True,
                 now=mint.now(),
             )
-        )
+        ).value
         assert redeemed is not None and redeemed.invite_token is None
         assert (
             await users.redeem_invite(
@@ -314,7 +314,7 @@ async def test_set_password_clears_invite_and_missing_raises(database):
         )
         assert user.invite_token is not None and user.password_hash is None
 
-        ok(await users.set_password(session, user.id, "fresh-pass-phrase-1"))
+        done(await users.set_password(session, user.id, "fresh-pass-phrase-1"))
         assert user.invite_token is None
         assert (
             await users.authenticate(
@@ -359,7 +359,7 @@ async def test_invite_links_expire(database):
         assert user.invite_token is not None, "and is not silently consumed"
 
         # the account is not stranded: an emailed code still signs it in
-        _, code = ok(
+        _, code = otp_started(
             await users.start_otp_login(
                 session, "slow@example.org", now=mint.now(), code=mint.code()
             )
@@ -699,11 +699,11 @@ async def test_redeem_invite_requires_confidentiality_agreement(database):
         assert user.invite_token is not None, "a refused redemption spends nothing"
         assert user.confidentiality_agreed_at is None
 
-        redeemed = ok(
+        redeemed = done(
             await users.redeem_invite(
                 session, token, None, agreed_to_confidentiality=True, now=mint.now()
             )
-        )
+        ).value
         assert redeemed is not None
         assert redeemed.confidentiality_agreed_at is not None
 
@@ -720,7 +720,7 @@ async def test_clear_password_drops_api_access_too(database):
         )
         token = ok(await users.issue_api_token(session, user.id, token=mint.token()))
 
-        ok(await users.clear_password(session, user.id))
+        done(await users.clear_password(session, user.id))
         assert user.password_hash is None
         assert await users.authenticate_token(session, token) is None, (
             "tokens are issued against a password; removing it revokes them"

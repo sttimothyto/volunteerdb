@@ -5,14 +5,13 @@ from starlette.responses import RedirectResponse
 
 from .. import passwords
 from ..config import settings
-from ..db import db_session
+from ..db import transaction
+from ..domain import OtpRequested, SignedIn, SignInFailed
 from ..env import current
 from ..errors import Invalid
 from ..fp import Err, Ok
-from ..log import audit_log
-from ..services import mail
 from ..services import users as user_service
-from .context import establish_session, session_user_id
+from .context import establish_session, perform, session_user_id, throttled
 from .logo_dialog import logo_img
 from .theme import apply_theme
 
@@ -42,6 +41,7 @@ def login_page(request: Request, redirect_to: str = "/"):
 
     pending_email = ""
     ip = request.client.host if request.client else "unknown"
+    base_url = str(request.base_url).rstrip("/")
     env = current()
 
     def finish(user_id: int, method: str) -> None:
@@ -55,29 +55,31 @@ def login_page(request: Request, redirect_to: str = "/"):
             ui.notify("Enter your email address", color="warning")
             return
         if password.value:
-            keys = (f"pw:{addr.lower()}", f"pw-ip:{ip}")
-            if env.throttle.blocked(keys[0], now) or env.throttle.blocked(keys[1], now):
+            if throttled(f"pw:{addr.lower()}", f"pw-ip:{ip}", now=now):
                 logger.warning("auth.throttled", method="password", email=addr, ip=ip)
                 ui.notify(
                     "Too many failed attempts — try again in a few minutes.",
                     color="negative",
                 )
                 return
-            async with db_session() as session:
+            async with transaction(env, None) as session:
                 signed = await user_service.authenticate(
                     session, addr, password.value, now=now
                 )
             if isinstance(signed, Err):
-                for key in keys:
-                    env.throttle.hit(key, now)
                 logger.warning(
                     "auth.login_failed", method="password", email=addr, ip=ip
+                )
+                await perform(
+                    [SignInFailed("password", addr, ip)], base_url=base_url, now=now
                 )
                 ui.notify("Invalid email or password", color="negative")
                 return
             user = signed.value
-            audit_log(
-                "auth.login", method="password", user=f"{user.id}:{user.email}", ip=ip
+            await perform(
+                [SignedIn(user.id, user.email, "password", ip)],
+                base_url=base_url,
+                now=now,
             )
             finish(user.id, "password")
         else:
@@ -87,23 +89,24 @@ def login_page(request: Request, redirect_to: str = "/"):
         nonlocal pending_email
         now = env.clock.now()
         addr = (email.value or "").strip()
-        if env.throttle.blocked(f"otp-ip:{ip}", now):
+        if throttled(f"otp-ip:{ip}", now=now):
             logger.warning("auth.throttled", method="otp", email=addr, ip=ip)
             ui.notify(
                 "Too many code requests from this device — try again later.",
                 color="negative",
             )
             return
-        env.throttle.hit(f"otp-ip:{ip}", now)
-        audit_log("auth.otp_requested", email=addr, ip=ip)
-        async with db_session() as session:
+        async with transaction(env, None) as session:
             result = await user_service.start_otp_login(
                 session, addr, now=now, code=env.rng.otp_code()
             )
+        # The request is charged and logged whether or not the account exists
+        # (no enumeration); a fresh code -- the service says when, a live one
+        # is not resent -- is what gets mailed.
+        events = [OtpRequested(addr, ip)]
         if isinstance(result, Ok):
-            user, code = result.value
-            if code is not None:  # None: throttled, a live code is already out
-                await mail.send_email(user.email, *mail.otp_email(code))
+            events.extend(result.value.events)
+        await perform(events, base_url=base_url, now=now)
         # Identical response whether or not the account exists (no enumeration).
         pending_email = addr
         code_hint.set_text(f"Enter the 6-digit code emailed to {addr}")
@@ -112,9 +115,10 @@ def login_page(request: Request, redirect_to: str = "/"):
         ui.notify("If that address has an account, a sign-in code is on its way.")
 
     async def verify() -> None:
-        async with db_session() as session:
+        now = env.clock.now()
+        async with transaction(env, None) as session:
             verified = await user_service.verify_otp(
-                session, pending_email, code_input.value or "", now=env.clock.now()
+                session, pending_email, code_input.value or "", now=now
             )
         if isinstance(verified, Err):
             logger.warning(
@@ -127,7 +131,9 @@ def login_page(request: Request, redirect_to: str = "/"):
             )
             return
         user = verified.value
-        audit_log("auth.login", method="otp", user=f"{user.id}:{user.email}", ip=ip)
+        await perform(
+            [SignedIn(user.id, user.email, "otp", ip)], base_url=base_url, now=now
+        )
         finish(user.id, "otp")
 
     def show_step(step: ui.column) -> None:
@@ -198,7 +204,7 @@ def login_page(request: Request, redirect_to: str = "/"):
 @ui.page("/invite/{token}")
 def invite_page(token: str, request: Request):
     apply_theme()
-    login_url = f"{str(request.base_url).rstrip('/')}/login"
+    base_url = str(request.base_url).rstrip("/")
 
     env = current()
 
@@ -222,13 +228,14 @@ def invite_page(token: str, request: Request):
             if pw != confirm.value:
                 ui.notify("The two passwords don't match", color="negative")
                 return
-        async with db_session() as session:
+        now = env.clock.now()
+        async with transaction(env, None) as session:
             redeemed = await user_service.redeem_invite(
                 session,
                 token,
                 pw or None,
                 agreed_to_confidentiality=agree.value,
-                now=env.clock.now(),
+                now=now,
                 site_terms=env.password_terms,
             )
         if isinstance(redeemed, Err):
@@ -242,15 +249,8 @@ def invite_page(token: str, request: Request):
                 timeout=10000,
             )
             return
-        user = redeemed.value
-        audit_log(
-            "auth.invite_redeemed",
-            user=f"{user.id}:{user.email}",
-            confidentiality_agreed=True,
-        )
-        await mail.send_email(
-            user.email, *mail.welcome_email(login_url, has_password=bool(pw))
-        )
+        user = redeemed.value.value
+        await perform(redeemed.value.events, base_url=base_url, now=now)
         establish_session(user.id, remember=remember.value, method="invite")
         ui.notify(
             "Welcome! Your password is set."
@@ -323,22 +323,21 @@ async def confirm_email_page(token: str, request: Request):
     account was reachable at is owed the news that it no longer is.
     """
     apply_theme()
-    login_url = f"{str(request.base_url).rstrip('/')}/login"
+    base_url = str(request.base_url).rstrip("/")
+    login_url = f"{base_url}/login"
     env = current()
-    async with db_session() as session:
+    async with transaction(env, None) as session:
         account = await user_service.pending_email_change(
             session, token, now=env.clock.now()
         )
         target = account.pending_email if account is not None else None
 
     async def apply() -> None:
-        async with db_session() as session:
-            # confirm_email_change hands back the outgoing address: this
-            # mailbox is owed the receipt (§4.1.2) for a binding that just
-            # changed, and the instance is mutated in place
-            result = await user_service.confirm_email_change(
-                session, token, now=env.clock.now()
-            )
+        now = env.clock.now()
+        async with transaction(env, None) as session:
+            # the EmailChanged event names the outgoing address: that mailbox
+            # is owed the receipt (§4.1.2) for a binding that just changed
+            result = await user_service.confirm_email_change(session, token, now=now)
         match result:
             case Err(Invalid(text, _)):  # the address went to somebody else first
                 _show_dead_link(body, login_url, text)
@@ -347,13 +346,9 @@ async def confirm_email_page(token: str, request: Request):
                 logger.warning("auth.email_change_invalid")
                 _show_dead_link(body, login_url)
                 return
-        user, was = result.value
-        audit_log("auth.email_changed", user=f"{user.id}:{user.email}")
+        user, _was = result.value.value
+        await perform(result.value.events, base_url=base_url, now=now)
         settled = user.email
-        if was:
-            await mail.send_email(
-                was, *mail.email_change_done_email(settled, login_url)
-            )
         body.clear()
         with body:
             ui.label("Address confirmed").classes("text-2xl vdb-brand")

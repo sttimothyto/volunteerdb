@@ -32,15 +32,12 @@ THROTTLE_READS = frozenset({"snapshot"})
 
 # What the tree carried when the sweep was written: module -> name -> count.
 BASELINE: dict[str, dict[str, int]] = {
-    "api/auth.py": {"audit_log": 7, "throttle": 8},
     "api/events.py": {"audit_log": 1},
     "api/volunteers.py": {"audit_log": 2},
     "services/roster_sheets.py": {"audit_log": 2},
-    "ui/account_page.py": {"audit_log": 4, "send_email": 4, "throttle": 5},
     "ui/events_page.py": {"audit_log": 1},
     "ui/invites.py": {"audit_log": 1, "send_email": 1},
-    "ui/login.py": {"audit_log": 5, "send_email": 3, "throttle": 5},
-    "ui/volunteers_page.py": {"audit_log": 2, "send_email": 3, "throttle": 2},
+    "ui/volunteers_page.py": {"audit_log": 1, "send_email": 1, "throttle": 2},
 }
 
 

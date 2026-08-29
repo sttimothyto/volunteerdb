@@ -18,7 +18,7 @@ from fastapi import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import effects, policy
+from .. import effects, policy, throttle
 from ..actors import load_actor
 from ..asof_param import parse_as_of
 from ..domain import NotifyMode, Outcome
@@ -208,6 +208,28 @@ def dispatch[T](
     if planned:
         background.add_task(effects.run, planned, ctx.env)
     return value
+
+
+def throttled(env: Env, *keys: str, now: datetime) -> bool:
+    """A front door's own pre-check, over the ledger as a value."""
+    ledger = env.throttle.snapshot()
+    return any(throttle.blocked(ledger, key, now) for key in keys)
+
+
+async def perform(
+    env: Env, events, *, base_url: str, now: datetime
+) -> effects.EffectReport:
+    """For the unauthenticated routes (sign-in, redeem, confirm) and for a
+    fact the route itself states (a failed attempt): plan the events and run
+    their effects now, after the caller's transaction."""
+    ctx = policy.PolicyCtx(
+        now=now,
+        base_url=base_url,
+        notify=NotifyMode.digest,
+        throttle=env.throttle.snapshot(),
+        copy=env.mail_context(),
+    )
+    return await effects.run(policy.plan(events, ctx), env)
 
 
 def _split[T](value: Outcome[T] | T) -> tuple[T, tuple]:

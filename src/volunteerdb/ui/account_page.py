@@ -22,14 +22,19 @@ from nicegui import ui
 
 from .. import passwords
 from ..auth import async_verify_password
+from ..domain import EmailChangeAttempted, SignInFailed
 from ..env import current as current_env
-from ..log import audit_log
-from ..services import mail
 from ..services import users as user_service
 from .calendar_panel import subscribe_panel
-from .context import action_session, notify_errors, page_session, session_auth_method
+from .context import (
+    PageCtx,
+    page_session,
+    perform,
+    run_command,
+    session_auth_method,
+    throttled,
+)
 from .layout import frame
-from .login import confirm_email_url
 
 logger = structlog.get_logger(__name__)
 
@@ -37,8 +42,6 @@ logger = structlog.get_logger(__name__)
 @ui.page("/account")
 async def account_page(request: Request):
     base_url = str(request.base_url).rstrip("/")
-    login_url = f"{base_url}/login"
-    account_url = f"{base_url}/account"
     ip = request.client.host if request.client else "unknown"
     async with page_session() as (session, actor):
         user = actor.user
@@ -62,7 +65,6 @@ async def account_page(request: Request):
             )
         ).unwrap()
 
-    @notify_errors
     async def request_email_change() -> None:
         addr = (new_email.value or "").strip()
         if not addr:
@@ -70,10 +72,8 @@ async def account_page(request: Request):
             return
         # The budget is on *sends*, not failures: what is worth abusing here is
         # the parish's sender, one address at a time.
-        key = f"email-change:{user_id}"
-        env = current_env()
-        now = env.clock.now()
-        if env.throttle.blocked(key, now):
+        now = current_env().clock.now()
+        if throttled(f"email-change:{user_id}", now=now):
             ui.notify(
                 "Too many address changes requested — try again in a few minutes.",
                 color="negative",
@@ -82,50 +82,42 @@ async def account_page(request: Request):
         # charge every attempt, before the service can reveal whether the
         # address is taken: a failed probe must count too, or it is an
         # unthrottled account-existence oracle.
-        env.throttle.hit(key, now)
-        async with action_session() as (session, actor):
-            account, token = (
-                await user_service.start_email_change(
-                    session, actor.user.id, addr, now=now, token=env.rng.token()
-                )
-            ).unwrap()
-            target = account.pending_email
-        audit_log("auth.email_change_requested", user=f"{user_id}:{email}", to=target)
-        # Both after the commit. The new address gets the proof — it is only a
-        # claim until somebody reads mail there — and the old address gets a
-        # warning it can still act on (§4.1.2: the notice travels a channel the
-        # browser making the change cannot suppress).
-        hours = int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600)
-        await mail.send_email(
-            target,
-            *mail.email_change_email(
-                confirm_email_url(base_url, token),
-                target,
-                hours,
-                ctx=current_env().mail_context(),
+        await perform([EmailChangeAttempted(user_id)], base_url=base_url, now=now)
+
+        async def command(ctx: PageCtx):
+            return await user_service.start_email_change(
+                ctx.session,
+                ctx.actor.user.id,
+                addr,
+                now=ctx.now,
+                token=ctx.env.rng.token(),
+            )
+
+        def done(value, _effects) -> None:
+            account, _token = value
+            ui.notify(
+                f"Confirmation sent to {account.pending_email}. Nothing changes "
+                "until the link in it is opened.",
+                color="positive",
+                multi_line=True,
+                timeout=8000,
+            )
+
+        await run_command(command, on_ok=done)
+
+    async def drop_email_change() -> None:
+        async def command(ctx: PageCtx):
+            return await user_service.cancel_email_change(
+                ctx.session, ctx.actor.user.id
+            )
+
+        await run_command(
+            command,
+            on_ok=lambda _v, _e: ui.notify(
+                "Address change cancelled — the link no longer works."
             ),
         )
-        await mail.send_email(
-            email, *mail.email_change_requested_email(target, account_url, hours)
-        )
-        ui.notify(
-            f"Confirmation sent to {target}. Nothing changes until the link "
-            "in it is opened.",
-            color="positive",
-            multi_line=True,
-            timeout=8000,
-        )
-        ui.navigate.reload()
 
-    @notify_errors
-    async def drop_email_change() -> None:
-        async with action_session() as (session, actor):
-            (await user_service.cancel_email_change(session, actor.user.id)).unwrap()
-        audit_log("auth.email_change_cancelled", user=f"{user_id}:{email}")
-        ui.notify("Address change cancelled — the link no longer works.")
-        ui.navigate.reload()
-
-    @notify_errors
     async def save() -> None:
         new, again = new_password.value or "", confirm.value or ""
         weak = passwords.problem(
@@ -141,35 +133,34 @@ async def account_page(request: Request):
             # Failed attempts here count against the same budgets as failed
             # sign-ins for this account (SP 800-63B §3.2.2): the per-account
             # bucket AND the per-IP flood bucket, exactly as the login page does.
-            keys = (f"pw:{email.lower()}", f"pw-ip:{ip}")
-            env = current_env()
-            now = env.clock.now()
-            if env.throttle.blocked(keys[0], now) or env.throttle.blocked(keys[1], now):
+            now = current_env().clock.now()
+            if throttled(f"pw:{email.lower()}", f"pw-ip:{ip}", now=now):
                 ui.notify(
                     "Too many failed attempts — try again in a few minutes.",
                     color="negative",
                 )
                 return
             if not await async_verify_password(stored_hash, current.value or ""):
-                for key in keys:
-                    env.throttle.hit(key, now)
                 logger.warning("auth.password_change_denied", email=email)
+                await perform(
+                    [SignInFailed("password", email, ip)], base_url=base_url, now=now
+                )
                 ui.notify("That is not your current password", color="negative")
                 return
-        async with action_session() as (session, actor):
-            (
-                await user_service.set_password(
-                    session, actor.user.id, new, site_terms=current_env().password_terms
-                )
-            ).unwrap()
-        audit_log("auth.password_set", user=f"{user.id}:{email}", via="self-service")
-        await mail.send_email(email, *mail.password_changed_email(login_url))
-        ui.notify(
-            "Password saved. You can sign in with it from now on.", color="positive"
-        )
-        ui.navigate.reload()
 
-    @notify_errors
+        async def command(ctx: PageCtx):
+            return await user_service.set_password(
+                ctx.session, ctx.actor.user.id, new, site_terms=ctx.env.password_terms
+            )
+
+        await run_command(
+            command,
+            on_ok=lambda _v, _e: ui.notify(
+                "Password saved. You can sign in with it from now on.",
+                color="positive",
+            ),
+        )
+
     async def remove() -> None:
         with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
             ui.label(
@@ -184,14 +175,16 @@ async def account_page(request: Request):
                 ).props("color=negative")
         if not await dialog:
             return
-        async with action_session() as (session, actor):
-            (await user_service.clear_password(session, actor.user.id)).unwrap()
-        audit_log("auth.password_cleared", user=f"{user.id}:{email}")
-        await mail.send_email(
-            email, *mail.password_changed_email(login_url, removed=True)
+
+        async def command(ctx: PageCtx):
+            return await user_service.clear_password(ctx.session, ctx.actor.user.id)
+
+        await run_command(
+            command,
+            on_ok=lambda _v, _e: ui.notify(
+                "Password removed — you now sign in with emailed codes."
+            ),
         )
-        ui.notify("Password removed — you now sign in with emailed codes.")
-        ui.navigate.reload()
 
     with frame("Your account", actor):
         with ui.card().classes("w-full max-w-xl gap-2"):

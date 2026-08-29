@@ -12,7 +12,7 @@ from volunteerdb.ui.context import parse_as_of
 
 from tests import mint
 from tests.conftest import _token
-from tests.fp_helpers import ok
+from tests.fp_helpers import done, ok
 
 
 async def test_login_and_me(client, seeded):
@@ -414,7 +414,7 @@ async def test_a_pending_address_change_shows_on_your_own_account(client, seeded
 
     async with db_session() as session:
         account = await users.get_by_email(session, "member@example.org")
-        ok(
+        done(
             await users.start_email_change(
                 session,
                 account.id,

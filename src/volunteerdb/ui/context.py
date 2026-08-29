@@ -10,7 +10,7 @@ from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import asof_param, effects, policy
+from .. import asof_param, effects, policy, throttle
 from ..actors import load_actor
 from ..db import transaction
 from ..domain import Outcome
@@ -244,6 +244,31 @@ async def run_command[T](
     if reload:
         ui.navigate.reload()
     return Ok(value)
+
+
+def throttled(*keys: str, now: datetime) -> bool:
+    """A front door's own pre-check, over the ledger as a VALUE (the cell is
+    only read): a throttled sign-in must not even reach authenticate()."""
+    ledger = current().throttle.snapshot()
+    return any(throttle.blocked(ledger, key, now) for key in keys)
+
+
+async def perform(
+    events, *, base_url: str, now: datetime | None = None
+) -> effects.EffectReport:
+    """The interpreter for a page with no signed-in actor (sign-in, an invite,
+    a confirmation link) and for a fact the edge itself states (a failed
+    attempt, a code requested): plan the events and run their effects now.
+    The caller does this AFTER its transaction, as run_command does."""
+    env = current()
+    ctx = policy.PolicyCtx(
+        now=now if now is not None else env.clock.now(),
+        base_url=base_url,
+        notify=env.notify,
+        throttle=env.throttle.snapshot(),
+        copy=env.mail_context(),
+    )
+    return await effects.run(policy.plan(events, ctx), env)
 
 
 def toast(err: DomainError) -> None:

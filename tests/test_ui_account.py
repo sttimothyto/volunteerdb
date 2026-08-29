@@ -19,19 +19,15 @@ from volunteerdb.services import mail, memberships, teams, users, volunteers
 
 from .conftest import SLOW, mail_to
 from tests import mint
+from tests.fakes import SIM_MAILER
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def test_otp_session_sets_a_password_without_the_old_one(database, monkeypatch):
-    sent: list[tuple[str, str, str]] = []
-
-    async def fake_send(to: str, subject: str, body: str) -> bool:
-        sent.append((to, subject, body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake_send)
+    SIM_MAILER.sent.clear()
+    sent = SIM_MAILER.sent
 
     async with db_session() as session:
         user, _ = ok(
@@ -133,13 +129,8 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
 ):
     """The whole flow at the surface: ask on /account, nothing moves, open the
     link that lands in the new mailbox, and both addresses move together."""
-    sent: list[tuple[str, str, str]] = []
-
-    async def fake_send(to: str, subject: str, body: str) -> bool:
-        sent.append((to, subject, body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake_send)
+    SIM_MAILER.sent.clear()
+    sent = SIM_MAILER.sent
 
     async with db_session() as session:
         maria = ok(

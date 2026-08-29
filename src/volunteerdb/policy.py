@@ -19,10 +19,21 @@ from datetime import datetime
 
 from . import throttle
 from .domain import (
+    ApiTokenIssued,
     DomainEvent,
+    EmailChangeAttempted,
+    EmailChangeCancelled,
+    EmailChanged,
+    EmailChangeRequested,
     EventCancelled,
+    InviteRedeemed,
     NotifyMode,
+    OtpIssued,
+    OtpRequested,
+    PasswordChanged,
     SelfRemoved,
+    SignedIn,
+    SignInFailed,
     SlotHandedOver,
     SubClaimed,
     SubRequested,
@@ -60,7 +71,109 @@ def plan_one(event: DomainEvent, ctx: PolicyCtx) -> tuple[Effect, ...]:
             return _self_removed(event, ctx)
         case EventCancelled():
             return _event_cancelled(event, ctx)
+        # sign-in and the account: mailed and logged whichever door, because
+        # these notices are the account's, not the roster's (SP 800-63B §4.1.2
+        # wants them on a channel the session making the change cannot suppress)
+        case OtpRequested(email=email, ip=ip):
+            return (
+                ThrottleHit(f"otp-ip:{ip}"),
+                Audit("auth.otp_requested", (("email", email), ("ip", ip))),
+            )
+        case OtpIssued(email=email, code=code):
+            return (SendMail(email, *mail.otp_email(code)),)
+        case SignInFailed(email=email, ip=ip):
+            # the per-account bucket AND the per-IP flood bucket (SP 800-63B
+            # §3.2.2): a spray across many accounts from one place is throttled too
+            return (ThrottleHit(f"pw:{email.lower()}"), ThrottleHit(f"pw-ip:{ip}"))
+        case SignedIn(user_id=user_id, email=email, method=method, ip=ip):
+            return (
+                Audit(
+                    "auth.login",
+                    (("method", method), ("user", f"{user_id}:{email}"), ("ip", ip)),
+                ),
+            )
+        case ApiTokenIssued(user_id=user_id, email=email, ip=ip):
+            return (
+                Audit(
+                    "auth.api_token_issued",
+                    (("user", f"{user_id}:{email}"), ("ip", ip)),
+                ),
+            )
+        case PasswordChanged(user_id=user_id, email=email, removed=removed):
+            return (
+                Audit(
+                    "auth.password_cleared" if removed else "auth.password_set",
+                    (("user", f"{user_id}:{email}"),),
+                ),
+                SendMail(
+                    email,
+                    *mail.password_changed_email(
+                        f"{ctx.base_url}/login", removed=removed
+                    ),
+                ),
+            )
+        case EmailChangeAttempted(user_id=user_id):
+            return (ThrottleHit(f"email-change:{user_id}"),)
+        case EmailChangeRequested():
+            return _email_change_requested(event, ctx)
+        case EmailChangeCancelled(user_id=user_id, email=email):
+            return (
+                Audit("auth.email_change_cancelled", (("user", f"{user_id}:{email}"),)),
+            )
+        case EmailChanged(user_id=user_id, was=was, now=now):
+            # the receipt goes to the mailbox the account moved AWAY from
+            # (§4.1.2): that address is owed the last word, and on a hijacked-
+            # session takeover it is the only independent channel left
+            return (
+                Audit("auth.email_changed", (("user", f"{user_id}:{now}"),)),
+                SendMail(
+                    was, *mail.email_change_done_email(now, f"{ctx.base_url}/login")
+                ),
+            )
+        case InviteRedeemed(user_id=user_id, email=email, has_password=has_password):
+            return (
+                Audit(
+                    "auth.invite_redeemed",
+                    (("user", f"{user_id}:{email}"), ("confidentiality_agreed", True)),
+                ),
+                SendMail(
+                    email,
+                    *mail.welcome_email(
+                        f"{ctx.base_url}/login", has_password=has_password
+                    ),
+                ),
+            )
     return ()
+
+
+def _email_change_requested(
+    event: EmailChangeRequested, ctx: PolicyCtx
+) -> tuple[Effect, ...]:
+    """Both after the commit. The new address gets the proof -- it is only a
+    claim until somebody reads mail there -- and the old address gets a
+    warning it can still act on (§4.1.2: the notice travels a channel the
+    browser making the change cannot suppress)."""
+    return (
+        Audit(
+            "auth.email_change_requested",
+            (("user", f"{event.user_id}:{event.old_email}"), ("to", event.new_email)),
+        ),
+        SendMail(
+            event.new_email,
+            *mail.email_change_email(
+                f"{ctx.base_url}/confirm-email/{event.token}",
+                event.new_email,
+                event.ttl_hours,
+                ctx=ctx.copy,
+            ),
+        ),
+        SendMail(
+            event.old_email,
+            *mail.email_change_requested_email(
+                event.new_email, f"{ctx.base_url}/account", event.ttl_hours
+            ),
+        ),
+    )
 
 
 def _when(starts_at: datetime, ends_at: datetime, ctx: PolicyCtx) -> str:

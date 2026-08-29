@@ -13,7 +13,7 @@ from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
 from tests import mint
-from tests.fp_helpers import ok
+from tests.fp_helpers import ok, otp_started
 
 
 def _by_event(records, event):
@@ -116,7 +116,7 @@ async def test_secrets_never_logged(database, log_records):
     async with db_session() as session:
         token = ok(await users.issue_api_token(session, user.id, token=mint.token()))
     async with db_session() as session:
-        result = ok(
+        result = otp_started(
             await users.start_otp_login(
                 session, "sec@example.org", now=mint.now(), code=mint.code()
             )
