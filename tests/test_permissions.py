@@ -5,12 +5,12 @@ from datetime import date
 import pytest
 
 from volunteerdb.actors import load_actor
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.permissions import volunteer_team_ids
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 

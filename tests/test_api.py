@@ -4,14 +4,13 @@ import asyncio
 from datetime import UTC, date, datetime
 
 from volunteerdb.api.deps import as_of_param
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import custom_fields as custom_fields_service
 from volunteerdb.services import memberships, users, volunteers
 from volunteerdb.ui.context import parse_as_of
 
 from tests import mint
-from tests.conftest import _token
+from tests.conftest import _token, db_session
 from tests.fp_helpers import done, ok
 
 

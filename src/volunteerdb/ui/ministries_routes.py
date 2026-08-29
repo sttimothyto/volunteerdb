@@ -14,7 +14,8 @@ from fastapi import HTTPException
 from nicegui import app
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from ..db import db_session
+from ..db import transaction
+from ..env import current as current_env
 from ..models import Team, TeamPageImage
 from ..services import pages as page_service
 from ..services import teams as team_service
@@ -98,7 +99,7 @@ async def ministries_redirect() -> RedirectResponse:
 
 
 async def ministries_index() -> HTMLResponse:
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         published = await page_service.published_teams(session)
         paths = (await team_service.tree(session)).paths
     slugs = page_service.slug_map(paths)
@@ -131,7 +132,7 @@ async def _resolve_slug(session, slug: str) -> tuple[Team | None, dict[int, str]
 
 
 async def ministry_page(slug: str) -> HTMLResponse:
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         team, paths = await _resolve_slug(session, slug)
         # one row for the one team — never every published page's html
         page = (
@@ -163,7 +164,7 @@ async def ministry_image(team_id: int, seq: int, v: str | None = None) -> Respon
     hashed URL names exact bytes, so it is served immutable (the photos-route
     pattern). Bare URLs — html cached before hashing shipped — keep the short
     lifetime."""
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         row = (
             await session.execute(
                 sa.select(TeamPageImage)

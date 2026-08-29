@@ -12,9 +12,10 @@ from datetime import date, timedelta
 
 import sqlalchemy as sa
 
-from volunteerdb.db import db_session
 from volunteerdb.models import MailQuota
 from volunteerdb.services import mail_quota
+
+from tests.conftest import db_session
 
 MAY = date(2026, 5, 15)  # a 31-day month, halfway through
 

@@ -4,9 +4,9 @@ from io import BytesIO
 
 from PIL import Image
 
-from volunteerdb.db import db_session
 from volunteerdb.services import photos, teams, volunteers
 
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 

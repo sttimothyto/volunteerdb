@@ -2,11 +2,11 @@
 filename each answers with, and that an anonymous browser is sent to sign
 in rather than served."""
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 

@@ -2,11 +2,11 @@
 
 import httpx
 
-from volunteerdb.db import db_session
 from volunteerdb.jobs import fetch_pages
 from volunteerdb.models import TeamPage
 from volunteerdb.services import pages, teams
 
+from tests.conftest import db_session
 from tests.fakes import FakeHttp
 from tests.fp_helpers import ok
 

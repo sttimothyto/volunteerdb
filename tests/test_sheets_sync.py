@@ -17,12 +17,12 @@ from io import StringIO
 import pytest
 import sqlalchemy as sa
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole, membership_history
 from volunteerdb.services import memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 

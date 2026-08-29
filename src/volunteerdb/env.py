@@ -323,10 +323,8 @@ def build(
     """The real thing, with any part swappable. Composition roots only."""
     config = config if config is not None else settings()
     if engine is None:
-        engine = db.engine()
-        sessions = db.sessionmaker()
-    else:
-        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        engine = db.make_engine(config.database_url)
+    sessions = db.make_sessions(engine)
     clock = clock if clock is not None else SystemClock()
     http = http if http is not None else HttpxClients()
     quota = QuotaCell()

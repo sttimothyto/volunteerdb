@@ -14,13 +14,13 @@ import pytest
 from nicegui import app, ui
 from nicegui.testing.user_simulation import user_simulation
 
-from volunteerdb.db import db_session
 from volunteerdb.models import FieldType
 from volunteerdb.services import custom_fields as custom_field_service
 from volunteerdb.ui import column_order
 from volunteerdb.ui.context import clear_session
 
 from .test_ui_teams import SIM_MAIN, _parish, _table
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 TEAMS_DEFAULT = ["team", "leader", "second", "core", "member", "total", "gaps"]

@@ -15,10 +15,10 @@ from pathlib import Path
 from PIL import Image
 
 import volunteerdb.ui.logo_route
-from volunteerdb.db import db_session
 from volunteerdb.services import branding
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 
@@ -236,8 +236,9 @@ async def test_a_signed_in_browser_is_not_rotated_off_its_own_session(
     stale /login link, or lands on a dead invite link, must come away still
     signed in — rotating there would carry nothing over and read as a random
     logout."""
-    from volunteerdb.db import db_session
     from volunteerdb.services import users
+
+    from tests.conftest import db_session
 
     async with db_session() as session:
         user, _ = ok(

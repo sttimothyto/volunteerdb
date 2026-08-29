@@ -3,12 +3,12 @@
 import csv
 from io import StringIO
 
-from volunteerdb.db import db_session
 from volunteerdb.models import FieldType, TeamRole
 from volunteerdb.services import custom_fields, memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests.conftest import db_session
 from tests.fp_helpers import done, ok
 
 

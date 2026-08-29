@@ -26,7 +26,6 @@ from nicegui import ui
 from starlette.requests import Request
 
 from .. import query_lang, throttle
-from ..config import settings
 from ..effects import Effect, SendMail, ThrottleHit
 from ..env import current as current_env
 from ..errors import NotFound, not_found, require
@@ -59,7 +58,7 @@ SUB_REQUESTS_PER_TEAM_PER_DAY = throttle.LIMITS["sub-req"].hits
 
 
 def _tz() -> ZoneInfo:
-    return ZoneInfo(settings().timezone)
+    return current_env().tz
 
 
 def _status_badge(event) -> None:

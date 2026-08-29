@@ -13,7 +13,6 @@ import pytest
 
 from volunteerdb import errors
 from volunteerdb.actors import load_actor
-from volunteerdb.db import db_session, sessionmaker
 from volunteerdb.models import Team, TeamRole
 from volunteerdb.services import (
     events,
@@ -25,7 +24,8 @@ from volunteerdb.services import (
 )
 
 from .conftest import TEAM_TREE_SQL, _now, count_sql
-from tests import mint
+from tests import conftest, mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
 
@@ -174,7 +174,7 @@ async def test_a_home_doc_url_set_outside_the_teams_service_invalidates(parish):
 async def test_a_rolled_back_team_does_not_survive_in_the_memo(parish):
     """db_session() owns its transaction and rolling back inside its block closes
     it, so this drives a bare session to reach the after_rollback path."""
-    async with sessionmaker()() as session:
+    async with conftest.SESSIONS() as session:
         made = ok(await teams.create(session, None, "Provisional"))
         assert made.id in (await teams.tree(session)).paths
         await session.rollback()

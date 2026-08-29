@@ -8,13 +8,13 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from volunteerdb.db import db_session
 from volunteerdb.jobs import event_reminders
 from volunteerdb.models import TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fakes import FailingMailer
 from tests.fp_helpers import ok
 

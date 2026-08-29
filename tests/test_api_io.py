@@ -3,11 +3,11 @@
 import csv
 from io import StringIO
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 

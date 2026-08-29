@@ -4,7 +4,6 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 
-from volunteerdb.db import db_session
 from volunteerdb.models import (
     TeamRole,
     Volunteer,
@@ -15,6 +14,7 @@ from volunteerdb.models import (
 from volunteerdb.services import memberships, teams, volunteers
 
 from .conftest import _now
+from tests.conftest import db_session
 from tests.fp_helpers import done, ok
 
 

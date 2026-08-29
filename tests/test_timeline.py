@@ -9,10 +9,10 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from volunteerdb.config import settings
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 TZ = ZoneInfo(settings().timezone)

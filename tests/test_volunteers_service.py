@@ -1,11 +1,11 @@
 """Volunteer service: update sentinel semantics, search, normalization, impact."""
 
 from volunteerdb import errors
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import done, ok, refused
 
 

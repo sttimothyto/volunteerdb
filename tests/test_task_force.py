@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 
 from volunteerdb import errors
 from volunteerdb.actors import load_actor
-from volunteerdb.db import db_session
 from volunteerdb.jobs import task_force_cleanup
 from volunteerdb.models import Event, TeamRole
 from volunteerdb.permissions import volunteer_team_ids
@@ -16,6 +15,7 @@ from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, task_force, teams, users, volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import done, ok, refused
 
 TZ = ZoneInfo("America/Toronto")

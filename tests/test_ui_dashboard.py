@@ -12,12 +12,12 @@ from pathlib import Path
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"

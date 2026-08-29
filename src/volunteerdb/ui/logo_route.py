@@ -26,7 +26,8 @@ from fastapi import Request
 from nicegui import app
 from starlette.responses import Response
 
-from ..db import db_session
+from ..db import transaction
+from ..env import current as current_env
 from ..models import SiteLogo
 from ..services import branding
 from .assets import STATIC_DIR
@@ -57,7 +58,7 @@ def register() -> None:
 
 
 async def logo(request: Request) -> Response:
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         # just the timestamp: enough to answer a revalidation without ever
         # reading the blob, which is the common case on every page load
         stamp = (
@@ -75,7 +76,7 @@ async def logo(request: Request) -> Response:
         return Response(
             content=_placeholder(), media_type="image/svg+xml", headers=headers
         )
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         record = await branding.get(session)
     if record is None:  # deleted between the two reads; serve the fallback
         return Response(

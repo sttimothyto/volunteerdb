@@ -8,7 +8,8 @@ import asyncio
 import os
 import re
 import subprocess
-from contextlib import contextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -18,14 +19,18 @@ import sqlalchemy as sa
 import structlog
 from fastapi import FastAPI
 from nicegui.testing.user_simulation import user_simulation
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from volunteerdb import audit, db, log
 from volunteerdb import env as env_mod
 from volunteerdb.api import api_router
 from volunteerdb.api.deps import install_exception_handlers
 from volunteerdb.config import settings
-from volunteerdb.db import db_session
 from volunteerdb.log import shared_processors
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
@@ -49,6 +54,22 @@ TEST_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_test"
 # NiceGUI "main file" for user_simulation; see its docstring for why page module
 # imports have to happen inside the simulation's reset context.
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
+
+# The test engine, for the suite's own session helper below and for the
+# simulated app (tests/ui_sim_main.py builds its Env over it). Set by the
+# session-scoped `database` fixture; there is no process-global engine.
+ENGINE: AsyncEngine | None = None
+SESSIONS: async_sessionmaker[AsyncSession] | None = None
+
+
+@asynccontextmanager
+async def db_session(user_id: int | None = None) -> AsyncIterator[AsyncSession]:
+    """One unit of work on the test engine, for fixtures and test setup --
+    the same contract as db.transaction(), without an Env to hand in."""
+    assert SESSIONS is not None, "the database fixture has not run"
+    async with db._unit_of_work(SESSIONS, user_id) as session:
+        yield session
+
 
 # should_see budgets 3 retries x 0.1 s = 300 ms, which is the same order as one
 # argon2 pass: measured at 106 ms to hash and 63 ms to verify on an idle dev box,
@@ -97,7 +118,8 @@ def count_sql(pattern: str):
     """
     seen: list[str] = []
     matcher = re.compile(pattern)
-    engine = db.engine().sync_engine
+    assert ENGINE is not None, "the database fixture has not run"
+    engine = ENGINE.sync_engine
 
     def before(conn, cursor, statement, parameters, context, executemany):
         if matcher.search(statement):
@@ -161,9 +183,12 @@ async def database():
 
     settings.cache_clear()
     os.environ["VDB_DATABASE_URL"] = TEST_URL
-    engine = db.init(TEST_URL)
+    global ENGINE, SESSIONS
+    engine = db.make_engine(TEST_URL)
+    ENGINE, SESSIONS = engine, db.make_sessions(engine)
     yield engine
     await engine.dispose()
+    ENGINE = SESSIONS = None
 
 
 @pytest.fixture(scope="session")

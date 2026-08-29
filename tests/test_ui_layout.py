@@ -11,12 +11,12 @@ from nicegui.testing.user_simulation import user_simulation
 from PIL import Image
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from volunteerdb.db import db_session
 from volunteerdb.models import MailQuota
 from volunteerdb.services import mail_quota, photos, teams, users, volunteers
 
 from .conftest import SLOW
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"

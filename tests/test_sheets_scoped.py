@@ -6,13 +6,13 @@ from io import StringIO
 import pytest
 
 from volunteerdb import errors
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
 

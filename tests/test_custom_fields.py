@@ -4,10 +4,10 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from volunteerdb import errors
-from volunteerdb.db import db_session
 from volunteerdb.models import FieldType
 from volunteerdb.services import custom_fields, volunteers
 
+from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
 

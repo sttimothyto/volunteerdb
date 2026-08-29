@@ -9,14 +9,15 @@ from fastapi import HTTPException
 from nicegui import app
 from starlette.responses import Response
 
-from ..db import db_session
+from ..db import transaction
+from ..env import current as current_env
 from ..services import photos as photo_service
 from .context import get_actor
 
 
 @app.get("/photos/{volunteer_id}", include_in_schema=False)
 async def photo(volunteer_id: int) -> Response:
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         # AuthMiddleware already bounced anonymous browsers; this also covers
         # deactivated accounts that still hold a cookie
         if await get_actor(session) is None:

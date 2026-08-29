@@ -4,7 +4,6 @@ from nicegui import ui
 from starlette.responses import RedirectResponse
 
 from .. import passwords
-from ..config import settings
 from ..db import transaction
 from ..domain import OtpRequested, SignedIn, SignInFailed
 from ..env import current
@@ -196,7 +195,7 @@ def login_page(request: Request, redirect_to: str = "/"):
             'outline no-caps href="/ministries/"'
         ).classes("w-80")
         ui.label(
-            f"Invite link is sent from {settings().mail_from}. Open it to finish setup."
+            f"Invite link is sent from {env.settings.mail_from}. Open it to finish setup."
         ).classes("text-sm text-gray-500 max-w-80 text-center")
 
 

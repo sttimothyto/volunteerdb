@@ -8,7 +8,6 @@ service refuses to answer, not that the page hides an answer it holds.
 from datetime import UTC, datetime, timedelta
 
 from volunteerdb.actors import load_actor
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import (
     memberships,
@@ -19,6 +18,7 @@ from volunteerdb.services import (
 )
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import done, ok
 
 

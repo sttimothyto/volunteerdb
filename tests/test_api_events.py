@@ -8,12 +8,12 @@ nothing patches mail: a send attempt in dev mode would only print.
 
 from datetime import UTC, date, datetime, time, timedelta
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import _token
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 

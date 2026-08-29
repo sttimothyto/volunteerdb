@@ -4,12 +4,12 @@ from decimal import Decimal
 
 from volunteerdb import errors
 from volunteerdb.actors import load_actor
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import graph as graph_service
 from volunteerdb.services import memberships, teams, users, volunteers, workload
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
 

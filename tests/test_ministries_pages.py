@@ -15,11 +15,11 @@ import sqlalchemy as sa
 from PIL import Image
 
 from volunteerdb import errors
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamPage, TeamPageImage
 from volunteerdb.services import pages, teams
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
 DOC_HTML = (

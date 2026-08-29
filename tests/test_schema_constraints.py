@@ -16,7 +16,6 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
-from volunteerdb.db import db_session
 from volunteerdb.models import (
     AppUser,
     Event,
@@ -27,6 +26,8 @@ from volunteerdb.models import (
     Team,
     Volunteer,
 )
+
+from tests.conftest import db_session
 
 
 async def _refused(stmt) -> str:

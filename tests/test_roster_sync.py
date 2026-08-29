@@ -13,7 +13,6 @@ from io import StringIO
 import pytest
 
 from volunteerdb import errors
-from volunteerdb.db import db_session
 from volunteerdb.errors import External
 from volunteerdb.fp import Err, Ok
 from volunteerdb.jobs import roster_sync
@@ -23,6 +22,7 @@ from volunteerdb.services import roster_sheets as service
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
 

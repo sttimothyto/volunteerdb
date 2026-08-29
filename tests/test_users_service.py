@@ -4,11 +4,11 @@ from datetime import UTC, datetime, timedelta
 
 from volunteerdb import errors
 from volunteerdb.config import settings
-from volunteerdb.db import db_session
 from volunteerdb.services import users, volunteers
 from volunteerdb.services.users import _token_digest
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import done, ok, otp_started, refused
 
 

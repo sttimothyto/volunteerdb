@@ -13,11 +13,11 @@ the email cell is blank.
 import csv
 from io import StringIO
 
-from volunteerdb.db import db_session
 from volunteerdb.services import teams, volunteers
 from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import ROSTER_HEADERS, ROSTER_SHEET
 
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 

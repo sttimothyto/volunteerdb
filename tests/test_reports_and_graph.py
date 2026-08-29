@@ -6,7 +6,6 @@ from io import BytesIO
 from PIL import Image
 
 from volunteerdb.actors import load_actor
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import (
     graph,
@@ -19,6 +18,7 @@ from volunteerdb.services import (
 )
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 

@@ -33,7 +33,7 @@ import httpx
 import sqlalchemy as sa
 
 from volunteerdb import env as env_mod
-from volunteerdb.db import db_session, init
+from volunteerdb.db import transaction
 from volunteerdb.errors import External
 from volunteerdb.fp import Err, Ok, Result
 from volunteerdb.log import init_logging
@@ -42,9 +42,9 @@ from volunteerdb.services import gsheets
 from volunteerdb.services import teams as team_service
 
 
-async def _sheets() -> list[tuple[str, str]]:
+async def _sheets(env: env_mod.Env) -> list[tuple[str, str]]:
     """(file_id, team path) for every team that has a sheet."""
-    async with db_session() as session:
+    async with transaction(env, None) as session:
         tree = await team_service.tree(session)
         rows = (await session.execute(sa.select(TeamSheet))).scalars()
         return [
@@ -90,9 +90,7 @@ async def main(argv: list[str]) -> int:
     if not gsheets.enabled(cfg):
         print("FATAL: VDB_SHEETS_* is not configured", file=sys.stderr)
         return 1
-    init(env.settings.database_url)
-
-    sheets = await _sheets()
+    sheets = await _sheets(env)
     print(f"{len(sheets)} sheet(s) on file")
 
     shared = already = failed = 0

@@ -5,13 +5,13 @@ the personal token stays out of the request log."""
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from volunteerdb.db import db_session
 from volunteerdb.main import redact_path
 from volunteerdb.models import TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 TZ = ZoneInfo("America/Toronto")

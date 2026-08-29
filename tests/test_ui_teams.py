@@ -13,11 +13,11 @@ from pathlib import Path
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamPage, TeamRole, TeamSheet
 from volunteerdb.services import memberships, pages, teams, users, volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"

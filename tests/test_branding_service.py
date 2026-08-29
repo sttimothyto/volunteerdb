@@ -19,11 +19,11 @@ from PIL import Image, ImageDraw, ImageFilter
 
 from volunteerdb import errors
 from volunteerdb.actors import load_actor
-from volunteerdb.db import db_session
 from volunteerdb.models import SiteLogo
 from volunteerdb.services import branding, users
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
 # ui/static/theme.css --vdb-header-bg: what the cut has to look right against

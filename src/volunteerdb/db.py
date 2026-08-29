@@ -14,14 +14,10 @@ from . import (
     audit,  # noqa: F401 — registers the CRUD audit listeners
     team_cache,  # noqa: F401 — registers the team-tree cache listeners
 )
-from .config import settings
 from .log import bind_fallback_user
 
 if TYPE_CHECKING:
     from .env import Env
-
-_engine: AsyncEngine | None = None
-_sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
 def make_engine(url: str) -> AsyncEngine:
@@ -34,25 +30,6 @@ def make_sessions(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     # expire_on_commit=False: what a service returned stays readable after the
     # edge commits, which is what lets a page render and a policy mail from it
     return async_sessionmaker(engine, expire_on_commit=False)
-
-
-def init(url: str | None = None) -> AsyncEngine:
-    """Create (or replace) the global engine. Tests call this with their own URL."""
-    global _engine, _sessionmaker
-    _engine = make_engine(url or settings().database_url)
-    _sessionmaker = make_sessions(_engine)
-    return _engine
-
-
-def engine() -> AsyncEngine:
-    return _engine if _engine is not None else init()
-
-
-def sessionmaker() -> async_sessionmaker[AsyncSession]:
-    if _sessionmaker is None:
-        init()
-    assert _sessionmaker is not None
-    return _sessionmaker
 
 
 @asynccontextmanager
@@ -83,14 +60,4 @@ async def transaction(env: "Env", user_id: int | None) -> AsyncIterator[AsyncSes
     `changed_by` on every row they archive.
     """
     async with _unit_of_work(env.sessions, user_id) as session:
-        yield session
-
-
-@asynccontextmanager
-async def db_session(user_id: int | None = None) -> AsyncIterator[AsyncSession]:
-    """One transaction per unit of work on the process-global engine; the
-    same contract as transaction(). Scripts, jobs and tests still reach the
-    database through here; the global goes with them (FUNCTIONAL_REFACTORING.md,
-    Phase 7)."""
-    async with _unit_of_work(sessionmaker(), user_id) as session:
         yield session

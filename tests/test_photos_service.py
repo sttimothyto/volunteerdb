@@ -7,10 +7,10 @@ import sqlalchemy as sa
 from PIL import Image
 
 from volunteerdb import errors
-from volunteerdb.db import db_session
 from volunteerdb.models import VolunteerPhoto
 from volunteerdb.services import photos, volunteers
 
+from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
 

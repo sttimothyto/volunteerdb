@@ -25,7 +25,6 @@ from datetime import datetime
 
 from nicegui import ui
 
-from ..config import settings
 from ..effects import delivered
 from ..env import current as current_env
 from ..errors import require
@@ -69,7 +68,7 @@ def show_invite(
         url = invite_url(base_url, token)
         if reveal:
             ui.input(value=url).props("readonly outlined dense").classes("w-full")
-        window = mail.ttl_window(settings().invite_ttl_hours)
+        window = mail.ttl_window(current_env().settings.invite_ttl_hours)
         ui.label(
             f"Usable once, and only for the next {window}. After that "
             "they sign in with an emailed code and can set a password "

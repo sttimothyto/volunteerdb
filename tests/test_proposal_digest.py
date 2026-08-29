@@ -10,7 +10,6 @@ from datetime import date
 
 import sqlalchemy as sa
 
-from volunteerdb.db import db_session
 from volunteerdb.jobs import proposal_digest
 from volunteerdb.models import (
     Notification,
@@ -22,6 +21,7 @@ from volunteerdb.models import (
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fakes import FailingMailer, RecordingMailer
 from tests.fp_helpers import ok
 

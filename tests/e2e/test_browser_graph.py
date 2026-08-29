@@ -10,11 +10,11 @@ line of it. So this asks the drawn graph what it is showing, and clicks it.
 import pytest
 from playwright.async_api import expect
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, volunteers
 
 from .conftest import ready, sign_in
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 # Cytoscape draws each layer on its own canvas and tags it; the node layer is

@@ -9,11 +9,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, users, volunteers
 
-from tests.conftest import _token
+from tests.conftest import _token, db_session
 from tests.fp_helpers import ok
 
 

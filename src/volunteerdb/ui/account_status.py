@@ -16,18 +16,16 @@ cannot drift apart.
 
 from collections.abc import Callable
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from nicegui import ui
 
-from ..config import settings
 from ..env import current as current_env
 from ..models import AppUser
 from ..services import users as user_service
 
 
 def _local(ts: datetime) -> datetime:
-    return ts.astimezone(ZoneInfo(settings().timezone))
+    return ts.astimezone(current_env().tz)
 
 
 def last_login_text(account: AppUser | None) -> str:

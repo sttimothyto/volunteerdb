@@ -14,8 +14,9 @@ layer and a half-open connection are both worse than a clean exit 2.
 import pytest
 
 from volunteerdb import admin_bootstrap
-from volunteerdb.db import db_session
 from volunteerdb.services import users
+
+from tests.conftest import db_session
 
 
 @pytest.fixture
@@ -33,14 +34,14 @@ def admin_env(monkeypatch):
 async def test_weak_password_exits_2_without_touching_the_database(
     admin_env, monkeypatch, capsys
 ):
-    """The whole reason the policy check precedes `db_session()`. If this
+    """The whole reason the policy check precedes the transaction. If this
     inverts, a bad deploy password produces a traceback instead of a reason."""
     admin_env("demo")  # four characters — far below the 15-char minimum
 
     def _explode():  # pragma: no cover - must never be reached
         raise AssertionError("database opened before the password was checked")
 
-    monkeypatch.setattr(admin_bootstrap, "db_session", _explode)
+    monkeypatch.setattr(admin_bootstrap, "transaction", _explode)
 
     assert await admin_bootstrap.main() == 2
     assert "VDB_ADMIN_PASSWORD rejected" in capsys.readouterr().err

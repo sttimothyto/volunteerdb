@@ -7,12 +7,12 @@ the structlog events emitted by the audit listeners in volunteerdb/audit.py.
 import csv
 from io import StringIO
 
-from volunteerdb.db import db_session
 from volunteerdb.services import users, volunteers, workload
 from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import done, ok, otp_started
 
 

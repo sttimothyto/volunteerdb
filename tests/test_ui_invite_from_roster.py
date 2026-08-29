@@ -18,12 +18,12 @@ import pytest
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import SLOW, mail_to
 from tests import mint
+from tests.conftest import db_session
 from tests.fakes import SIM_MAILER
 from tests.fp_helpers import done, ok
 

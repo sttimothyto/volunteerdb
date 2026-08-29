@@ -13,11 +13,11 @@ from sqlalchemy.exc import IntegrityError
 
 from volunteerdb import errors
 from volunteerdb.actors import load_actor
-from volunteerdb.db import db_session
 from volunteerdb.models import AppUser, ProposalStatus, TeamRole
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
 TODAY = date(2026, 8, 10)  # nominating

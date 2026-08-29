@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from volunteerdb.db import db_session
 from volunteerdb.errors import External
 from volunteerdb.fp import Err, Ok
 from volunteerdb.jobs import calendar_sync
@@ -19,6 +18,7 @@ from volunteerdb.services import events as event_service
 from volunteerdb.services import gcal, teams
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 TZ = ZoneInfo("America/Toronto")

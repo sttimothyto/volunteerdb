@@ -64,15 +64,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from io import BytesIO
-from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from volunteerdb import env as env_mod
 from volunteerdb.auth import async_hash_password
-from volunteerdb.config import settings
-from volunteerdb.db import db_session
+from volunteerdb.db import transaction
 from volunteerdb.models import (
     AppUser,
     CustomFieldDef,
@@ -122,7 +121,14 @@ EMAIL_DOMAIN = "example.org"
 RNG_SEED = 20260816
 COHORT_SIZE = 84  # generated volunteers, on top of the hand-written ones
 
-TZ = ZoneInfo(settings().timezone)
+ENV = env_mod.build()  # the seed's one Env: its engine, clock and settings
+TZ = ENV.tz
+
+
+def db_session(user_id: int | None = None):
+    return transaction(ENV, user_id)
+
+
 TODAY = datetime.now(TZ).date()
 
 L, S, C, M = TeamRole.leader, TeamRole.second, TeamRole.core, TeamRole.member

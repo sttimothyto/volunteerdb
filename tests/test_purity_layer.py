@@ -118,6 +118,33 @@ def current() -> dict[str, dict[str, int]]:
     }
 
 
+# Configuration is read at the composition roots and nowhere else: the Env
+# carries it in. The logging and audit setup read it at process start, which
+# is infrastructure rather than a rule.
+SETTINGS_ALLOWED = frozenset(
+    {"config.py", "main.py", "env.py", "admin_bootstrap.py", "log.py", "audit.py"}
+)
+
+
+def test_settings_is_read_only_at_the_composition_roots():
+    stray = []
+    for path in sorted(SRC.rglob("*.py")):
+        rel = str(path.relative_to(SRC))
+        if rel in SETTINGS_ALLOWED:
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "settings"
+            ):
+                stray.append(f"{rel}:{node.lineno}")
+    assert not stray, (
+        "settings() is read here; take the value from the Env (ctx.env, "
+        f"current_env(), env.settings) instead: {stray}"
+    )
+
+
 def test_core_impurity_never_grows():
     """Every forbidden call and every raise under the core is either gone or
     still on the baseline at no more than its original count."""

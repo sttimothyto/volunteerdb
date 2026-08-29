@@ -6,7 +6,6 @@ from fastapi import Request
 from nicegui import events, ui
 
 from .. import query_lang
-from ..config import settings
 from ..env import current as current_env
 from ..errors import not_found
 from ..fp import Err, Ok, expect
@@ -505,12 +504,13 @@ def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -
                 icon="add_link",
                 on_click=lambda: _roster_sheet_dialog(team_id, linked=False),
             ).props("dense outline")
-        if settings().template_sheet_url:
+        template_url = current_env().settings.template_sheet_url
+        if template_url:
             # The decorated Google Sheet (role dropdown, hidden ID column,
             # structure warning) replaces the bare CSV: copy it, share the
             # copy, link it here — the decoration comes along with the copy.
             ui.button("Roster template (Google Sheets)", icon="open_in_new").props(
-                f'outline dense href="{settings().template_sheet_url}" target="_blank"'
+                f'outline dense href="{template_url}" target="_blank"'
             )
         else:  # dev fallback: no Drive template configured
             ui.button("Empty template", icon="description").props(

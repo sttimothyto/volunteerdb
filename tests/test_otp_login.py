@@ -3,12 +3,12 @@
 from datetime import UTC, datetime, timedelta
 
 from volunteerdb.config import Settings
-from volunteerdb.db import db_session
 from volunteerdb.env import LoggingMailer
 from volunteerdb.services import mail, users
 from volunteerdb.ui.context import session_expired
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import done, ok, otp_started
 
 

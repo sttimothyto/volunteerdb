@@ -13,10 +13,9 @@ import hashlib
 
 import pytest
 
-from volunteerdb.db import db_session
 from volunteerdb.services import users
 
-from tests.conftest import _token
+from tests.conftest import _token, db_session
 
 
 @pytest.fixture

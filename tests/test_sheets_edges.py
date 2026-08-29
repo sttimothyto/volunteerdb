@@ -3,7 +3,6 @@
 import csv
 from io import StringIO
 
-from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import teams, volunteers
 from volunteerdb.sheets import exporter, importer
@@ -14,6 +13,7 @@ from volunteerdb.sheets.common import (
     safe_cell,
 )
 
+from tests.conftest import db_session
 from tests.fp_helpers import done, ok
 
 

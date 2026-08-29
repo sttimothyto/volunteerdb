@@ -202,9 +202,8 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
 
 
 def create_app(env: env_mod.Env | None = None) -> None:
-    """Assemble the app around one Env. Called with none by the test harness
-    (tests/ui_sim_main.py), which gets the real thing over whatever engine
-    db.init() was last given; run() below builds its own."""
+    """Assemble the app around one Env. run() below builds the real one; the
+    test harness (tests/ui_sim_main.py) hands in one over its test engine."""
     init_logging()
     # The app object is the carrier: a @ui.page function has no dependency
     # injection, so env.current() reads it back from here.

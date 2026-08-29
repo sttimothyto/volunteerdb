@@ -7,10 +7,10 @@ its phases by PATCHing deadlines relative to today (the API cannot inject
 
 from datetime import timedelta
 
-from volunteerdb.db import db_session
 from volunteerdb.services import volunteers
 
 from tests import mint
+from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 

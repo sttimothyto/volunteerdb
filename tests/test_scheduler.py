@@ -11,10 +11,11 @@ from nicegui import app
 
 from volunteerdb import scheduler
 from volunteerdb.config import settings
-from volunteerdb.db import db_session
 from volunteerdb.jobs import job_lock
 from volunteerdb.models import JobRun
 from volunteerdb.scheduler import JobState, Scheduler, is_due, is_due_every
+
+from tests.conftest import db_session
 
 TZ = ZoneInfo("America/Toronto")
 AT = time(4, 0)

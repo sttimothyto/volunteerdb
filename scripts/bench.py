@@ -35,9 +35,10 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from volunteerdb import db
+from volunteerdb import env as env_mod
 from volunteerdb.actors import load_actor
 from volunteerdb.config import settings
-from volunteerdb.db import db_session
+from volunteerdb.db import transaction
 from volunteerdb.models import (
     FieldType,
     Membership,
@@ -63,6 +64,20 @@ from volunteerdb.sheets.importer import run_import
 # Through Settings, not os.environ, so the bench reaches the same database
 # .env points the app at (see the note in tests/conftest.py).
 BASE_URL = settings().database_url
+ENV: env_mod.Env | None = None  # the bench's Env over the bench database
+
+
+def _connect(url: str) -> env_mod.Env:
+    global ENV
+    ENV = env_mod.build(engine=db.make_engine(url))
+    return ENV
+
+
+def db_session(user_id: int | None = None):
+    assert ENV is not None, "connect first"
+    return transaction(ENV, user_id)
+
+
 BENCH_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_bench"
 
 # landmark accounts/volunteers the patterns look up by email at run time
@@ -338,7 +353,7 @@ async def seed(scale: int) -> None:
         ).unwrap()  # tuple return ignored: the bench never redeems an invite
 
     # bulk load leaves the planner blind until autovacuum catches up
-    async with db.engine().begin() as conn:
+    async with ENV.engine.begin() as conn:
         await conn.exec_driver_sql("ANALYZE")
 
 
@@ -352,7 +367,7 @@ def capture_sql(records: list[tuple[str, tuple]]):
     def before(conn, cursor, statement, parameters, context, executemany):
         records.append((statement, parameters))
 
-    engine = db.engine().sync_engine
+    engine = ENV.engine.sync_engine
     event.listen(engine, "before_cursor_execute", before)
     try:
         yield
@@ -385,7 +400,7 @@ async def measure(fn, runs: int) -> dict:
 
 
 async def explain_statements(statements: list[tuple[str, tuple]]) -> None:
-    async with db.engine().connect() as conn:
+    async with ENV.engine.connect() as conn:
         for stmt, params in statements:
             head = stmt.lstrip().upper()
             if not head.startswith(("SELECT", "WITH")) or "set_config" in stmt:
@@ -571,18 +586,18 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
 async def cmd_setup(scale: int) -> None:
     await recreate_bench_db()
-    db.init(BENCH_URL)
+    _connect(BENCH_URL)
     t0 = time.perf_counter()
     await seed(scale)
     print(
         f"Seeded volunteerdb_bench: {scale} volunteers, 50 teams "
         f"({time.perf_counter() - t0:.1f}s)"
     )
-    await db.engine().dispose()
+    await ENV.engine.dispose()
 
 
 async def cmd_run(args) -> None:
-    db.init(BENCH_URL)
+    _connect(BENCH_URL)
     marks = await find_landmarks()
     async with db_session() as session:
         n_volunteers = (
@@ -613,7 +628,7 @@ async def cmd_run(args) -> None:
         with open(args.json, "w") as f:
             json.dump({"volunteers": n_volunteers, "patterns": results}, f, indent=2)
         print(f"\nwrote {args.json}")
-    await db.engine().dispose()
+    await ENV.engine.dispose()
 
 
 def cmd_compare(before_path: str, after_path: str) -> None:

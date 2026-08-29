@@ -15,8 +15,9 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
-from volunteerdb.db import db_session
 from volunteerdb.models import Membership, Team, TeamRole, Volunteer
+
+from tests.conftest import db_session
 
 
 async def _team_count() -> int:

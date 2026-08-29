@@ -23,8 +23,7 @@ from starlette.responses import RedirectResponse, Response
 
 from ..actors import load_actor
 from ..api.deps import raise_http
-from ..config import settings
-from ..db import db_session
+from ..db import transaction
 from ..env import current as current_env
 from ..services import events as event_service
 from ..services import gcal, ics
@@ -53,14 +52,14 @@ def parish_feed_name() -> str:
 
 
 def personal_feed_name() -> str:
-    org = settings().org_name.strip()
+    org = current_env().settings.org_name.strip()
     return f"My duties — {org}" if org else "My duties"
 
 
 async def parish_feed(request: Request) -> Response:
     base_url, host = _origin(request)
     from_, to = _window()
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         entries = raise_http(
             await event_service.calendar_entries(
                 session, None, scope="parish", from_=from_, to=to
@@ -80,7 +79,7 @@ async def parish_feed(request: Request) -> Response:
 async def personal_feed(token: str, request: Request) -> Response:
     base_url, host = _origin(request)
     from_, to = _window()
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         user = await user_service.by_calendar_token(session, token)
         if user is None:
             raise HTTPException(404, "no such calendar")
@@ -104,7 +103,7 @@ async def personal_feed(token: str, request: Request) -> Response:
 async def personal_download(request: Request) -> Response:
     base_url, host = _origin(request)
     from_, to = _window()
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         actor = await get_actor(session)
         if actor is None:
             raise HTTPException(401, "sign in to download your calendar")
@@ -132,7 +131,7 @@ async def personal_download(request: Request) -> Response:
 
 
 async def reset_personal(request: Request) -> Response:
-    async with db_session() as session:
+    async with transaction(current_env(), None) as session:
         actor = await get_actor(session)
         if actor is None:
             raise HTTPException(401, "sign in to reset your calendar address")
