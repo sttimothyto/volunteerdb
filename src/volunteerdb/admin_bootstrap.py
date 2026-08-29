@@ -17,6 +17,7 @@ import sys
 from volunteerdb.config import settings
 from volunteerdb.db import db_session
 from volunteerdb.errors import message
+from volunteerdb.fp import Err
 from volunteerdb.log import init_logging
 from volunteerdb.passwords import check as check_password
 from volunteerdb.passwords import site_terms
@@ -41,11 +42,13 @@ async def main() -> int:
                 f"admin {existing.email} already exists (id={existing.id}); nothing to do"
             )
             return 0
-        user, _ = (
-            await users.create(
-                session, email, is_admin=True, password=password, site_terms=terms
-            )
-        ).unwrap()
+        made = await users.create(
+            session, email, is_admin=True, password=password, site_terms=terms
+        )
+        if isinstance(made, Err):
+            print(f"admin not created: {message(made.error)}", file=sys.stderr)
+            return 2
+        user, _ = made.value
         print(f"created admin {user.email} (id={user.id})")
     return 0
 

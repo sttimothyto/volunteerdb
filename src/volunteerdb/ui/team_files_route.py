@@ -15,9 +15,9 @@ from fastapi import HTTPException, Request
 from nicegui import app
 from starlette.responses import Response
 
+from ..api.deps import gate, raise_http
 from ..db import db_session
 from ..models import Team
-from ..permissions import require
 from ..services import pages as page_service
 from ..services import teams as team_service
 from ..sheets import exporter
@@ -49,9 +49,9 @@ async def teams_export(request: Request) -> Response:
         if actor.is_admin:
             scope, name = None, "parish"
         else:
-            require(bool(actor.full_view_team_ids), "export your teams")
+            gate(bool(actor.full_view_team_ids), "export your teams")
             scope, name = actor.full_view_team_ids, "my-teams"
-        content = (await exporter.export_csv(session, actor, team_ids=scope)).unwrap()
+        content = raise_http(await exporter.export_csv(session, actor, team_ids=scope))
     return _attachment(content, f"volunteerdb-{name}.csv", CSV)
 
 
@@ -65,9 +65,9 @@ async def roster_export(team_id: int, request: Request, as_of: str = "") -> Resp
         team = await session.get(Team, team_id)
         if team is None:
             raise HTTPException(404, "no such team")
-        content = (
+        content = raise_http(
             await exporter.export_csv(session, actor, team_id=team_id, at=at)
-        ).unwrap()
+        )
     stem = team.name.lower().replace(" ", "-")
     return _attachment(content, f"{stem}.csv", CSV)
 

@@ -4,7 +4,6 @@ import pytest
 
 from volunteerdb import fp
 from volunteerdb.errors import (
-    DomainErrorRaised,
     Forbidden,
     Invalid,
     NotFound,
@@ -109,7 +108,7 @@ def test_attempt_catches_only_what_it_is_told():
         fp.attempt(boom, KeyError, to_err=str)
 
 
-async def test_attempt_async_and_lift():
+async def test_attempt_async():
     async def ok():
         return 1
 
@@ -120,20 +119,12 @@ async def test_attempt_async_and_lift():
         raise TypeError("programming error")
 
     assert await fp.attempt_async(ok(), LookupError, to_err=str) == Ok(1)
-    assert await fp.lift(ok()) == Ok(1)
-    assert await fp.lift(nope()) == Err(NotFound("team 7"))
-    with pytest.raises(TypeError):
-        await fp.lift(bug())
 
 
-def test_unwrap_raises_the_carrier_for_domain_errors():
-    assert Ok(1).unwrap() == 1
-    with pytest.raises(DomainErrorRaised) as info:
-        Err(Invalid("too long")).unwrap()
-    assert info.value.error == Invalid("too long")
-    assert str(info.value) == "too long"
-    with pytest.raises(fp.UnwrapError):
-        Err("not a domain error").unwrap()
+def test_expect_is_for_a_result_that_cannot_refuse():
+    assert fp.expect(Ok(1)) == 1
+    with pytest.raises(AssertionError, match="unexpected refusal"):
+        fp.expect(Err(Invalid("too long")))
 
 
 def test_as_result_wraps_plain_values_only():

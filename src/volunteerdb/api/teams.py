@@ -1,12 +1,12 @@
 from decimal import Decimal
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..services import pages as page_service
 from ..services import roster_sheets as sheet_service
 from ..services import teams as service
-from .deps import AsOf, CtxDep
+from .deps import AsOf, CtxDep, raise_http
 from .schemas import (
     HomeDocPatch,
     RosterEntry,
@@ -46,7 +46,7 @@ async def list_teams(ctx: CtxDep, as_of: AsOf) -> list[TeamWithPath]:
 async def create_team(ctx: CtxDep, data: TeamIn) -> TeamOut:
     fields = data.model_dump()
     _weight_to_decimal(fields)
-    team = (await service.create(ctx.session, ctx.actor, **fields)).unwrap()
+    team = raise_http(await service.create(ctx.session, ctx.actor, **fields))
     return TeamOut.model_validate(team)
 
 
@@ -54,7 +54,7 @@ async def create_team(ctx: CtxDep, data: TeamIn) -> TeamOut:
 async def get_team(ctx: CtxDep, team_id: int, as_of: AsOf) -> TeamOut:
     team = await service.get(ctx.session, team_id, at=as_of)
     if team is None:
-        raise LookupError(f"team {team_id} not found")
+        raise HTTPException(404, f"team {team_id} not found")
     return TeamOut.model_validate(team)
 
 
@@ -67,13 +67,13 @@ async def update_team(ctx: CtxDep, team_id: int, data: TeamPatch) -> TeamOut:
         fields["workload_weight"] = Decimal(0)  # 0 IS unweighted
     else:
         _weight_to_decimal(fields)
-    team = (await service.update(ctx.session, ctx.actor, team_id, **fields)).unwrap()
+    team = raise_http(await service.update(ctx.session, ctx.actor, team_id, **fields))
     return TeamOut.model_validate(team)
 
 
 @router.delete("/{team_id}", status_code=204)
 async def delete_team(ctx: CtxDep, team_id: int) -> None:
-    (await service.delete(ctx.session, ctx.actor, team_id)).unwrap()
+    raise_http(await service.delete(ctx.session, ctx.actor, team_id))
 
 
 @router.patch("/{team_id}/home-doc")
@@ -88,9 +88,9 @@ async def set_home_doc(ctx: CtxDep, team_id: int, data: HomeDocPatch) -> TeamOut
     is worth more than narrowing who may speak for the ministry — the content
     is nh3-sanitized and the URL must live on docs.google.com, so the exposure
     is what the page says, under a name the parish can correct."""
-    team = (
+    team = raise_http(
         await page_service.set_home_doc_url(ctx.session, ctx.actor, team_id, data.url)
-    ).unwrap()
+    )
     return TeamOut.model_validate(team)
 
 
@@ -102,7 +102,7 @@ async def get_roster_sheet(ctx: CtxDep, team_id: int) -> TeamSheetOut | None:
     Management rights, matching what the team page shows — the sheet is the
     roster, so who may see the link is who may manage the roster. And the link
     *is* the access: the sheet is shared to anyone holding it."""
-    sheet = (await service.roster_sheet(ctx.session, ctx.actor, team_id)).unwrap()
+    sheet = raise_http(await service.roster_sheet(ctx.session, ctx.actor, team_id))
     return None if sheet is None else TeamSheetOut.model_validate(sheet)
 
 
@@ -123,9 +123,9 @@ async def set_roster_sheet(
     address and phone and grants a bulk write over the roster.
 
     The link is only recorded here. Call `/roster-sheet/sync` to move data."""
-    sheet = (
+    sheet = raise_http(
         await service.set_roster_sheet(ctx.session, ctx.actor, team_id, data.url)
-    ).unwrap()
+    )
     return TeamSheetOut.model_validate(sheet)
 
 
@@ -140,10 +140,10 @@ async def sync_roster_sheet(
     back, so the sheet ends up showing what the database holds.
     `direction="export"` skips the read and overwrites the sheet — the answer
     that cannot lose parish data. Importing never removes anybody."""
-    (
+    raise_http(
         await service.roster_sheet(ctx.session, ctx.actor, team_id)
-    ).unwrap()  # rights + 404
-    outcome = (
+    )  # rights + 404
+    outcome = raise_http(
         await sheet_service.sync_team(
             ctx.env,
             team_id,
@@ -151,10 +151,10 @@ async def sync_roster_sheet(
             user_id=ctx.actor.user.id,
             now=ctx.now,
         )
-    ).unwrap()
+    )
     if outcome.failed:
-        raise ValueError(outcome.message)
-    sheet = (await service.roster_sheet(ctx.session, ctx.actor, team_id)).unwrap()
+        raise HTTPException(422, outcome.message)
+    sheet = raise_http(await service.roster_sheet(ctx.session, ctx.actor, team_id))
     return TeamSheetOut.model_validate(sheet)
 
 
@@ -163,8 +163,8 @@ async def team_roster(ctx: CtxDep, team_id: int, as_of: AsOf) -> list[RosterEntr
     # the fetch is only to 404 an id nobody has: an unknown team would
     # otherwise answer with an empty roster, which reads as "nobody serves here"
     if await service.get(ctx.session, team_id, at=as_of) is None:
-        raise LookupError(f"team {team_id} not found")
-    rows = (await service.roster(ctx.session, ctx.actor, team_id, at=as_of)).unwrap()
+        raise HTTPException(404, f"team {team_id} not found")
+    rows = raise_http(await service.roster(ctx.session, ctx.actor, team_id, at=as_of))
     full = ctx.actor.can_view_full_roster(team_id)
     manage = ctx.actor.can_manage_team(team_id)
     entries = []
@@ -193,7 +193,7 @@ async def get_team_page(ctx: CtxDep, team_id: int) -> TeamPageOut | None:
     Null when the team has no home doc set. The page's HTML is not here: it is
     served to the world at /ministries/<slug>.html, and what a caller needs from
     JSON is whether the nightly fetch is working."""
-    page = (await page_service.page_status(ctx.session, ctx.actor, team_id)).unwrap()
+    page = raise_http(await page_service.page_status(ctx.session, ctx.actor, team_id))
     return None if page is None else TeamPageOut.model_validate(page)
 
 
@@ -207,13 +207,13 @@ async def fetch_team_page(ctx: CtxDep, team_id: int) -> TeamPageOut:
     than blanking what the world can see."""
     team = await service.get(ctx.session, team_id)
     if team is None:
-        raise LookupError(f"team {team_id} not found")
+        raise HTTPException(404, f"team {team_id} not found")
     if not team.home_doc_url:
-        raise ValueError("this team has no home page doc")
+        raise HTTPException(422, "this team has no home page doc")
     async with httpx.AsyncClient() as http:
-        page = (
+        page = raise_http(
             await page_service.fetch_and_store(
                 ctx.session, team, http, force=True, actor=ctx.actor, now=ctx.now
             )
-        ).unwrap()
+        )
     return TeamPageOut.model_validate(page)

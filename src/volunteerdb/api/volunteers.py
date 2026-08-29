@@ -2,14 +2,14 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFi
 from starlette.responses import Response
 
 from ..models import Volunteer
-from ..permissions import Actor, require, team_ids_map, volunteer_team_ids
+from ..permissions import Actor, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
 from ..services import events as event_service
 from ..services import photos as photo_service
 from ..services import users as user_service
 from ..services import volunteers as service
-from .deps import AsOf, CtxDep, dispatch
+from .deps import AsOf, CtxDep, dispatch, gate, raise_http
 from .elections import proposal_out
 from .schemas import (
     AssignmentOut,
@@ -53,15 +53,15 @@ async def list_volunteers(
     fallback to text search."""
     if include_inactive:
         # matches the GUI, which offers the archived toggle to admins only
-        require(ctx.actor.is_admin, "only admins list archived volunteers")
+        gate(ctx.actor.is_admin, "only admins list archived volunteers")
     # search_or_query, not search: `q` accepts the same SQL-shaped filter the
     # GUI's search boxes take (query_lang), and the grammar is already
     # actor-scoped per field. Plain text still means a substring search.
-    found = (
+    found = raise_http(
         await service.search_or_query(
             ctx.session, q, at=as_of, include_inactive=include_inactive, actor=ctx.actor
         )
-    ).unwrap()
+    )
     teams_map = await team_ids_map(ctx.session, [v.id for v in found], as_of)
     photo_ids = await photo_service.versions(ctx.session, [v.id for v in found])
     out = [redacted(ctx.actor, v, teams_map.get(v.id, set())) for v in found]
@@ -72,9 +72,9 @@ async def list_volunteers(
 
 @router.post("", status_code=201)
 async def create_volunteer(ctx: CtxDep, data: VolunteerIn) -> VolunteerOut:
-    volunteer = (
+    volunteer = raise_http(
         await service.create(ctx.session, ctx.actor, **data.model_dump())
-    ).unwrap()
+    )
     return VolunteerOut.model_validate(volunteer)
 
 
@@ -82,7 +82,7 @@ async def create_volunteer(ctx: CtxDep, data: VolunteerIn) -> VolunteerOut:
 async def get_volunteer(ctx: CtxDep, volunteer_id: int, as_of: AsOf) -> VolunteerOut:
     volunteer = await service.get(ctx.session, volunteer_id, at=as_of)
     if volunteer is None:
-        raise LookupError(f"volunteer {volunteer_id} not found")
+        raise HTTPException(404, f"volunteer {volunteer_id} not found")
     team_ids = (await team_ids_map(ctx.session, [volunteer_id], as_of))[volunteer_id]
     out = redacted(ctx.actor, volunteer, team_ids)
     out.has_photo = bool(await photo_service.versions(ctx.session, [volunteer_id]))
@@ -112,10 +112,11 @@ async def update_volunteer(
         current = (on_file.email or "").strip().lower() if on_file else ""
         own_login = (ctx.actor.user.email or "").strip().lower()
         if typed != current and typed != own_login:
-            raise ValueError(
+            raise HTTPException(
+                422,
                 "your own address changes only once the new one confirms "
                 "itself; ask for it on the Password & sign-in page (/account) "
-                "and we will mail a confirmation link there"
+                "and we will mail a confirmation link there",
             )
     # somebody else's address moving is worth a word to the address it moved
     # away from (the service's AddressReplaced event): the notice runs after
@@ -127,17 +128,17 @@ async def update_volunteer(
         await service.update(ctx.session, ctx.actor, volunteer_id, **fields),
     )
     if custom is not None:
-        volunteer = (
+        volunteer = raise_http(
             await custom_field_service.set_values(
                 ctx.session, ctx.actor, volunteer_id, custom
             )
-        ).unwrap()
+        )
     return redacted(ctx.actor, volunteer, team_ids)
 
 
 @router.delete("/{volunteer_id}", status_code=204)
 async def delete_volunteer(ctx: CtxDep, volunteer_id: int) -> None:
-    (await service.delete(ctx.session, ctx.actor, volunteer_id)).unwrap()
+    raise_http(await service.delete(ctx.session, ctx.actor, volunteer_id))
 
 
 @router.put("/{volunteer_id}/photo")
@@ -148,7 +149,7 @@ async def put_photo(ctx: CtxDep, volunteer_id: int, file: UploadFile) -> PhotoMe
     content = await file.read(photo_service.MAX_UPLOAD_BYTES + 1)
     if len(content) > photo_service.MAX_UPLOAD_BYTES:
         raise HTTPException(413, "image file larger than 10 MB")
-    record = (
+    record = raise_http(
         await photo_service.set_photo(
             ctx.session,
             volunteer_id,
@@ -156,7 +157,7 @@ async def put_photo(ctx: CtxDep, volunteer_id: int, file: UploadFile) -> PhotoMe
             uploaded_by=ctx.actor.user.id,
             now=ctx.now,
         )
-    ).unwrap()
+    )
     return PhotoMetaOut(
         volunteer_id=record.volunteer_id,
         content_type=record.content_type,
@@ -170,14 +171,14 @@ async def get_photo(ctx: CtxDep, volunteer_id: int) -> Response:
     """The stored JPEG bytes. Visible to all signed-in users."""
     record = await photo_service.get(ctx.session, volunteer_id)
     if record is None:
-        raise LookupError(f"volunteer {volunteer_id} has no photo")
+        raise HTTPException(404, f"volunteer {volunteer_id} has no photo")
     return Response(content=record.image, media_type=record.content_type)
 
 
 @router.delete("/{volunteer_id}/photo", status_code=204)
 async def delete_photo(ctx: CtxDep, volunteer_id: int) -> None:
     """Remove the headshot (idempotent). Open to every signed-in account."""
-    (await photo_service.delete_photo(ctx.session, volunteer_id)).unwrap()
+    raise_http(await photo_service.delete_photo(ctx.session, volunteer_id))
 
 
 @router.get("/{volunteer_id}/assignments")
@@ -251,7 +252,7 @@ async def invite_volunteer(
     account.
     """
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
-    require(ctx.actor.can_invite_volunteer(team_ids), "invite this volunteer")
+    gate(ctx.actor.can_invite_volunteer(team_ids), "invite this volunteer")
     # an admin gets the link in the body, so the send is dropped (silent);
     # anybody else's link goes out by mail, after the commit
     account, token = dispatch(
@@ -275,7 +276,7 @@ async def volunteer_proposals(ctx: CtxDep, volunteer_id: int) -> list[Involvemen
     appointee. Elections are live-only, so no as_of. Access and scoping mirror
     GET /elections/proposals: admins see all, managers their subtree, voters
     the rolls they sit on."""
-    require(ctx.actor.can_access_elections, "use the elections page")
+    gate(ctx.actor.can_access_elections, "use the elections page")
     rows = await elections_service.involving(
         ctx.session, ctx.actor, volunteer_id, today=ctx.env.today()
     )
@@ -297,12 +298,12 @@ async def volunteer_hours(ctx: CtxDep, volunteer_id: int) -> VolunteerHoursOut:
     volunteer was assigned to (auto = scheduled duration, unless a manager
     recorded an exception). Visible to whoever may view the full profile."""
     if await service.get(ctx.session, volunteer_id) is None:
-        raise LookupError(f"volunteer {volunteer_id} not found")
-    summary = (
+        raise HTTPException(404, f"volunteer {volunteer_id} not found")
+    summary = raise_http(
         await event_service.hours_for_volunteer(
             ctx.session, ctx.actor, volunteer_id, now=ctx.now
         )
-    ).unwrap()
+    )
     return VolunteerHoursOut(
         volunteer_id=volunteer_id,
         total_hours=float(summary.total_hours),
@@ -315,9 +316,9 @@ async def volunteer_impact(
     ctx: CtxDep, volunteer_id: int, as_of: AsOf
 ) -> list[ImpactOut]:
     """If this volunteer leaves, what holes appear?"""
-    rows = (
+    rows = raise_http(
         await service.impact(ctx.session, ctx.actor, volunteer_id, at=as_of)
-    ).unwrap()
+    )
     return [
         ImpactOut(
             team=r.team,

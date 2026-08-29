@@ -4,7 +4,7 @@ from nicegui import ui
 from ..domain import InviteIssued, Outcome
 from ..effects import SendMail, delivered
 from ..env import current as current_env
-from ..fp import Err, Ok
+from ..fp import Err, Ok, expect
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from . import invites
@@ -19,7 +19,7 @@ async def users_page(request: Request):
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
         accounts = (
-            (await user_service.list_all(session, actor)).unwrap()
+            expect(await user_service.list_all(session, actor))
             if actor.is_admin
             else []
         )

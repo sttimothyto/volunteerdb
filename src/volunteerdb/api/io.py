@@ -1,9 +1,8 @@
 from fastapi import APIRouter, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
-from ..permissions import require
 from ..sheets import exporter, importer
-from .deps import AsOf, CtxDep
+from .deps import AsOf, CtxDep, gate, raise_http
 
 router = APIRouter(tags=["import/export"])
 
@@ -21,7 +20,7 @@ def _csv(content: bytes, filename: str) -> Response:
 @router.get("/export/parish.csv")
 async def export_parish(ctx: CtxDep, as_of: AsOf) -> Response:
     """Full roster export. Admin-only, and audit-logged, in the exporter."""
-    content = (await exporter.export_csv(ctx.session, ctx.actor, at=as_of)).unwrap()
+    content = raise_http(await exporter.export_csv(ctx.session, ctx.actor, at=as_of))
     return _csv(content, "volunteerdb-parish.csv")
 
 
@@ -32,9 +31,9 @@ async def export_team(ctx: CtxDep, team_id: int, as_of: AsOf) -> Response:
     The notes column comes through only for someone who may read notes:
     everywhere else `notes` needs can_edit_volunteer, but the CSV used to hand
     the whole column to any core member who could see the roster."""
-    content = (
+    content = raise_http(
         await exporter.export_csv(ctx.session, ctx.actor, team_id=team_id, at=as_of)
-    ).unwrap()
+    )
     return _csv(content, f"volunteerdb-team-{team_id}.csv")
 
 
@@ -45,12 +44,12 @@ async def export_my_teams(ctx: CtxDep, as_of: AsOf) -> Response:
     people_team_ids, not managed_team_ids: this export carries contact details,
     so a task force the caller happens to run must not smuggle out the rosters
     it borrowed (permissions.Actor)."""
-    require(bool(ctx.actor.people_team_ids), "export the teams you lead")
-    content = (
+    gate(bool(ctx.actor.people_team_ids), "export the teams you lead")
+    content = raise_http(
         await exporter.export_csv(
             ctx.session, ctx.actor, team_ids=ctx.actor.people_team_ids, at=as_of
         )
-    ).unwrap()
+    )
     return _csv(content, "volunteerdb-my-teams.csv")
 
 
@@ -90,11 +89,11 @@ async def import_roster(
     content = await file.read(MAX_IMPORT_BYTES + 1)
     if len(content) > MAX_IMPORT_BYTES:
         raise HTTPException(413, "file larger than 10 MB")
-    report = (
+    report = raise_http(
         await importer.run_import(
             ctx.env, content, dry_run=dry_run, user_id=ctx.actor.user.id
         )
-    ).unwrap()
+    )
     return ImportReportOut(
         applied=report.applied,
         volunteers_created=report.volunteers_created,

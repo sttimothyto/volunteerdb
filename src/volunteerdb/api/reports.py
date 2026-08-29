@@ -1,11 +1,10 @@
 from fastapi import APIRouter
 
 from ..models import TeamRole
-from ..permissions import require
 from ..services import graph as graph_service
 from ..services import reports as service
 from ..services import stats as stats_service
-from .deps import AsOf, CtxDep
+from .deps import AsOf, CtxDep, gate
 from .schemas import CoverageOut, DashboardStatsOut
 
 router = APIRouter(tags=["reports"])
@@ -15,7 +14,7 @@ router = APIRouter(tags=["reports"])
 async def coverage(ctx: CtxDep, as_of: AsOf) -> list[CoverageOut]:
     """Teams and their role headcounts; missing leadership sorts first.
     Admins see the whole parish, leaders see the teams they manage."""
-    require(
+    gate(
         ctx.actor.is_admin or bool(ctx.actor.managed_team_ids),
         "view the coverage report",
     )

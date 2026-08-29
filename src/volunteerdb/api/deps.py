@@ -27,7 +27,6 @@ from ..errors import (
     BadCredentials,
     Conflict,
     DomainError,
-    DomainErrorRaised,
     External,
     Invalid,
     NotFound,
@@ -35,11 +34,12 @@ from ..errors import (
     Throttled,
     WeakPassword,
     message,
+    require,
 )
 from ..errors import Forbidden as ForbiddenValue
 from ..fp import Err, Result, as_result
 from ..log import bind_actor
-from ..permissions import Actor, Forbidden
+from ..permissions import Actor
 from ..services import users as user_service
 
 logger = structlog.get_logger(__name__)
@@ -147,11 +147,13 @@ def as_of_param(
     ] = None,
 ) -> datetime | None:
     """Parsed by the same helper the GUI uses, so a query string means the same
-    thing on both surfaces. A malformed value raises ValueError, which the
-    installed handler turns into a 422."""
+    thing on both surfaces. A malformed value is a 422."""
     if as_of is None or not as_of.strip():
         return None
-    return parse_as_of(as_of)
+    try:
+        return parse_as_of(as_of)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
 
 
 AsOf = Annotated[datetime | None, Depends(as_of_param)]
@@ -246,42 +248,20 @@ def _split[T](value: Outcome[T] | T) -> tuple[T, tuple]:
     return value, ()
 
 
+def gate(condition: bool, what: str) -> None:
+    """A front door's own actor-shaped check (tests/test_authorization_layer.py
+    EDGE_ALLOWLIST): the refusal is the 403 it maps to."""
+    if denied := require(condition, what):
+        raise to_http(denied.error)
+
+
 def install_exception_handlers(app: FastAPI) -> None:
-    # Transition: a converted service called by an unconverted route raises
-    # the carrier from Err.unwrap(); it maps exactly as the value would.
-    @app.exception_handler(DomainErrorRaised)
-    async def _domain_error(request: Request, exc: DomainErrorRaised):
-        from fastapi.responses import JSONResponse
-
-        http = to_http(exc.error)
-        return JSONResponse(
-            status_code=http.status_code,
-            content={"detail": http.detail},
-            headers=http.headers,
-        )
-
-    @app.exception_handler(Forbidden)
-    async def _forbidden(request: Request, exc: Forbidden):
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse(status_code=403, content={"detail": str(exc)})
-
-    @app.exception_handler(LookupError)
-    async def _not_found(request: Request, exc: LookupError):
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse(status_code=404, content={"detail": str(exc)})
-
     @app.exception_handler(IntegrityError)
     async def _conflict(request: Request, exc: IntegrityError):
+        # a constraint violation at commit: the transaction is dead, and this
+        # is the boundary that says Conflict (Rule 6, FUNCTIONAL_REFACTORING.md)
         from fastapi.responses import JSONResponse
 
         return JSONResponse(
             status_code=409, content={"detail": "conflicts with existing data"}
         )
-
-    @app.exception_handler(ValueError)
-    async def _unprocessable(request: Request, exc: ValueError):
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse(status_code=422, content={"detail": str(exc)})

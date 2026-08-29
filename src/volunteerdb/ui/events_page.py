@@ -30,7 +30,7 @@ from ..config import settings
 from ..effects import Effect, SendMail, ThrottleHit
 from ..env import current as current_env
 from ..errors import NotFound, not_found, require
-from ..fp import Err, Ok
+from ..fp import Err, Ok, expect
 from ..models import (
     Event,
     EventAssignment,
@@ -553,18 +553,18 @@ async def events_page(
         calendar = await gcal.stored_calendar(session)
         cal_month = calendar_grid.parse_month(month, now.date())
         cal_from, cal_to = calendar_grid.window(cal_month, _tz())
-        entries = (
+        entries = expect(
             await event_service.calendar_entries(
                 session, actor, scope=cal_view, from_=cal_from, to=cal_to
             )
-        ).unwrap()
+        )
         # the personal feed address, minted the first time it is shown
         feed_token = (
             (
                 await user_service.ensure_calendar_token(
                     session, actor.user.id, token=current_env().rng.token()
                 )
-            ).unwrap()
+            ).unwrap_or([])
             if cal_view == "mine"
             else None
         )
@@ -1489,12 +1489,12 @@ async def event_detail_page(request: Request, event_id: int):
             # members holding a slot need the roster too: the hand-off picker
             # shows names, which everyone past can_view_roster_names may see
             roster = (
-                (await team_service.roster(session, actor, event.team_id)).unwrap()
+                expect(await team_service.roster(session, actor, event.team_id))
                 if can_manage or am_assigned
                 else []
             )
             attendance = (
-                (await event_service.attendance_rows(session, actor, event_id)).unwrap()
+                expect(await event_service.attendance_rows(session, actor, event_id))
                 if can_manage
                 and event_service.is_past(event, now=ctx.now)
                 and event.status == EventStatus.scheduled.value

@@ -62,6 +62,8 @@ SCOPING_ONLY = {
 # question with no single service behind it, or a page-level gate on a whole
 # screen. Anything else belongs in a service.
 EDGE_ALLOWLIST = {
+    # the helper itself: gate() is how a front door states its own check
+    ("api/deps.py", "condition"),
     # "may this account use elections at all" — a nav/page question, not an
     # operation; every operation behind it is checked in the service
     ("api/elections.py", "can_access_elections"),
@@ -178,7 +180,9 @@ def test_the_front_doors_do_not_decide_who_may_do_what():
         for path in sorted((SRC / folder).glob("*.py")):
             rel = f"{folder}/{path.name}"
             for lineno, line in enumerate(path.read_text().splitlines(), 1):
-                if "require(" not in line or line.lstrip().startswith("#"):
+                if (
+                    "require(" not in line and "gate(" not in line
+                ) or line.lstrip().startswith("#"):
                     continue
                 # the predicate usually names the right on the following lines
                 text = "\n".join(path.read_text().splitlines()[lineno - 1 : lineno + 4])

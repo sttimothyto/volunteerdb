@@ -1,7 +1,6 @@
 """The closed DomainError vocabulary and its one phrasing."""
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 
 from volunteerdb import errors
 from volunteerdb.errors import (
@@ -14,11 +13,9 @@ from volunteerdb.errors import (
     QueryError,
     Throttled,
     WeakPassword,
-    from_exception,
     message,
 )
 from volunteerdb.fp import Err
-from volunteerdb.permissions import Forbidden as LegacyForbidden
 
 pytestmark = pytest.mark.pure
 
@@ -55,27 +52,3 @@ def test_variants_are_values():
     assert hash(Invalid("a")) == hash(Invalid("a"))
     with pytest.raises(AttributeError):
         Invalid("a").message = "b"  # type: ignore[misc]
-
-
-def test_from_exception_covers_the_legacy_vocabulary():
-    assert from_exception(LegacyForbidden("not allowed: edit")) == Forbidden("edit")
-    assert from_exception(LookupError("team 4 not found")) == NotFound("team 4")
-    assert from_exception(ValueError("bad input")) == Invalid("bad input")
-    assert from_exception(IntegrityError("stmt", {}, Exception())) == Conflict()
-    assert from_exception(errors.DomainErrorRaised(Throttled(1))) == Throttled(1)
-    assert from_exception(TypeError("bug")) is None
-
-
-def test_from_exception_keeps_subclass_identity():
-    class GcalError(RuntimeError):  # the retired Google error, by name
-        pass
-
-    assert from_exception(GcalError("HTTP 500")) == External(
-        "google calendar", "HTTP 500"
-    )
-
-
-def test_the_carrier_reads_as_its_message():
-    exc = errors.DomainErrorRaised(NotFound("volunteer", 9))
-    assert str(exc) == "volunteer 9 not found"
-    assert exc.error == NotFound("volunteer", 9)

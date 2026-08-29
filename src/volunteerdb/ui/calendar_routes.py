@@ -22,6 +22,7 @@ from nicegui import app
 from starlette.responses import RedirectResponse, Response
 
 from ..actors import load_actor
+from ..api.deps import raise_http
 from ..config import settings
 from ..db import db_session
 from ..env import current as current_env
@@ -60,11 +61,11 @@ async def parish_feed(request: Request) -> Response:
     base_url, host = _origin(request)
     from_, to = _window()
     async with db_session() as session:
-        entries = (
+        entries = raise_http(
             await event_service.calendar_entries(
                 session, None, scope="parish", from_=from_, to=to
             )
-        ).unwrap()
+        )
     body = ics.render(
         entries,
         name=parish_feed_name(),
@@ -84,11 +85,11 @@ async def personal_feed(token: str, request: Request) -> Response:
         if user is None:
             raise HTTPException(404, "no such calendar")
         actor = await load_actor(session, user)
-        entries = (
+        entries = raise_http(
             await event_service.calendar_entries(
                 session, actor, scope="mine", from_=from_, to=to
             )
-        ).unwrap()
+        )
     body = ics.render(
         entries,
         name=personal_feed_name(),
@@ -107,11 +108,11 @@ async def personal_download(request: Request) -> Response:
         actor = await get_actor(session)
         if actor is None:
             raise HTTPException(401, "sign in to download your calendar")
-        entries = (
+        entries = raise_http(
             await event_service.calendar_entries(
                 session, actor, scope="mine", from_=from_, to=to
             )
-        ).unwrap()
+        )
     body = ics.render(
         entries,
         name=personal_feed_name(),
@@ -135,11 +136,11 @@ async def reset_personal(request: Request) -> Response:
         actor = await get_actor(session)
         if actor is None:
             raise HTTPException(401, "sign in to reset your calendar address")
-        (
+        raise_http(
             await user_service.reset_calendar_token(
                 session, actor.user.id, token=current_env().rng.token()
             )
-        ).unwrap()
+        )
     # back to the page the form was on — same origin only, or /events
     base_url, _ = _origin(request)
     referer = request.headers.get("referer", "")

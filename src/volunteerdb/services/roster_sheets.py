@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING
 from ..actors import load_actor
 from ..db import transaction
 from ..errors import DomainError, External, NotFound, invalid, message, require
-from ..fp import Err, Ok, Result
+from ..fp import Err, Ok, Result, expect
 from ..log import audit_log
 from ..models import AppUser, SyncStatus, TeamSheet
 from ..services import gsheets
@@ -88,14 +88,14 @@ async def ensure_sync_user(env: Env) -> int:
     async with transaction(env, None) as session:
         user = await user_service.get_by_email(session, email)
         if user is None:
-            user, _ = (
+            user, _ = expect(
                 await user_service.create(
                     session,
                     email,
                     password=env.rng.token(),
                     link_by_email=False,  # a bot, never a volunteer's login
                 )
-            ).unwrap()
+            )
             user.is_active = False
             await session.flush()
         return user.id

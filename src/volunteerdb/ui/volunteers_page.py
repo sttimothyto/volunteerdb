@@ -7,7 +7,7 @@ from .. import query_lang
 from ..domain import EmailChangeAttempted
 from ..env import current
 from ..env import current as current_env
-from ..fp import Err
+from ..fp import Err, expect
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
@@ -271,7 +271,7 @@ async def volunteer_detail(request: Request, volunteer_id: int):
         )
         assignments = await volunteer_service.assignments(session, volunteer_id)
         impact = (
-            (await volunteer_service.impact(session, actor, volunteer_id)).unwrap()
+            expect(await volunteer_service.impact(session, actor, volunteer_id))
             if can_view
             else []
         )
@@ -280,11 +280,11 @@ async def volunteer_detail(request: Request, volunteer_id: int):
             session, actor, volunteer_id, today=current_env().today()
         )
         hours = (
-            (
+            expect(
                 await event_service.hours_for_volunteer(
                     session, actor, volunteer_id, now=current_env().clock.now()
                 )
-            ).unwrap()
+            )
             if can_view
             else None
         )

@@ -24,6 +24,7 @@ from .. import passwords
 from ..auth import async_verify_password
 from ..domain import EmailChangeAttempted, SignInFailed
 from ..env import current as current_env
+from ..fp import expect
 from ..services import users as user_service
 from .calendar_panel import subscribe_panel
 from .context import (
@@ -60,11 +61,11 @@ async def account_page(request: Request):
         # the forgotten password.
         proved_by_email = session_auth_method() in ("otp", "invite")
         must_retype = has_password and not proved_by_email
-        feed_token = (
+        feed_token = expect(
             await user_service.ensure_calendar_token(
                 session, user_id, token=current_env().rng.token()
             )
-        ).unwrap()
+        )
 
     async def request_email_change() -> None:
         addr = (new_email.value or "").strip()

@@ -7,7 +7,7 @@ from ..domain import ApiTokenIssued, EmailChangeAttempted, SignInFailed
 from ..errors import NotFound, message
 from ..fp import Err
 from ..services import users as service
-from .deps import CtxDep, dispatch, env_of, perform, throttled
+from .deps import CtxDep, dispatch, env_of, perform, raise_http, throttled
 from .schemas import (
     EmailChangeConfirmIn,
     EmailChangeIn,
@@ -42,9 +42,9 @@ async def login(data: LoginIn, request: Request) -> TokenOut:
             await session.rollback()
         else:
             user = signed.value
-            token = (
+            token = raise_http(
                 await service.issue_api_token(session, user.id, token=env.rng.token())
-            ).unwrap()
+            )
     if isinstance(signed, Err):
         logger.warning("auth.login_failed", method="api", email=data.email, ip=ip)
         await perform(env, [SignInFailed("api", addr, ip)], base_url=base_url, now=now)

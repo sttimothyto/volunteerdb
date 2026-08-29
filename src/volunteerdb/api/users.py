@@ -25,7 +25,7 @@ def _user_out(user, invite_token: str | None = None) -> UserOut:
 @router.get("")
 async def list_users(ctx: CtxDep) -> list[UserOut]:
     return [
-        _user_out(u) for u in (await service.list_all(ctx.session, ctx.actor)).unwrap()
+        _user_out(u) for u in raise_http(await service.list_all(ctx.session, ctx.actor))
     ]
 
 
@@ -54,13 +54,13 @@ async def update_user(ctx: CtxDep, user_id: int, data: UserPatch) -> UserOut:
     # volunteer_id is a link, not a flag, and null means unlink — hence
     # exclude_unset above and a separate call rather than a None-means-skip arg
     link = fields.pop("volunteer_id", ...)
-    user = (
+    user = raise_http(
         await service.set_flags(ctx.session, user_id, actor=ctx.actor, **fields)
-    ).unwrap()
+    )
     if link is not ...:
-        user = (
+        user = raise_http(
             await service.set_volunteer(ctx.session, user_id, link, actor=ctx.actor)
-        ).unwrap()
+        )
     return _user_out(user)
 
 

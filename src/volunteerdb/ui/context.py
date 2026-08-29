@@ -19,7 +19,6 @@ from ..env import Env, current
 from ..errors import (
     Conflict,
     DomainError,
-    DomainErrorRaised,
     Invalid,
     QueryError,
     Throttled,
@@ -204,16 +203,12 @@ async def run_command[T](
     the commit, so mail never rides a transaction; then `on_ok` (the success
     toast, a dialog to close: a function of the value, the effects planned
     and how they went) and, unless told otherwise, a reload. A conflict at commit (IntegrityError)
-    is a Conflict toast. A command may still call .unwrap() on the way
-    (transition); the carrier is read back as the Err it wraps.
+    is a Conflict toast.
     """
     env = current()
     try:
         async with page_ctx() as ctx:
-            try:
-                result = as_result(await command(ctx))
-            except DomainErrorRaised as exc:
-                result = Err(exc.error)
+            result = as_result(await command(ctx))
             if isinstance(result, Err):
                 await ctx.session.rollback()
                 toast(result.error)

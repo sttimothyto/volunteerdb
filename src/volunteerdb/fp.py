@@ -34,14 +34,10 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .errors import DomainError
-
-
-class UnwrapError(Exception):
-    """``Err.unwrap()`` on an error that is not a DomainError."""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,9 +62,6 @@ class Ok[T]:
     def unwrap_or(self, default: Any) -> T:
         return self.value
 
-    def unwrap(self) -> T:
-        return self.value
-
 
 @dataclass(frozen=True, slots=True)
 class Err[E]:
@@ -91,17 +84,6 @@ class Err[E]:
 
     def unwrap_or[T](self, default: T) -> T:
         return default
-
-    def unwrap(self) -> NoReturn:
-        """Transition shim: raise the error for a caller that still expects
-        exceptions. A DomainError travels as ``errors.DomainErrorRaised``,
-        which both front doors map exactly as they map the legacy exceptions.
-        Deleted with the last raising caller."""
-        from .errors import DomainErrorRaised, is_domain_error
-
-        if is_domain_error(self.error):
-            raise DomainErrorRaised(self.error)
-        raise UnwrapError(self.error)
 
 
 type Result[T, E] = Ok[T] | Err[E]
@@ -157,19 +139,12 @@ async def attempt_async[T, E](
         return Err(to_err(e))
 
 
-async def lift[T](aw: Awaitable[T]) -> Result[T, DomainError]:
-    """Transition shim: call a not-yet-converted service from converted code.
-    The legacy exception vocabulary becomes the matching DomainError; an
-    exception outside that vocabulary is a bug and propagates."""
-    from .errors import LEGACY_EXCEPTIONS, from_exception
-
-    try:
-        return Ok(await aw)
-    except LEGACY_EXCEPTIONS as exc:
-        err = from_exception(exc)
-        if err is None:
-            raise
-        return Err(err)
+def expect[T](result: Result[T, Any]) -> T:
+    """The value of a Result that cannot be an Err here -- a read guarded by
+    the very right the service checks, an internal caller acting for nobody.
+    An Err is then a bug, not a refusal, and says so."""
+    assert isinstance(result, Ok), f"unexpected refusal: {result!r}"
+    return result.value
 
 
 def as_result[T, E](x: Result[T, E] | T) -> Result[T, E]:

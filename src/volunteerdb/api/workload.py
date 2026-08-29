@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from ..permissions import team_ids_map
 from ..services import volunteers as volunteer_service
 from ..services import workload as service
-from .deps import AsOf, CtxDep
+from .deps import AsOf, CtxDep, raise_http
 from .schemas import BandOut, WorkloadConfigIn, WorkloadConfigOut, WorkloadScoreOut
 
 router = APIRouter(prefix="/workload", tags=["workload"])
@@ -28,7 +28,7 @@ def _config_out(config: service.WorkloadConfig) -> WorkloadConfigOut:
 @router.get("/config")
 async def get_config(ctx: CtxDep) -> WorkloadConfigOut:
     """Multipliers and band colors/thresholds; leaders need them to render workload."""
-    return _config_out((await service.get_config(ctx.session, ctx.actor)).unwrap())
+    return _config_out(raise_http(await service.get_config(ctx.session, ctx.actor)))
 
 
 @router.put("/config")
@@ -42,7 +42,7 @@ async def put_config(ctx: CtxDep, data: WorkloadConfigIn) -> WorkloadConfigOut:
             for b in data.bands
         ],
     )
-    (await service.set_config(ctx.session, ctx.actor, config, now=ctx.now)).unwrap()
+    raise_http(await service.set_config(ctx.session, ctx.actor, config, now=ctx.now))
     return _config_out(config)
 
 

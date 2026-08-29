@@ -66,10 +66,7 @@ RAISE = "raise"  # a refusal is a returned Err, never an exception
 
 # What the tree carried when the sweep was written: module -> name -> count.
 # Shrinks per phase; a stale entry fails test_the_baseline_has_no_stale_entries.
-BASELINE: dict[str, dict[str, int]] = {
-    "fp.py": {"raise": 3},
-    "permissions.py": {"raise": 1},
-}
+BASELINE: dict[str, dict[str, int]] = {}
 
 
 def _core_files():

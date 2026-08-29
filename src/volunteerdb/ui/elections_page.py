@@ -15,7 +15,7 @@ from nicegui import ui
 
 from ..env import current as current_env
 from ..errors import NotFound
-from ..fp import Err, Ok
+from ..fp import Err, Ok, expect
 from ..models import ROLE_LABELS, ProposalStatus, TeamRole
 from ..permissions import team_ids_map
 from ..services import elections as elections_service
@@ -390,11 +390,11 @@ async def proposal_detail(proposal_id: int):
                 and proposal_id in actor.voter_proposal_ids
             )
             my = (
-                (
+                expect(
                     await elections_service.my_scores(
                         session, actor, proposal_id, actor.volunteer_id
                     )
-                ).unwrap()
+                )
                 if is_voter
                 else {}
             )

@@ -8,14 +8,13 @@ aggregates, never a voter's scores.
 
 from datetime import date
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..models import Proposal, TeamRole
-from ..permissions import require
 from ..services import elections as service
 from ..services import volunteers as volunteer_service
 from ..star import StarResult
-from .deps import CtxDep
+from .deps import CtxDep, gate, raise_http
 from .schemas import (
     AppointIn,
     AssignmentOut,
@@ -105,7 +104,7 @@ async def list_proposals(
 ) -> list[ProposalOut]:
     """Proposals the caller may see: admins all, leaders/seconds their
     subtree, voters the rolls they sit on."""
-    require(ctx.actor.can_access_elections, "use the elections page")
+    gate(ctx.actor.can_access_elections, "use the elections page")
     views = await service.list_proposals(
         ctx.session, ctx.actor, team_id=team_id, status=status, today=ctx.env.today()
     )
@@ -114,7 +113,7 @@ async def list_proposals(
 
 @router.post("/proposals", status_code=201)
 async def create_proposal(ctx: CtxDep, data: ProposalCreateIn) -> ProposalOut:
-    proposal = (
+    proposal = raise_http(
         await service.create_proposal(
             ctx.session,
             ctx.actor,
@@ -129,18 +128,18 @@ async def create_proposal(ctx: CtxDep, data: ProposalCreateIn) -> ProposalOut:
             notes=data.notes,
             today=ctx.env.today(),
         )
-    ).unwrap()
+    )
     return proposal_out(proposal, today=ctx.env.today())
 
 
 @router.get("/proposals/{proposal_id}")
 async def get_proposal(ctx: CtxDep, proposal_id: int) -> ProposalDetailOut:
     return _detail_out(
-        (
+        raise_http(
             await service.detail(
                 ctx.session, ctx.actor, proposal_id, today=ctx.env.today()
             )
-        ).unwrap(),
+        ),
         today=ctx.env.today(),
     )
 
@@ -150,7 +149,7 @@ async def update_proposal(
     ctx: CtxDep, proposal_id: int, data: ProposalPatch
 ) -> ProposalOut:
     extra = {} if data.notes is None else {"notes": data.notes}
-    updated = (
+    updated = raise_http(
         await service.update_proposal(
             ctx.session,
             ctx.actor,
@@ -160,7 +159,7 @@ async def update_proposal(
             **extra,
             today=ctx.env.today(),
         )
-    ).unwrap()
+    )
     return proposal_out(updated, today=ctx.env.today())
 
 
@@ -170,7 +169,7 @@ async def add_candidate(
 ) -> CandidateOut:
     """Nominate: managers and the proposal's voting members, until the
     nomination deadline."""
-    candidate = (
+    candidate = raise_http(
         await service.add_candidate(
             ctx.session,
             ctx.actor,
@@ -180,7 +179,7 @@ async def add_candidate(
             note=data.note,
             today=ctx.env.today(),
         )
-    ).unwrap()
+    )
     out = CandidateOut.model_validate(candidate)
     volunteer = await volunteer_service.get(ctx.session, data.volunteer_id)
     out.volunteer_name = volunteer.full_name if volunteer else ""
@@ -189,16 +188,16 @@ async def add_candidate(
 
 @router.delete("/proposals/{proposal_id}/candidates/{candidate_id}", status_code=204)
 async def remove_candidate(ctx: CtxDep, proposal_id: int, candidate_id: int) -> None:
-    (
+    raise_http(
         await service.remove_candidate(
             ctx.session, ctx.actor, proposal_id, candidate_id, today=ctx.env.today()
         )
-    ).unwrap()
+    )
 
 
 @router.post("/proposals/{proposal_id}/voters", status_code=201)
 async def add_voter(ctx: CtxDep, proposal_id: int, data: VoterIn) -> VoterOut:
-    voter = (
+    voter = raise_http(
         await service.add_voter(
             ctx.session,
             ctx.actor,
@@ -207,7 +206,7 @@ async def add_voter(ctx: CtxDep, proposal_id: int, data: VoterIn) -> VoterOut:
             added_by=ctx.actor.user.id,
             today=ctx.env.today(),
         )
-    ).unwrap()
+    )
     out = VoterOut.model_validate(voter)
     volunteer = await volunteer_service.get(ctx.session, data.volunteer_id)
     out.volunteer_name = volunteer.full_name if volunteer else ""
@@ -216,11 +215,11 @@ async def add_voter(ctx: CtxDep, proposal_id: int, data: VoterIn) -> VoterOut:
 
 @router.delete("/proposals/{proposal_id}/voters/{voter_id}", status_code=204)
 async def remove_voter(ctx: CtxDep, proposal_id: int, voter_id: int) -> None:
-    (
+    raise_http(
         await service.remove_voter(
             ctx.session, ctx.actor, proposal_id, voter_id, today=ctx.env.today()
         )
-    ).unwrap()
+    )
 
 
 @router.get("/vacancies")
@@ -231,7 +230,7 @@ async def vacancies(ctx: CtxDep) -> list[CoverageOut]:
     close but returns every team with its counts, not the holes. Scoped like
     the proposal list: admins see the parish, leaders/seconds their subtree.
     """
-    require(ctx.actor.can_access_elections, "use the elections page")
+    gate(ctx.actor.can_access_elections, "use the elections page")
     rows = await service.vacancies(ctx.session, ctx.actor)
     return [
         CoverageOut(
@@ -255,20 +254,20 @@ async def get_own_ballot(ctx: CtxDep, proposal_id: int) -> BallotOut:
     overwritten blind. A ballot is secret from everyone else — including the
     team's managers — so this only ever answers for the caller themselves.
     Empty until they vote."""
-    require(ctx.actor.volunteer_id is not None, "vote on this proposal")
-    scores = (
+    gate(ctx.actor.volunteer_id is not None, "vote on this proposal")
+    scores = raise_http(
         await service.my_scores(
             ctx.session, ctx.actor, proposal_id, ctx.actor.volunteer_id
         )
-    ).unwrap()
+    )
     return BallotOut(scores=scores)
 
 
 @router.put("/proposals/{proposal_id}/ballot", status_code=204)
 async def cast_ballot(ctx: CtxDep, proposal_id: int, data: BallotIn) -> None:
     """Cast or revise the caller's whole ballot (PUT: idempotent overwrite)."""
-    require(ctx.actor.volunteer_id is not None, "vote on this proposal")
-    (
+    gate(ctx.actor.volunteer_id is not None, "vote on this proposal")
+    raise_http(
         await service.cast_ballot(
             ctx.session,
             ctx.actor,
@@ -278,17 +277,17 @@ async def cast_ballot(ctx: CtxDep, proposal_id: int, data: BallotIn) -> None:
             today=ctx.env.today(),
             now=ctx.now,
         )
-    ).unwrap()
+    )
 
 
 @router.get("/proposals/{proposal_id}/tally")
 async def get_tally(ctx: CtxDep, proposal_id: int) -> TallyOut:
     """The STAR result — 422 while voting is still possible."""
-    view = (
+    view = raise_http(
         await service.detail(ctx.session, ctx.actor, proposal_id, today=ctx.env.today())
-    ).unwrap()
+    )
     if view.tally is None:
-        raise ValueError("voting has not concluded")
+        raise HTTPException(422, "voting has not concluded")
     names = {c.candidate.id: c.volunteer.full_name for c in view.candidates}
     return _tally_out(view.tally, names)
 
@@ -298,7 +297,7 @@ async def appoint(ctx: CtxDep, proposal_id: int, data: AppointIn) -> ProposalOut
     """Appoint: flips the status and creates/upgrades the membership together.
     The tally is advisory — any candidate may be appointed."""
     return proposal_out(
-        (
+        raise_http(
             await service.appoint(
                 ctx.session,
                 ctx.actor,
@@ -308,7 +307,7 @@ async def appoint(ctx: CtxDep, proposal_id: int, data: AppointIn) -> ProposalOut
                 today=ctx.env.today(),
                 now=ctx.now,
             )
-        ).unwrap(),
+        ),
         today=ctx.env.today(),
     )
 
@@ -316,7 +315,7 @@ async def appoint(ctx: CtxDep, proposal_id: int, data: AppointIn) -> ProposalOut
 @router.post("/proposals/{proposal_id}/cancel")
 async def cancel(ctx: CtxDep, proposal_id: int) -> ProposalOut:
     return proposal_out(
-        (
+        raise_http(
             await service.cancel(
                 ctx.session,
                 ctx.actor,
@@ -324,7 +323,7 @@ async def cancel(ctx: CtxDep, proposal_id: int) -> ProposalOut:
                 decided_by=ctx.actor.user.id,
                 now=ctx.now,
             )
-        ).unwrap(),
+        ),
         today=ctx.env.today(),
     )
 
@@ -334,7 +333,7 @@ async def new_round(ctx: CtxDep, proposal_id: int, data: NewRoundIn) -> Proposal
     """Close a concluded round and open a fresh one for the same seat with
     the same candidates and roll — the Ignatian repeat."""
     return proposal_out(
-        (
+        raise_http(
             await service.new_round(
                 ctx.session,
                 ctx.actor,
@@ -345,6 +344,6 @@ async def new_round(ctx: CtxDep, proposal_id: int, data: NewRoundIn) -> Proposal
                 today=ctx.env.today(),
                 now=ctx.now,
             )
-        ).unwrap(),
+        ),
         today=ctx.env.today(),
     )

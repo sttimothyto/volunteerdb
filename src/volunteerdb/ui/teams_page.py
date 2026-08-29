@@ -9,7 +9,7 @@ from .. import query_lang
 from ..config import settings
 from ..env import current as current_env
 from ..errors import not_found
-from ..fp import Err, Ok
+from ..fp import Err, Ok, expect
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
 from ..services import events as event_service
 from ..services import mail, roster_sheets
@@ -853,7 +853,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         # snapshot, where the roster is history and the addresses may be stale
         can_invite = can_full and at is None
         roster = (
-            (await team_service.roster(session, actor, team_id, at=at)).unwrap()
+            expect(await team_service.roster(session, actor, team_id, at=at))
             if can_names
             else []
         )

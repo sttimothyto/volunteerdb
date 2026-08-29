@@ -162,8 +162,3 @@ async def volunteer_team_ids(session: AsyncSession, volunteer_id: int) -> set[in
 
 class Forbidden(PermissionError):
     """Raised by services/API when the actor lacks the required permission."""
-
-
-def require(condition: bool, what: str = "this action") -> None:
-    if not condition:
-        raise Forbidden(f"not allowed: {what}")
