@@ -143,9 +143,15 @@ async def sync_roster_sheet(
     (
         await service.roster_sheet(ctx.session, ctx.actor, team_id)
     ).unwrap()  # rights + 404
-    outcome = await sheet_service.sync_team(
-        ctx.env, team_id, direction=data.direction, user_id=ctx.actor.user.id
-    )
+    outcome = (
+        await sheet_service.sync_team(
+            ctx.env,
+            team_id,
+            direction=data.direction,
+            user_id=ctx.actor.user.id,
+            now=ctx.now,
+        )
+    ).unwrap()
     if outcome.failed:
         raise ValueError(outcome.message)
     sheet = (await service.roster_sheet(ctx.session, ctx.actor, team_id)).unwrap()

@@ -78,19 +78,23 @@ async def _team_volunteer_ids(team_id: int) -> set[int]:
         return {volunteer.id for _, volunteer in pairs}
 
 
-async def test_sync_roundtrip_of_team_export_is_a_noop(choir):
+async def test_sync_roundtrip_of_team_export_is_a_noop(choir, env):
     async with db_session() as session:
-        content = await exporter.export_csv(
-            session, None, team_id=choir["choir"], subtree=False
+        content = ok(
+            await exporter.export_csv(
+                session, None, team_id=choir["choir"], subtree=False
+            )
         )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        env, content, team_id=choir["choir"], user_id=None
+    )
     assert not report.has_errors, report.errors
     assert report.applied
     assert report.volunteers_created == report.volunteers_updated == 0
     assert report.memberships_created == report.memberships_updated == 0
 
 
-async def test_sync_applies_adds_and_updates_but_removes_nobody(choir):
+async def test_sync_applies_adds_and_updates_but_removes_nobody(choir, env):
     """Lena unchanged, Mia promoted, Nora added; Carl and Dora simply absent.
     Absence is not a departure — they keep their memberships, and the caller's
     write-back leg is what puts them back into the sheet."""
@@ -101,7 +105,9 @@ async def test_sync_applies_adds_and_updates_but_removes_nobody(choir):
             ["", "Nora", "New", "nora@example.org", "", "", "Choir", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        env, content, team_id=choir["choir"], user_id=None
+    )
     assert not report.has_errors, report.errors
     assert report.applied
     assert report.volunteers_created == 1
@@ -125,7 +131,7 @@ async def test_sync_applies_adds_and_updates_but_removes_nobody(choir):
         assert deleted == 0
 
 
-async def test_sync_blank_team_defaults_to_the_sheet_team(choir):
+async def test_sync_blank_team_defaults_to_the_sheet_team(choir, env):
     content = _csv_bytes(
         [
             ["", "Lena", "Leader", "lena@example.org", "", "", "", "leader"],
@@ -134,12 +140,14 @@ async def test_sync_blank_team_defaults_to_the_sheet_team(choir):
             ["", "Dora", "Done", "dora@example.org", "", "", "", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        env, content, team_id=choir["choir"], user_id=None
+    )
     assert not report.has_errors, report.errors
     assert report.applied
 
 
-async def test_sync_rejects_rows_for_other_teams(choir):
+async def test_sync_rejects_rows_for_other_teams(choir, env):
     content = _csv_bytes(
         [
             ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
@@ -148,7 +156,9 @@ async def test_sync_rejects_rows_for_other_teams(choir):
             ["", "Dora", "Done", "dora@example.org", "", "", "Choir", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        env, content, team_id=choir["choir"], user_id=None
+    )
     assert report.has_errors and not report.applied
     assert any("only manages 'Choir'" in e.message for e in report.errors)
     assert await _team_volunteer_ids(choir["choir"]) == {
@@ -159,7 +169,7 @@ async def test_sync_rejects_rows_for_other_teams(choir):
     }, "all-or-nothing per team"
 
 
-async def test_a_row_error_rolls_the_whole_team_back(choir):
+async def test_a_row_error_rolls_the_whole_team_back(choir, env):
     """Mia's Role cell is garbage. All-or-nothing per team: the good rows in
     the same file must not land either."""
     content = _csv_bytes(
@@ -169,7 +179,9 @@ async def test_a_row_error_rolls_the_whole_team_back(choir):
             ["", "Nora", "New", "nora@example.org", "", "", "Choir", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        env, content, team_id=choir["choir"], user_id=None
+    )
     assert report.has_errors and not report.applied
     # the report still COUNTS what it would have done — the rollback is the
     # database's, not the tally's — so the state is what the assertion checks
@@ -177,12 +189,12 @@ async def test_a_row_error_rolls_the_whole_team_back(choir):
         assert await volunteers.search(session, "nora@example.org") == []
 
 
-async def test_sync_dry_run_reports_without_writing(choir):
+async def test_sync_dry_run_reports_without_writing(choir, env):
     content = _csv_bytes(
         [["", "Nora", "New", "nora@example.org", "", "", "Choir", "member"]]
     )
     report = await importer.run_team_sync(
-        content, team_id=choir["choir"], user_id=None, dry_run=True
+        env, content, team_id=choir["choir"], user_id=None, dry_run=True
     )
     assert not report.has_errors and not report.applied
     assert report.volunteers_created == 1, "reported..."
@@ -192,18 +204,18 @@ async def test_sync_dry_run_reports_without_writing(choir):
         )
 
 
-async def test_sync_empty_sheet_for_an_empty_team_is_fine(choir):
+async def test_sync_empty_sheet_for_an_empty_team_is_fine(choir, env):
     async with db_session() as session:
         fresh = ok(await teams.create(session, None, "Fresh"))
         fresh_id = fresh.id
     report = await importer.run_team_sync(
-        _csv_bytes([]), team_id=fresh_id, user_id=None
+        env, _csv_bytes([]), team_id=fresh_id, user_id=None
     )
     assert not report.has_errors, report.errors
     assert report.applied
 
 
-async def test_sync_adding_an_archived_volunteer_reactivates_them(choir):
+async def test_sync_adding_an_archived_volunteer_reactivates_them(choir, env):
     """Archiving is an act in the app now, never a consequence of a sheet —
     but putting an archived person on a team still reactivates them, which is
     how a leader brings somebody back."""
@@ -217,7 +229,9 @@ async def test_sync_adding_an_archived_volunteer_reactivates_them(choir):
     content = _csv_bytes(
         [["", "Greta", "Gone", "greta@example.org", "", "", "Choir", "member"]]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        env, content, team_id=choir["choir"], user_id=None
+    )
     assert report.applied, report.errors
     assert report.volunteers_reactivated == 1
 
@@ -226,7 +240,7 @@ async def test_sync_adding_an_archived_volunteer_reactivates_them(choir):
         assert greta.is_active, "joining a team implies active"
 
 
-async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir):
+async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir, env):
     """A team's sheet is edited by whoever holds its Drive share and applied
     overnight with nobody watching. Before this it ran unrestricted, so pasting
     a stranger's row rewrote their address on the spot — point it at your own
@@ -256,7 +270,7 @@ async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir):
         ]
     )
     report = await importer.run_team_sync(
-        poisoned, team_id=choir["choir"], user_id=None
+        env, poisoned, team_id=choir["choir"], user_id=None
     )
     assert not report.applied, "all-or-nothing: the whole sheet rolls back"
     assert any("not allowed to edit" in i.message for i in report.errors)
@@ -266,7 +280,9 @@ async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir):
         assert still.email == "orla@example.org", "her address is untouched"
 
 
-async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(choir):
+async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(
+    choir, env
+):
     """Replacing an address is reported for the caller to mail; filling a blank
     one is not — there is no mailbox to tell.
 
@@ -313,7 +329,9 @@ async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(c
             ],
         ]
     )
-    report = await importer.run_team_sync(moved, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        env, moved, team_id=choir["choir"], user_id=None
+    )
     assert report.applied, report.errors
     assert report.addresses_replaced == [("mia@example.org", "mia.new@example.org")], (
         "Mia moved and gets a notice; Basil's blank was filled in, so nobody does"
@@ -323,7 +341,7 @@ async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(c
 # --- the production default: a sheet never removes anybody -------------------
 
 
-async def test_the_default_sync_never_removes_a_missing_member(choir):
+async def test_the_default_sync_never_removes_a_missing_member(choir, env):
     """The contract jobs.roster_sync runs under. Dora is absent from the sheet
     and stays on the roster regardless — the write-back leg is what reconciles
     the sheet, by putting her back into it."""
@@ -334,12 +352,14 @@ async def test_the_default_sync_never_removes_a_missing_member(choir):
             ["", "Carl", "Cross", "carl@example.org", "", "", "Choir", "member"],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        env, content, team_id=choir["choir"], user_id=None
+    )
     assert report.applied
     assert choir["dora"] in await _team_volunteer_ids(choir["choir"])
 
 
-async def test_the_default_sync_still_adds_and_updates(choir):
+async def test_the_default_sync_still_adds_and_updates(choir, env):
     """Not removing is not the same as not applying: the sheet is still the
     way a leader adds somebody and fixes a phone number."""
     content = _csv_bytes(
@@ -357,7 +377,9 @@ async def test_the_default_sync_still_adds_and_updates(choir):
             ],
         ]
     )
-    report = await importer.run_team_sync(content, team_id=choir["choir"], user_id=None)
+    report = await importer.run_team_sync(
+        env, content, team_id=choir["choir"], user_id=None
+    )
     assert report.applied
     assert report.volunteers_created == 1
     ids = await _team_volunteer_ids(choir["choir"])
@@ -366,11 +388,11 @@ async def test_the_default_sync_still_adds_and_updates(choir):
     assert len(ids) == 5
 
 
-async def test_an_empty_sheet_is_harmless_when_nothing_is_removed(choir):
+async def test_an_empty_sheet_is_harmless_when_nothing_is_removed(choir, env):
     """An emptied sheet is simply a no-op, which is the better failure mode:
     the write-back leg refills it the same night."""
     report = await importer.run_team_sync(
-        _csv_bytes([]), team_id=choir["choir"], user_id=None
+        env, _csv_bytes([]), team_id=choir["choir"], user_id=None
     )
     assert report.applied and not report.has_errors
     assert await _team_volunteer_ids(choir["choir"]) == {

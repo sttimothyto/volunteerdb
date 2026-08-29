@@ -26,7 +26,7 @@ import sqlalchemy as sa
 from .. import env as env_mod
 from ..db import db_session
 from ..env import Env
-from ..errors import External
+from ..errors import External, message
 from ..fp import Err, Result
 from ..log import init_logging
 from ..models import SyncStatus, TeamSheet
@@ -95,18 +95,24 @@ async def main(env: Env) -> int:
                 counts["created"] += 1
                 # a brand-new sheet has nothing in it worth importing, so the
                 # first pass is always database -> sheet
-                outcome = await sheet_service.sync_team(
-                    env, team_id, direction=sheet_service.EXPORT, user_id=None
-                )
+                direction = sheet_service.EXPORT
             else:
-                outcome = await sheet_service.sync_team(
-                    env, team_id, direction=sheet_service.IMPORT, user_id=None
-                )
+                direction = sheet_service.IMPORT
+            synced = await sheet_service.sync_team(
+                env, team_id, direction=direction, user_id=None, now=env.clock.now()
+            )
         except Exception as exc:  # one team's problem is not the job's
             counts["failed"] += 1
             await sheet_service.record_status(env, team_id, SyncStatus.error, str(exc))
             print(f"FAILED {path}: {exc}", file=sys.stderr)
             continue
+        if isinstance(synced, Err):
+            counts["failed"] += 1
+            text = message(synced.error)
+            await sheet_service.record_status(env, team_id, SyncStatus.error, text)
+            print(f"FAILED {path}: {text}", file=sys.stderr)
+            continue
+        outcome = synced.value
         if outcome.failed:
             counts["failed"] += 1
             print(f"FAILED {path}: {outcome.message}", file=sys.stderr)

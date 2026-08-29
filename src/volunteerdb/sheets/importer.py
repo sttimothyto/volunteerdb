@@ -17,23 +17,36 @@
   an archived volunteer on a team does reactivate them: joining implies
   active.
 - Any error rolls the whole import back; the report lists every issue.
+
+The two entry points take the Env and open their own unit of work
+(db.transaction) -- the plan's exemption for the orchestrators -- and abort
+it with session.rollback() rather than an exception: a dry run, a report with
+errors, and a refused import all leave the database untouched.
 """
+
+from __future__ import annotations
 
 import csv
 from dataclasses import dataclass, field
 from io import StringIO
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..actors import load_actor
-from ..db import db_session
+from ..db import transaction
+from ..errors import DomainError, message, require
+from ..fp import Err, Ok, Result
 from ..log import audit_log
 from ..models import AppUser, Membership, Volunteer
-from ..permissions import Actor, require
+from ..permissions import Actor
 from ..services import memberships as membership_service
 from ..services import teams as team_service
 from .common import ROSTER_HEADERS, ROSTER_SHEET, clean_cell, parse_role
+
+if TYPE_CHECKING:
+    from ..env import Env
 
 
 @dataclass
@@ -66,10 +79,6 @@ class ImportReport:
     @property
     def has_errors(self) -> bool:
         return bool(self.errors)
-
-
-class _Abort(Exception):
-    pass
 
 
 @dataclass
@@ -159,33 +168,36 @@ def parse_roster_csv(content: bytes, report: ImportReport) -> list[RosterRow] | 
 
 
 async def run_import(
-    content: bytes, *, dry_run: bool, user_id: int | None
-) -> ImportReport:
+    env: Env, content: bytes, *, dry_run: bool, user_id: int | None
+) -> Result[ImportReport, DomainError]:
     """Parse and apply a roster CSV. On dry_run or any error, everything rolls
     back. Non-admin users (leaders/seconds) are scoped to the teams they
-    manage; user_id=None runs unrestricted (service-level callers)."""
+    manage; user_id=None runs unrestricted (service-level callers). The only
+    Err is the refusal to import at all: row problems are in the report."""
     report = ImportReport()
     rows = parse_roster_csv(content, report)
     if rows is None:
-        return report
+        return Ok(report)
 
-    try:
-        async with db_session(user_id) as session:
-            actor = None
-            if user_id is not None:
-                user = await session.get(AppUser, user_id)
-                assert user is not None, f"unknown user {user_id}"
-                actor = await load_actor(session, user)
-                # The right to import at all, checked here rather than at the
-                # two front doors: rows are then scoped one by one below, and
-                # both surfaces reach this same function.
-                require(actor.can_import_export, "import spreadsheets")
-            await apply_rows(session, rows, report, actor)
-            if dry_run or report.has_errors:
-                raise _Abort()
+    async with transaction(env, user_id) as session:
+        actor = None
+        if user_id is not None:
+            user = await session.get(AppUser, user_id)
+            assert user is not None, f"unknown user {user_id}"
+            actor = await load_actor(session, user)
+            # The right to import at all, checked here rather than at the
+            # two front doors: rows are then scoped one by one below, and
+            # both surfaces reach this same function.
+            if denied := require(actor.can_import_export, "import spreadsheets"):
+                await session.rollback()
+                return denied
+        applied = await apply_rows(session, rows, report, actor)
+        if isinstance(applied, Err):
+            report.errors.append(Issue(ROSTER_SHEET, 0, message(applied.error)))
+        if dry_run or report.has_errors:
+            await session.rollback()  # the block then exits without committing
+        else:
             report.applied = True
-    except _Abort:
-        pass
     audit_log(
         "import.finished",
         outcome=(
@@ -202,10 +214,11 @@ async def run_import(
         memberships_updated=report.memberships_updated,
         errors=len(report.errors),
     )
-    return report
+    return Ok(report)
 
 
 async def run_team_sync(
+    env: Env,
     content: bytes,
     *,
     team_id: int,
@@ -238,14 +251,16 @@ async def run_team_sync(
         full_view_team_ids={team_id},
         names_view_team_ids=set(),
     )
-    try:
-        async with db_session(user_id) as session:
-            await apply_rows(session, rows, report, sheet_actor, sync_team_id=team_id)
-            if dry_run or report.has_errors:
-                raise _Abort()
+    async with transaction(env, user_id) as session:
+        applied = await apply_rows(
+            session, rows, report, sheet_actor, sync_team_id=team_id
+        )
+        if isinstance(applied, Err):
+            report.errors.append(Issue(ROSTER_SHEET, 0, message(applied.error)))
+        if dry_run or report.has_errors:
+            await session.rollback()  # the block then exits without committing
+        else:
             report.applied = True
-    except _Abort:
-        pass
     audit_log(
         "sync.team_finished",
         team_id=team_id,
@@ -267,8 +282,9 @@ async def apply_rows(
     actor=None,
     *,
     sync_team_id: int | None = None,
-) -> None:
-    """Upsert volunteers and memberships from parsed rows.
+) -> Result[None, DomainError]:
+    """Upsert volunteers and memberships from parsed rows. Row problems go
+    into the report; the Err is a membership write the service refused.
 
     actor None runs unrestricted; a non-admin actor is scoped row-by-row to
     the teams they manage. sync_team_id switches on sync mode: blank Team cells
@@ -561,16 +577,17 @@ async def apply_rows(
 
         existing = membership_by_pair.get((target.id, team_id))
         before = existing.role if existing else None
-        membership = (
-            await membership_service.assign(
-                session,
-                None,  # the row's licence was already checked above
-                target.id,
-                team_id,
-                role,
-                existing=existing,
-            )
-        ).unwrap()
+        assigned = await membership_service.assign(
+            session,
+            None,  # the row's licence was already checked above
+            target.id,
+            team_id,
+            role,
+            existing=existing,
+        )
+        if isinstance(assigned, Err):
+            return assigned
+        membership = assigned.value
         if existing is None:
             # a later sheet row for the same pair must hit the update branch
             membership_by_pair[(target.id, team_id)] = membership
@@ -583,3 +600,4 @@ async def apply_rows(
                 report.volunteers_reactivated += 1
         elif before != membership.role:
             report.memberships_updated += 1
+    return Ok(None)

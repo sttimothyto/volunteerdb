@@ -69,9 +69,6 @@ RAISE = "raise"  # a refusal is a returned Err, never an exception
 BASELINE: dict[str, dict[str, int]] = {
     "fp.py": {"raise": 3},
     "permissions.py": {"raise": 1},
-    "services/roster_sheets.py": {"now": 1, "raise": 3},
-    "sheets/exporter.py": {"raise": 1},
-    "sheets/importer.py": {"db_session": 2, "raise": 2},
 }
 
 

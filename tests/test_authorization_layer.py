@@ -95,11 +95,7 @@ EDGE_ALLOWLIST = {
 # `Err | None` instead of raising (FUNCTIONAL_REFACTORING.md, Phase 2). A raising
 # gate as a bare statement was correct; a value-returning one is a check that
 # never refuses. The count may only fall; an entry at zero must be deleted.
-DISCARDED_GATE_BASELINE: dict[str, int] = {
-    "services/roster_sheets.py": 1,
-    "sheets/exporter.py": 2,
-    "sheets/importer.py": 1,
-}
+DISCARDED_GATE_BASELINE: dict[str, int] = {}
 
 
 def _functions(path: pathlib.Path):

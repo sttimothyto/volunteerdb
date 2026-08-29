@@ -12,6 +12,7 @@ from io import StringIO
 
 import pytest
 
+from volunteerdb import errors
 from volunteerdb.db import db_session
 from volunteerdb.errors import External
 from volunteerdb.fp import Err, Ok
@@ -22,7 +23,7 @@ from volunteerdb.services import roster_sheets as service
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
 from tests import mint
-from tests.fp_helpers import ok
+from tests.fp_helpers import ok, refused
 
 
 def _csv_bytes(rows: list[list]) -> bytes:
@@ -126,8 +127,10 @@ async def _roster_names(team_id: int) -> set[str]:
 
 
 async def test_export_overwrites_the_sheet_from_the_database(choir, fake, env):
-    outcome = await service.sync_team(
-        env, choir["team"], direction=service.EXPORT, user_id=None
+    outcome = ok(
+        await service.sync_team(
+            env, choir["team"], direction=service.EXPORT, user_id=None, now=mint.now()
+        )
     )
     assert not outcome.failed
     assert len(fake.written) == 1
@@ -143,8 +146,10 @@ async def test_import_applies_the_sheet_then_writes_it_back(choir, fake, env):
             ["", "Nina", "New", "nina@example.org", "", "", "Choir", "member"],
         ]
     )
-    outcome = await service.sync_team(
-        env, choir["team"], direction=service.IMPORT, user_id=None
+    outcome = ok(
+        await service.sync_team(
+            env, choir["team"], direction=service.IMPORT, user_id=None, now=mint.now()
+        )
     )
     assert not outcome.failed
     assert outcome.report.volunteers_created == 1
@@ -158,8 +163,10 @@ async def test_a_sync_never_removes_and_puts_the_missing_row_back(choir, fake, e
     fake.content = _csv_bytes(
         [["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"]]
     )
-    outcome = await service.sync_team(
-        env, choir["team"], direction=service.IMPORT, user_id=None
+    outcome = ok(
+        await service.sync_team(
+            env, choir["team"], direction=service.IMPORT, user_id=None, now=mint.now()
+        )
     )
     assert not outcome.failed
     assert await _roster_names(choir["team"]) == {"Lena", "Mia"}
@@ -171,8 +178,10 @@ async def test_a_sync_never_removes_and_puts_the_missing_row_back(choir, fake, e
 
 async def test_an_unshared_sheet_records_the_error_and_writes_nothing(choir, fake, env):
     fake.read_error = External(gsheets.SERVICE, "the spreadsheet is not shared")
-    outcome = await service.sync_team(
-        env, choir["team"], direction=service.IMPORT, user_id=None
+    outcome = ok(
+        await service.sync_team(
+            env, choir["team"], direction=service.IMPORT, user_id=None, now=mint.now()
+        )
     )
     assert outcome.failed
     assert "not shared" in outcome.message
@@ -189,8 +198,10 @@ async def test_a_bad_row_fails_the_team_whole_and_leaves_the_sheet_alone(
     fake.content = _csv_bytes(
         [["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "archbishop"]]
     )
-    outcome = await service.sync_team(
-        env, choir["team"], direction=service.IMPORT, user_id=None
+    outcome = ok(
+        await service.sync_team(
+            env, choir["team"], direction=service.IMPORT, user_id=None, now=mint.now()
+        )
     )
     assert outcome.failed
     assert fake.written == []
@@ -200,13 +211,22 @@ async def test_a_bad_row_fails_the_team_whole_and_leaves_the_sheet_alone(
 async def test_a_team_with_no_sheet_cannot_be_synced(database, fake, env):
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Choir"))
-    with pytest.raises(LookupError):
-        await service.sync_team(env, team.id, direction=service.EXPORT, user_id=None)
+    refused(
+        await service.sync_team(
+            env, team.id, direction=service.EXPORT, user_id=None, now=mint.now()
+        ),
+        errors.NotFound,
+    )
 
 
 async def test_an_unknown_direction_is_refused(choir, fake, env):
-    with pytest.raises(ValueError, match="unknown sync direction"):
-        await service.sync_team(env, choir["team"], direction="sideways", user_id=None)
+    refused(
+        await service.sync_team(
+            env, choir["team"], direction="sideways", user_id=None, now=mint.now()
+        ),
+        errors.Invalid,
+        match="unknown sync direction",
+    )
 
 
 # --- permissions -------------------------------------------------------------
@@ -224,17 +244,27 @@ async def test_a_plain_member_may_not_sync(choir, fake, database, env):
         )
         mia_user_id = mia_u.id
 
-    from volunteerdb.permissions import Forbidden
-
-    with pytest.raises(Forbidden):
+    refused(
         await service.sync_team(
-            env, choir["team"], direction=service.EXPORT, user_id=mia_user_id
-        )
+            env,
+            choir["team"],
+            direction=service.EXPORT,
+            user_id=mia_user_id,
+            now=mint.now(),
+        ),
+        errors.Forbidden,
+    )
 
 
 async def test_the_leader_may_sync(choir, fake, env):
-    outcome = await service.sync_team(
-        env, choir["team"], direction=service.EXPORT, user_id=choir["lena_user"]
+    outcome = ok(
+        await service.sync_team(
+            env,
+            choir["team"],
+            direction=service.EXPORT,
+            user_id=choir["lena_user"],
+            now=mint.now(),
+        )
     )
     assert not outcome.failed
 

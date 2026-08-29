@@ -6,10 +6,12 @@ from io import StringIO
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..errors import DomainError, Invalid, invalid, require
+from ..fp import Err, Ok, Result
 from ..history import entity, fetch
 from ..log import audit_log
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, Membership, Volunteer
-from ..permissions import Actor, require
+from ..permissions import Actor
 from ..services import custom_fields as custom_field_service
 from ..services import teams as team_service
 from .common import ROSTER_HEADERS, safe_cell
@@ -50,7 +52,7 @@ async def build_roster_rows(
     at: datetime | None = None,
     subtree: bool = True,
     include_notes: bool = True,
-) -> RosterData:
+) -> Result[RosterData, Invalid]:
     """One row per membership, ordered by (team path, volunteer name).
 
     include_notes=False blanks the "Volunteer notes" column while keeping it in
@@ -68,7 +70,7 @@ async def build_roster_rows(
     the leader-editable sheet stays minimal.
     """
     if team_ids is not None and not team_ids:
-        raise ValueError("team_ids must be None (parish) or a non-empty set")
+        return invalid("team_ids must be None (parish) or a non-empty set")
     tree = await team_service.tree(session, at=at)
     paths = tree.paths
     if team_ids is None:
@@ -163,9 +165,11 @@ async def build_roster_rows(
             for v in unassigned
         ]
 
-    return RosterData(
-        header=[*ROSTER_HEADERS, *(d.label for d in custom_defs)],
-        rows=rows,
+    return Ok(
+        RosterData(
+            header=[*ROSTER_HEADERS, *(d.label for d in custom_defs)],
+            rows=rows,
+        )
     )
 
 
@@ -177,7 +181,7 @@ async def export_csv(
     team_ids: set[int] | None = None,
     at: datetime | None = None,
     subtree: bool = True,
-) -> bytes:
+) -> Result[bytes, DomainError]:
     """Whole parish, one team's subtree (team_id), or a union of subtrees
     (team_ids); subtree=False restricts to direct memberships (Drive-sheet mode).
 
@@ -196,10 +200,14 @@ async def export_csv(
     include_notes = True
     if actor is not None:
         if team_ids is None:
-            require(actor.is_admin, "export the whole parish")
+            if denied := require(actor.is_admin, "export the whole parish"):
+                return denied
         else:
             for scope_id in team_ids:
-                require(actor.can_view_full_roster(scope_id), "export this team")
+                if denied := require(
+                    actor.can_view_full_roster(scope_id), "export this team"
+                ):
+                    return denied
             # Notes need edit rights everywhere else in the app, so a core
             # member — who may read the roster but not the notes on it — gets
             # the column blank. It stays in place because the file has to
@@ -221,4 +229,6 @@ async def export_csv(
         subtree=subtree,
         include_notes=include_notes,
     )
-    return _csv_bytes(data.header, data.rows)
+    if isinstance(data, Err):
+        return data
+    return Ok(_csv_bytes(data.value.header, data.value.rows))

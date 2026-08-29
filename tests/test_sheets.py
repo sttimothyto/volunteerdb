@@ -44,7 +44,7 @@ async def test_template_csv_header_and_bom():
     assert _rows(content) == [ROSTER_HEADERS]
 
 
-async def test_roundtrip_reimport_is_a_noop(database):
+async def test_roundtrip_reimport_is_a_noop(database, env):
     async with db_session() as session:
         await _setup(session)
         # an unassigned volunteer exercises the blank-Team parish rows too
@@ -53,10 +53,10 @@ async def test_roundtrip_reimport_is_a_noop(database):
                 session, None, "Ursula", "Unassigned", "u@example.org"
             )
         )
-        content = await exporter.export_csv(session, None)
+        content = ok(await exporter.export_csv(session, None))
 
     assert _rows(content)[0] == ROSTER_HEADERS
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert not report.has_errors, report.errors
     assert report.applied
     assert report.volunteers_created == 0
@@ -65,10 +65,10 @@ async def test_roundtrip_reimport_is_a_noop(database):
     assert report.memberships_updated == 0
 
 
-async def test_import_applies_edits_and_additions(database):
+async def test_import_applies_edits_and_additions(database, env):
     async with db_session() as session:
         await _setup(session)
-        content = await exporter.export_csv(session, None)
+        content = ok(await exporter.export_csv(session, None))
 
     rows = _rows(content)
     # promote Ben to Music leader (Role is the last column of his row)
@@ -89,8 +89,10 @@ async def test_import_applies_edits_and_additions(database):
         ]
     )
 
-    report = await importer.run_import(
-        _csv_bytes(rows[1:], header=rows[0]), dry_run=False, user_id=None
+    report = ok(
+        await importer.run_import(
+            env, _csv_bytes(rows[1:], header=rows[0]), dry_run=False, user_id=None
+        )
     )
     assert not report.has_errors, report.errors
     assert report.applied
@@ -114,7 +116,7 @@ async def test_parish_export_lists_unassigned_after_memberships(database):
                 session, None, "Ursula", "Unassigned", "u@example.org"
             )
         )
-        content = await exporter.export_csv(session, None)
+        content = ok(await exporter.export_csv(session, None))
 
     rows = _rows(content)[1:]
     assert rows[-1][1] == "Ursula" and rows[-1][6] == "", (
@@ -140,14 +142,14 @@ async def test_parish_export_omits_archived_unassigned_but_keeps_members(databas
         ok(
             await volunteers.update(session, None, anna.id, is_active=False)
         )  # keeps membership
-        content = await exporter.export_csv(session, None)
+        content = ok(await exporter.export_csv(session, None))
 
     body = content.decode("utf-8-sig")
     assert "gone@example.org" not in body, "archived + membership-less: omitted"
     assert "anna@example.org" in body, "archived but on a team: still exported"
 
 
-async def test_unknown_team_blocks_everything(database):
+async def test_unknown_team_blocks_everything(database, env):
     async with db_session() as session:
         await _setup(session)
 
@@ -165,7 +167,7 @@ async def test_unknown_team_blocks_everything(database):
             ]
         ]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert report.has_errors
     assert not report.applied
     assert "No Such Team" in report.errors[0].message
@@ -176,7 +178,7 @@ async def test_unknown_team_blocks_everything(database):
         )
 
 
-async def test_dry_run_writes_nothing(database):
+async def test_dry_run_writes_nothing(database, env):
     async with db_session() as session:
         ok(await teams.create(session, None, "Liturgy"))
 
@@ -194,7 +196,7 @@ async def test_dry_run_writes_nothing(database):
             ]
         ]
     )
-    report = await importer.run_import(content, dry_run=True, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=True, user_id=None))
     assert not report.has_errors
     assert not report.applied
     assert report.volunteers_created == 1  # would be created
@@ -203,40 +205,46 @@ async def test_dry_run_writes_nothing(database):
         assert await volunteers.search(session, "Eve") == []
 
 
-async def test_volunteer_only_row_needs_no_team(database):
+async def test_volunteer_only_row_needs_no_team(database, env):
     async with db_session() as session:
         await _setup(session)
 
     content = _csv_bytes(
         [["", "Cara", "White", "cara@example.org", "555-9", "", "", ""]]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert not report.has_errors, report.errors
     assert report.applied and report.volunteers_created == 1
     assert report.memberships_created == 0
 
 
-async def test_xlsx_upload_rejected_with_pointer_to_csv(database):
-    report = await importer.run_import(
-        b"PK\x03\x04 pretend workbook", dry_run=False, user_id=None
+async def test_xlsx_upload_rejected_with_pointer_to_csv(database, env):
+    report = ok(
+        await importer.run_import(
+            env, b"PK\x03\x04 pretend workbook", dry_run=False, user_id=None
+        )
     )
     assert report.has_errors and not report.applied
     assert "no longer supported" in report.errors[0].message
 
 
-async def test_unrecognized_header_rejected(database):
-    report = await importer.run_import(b"foo,bar\n1,2\n", dry_run=False, user_id=None)
+async def test_unrecognized_header_rejected(database, env):
+    report = ok(
+        await importer.run_import(env, b"foo,bar\n1,2\n", dry_run=False, user_id=None)
+    )
     assert report.has_errors and not report.applied
     assert "cannot identify CSV" in report.errors[0].message
 
 
-async def test_non_utf8_rejected(database):
-    report = await importer.run_import(b"\xc3\x28\xa0\xa1", dry_run=False, user_id=None)
+async def test_non_utf8_rejected(database, env):
+    report = ok(
+        await importer.run_import(env, b"\xc3\x28\xa0\xa1", dry_run=False, user_id=None)
+    )
     assert report.has_errors and not report.applied
     assert "cannot read file" in report.errors[0].message
 
 
-async def test_export_includes_custom_columns_and_reimport_ignores_them(database):
+async def test_export_includes_custom_columns_and_reimport_ignores_them(database, env):
     async with db_session() as session:
         _, _, anna, _ = await _setup(session)
         ok(await custom_fields.create_def(session, None, "Shirt size", FieldType.text))
@@ -250,7 +258,7 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
                 {"shirt_size": "M", "trained": True, "term": "P1DT2H"},
             )
         )
-        content = await exporter.export_csv(session, None)
+        content = ok(await exporter.export_csv(session, None))
 
     rows = _rows(content)
     assert rows[0][-3:] == ["Shirt size", "Term", "Trained"]
@@ -258,7 +266,7 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
     assert anna_row[8] == "M" and anna_row[9] == "P1DT2H" and anna_row[10] == "yes"
 
     # round-trip stays safe: the extra columns are ignored with a warning
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert not report.has_errors
     assert report.applied
     assert report.volunteers_updated == 0

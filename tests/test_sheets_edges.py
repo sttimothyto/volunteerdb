@@ -65,7 +65,7 @@ def test_parse_role_value_and_label():
     assert parse_role("bogus") is None
 
 
-async def test_formula_injection_escape_roundtrips(database):
+async def test_formula_injection_escape_roundtrips(database, env):
     async with db_session() as session:
         ok(
             await volunteers.create(
@@ -77,14 +77,14 @@ async def test_formula_injection_escape_roundtrips(database):
                 notes="=SUM(A1:A9)",
             )
         )
-        content = await exporter.export_csv(session, None)
+        content = ok(await exporter.export_csv(session, None))
 
     row = next(r for r in _rows(content)[1:] if r[3] == "evil@example.org")
     assert row[1] == "'=Evil" and row[5] == "'=SUM(A1:A9)", (
         "cells never start with a bare ="
     )
 
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert not report.has_errors
     assert report.volunteers_updated == 0, "round-trip is a no-op"
 
@@ -95,7 +95,7 @@ async def test_formula_injection_escape_roundtrips(database):
         )
 
 
-async def test_import_row_validation_errors(database):
+async def test_import_row_validation_errors(database, env):
     async with db_session() as session:
         ok(await teams.create(session, None, "Liturgy"))
         ok(
@@ -121,7 +121,7 @@ async def test_import_row_validation_errors(database):
             ],
         ]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
 
     assert not report.applied, "all-or-nothing"
     messages = [issue.message for issue in report.errors]
@@ -131,7 +131,7 @@ async def test_import_row_validation_errors(database):
     assert any("unknown role 'grand-poobah'" in m for m in messages)
 
 
-async def test_import_ambiguous_matches_error(database):
+async def test_import_ambiguous_matches_error(database, env):
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
         youth = ok(await teams.create(session, None, "Youth"))
@@ -147,7 +147,7 @@ async def test_import_ambiguous_matches_error(database):
             ["", "Uma", "Unique", "uma@example.org", "", "", "Music", "member"],
         ]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
 
     assert not report.applied
     messages = [issue.message for issue in report.errors]
@@ -155,7 +155,7 @@ async def test_import_ambiguous_matches_error(database):
     assert any("'Music' is ambiguous, use its full path" in m for m in messages)
 
 
-async def test_a_blank_cell_never_clears_an_existing_value(database):
+async def test_a_blank_cell_never_clears_an_existing_value(database, env):
     """Round-tripping an export and deleting a cell does NOT clear the field —
     only non-empty values are written back. Deliberate: a truncated paste would
     otherwise wipe contact details parish-wide, and all-or-nothing would not
@@ -176,7 +176,7 @@ async def test_a_blank_cell_never_clears_an_existing_value(database):
     content = _csv_bytes(
         [["", "Clara", "Contact", "clara@example.org", "", "", "", ""]]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert report.applied and report.volunteers_updated == 0, "nothing changed"
 
     async with db_session() as session:
@@ -186,9 +186,9 @@ async def test_a_blank_cell_never_clears_an_existing_value(database):
     )
 
 
-async def test_new_volunteers_are_created_active(database):
+async def test_new_volunteers_are_created_active(database, env):
     content = _csv_bytes([["", "Newly", "Active", "newly@example.org", "", "", "", ""]])
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert report.applied and report.volunteers_created == 1
 
     async with db_session() as session:
@@ -196,7 +196,7 @@ async def test_new_volunteers_are_created_active(database):
         assert found.is_active is True
 
 
-async def test_import_cannot_archive_anyone(database):
+async def test_import_cannot_archive_anyone(database, env):
     """There is no Active column: archiving happens in the app (or when a sync
     removes someone's last membership), never from a spreadsheet cell."""
     async with db_session() as session:
@@ -209,7 +209,7 @@ async def test_import_cannot_archive_anyone(database):
     content = _csv_bytes(
         [["", "Vera", "Verbatim", "vera@example.org", "555-7", "", "", ""]]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert report.applied, report.errors
 
     async with db_session() as session:
@@ -217,7 +217,7 @@ async def test_import_cannot_archive_anyone(database):
     assert found.phone == "555-7" and found.is_active is True
 
 
-async def test_volunteer_only_row_does_not_reactivate(database):
+async def test_volunteer_only_row_does_not_reactivate(database, env):
     """Only a row that puts an archived volunteer on a team reactivates them;
     a bare contact update leaves the archive flag alone."""
     async with db_session() as session:
@@ -229,7 +229,7 @@ async def test_volunteer_only_row_does_not_reactivate(database):
     content = _csv_bytes(
         [["", "Ana", "Archived", "ana@example.org", "555-3", "", "", ""]]
     )
-    report = await importer.run_import(content, dry_run=False, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert report.applied, report.errors
     assert report.volunteers_reactivated == 0
 

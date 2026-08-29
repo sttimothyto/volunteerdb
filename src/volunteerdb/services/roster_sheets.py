@@ -32,11 +32,10 @@ from typing import TYPE_CHECKING
 
 from ..actors import load_actor
 from ..db import transaction
-from ..errors import External
+from ..errors import DomainError, External, NotFound, invalid, message, require
 from ..fp import Err, Ok, Result
 from ..log import audit_log
 from ..models import AppUser, SyncStatus, TeamSheet
-from ..permissions import require
 from ..services import gsheets
 from ..services import pages as page_service
 from ..services import teams as team_service
@@ -44,6 +43,8 @@ from ..services import users as user_service
 from ..sheets import exporter, importer
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from ..env import Env
 
 IMPORT = "import"
@@ -112,10 +113,16 @@ def same_rows(a: bytes, b: bytes) -> bool:
 
 
 async def record_status(
-    env: Env, team_id: int, status: str, error: str | None, *, synced: bool = False
+    env: Env,
+    team_id: int,
+    status: str,
+    error: str | None,
+    *,
+    synced_at: datetime | None = None,
 ) -> None:
     """Stamp the outcome on team_sheet. last_synced_at only advances on a
-    clean run, so a failed sheet still reads as needing attention."""
+    clean run (`synced_at`), so a failed sheet still reads as needing
+    attention."""
     async with transaction(env, None) as session:
         sheet = await session.get(TeamSheet, team_id)
         if sheet is None:
@@ -123,8 +130,8 @@ async def record_status(
             session.add(sheet)
         sheet.last_status = status
         sheet.last_error = error
-        if synced:
-            sheet.last_synced_at = env.clock.now()
+        if synced_at is not None:
+            sheet.last_synced_at = synced_at
 
 
 async def team_dropdown_values(env: Env, team_id: int) -> list[str] | None:
@@ -195,13 +202,15 @@ async def import_sheet(
     if isinstance(content, Err):
         return content
     return Ok(
-        await importer.run_team_sync(content.value, team_id=team_id, user_id=user_id)
+        await importer.run_team_sync(
+            env, content.value, team_id=team_id, user_id=user_id
+        )
     )
 
 
 async def export_sheet(
     env: Env, token: str, file_id: str, team_id: int
-) -> Result[bool, External]:
+) -> Result[bool, DomainError]:
     """Database → sheet; True if anything was actually written.
 
     subtree=False: a team's sheet is its own direct memberships. actor=None
@@ -209,9 +218,12 @@ async def export_sheet(
     columns it is about to write back.
     """
     async with transaction(env, None) as session:
-        content = await exporter.export_csv(
+        exported = await exporter.export_csv(
             session, None, team_id=team_id, subtree=False
         )
+    if isinstance(exported, Err):
+        return exported
+    content = exported.value
     # unreadable is not a reason to skip the write
     current = (await _read_sheet(env, file_id)).unwrap_or(b"")
     if current and same_rows(current, content):
@@ -224,17 +236,24 @@ async def export_sheet(
 
 
 async def _failed(
-    env: Env, team_id: int, error: External, report: importer.ImportReport | None
-) -> SyncOutcome:
-    """Record a Google failure against the team, in the words the leader
-    reads (the service prefix is for the log, not the team page)."""
-    await record_status(env, team_id, SyncStatus.error, error.message)
-    return SyncOutcome(SyncStatus.error, error.message, report)
+    env: Env, team_id: int, error: DomainError, report: importer.ImportReport | None
+) -> Ok[SyncOutcome]:
+    """Record a failure against the team, in the words the leader reads (a
+    Google error's service prefix is for the log, not the team page). A
+    failed sync is an outcome, not a refusal: the callers read .failed."""
+    text = error.message if isinstance(error, External) else message(error)
+    await record_status(env, team_id, SyncStatus.error, text)
+    return Ok(SyncOutcome(SyncStatus.error, text, report))
 
 
 async def sync_team(
-    env: Env, team_id: int, *, direction: str, user_id: int | None
-) -> SyncOutcome:
+    env: Env,
+    team_id: int,
+    *,
+    direction: str,
+    user_id: int | None,
+    now: datetime,
+) -> Result[SyncOutcome, DomainError]:
     """One team's sync, in the direction asked for.
 
     IMPORT applies the sheet's rows and then writes the result back, so the
@@ -246,15 +265,19 @@ async def sync_team(
     A failed import deliberately does NOT write back: the leader's edits stay
     in the sheet to be corrected, rather than being replaced by the very rows
     they were trying to change.
+
+    The Err is a refusal (not configured, unknown direction, no sheet, not
+    the team's manager); a sync that ran and failed is an Ok(SyncOutcome)
+    with .failed set, recorded on team_sheet.
     """
     cfg = env.google()
     if not gsheets.enabled(cfg):
-        raise ValueError(
+        return invalid(
             "roster spreadsheet sync is not configured — set the VDB_SHEETS_* "
             "settings (docs/how-to/roster-spreadsheets.md)"
         )
     if direction not in (IMPORT, EXPORT):
-        raise ValueError(f"unknown sync direction {direction!r}")
+        return invalid(f"unknown sync direction {direction!r}")
 
     async with transaction(env, user_id) as session:
         actor = None
@@ -262,14 +285,15 @@ async def sync_team(
             user = await session.get(AppUser, user_id)
             assert user is not None, f"unknown user {user_id}"
             actor = await load_actor(session, user)
-        require(
+        if denied := require(
             actor is None or actor.can_manage_team(team_id),
             "sync this team's roster spreadsheet",
-        )
+        ):
+            return denied
         sheet = await session.get(TeamSheet, team_id)
         file_id = sheet.file_id if sheet else None
         if not file_id:
-            raise LookupError("this team has no roster spreadsheet linked yet")
+            return Err(NotFound("roster spreadsheet for this team"))
 
     # Writes are attributed to the bot account, not to whoever pressed the
     # button: the rows come from the sheet, and a leader who synced somebody
@@ -283,14 +307,14 @@ async def sync_team(
             return await _failed(env, team_id, imported.error, report)
         report = imported.value
         if not report.applied:
-            message = (
+            text = (
                 "; ".join(
                     f"row {issue.row}: {issue.message}" for issue in report.errors[:5]
                 )
                 or "the sheet could not be read"
             )
-            await record_status(env, team_id, SyncStatus.error, message)
-            return SyncOutcome(SyncStatus.error, message, report)
+            await record_status(env, team_id, SyncStatus.error, text)
+            return Ok(SyncOutcome(SyncStatus.error, text, report))
     async with env.http.client(timeout=gsheets.TIMEOUT) as client:
         minted = await gsheets.mint_token(client, cfg)
     if isinstance(minted, Err):
@@ -309,18 +333,16 @@ async def sync_team(
 
     if direction == IMPORT:
         assert report is not None
-        message = (
+        text = (
             f"+{report.volunteers_created} volunteers, "
             f"+{report.memberships_created}/~{report.memberships_updated} "
             "memberships; sheet rewritten to match"
         )
     else:
-        message = (
-            "sheet rewritten from the database" if wrote else "sheet already matched"
-        )
+        text = "sheet rewritten from the database" if wrote else "sheet already matched"
     status = (
         SyncStatus.applied if wrote or direction == IMPORT else SyncStatus.unchanged
     )
-    await record_status(env, team_id, status, None, synced=True)
+    await record_status(env, team_id, status, None, synced_at=now)
     audit_log("roster_sheet.synced", team_id=team_id, direction=direction)
-    return SyncOutcome(status, message, report, wrote_sheet=wrote)
+    return Ok(SyncOutcome(status, text, report, wrote_sheet=wrote))

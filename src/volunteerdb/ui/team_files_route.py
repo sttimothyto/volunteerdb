@@ -51,7 +51,7 @@ async def teams_export(request: Request) -> Response:
         else:
             require(bool(actor.full_view_team_ids), "export your teams")
             scope, name = actor.full_view_team_ids, "my-teams"
-        content = await exporter.export_csv(session, actor, team_ids=scope)
+        content = (await exporter.export_csv(session, actor, team_ids=scope)).unwrap()
     return _attachment(content, f"volunteerdb-{name}.csv", CSV)
 
 
@@ -65,7 +65,9 @@ async def roster_export(team_id: int, request: Request, as_of: str = "") -> Resp
         team = await session.get(Team, team_id)
         if team is None:
             raise HTTPException(404, "no such team")
-        content = await exporter.export_csv(session, actor, team_id=team_id, at=at)
+        content = (
+            await exporter.export_csv(session, actor, team_id=team_id, at=at)
+        ).unwrap()
     stem = team.name.lower().replace(" ", "-")
     return _attachment(content, f"{stem}.csv", CSV)
 

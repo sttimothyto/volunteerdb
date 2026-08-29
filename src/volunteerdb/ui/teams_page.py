@@ -555,9 +555,15 @@ async def _sync_sheet(team_id: int, direction: str) -> None:
     async with action_session() as (_session, actor):
         user_id = actor.user.id
     ui.notify("Syncing with Google Sheets…")
-    outcome = await roster_sheets.sync_team(
-        current_env(), team_id, direction=direction, user_id=user_id
-    )
+    outcome = (
+        await roster_sheets.sync_team(
+            current_env(),
+            team_id,
+            direction=direction,
+            user_id=user_id,
+            now=current_env().clock.now(),
+        )
+    ).unwrap()
     if outcome.failed:
         ui.notify(f"Sync failed: {outcome.message}", color="negative", multi_line=True)
     else:
@@ -646,18 +652,22 @@ def _sheet_import_block(is_admin: bool) -> None:
         state["filename"] = e.file.name
         async with action_session() as (_, actor):
             user_id = actor.user.id  # run_import checks the right itself
-        report = await importer.run_import(
-            state["content"], dry_run=True, user_id=user_id
-        )
+        report = (
+            await importer.run_import(
+                current_env(), state["content"], dry_run=True, user_id=user_id
+            )
+        ).unwrap()
         await render_report(report)
 
     @notify_errors
     async def apply_import() -> None:
         async with action_session() as (_, actor):
             user_id = actor.user.id  # run_import checks the right itself
-        report = await importer.run_import(
-            state["content"], dry_run=False, user_id=user_id
-        )
+        report = (
+            await importer.run_import(
+                current_env(), state["content"], dry_run=False, user_id=user_id
+            )
+        ).unwrap()
         await render_report(report)
         if report.applied:
             ui.notify(f"Imported {state['filename']}", color="positive")
@@ -717,16 +727,19 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
                 user_id = actor.user.id
             dialog.close()
             ui.notify("Syncing with Google Sheets…")
-            outcome = await roster_sheets.sync_team(
-                current_env(),
-                team_id,
-                direction=(
-                    roster_sheets.IMPORT
-                    if direction.value == _IMPORT_ROWS
-                    else roster_sheets.EXPORT
-                ),
-                user_id=user_id,
-            )
+            outcome = (
+                await roster_sheets.sync_team(
+                    current_env(),
+                    team_id,
+                    direction=(
+                        roster_sheets.IMPORT
+                        if direction.value == _IMPORT_ROWS
+                        else roster_sheets.EXPORT
+                    ),
+                    user_id=user_id,
+                    now=current_env().clock.now(),
+                )
+            ).unwrap()
             if outcome.failed:
                 ui.notify(
                     f"Linked, but the first sync failed: {outcome.message}",

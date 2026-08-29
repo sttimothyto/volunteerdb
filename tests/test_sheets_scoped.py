@@ -5,15 +5,15 @@ from io import StringIO
 
 import pytest
 
+from volunteerdb import errors
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
-from volunteerdb.permissions import Forbidden
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
 from tests import mint
-from tests.fp_helpers import ok
+from tests.fp_helpers import ok, refused
 
 
 @pytest.fixture
@@ -87,18 +87,20 @@ def _csv_bytes(rows: list[list]) -> bytes:
     return buffer.getvalue().encode("utf-8-sig")
 
 
-async def test_membership_on_managed_subtree_applied(parish):
+async def test_membership_on_managed_subtree_applied(parish, env):
     content = _csv_bytes(
         [["", "Mia", "Member", "mia@example.org", "", "", "Liturgy / Music", "member"]]
     )
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert not report.has_errors, report.errors
     assert report.applied and report.memberships_created == 1
 
 
-async def test_unmanaged_team_row_blocks_everything(parish):
+async def test_unmanaged_team_row_blocks_everything(parish, env):
     content = _csv_bytes(
         [
             [
@@ -114,8 +116,10 @@ async def test_unmanaged_team_row_blocks_everything(parish):
             ["", "Otto", "Out", "otto@example.org", "", "", "Hospitality", "core"],
         ]
     )
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert report.has_errors and not report.applied
     # the volunteer columns are checked first, so the row is refused as an
@@ -126,12 +130,14 @@ async def test_unmanaged_team_row_blocks_everything(parish):
         assert len(rows) == 1, "all-or-nothing: the valid row rolled back too"
 
 
-async def test_new_volunteer_with_managed_membership_created(parish):
+async def test_new_volunteer_with_managed_membership_created(parish, env):
     content = _csv_bytes(
         [["", "Nora", "New", "nora@example.org", "", "", "Liturgy", "member"]]
     )
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert not report.has_errors, report.errors
     assert (
@@ -141,32 +147,38 @@ async def test_new_volunteer_with_managed_membership_created(parish):
     )
 
 
-async def test_new_volunteer_without_membership_rejected(parish):
+async def test_new_volunteer_without_membership_rejected(parish, env):
     content = _csv_bytes([["", "Nora", "New", "nora@example.org", "", "", "", ""]])
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert report.has_errors and not report.applied
     assert any("must be put on a team you lead" in e.message for e in report.errors)
 
 
-async def test_new_volunteer_with_unmanaged_membership_rejected(parish):
+async def test_new_volunteer_with_unmanaged_membership_rejected(parish, env):
     content = _csv_bytes(
         [["", "Nora", "New", "nora@example.org", "", "", "Hospitality", "member"]]
     )
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert not report.applied
     assert any("must be put on a team you lead" in e.message for e in report.errors)
 
 
-async def test_contact_update_of_managed_volunteer_applied(parish):
+async def test_contact_update_of_managed_volunteer_applied(parish, env):
     content = _csv_bytes(
         [["", "Mia", "Member", "mia@example.org", "555-99", "", "", ""]]
     )
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert not report.has_errors, report.errors
     assert report.applied and report.volunteers_updated == 1
@@ -175,18 +187,20 @@ async def test_contact_update_of_managed_volunteer_applied(parish):
         assert mia.phone == "555-99"
 
 
-async def test_update_of_outsider_rejected_even_when_identical(parish):
+async def test_update_of_outsider_rejected_even_when_identical(parish, env):
     # values match Otto's current record exactly — still denied, otherwise a
     # dry-run would confirm guessed contact details
     content = _csv_bytes([["", "Otto", "Out", "otto@example.org", "555-2", "", "", ""]])
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert report.has_errors and not report.applied
     assert any("not allowed to edit volunteer" in e.message for e in report.errors)
 
 
-async def test_update_of_outsider_by_id_rejected(parish):
+async def test_update_of_outsider_by_id_rejected(parish, env):
     """An ID pins the row to Otto just as surely as his email does — the scope
     check must treat both the same."""
     content = _csv_bytes(
@@ -203,14 +217,16 @@ async def test_update_of_outsider_by_id_rejected(parish):
             ]
         ]
     )
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert report.has_errors and not report.applied
     assert any("not allowed to edit volunteer" in e.message for e in report.errors)
 
 
-async def test_id_row_on_managed_team_grants_the_contact_edit(parish):
+async def test_id_row_on_managed_team_grants_the_contact_edit(parish, env):
     """A leader's own export carries IDs on every row — the scoping pre-pass
     must resolve them, or scoped exports stop round-tripping."""
     content = _csv_bytes(
@@ -227,8 +243,10 @@ async def test_id_row_on_managed_team_grants_the_contact_edit(parish):
             ]
         ]
     )
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert not report.has_errors, report.errors
     assert (
@@ -238,12 +256,14 @@ async def test_id_row_on_managed_team_grants_the_contact_edit(parish):
     )
 
 
-async def test_update_ok_when_same_row_adds_them_to_managed_team(parish):
+async def test_update_ok_when_same_row_adds_them_to_managed_team(parish, env):
     content = _csv_bytes(
         [["", "Otto", "Out", "otto@example.org", "555-77", "", "Liturgy", "member"]]
     )
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert not report.has_errors, report.errors
     assert (
@@ -256,11 +276,15 @@ async def test_update_ok_when_same_row_adds_them_to_managed_team(parish):
         assert otto.phone == "555-77"
 
 
-async def test_scoped_export_reimports_as_noop(parish):
+async def test_scoped_export_reimports_as_noop(parish, env):
     async with db_session() as session:
-        content = await exporter.export_csv(session, None, team_ids={parish["liturgy"]})
-    report = await importer.run_import(
-        content, dry_run=False, user_id=parish["leader_uid"]
+        content = ok(
+            await exporter.export_csv(session, None, team_ids={parish["liturgy"]})
+        )
+    report = ok(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["leader_uid"]
+        )
     )
     assert not report.has_errors, report.errors
     assert report.applied
@@ -268,7 +292,7 @@ async def test_scoped_export_reimports_as_noop(parish):
     assert report.memberships_created == report.memberships_updated == 0
 
 
-async def test_a_user_who_leads_nothing_cannot_import_at_all(parish):
+async def test_a_user_who_leads_nothing_cannot_import_at_all(parish, env):
     """The right to import lives in run_import now, not at the two front doors,
     so a plain member is refused before a single row is read — one message
     instead of one per row, and the same answer on both surfaces.
@@ -281,7 +305,12 @@ async def test_a_user_who_leads_nothing_cannot_import_at_all(parish):
             ["", "Mia", "Member", "mia@example.org", "", "", "Liturgy", "core"],
         ]
     )
-    with pytest.raises(Forbidden, match="import spreadsheets"):
-        await importer.run_import(content, dry_run=False, user_id=parish["member_uid"])
+    refused(
+        await importer.run_import(
+            env, content, dry_run=False, user_id=parish["member_uid"]
+        ),
+        errors.Forbidden,
+        match="import spreadsheets",
+    )
     async with db_session() as session:
         assert await volunteers.find_by_email(session, "nora@example.org") == []

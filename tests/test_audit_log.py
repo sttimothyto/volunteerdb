@@ -147,12 +147,12 @@ async def test_secrets_never_logged(database, log_records):
     assert otp_updates[0]["changes"]["otp_hash"].endswith("→ «redacted»")
 
 
-async def test_dry_run_import_rollback_marked(database, log_records):
+async def test_dry_run_import_rollback_marked(database, log_records, env):
     content = _csv_bytes(
         ROSTER_HEADERS,
         [["", "Cara", "White", "cara@example.org", "555-9", "", "", ""]],
     )
-    report = await importer.run_import(content, dry_run=True, user_id=None)
+    report = ok(await importer.run_import(env, content, dry_run=True, user_id=None))
     assert not report.applied
 
     inserts = _by_event(log_records, "db.insert")
