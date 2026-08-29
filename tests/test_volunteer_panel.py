@@ -20,6 +20,7 @@ from volunteerdb.services import mail, memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
 from .conftest import SLOW, mail_to
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -46,11 +47,17 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
                 session, None, maria.id, liturgy.id, TeamRole.leader
             )
         )
-        admin, _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
-        await users.create(
-            session, "felix@example.org"
+        ok(
+            await users.create(session, "felix@example.org", invite=mint.fresh_invite())
         )  # passwordless -> email-code login
         team_id, maria_id, admin_id = liturgy.id, maria.id, admin.id
 
@@ -135,8 +142,14 @@ async def test_photo_dialog_disclaimer_gates_upload(database):
                 session, None, maria.id, liturgy.id, TeamRole.member
             )
         )
-        admin, _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         team_id, admin_id = liturgy.id, admin.id
 

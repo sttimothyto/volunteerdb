@@ -275,7 +275,11 @@ async def invite_volunteer(
     """
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
     require(ctx.actor.can_invite_volunteer(team_ids), "invite this volunteer")
-    account, token = await user_service.invite_volunteer(ctx.session, volunteer_id)
+    account, token = (
+        await user_service.invite_volunteer(
+            ctx.session, volunteer_id, invite=ctx.env.invite()
+        )
+    ).unwrap()
     out = UserOut.model_validate(account)
     out.has_password = account.password_hash is not None
     # never off the row — the column holds only a digest (services.users)

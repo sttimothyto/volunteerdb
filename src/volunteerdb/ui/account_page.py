@@ -45,14 +45,22 @@ async def account_page(request: Request):
         user_id = user.id
         stored_hash = user.password_hash
         email, has_password = user.email, stored_hash is not None
-        pending = user.pending_email if user_service.email_change_live(user) else None
+        pending = (
+            user.pending_email
+            if user_service.email_change_live(user, current_env().clock.now())
+            else None
+        )
         pending_until = user.email_change_expires_at if pending else None
         # An emailed code (or a freshly redeemed invite) is possession of the
         # mailbox — the same proof a reset link carries, so it stands in for
         # the forgotten password.
         proved_by_email = session_auth_method() in ("otp", "invite")
         must_retype = has_password and not proved_by_email
-        feed_token = await user_service.ensure_calendar_token(session, user_id)
+        feed_token = (
+            await user_service.ensure_calendar_token(
+                session, user_id, token=current_env().rng.token()
+            )
+        ).unwrap()
 
     @notify_errors
     async def request_email_change() -> None:
@@ -76,9 +84,11 @@ async def account_page(request: Request):
         # unthrottled account-existence oracle.
         env.throttle.hit(key, now)
         async with action_session() as (session, actor):
-            account, token = await user_service.start_email_change(
-                session, actor.user.id, addr
-            )
+            account, token = (
+                await user_service.start_email_change(
+                    session, actor.user.id, addr, now=now, token=env.rng.token()
+                )
+            ).unwrap()
             target = account.pending_email
         audit_log("auth.email_change_requested", user=f"{user_id}:{email}", to=target)
         # Both after the commit. The new address gets the proof — it is only a
@@ -105,7 +115,7 @@ async def account_page(request: Request):
     @notify_errors
     async def drop_email_change() -> None:
         async with action_session() as (session, actor):
-            await user_service.cancel_email_change(session, actor.user.id)
+            (await user_service.cancel_email_change(session, actor.user.id)).unwrap()
         audit_log("auth.email_change_cancelled", user=f"{user_id}:{email}")
         ui.notify("Address change cancelled — the link no longer works.")
         ui.navigate.reload()
@@ -113,7 +123,9 @@ async def account_page(request: Request):
     @notify_errors
     async def save() -> None:
         new, again = new_password.value or "", confirm.value or ""
-        weak = passwords.problem(new, email=email)
+        weak = passwords.problem(
+            new, email=email, site_terms=current_env().password_terms
+        )
         if weak:
             ui.notify(weak, color="negative", multi_line=True, timeout=8000)
             return
@@ -140,7 +152,11 @@ async def account_page(request: Request):
                 ui.notify("That is not your current password", color="negative")
                 return
         async with action_session() as (session, actor):
-            await user_service.set_password(session, actor.user.id, new)
+            (
+                await user_service.set_password(
+                    session, actor.user.id, new, site_terms=current_env().password_terms
+                )
+            ).unwrap()
         audit_log("auth.password_set", user=f"{user.id}:{email}", via="self-service")
         await mail.send_email(email, *mail.password_changed_email(login_url))
         ui.notify(
@@ -164,7 +180,7 @@ async def account_page(request: Request):
         if not await dialog:
             return
         async with action_session() as (session, actor):
-            await user_service.clear_password(session, actor.user.id)
+            (await user_service.clear_password(session, actor.user.id)).unwrap()
         audit_log("auth.password_cleared", user=f"{user.id}:{email}")
         await mail.send_email(
             email, *mail.password_changed_email(login_url, removed=True)

@@ -713,9 +713,15 @@ async def _stage_own_email(address: str, base_url: str) -> None:
     address being claimed, and warn the one being replaced. Same flow as the
     /account page; both messages go out after the commit."""
     async with action_session() as (session, actor):
-        account, token = await user_service.start_email_change(
-            session, actor.user.id, address
-        )
+        account, token = (
+            await user_service.start_email_change(
+                session,
+                actor.user.id,
+                address,
+                now=current().clock.now(),
+                token=current().rng.token(),
+            )
+        ).unwrap()
         target, user_id, was = account.pending_email, actor.user.id, actor.user.email
     audit_log("auth.email_change_requested", user=f"{user_id}:{was}", to=target)
     hours = int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600)

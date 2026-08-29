@@ -50,7 +50,9 @@ factor, stored parameters) lives in `auth.py`.
 import unicodedata
 from functools import lru_cache
 
-from .config import settings
+from .errors import WeakPassword
+from .errors import message as _message
+from .fp import Err
 
 MIN_LENGTH = 15
 MAX_LENGTH = 128
@@ -213,11 +215,6 @@ _DIGIT_LEET = str.maketrans(
 )
 
 
-class WeakPassword(ValueError):
-    """Rejected by the policy. A ValueError, so the API turns it into a 422 and
-    the GUI's notify_errors turns it into a toast, both carrying the reason."""
-
-
 def normalize(password: str) -> str:
     """NFC, as §3.1.1.2 asks, applied before the byte string is hashed."""
     return unicodedata.normalize("NFC", password)
@@ -317,12 +314,15 @@ def _org_terms(org_name: str, mail_from: str, public_base_url: str) -> frozenset
     return frozenset(terms - {""})
 
 
-def _context_terms(email: str | None) -> set[str]:
+def site_terms(org_name: str, mail_from: str, public_base_url: str) -> frozenset[str]:
+    """This instance's own names, for check(): the edge computes them once from
+    its settings (env.Env.password_terms)."""
+    return _org_terms(org_name, mail_from, public_base_url)
+
+
+def _context_terms(email: str | None, site: frozenset[str]) -> set[str]:
     """The service's names plus the account's own address, folded."""
-    s = settings()
-    terms = set(GENERIC_SERVICE_TERMS) | _org_terms(
-        s.org_name, s.mail_from, s.public_base_url
-    )
+    terms = set(GENERIC_SERVICE_TERMS) | site
     if email:
         local, _, domain = email.strip().partition("@")
         terms |= {_fold(email), _fold(local)}
@@ -331,8 +331,12 @@ def _context_terms(email: str | None) -> set[str]:
     return terms - {""}
 
 
-def check(password: str, *, email: str | None = None) -> None:
-    """Raise WeakPassword unless `password` may be set on `email`'s account.
+def check(
+    password: str, *, email: str | None = None, site_terms: frozenset[str] = frozenset()
+) -> Err[WeakPassword] | None:
+    """The WeakPassword refusal, or None when `password` may be set on `email`'s
+    account. `site_terms` are this instance's own names (site_terms()), which
+    the edge computes once from its settings.
 
     The message is written to be shown to whoever typed it: it says which rule
     was hit and what to do instead, because §3.1.1.2 requires both the reason
@@ -341,50 +345,64 @@ def check(password: str, *, email: str | None = None) -> None:
     # len() counts code points, which is what "Each Unicode code point SHALL be
     # counted as a single character when evaluating password length" asks for.
     if len(password) < MIN_LENGTH:
-        raise WeakPassword(
-            f"That password is too short — it needs {MIN_LENGTH} characters or "
-            f"more (this one has {len(password)}). {GUIDANCE}"
+        return Err(
+            WeakPassword(
+                f"That password is too short — it needs {MIN_LENGTH} characters or "
+                f"more (this one has {len(password)}). {GUIDANCE}"
+            )
         )
     if len(password) > MAX_LENGTH:
-        raise WeakPassword(
-            f"That password is too long — {MAX_LENGTH} characters is the limit."
+        return Err(
+            WeakPassword(
+                f"That password is too long — {MAX_LENGTH} characters is the limit."
+            )
         )
 
     forms = _forms(password)
-    if forms & _context_terms(email):
-        raise WeakPassword(
-            "That password is your email address or the name of this site. "
-            f"Pick something unrelated to the account. {GUIDANCE}"
+    if forms & _context_terms(email, site_terms):
+        return Err(
+            WeakPassword(
+                "That password is your email address or the name of this site. "
+                f"Pick something unrelated to the account. {GUIDANCE}"
+            )
         )
     if forms & BLOCKLIST:
-        raise WeakPassword(
-            "That password is a well-known one, or a lightly disguised version "
-            f"of one, so it is among the first an attacker tries. {GUIDANCE}"
+        return Err(
+            WeakPassword(
+                "That password is a well-known one, or a lightly disguised version "
+                f"of one, so it is among the first an attacker tries. {GUIDANCE}"
+            )
         )
 
     folded = _fold(password)
     if len(_unrepeat(folded)) <= 4:
-        raise WeakPassword(
-            "That password is one short pattern repeated, which is no harder to "
-            f"guess than the pattern itself. {GUIDANCE}"
+        return Err(
+            WeakPassword(
+                "That password is one short pattern repeated, which is no harder to "
+                f"guess than the pattern itself. {GUIDANCE}"
+            )
         )
     if len(set(folded or password)) < 5:
-        raise WeakPassword(
-            "That password uses too few different characters to be hard to "
-            f"guess. {GUIDANCE}"
+        return Err(
+            WeakPassword(
+                "That password uses too few different characters to be hard to "
+                f"guess. {GUIDANCE}"
+            )
         )
     if any(folded in walk or folded in walk[::-1] for walk in _WALKS):
-        raise WeakPassword(
-            "That password runs straight along the keyboard (or the alphabet), "
-            f"which guessing tools walk first. {GUIDANCE}"
+        return Err(
+            WeakPassword(
+                "That password runs straight along the keyboard (or the alphabet), "
+                f"which guessing tools walk first. {GUIDANCE}"
+            )
         )
-
-
-def problem(password: str, *, email: str | None = None) -> str | None:
-    """`check` as a value: the rejection message, or None if the password is
-    acceptable. For live feedback on a form, where raising is the wrong shape."""
-    try:
-        check(password, email=email)
-    except WeakPassword as exc:
-        return str(exc)
     return None
+
+
+def problem(
+    password: str, *, email: str | None = None, site_terms: frozenset[str] = frozenset()
+) -> str | None:
+    """The rejection message, or None if the password is acceptable. For live
+    feedback on a form."""
+    refusal = check(password, email=email, site_terms=site_terms)
+    return None if refusal is None else _message(refusal.error)

@@ -54,6 +54,8 @@ FORBIDDEN_CALLS = frozenset(
         "token_hex",
         "randbelow",
         "uuid4",
+        "new_token",  # auth.py's random draws are the edge's
+        "new_otp_code",
         "db_session",  # the unit of work belongs to the edge
         "sessionmaker",
         "AsyncClient",  # transports are injected
@@ -67,7 +69,6 @@ RAISE = "raise"  # a refusal is a returned Err, never an exception
 BASELINE: dict[str, dict[str, int]] = {
     "fieldcodec.py": {"raise": 19},
     "fp.py": {"raise": 3},
-    "passwords.py": {"raise": 7, "settings": 1},
     "permissions.py": {"raise": 1},
     "services/custom_fields.py": {"raise": 12},
     "services/elections.py": {"now": 5, "raise": 17, "settings": 1},
@@ -88,7 +89,6 @@ BASELINE: dict[str, dict[str, int]] = {
     },
     "services/stats.py": {"now": 1},
     "services/task_force.py": {"now": 2, "raise": 9, "settings": 1},
-    "services/users.py": {"now": 9, "raise": 23, "settings": 1},
     "services/workload.py": {"now": 1, "raise": 10},
     "sheets/exporter.py": {"raise": 1},
     "sheets/importer.py": {"db_session": 2, "raise": 2},

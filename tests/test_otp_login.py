@@ -7,19 +7,38 @@ from volunteerdb.db import db_session
 from volunteerdb.services import mail, users
 from volunteerdb.ui.context import session_expired
 
+from tests import mint
+from tests.fp_helpers import ok
+
 
 async def test_start_otp_login_unknown_or_inactive(database):
     async with db_session() as session:
-        assert await users.start_otp_login(session, "nobody@example.org") is None
-        u, _ = await users.create(session, "off@example.org")
-        await users.set_flags(session, u.id, is_active=False)
-        assert await users.start_otp_login(session, "off@example.org") is None
+        assert (
+            await users.start_otp_login(
+                session, "nobody@example.org", now=mint.now(), code=mint.code()
+            )
+        ).is_err()
+        u, _ = ok(
+            await users.create(session, "off@example.org", invite=mint.fresh_invite())
+        )
+        ok(await users.set_flags(session, u.id, is_active=False))
+        assert (
+            await users.start_otp_login(
+                session, "off@example.org", now=mint.now(), code=mint.code()
+            )
+        ).is_err()
 
 
 async def test_otp_round_trip_throttle_and_invite_clear(database):
     async with db_session() as session:
-        await users.create(session, "otp@example.org")  # no password -> invite token
-        user, code = await users.start_otp_login(session, "otp@example.org")
+        ok(
+            await users.create(session, "otp@example.org", invite=mint.fresh_invite())
+        )  # no password -> invite token
+        user, code = ok(
+            await users.start_otp_login(
+                session, "otp@example.org", now=mint.now(), code=mint.code()
+            )
+        )
         assert code is not None and len(code) == 6 and code.isdigit()
         assert user.otp_hash is not None and user.otp_hash != code
         assert user.otp_attempts == 0
@@ -30,16 +49,24 @@ async def test_otp_round_trip_throttle_and_invite_clear(database):
         )
 
         old_hash = user.otp_hash
-        again_user, again_code = await users.start_otp_login(session, "otp@example.org")
+        again_user, again_code = ok(
+            await users.start_otp_login(
+                session, "otp@example.org", now=mint.now(), code=mint.code()
+            )
+        )
         assert again_user.id == user.id and again_code is None  # throttled
         assert user.otp_hash == old_hash
 
         wrong = "000000" if code != "000000" else "111111"
         assert user.invite_token is not None
-        assert await users.verify_otp(session, "otp@example.org", wrong) is None
+        assert (
+            await users.verify_otp(session, "otp@example.org", wrong, now=mint.now())
+        ).is_err()
         assert user.otp_attempts == 1
 
-        verified = await users.verify_otp(session, "otp@example.org", code)
+        verified = ok(
+            await users.verify_otp(session, "otp@example.org", code, now=mint.now())
+        )
         assert verified is not None and verified.id == user.id
         assert user.otp_hash is None and user.otp_sent_at is None
         assert user.otp_expires_at is None and user.otp_attempts == 0
@@ -50,56 +77,91 @@ async def test_otp_round_trip_throttle_and_invite_clear(database):
 
 async def test_otp_lockout_then_fresh_code(database):
     async with db_session() as session:
-        await users.create(session, "lock@example.org")
-        user, code = await users.start_otp_login(session, "lock@example.org")
+        ok(await users.create(session, "lock@example.org", invite=mint.fresh_invite()))
+        user, code = ok(
+            await users.start_otp_login(
+                session, "lock@example.org", now=mint.now(), code=mint.code()
+            )
+        )
         wrong = "000000" if code != "000000" else "111111"
         for _ in range(users.OTP_MAX_ATTEMPTS):
-            assert await users.verify_otp(session, "lock@example.org", wrong) is None
+            assert (
+                await users.verify_otp(
+                    session, "lock@example.org", wrong, now=mint.now()
+                )
+            ).is_err()
         assert user.otp_attempts == users.OTP_MAX_ATTEMPTS
         # locked out: even the correct code is rejected now
-        assert await users.verify_otp(session, "lock@example.org", code) is None
+        assert (
+            await users.verify_otp(session, "lock@example.org", code, now=mint.now())
+        ).is_err()
 
         user.otp_sent_at = None  # skip the resend throttle
         await session.flush()
-        user2, code2 = await users.start_otp_login(session, "lock@example.org")
+        user2, code2 = ok(
+            await users.start_otp_login(
+                session, "lock@example.org", now=mint.now(), code=mint.code()
+            )
+        )
         assert code2 is not None and user2.otp_attempts == 0
-        assert await users.verify_otp(session, "lock@example.org", code2) is not None
+        assert (
+            await users.verify_otp(session, "lock@example.org", code2, now=mint.now())
+        ).is_ok()
 
 
 async def test_otp_expired_code_rejected(database):
     async with db_session() as session:
-        await users.create(session, "exp@example.org")
-        user, code = await users.start_otp_login(session, "exp@example.org")
+        ok(await users.create(session, "exp@example.org", invite=mint.fresh_invite()))
+        user, code = ok(
+            await users.start_otp_login(
+                session, "exp@example.org", now=mint.now(), code=mint.code()
+            )
+        )
         user.otp_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.flush()
-        assert await users.verify_otp(session, "exp@example.org", code) is None
+        assert (
+            await users.verify_otp(session, "exp@example.org", code, now=mint.now())
+        ).is_err()
 
 
 async def test_redeem_invite_password_optional(database):
     async with db_session() as session:
-        a, a_token = await users.create(session, "nopw@example.org")
-        b, b_token = await users.create(session, "withpw@example.org")
-
-        ra = await users.redeem_invite(
-            session, a_token, None, agreed_to_confidentiality=True
+        a, a_token = ok(
+            await users.create(session, "nopw@example.org", invite=mint.fresh_invite())
         )
-        assert ra is not None
+        b, b_token = ok(
+            await users.create(
+                session, "withpw@example.org", invite=mint.fresh_invite()
+            )
+        )
+
+        ra = ok(
+            await users.redeem_invite(
+                session, a_token, None, agreed_to_confidentiality=True, now=mint.now()
+            )
+        )
         assert ra.password_hash is None and ra.invite_token is None  # OTP-only account
-        assert await users.authenticate(session, "nopw@example.org", "anything") is None
-
-        rb = await users.redeem_invite(
-            session,
-            b_token,
-            "long-enough-phrase",
-            agreed_to_confidentiality=True,
-        )
-        assert rb is not None and rb.password_hash is not None
         assert (
             await users.authenticate(
-                session, "withpw@example.org", "long-enough-phrase"
+                session, "nopw@example.org", "anything", now=mint.now()
             )
-            is not None
+        ).is_err()
+
+        rb = ok(
+            await users.redeem_invite(
+                session,
+                b_token,
+                "long-enough-phrase",
+                agreed_to_confidentiality=True,
+                now=mint.now(),
+            )
         )
+        assert rb.password_hash is not None
+        assert (
+            await users.authenticate(
+                session, "withpw@example.org", "long-enough-phrase", now=mint.now()
+            )
+        ).is_ok()
 
 
 async def test_mail_dev_mode_and_builders(monkeypatch, capsys):

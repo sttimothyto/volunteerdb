@@ -318,12 +318,16 @@ async def seed(scale: int) -> None:
             options=["Email", "Phone", "Post"],
         )
 
-        await user_service.create(
-            session, ADMIN_EMAIL, is_admin=True, password=BENCH_PASSWORD
-        )
-        await user_service.create(
-            session, LEADER_EMAIL, volunteer_id=rows[1].id, password=BENCH_PASSWORD
-        )  # tuple return ignored: the bench never redeems an invite
+        (
+            await user_service.create(
+                session, ADMIN_EMAIL, is_admin=True, password=BENCH_PASSWORD
+            )
+        ).unwrap()
+        (
+            await user_service.create(
+                session, LEADER_EMAIL, volunteer_id=rows[1].id, password=BENCH_PASSWORD
+            )
+        ).unwrap()  # tuple return ignored: the bench never redeems an invite
 
     # bulk load leaves the planner blind until autovacuum catches up
     async with db.engine().begin() as conn:

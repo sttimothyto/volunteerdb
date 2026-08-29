@@ -7,6 +7,8 @@ from .. import passwords
 from ..config import settings
 from ..db import db_session
 from ..env import current
+from ..errors import Invalid
+from ..fp import Err, Ok
 from ..log import audit_log
 from ..services import mail
 from ..services import users as user_service
@@ -62,8 +64,10 @@ def login_page(request: Request, redirect_to: str = "/"):
                 )
                 return
             async with db_session() as session:
-                user = await user_service.authenticate(session, addr, password.value)
-            if user is None:
+                signed = await user_service.authenticate(
+                    session, addr, password.value, now=now
+                )
+            if isinstance(signed, Err):
                 for key in keys:
                     env.throttle.hit(key, now)
                 logger.warning(
@@ -71,6 +75,7 @@ def login_page(request: Request, redirect_to: str = "/"):
                 )
                 ui.notify("Invalid email or password", color="negative")
                 return
+            user = signed.value
             audit_log(
                 "auth.login", method="password", user=f"{user.id}:{user.email}", ip=ip
             )
@@ -92,9 +97,11 @@ def login_page(request: Request, redirect_to: str = "/"):
         env.throttle.hit(f"otp-ip:{ip}", now)
         audit_log("auth.otp_requested", email=addr, ip=ip)
         async with db_session() as session:
-            result = await user_service.start_otp_login(session, addr)
-        if result is not None:
-            user, code = result
+            result = await user_service.start_otp_login(
+                session, addr, now=now, code=env.rng.otp_code()
+            )
+        if isinstance(result, Ok):
+            user, code = result.value
             if code is not None:  # None: throttled, a live code is already out
                 await mail.send_email(user.email, *mail.otp_email(code))
         # Identical response whether or not the account exists (no enumeration).
@@ -106,10 +113,10 @@ def login_page(request: Request, redirect_to: str = "/"):
 
     async def verify() -> None:
         async with db_session() as session:
-            user = await user_service.verify_otp(
-                session, pending_email, code_input.value or ""
+            verified = await user_service.verify_otp(
+                session, pending_email, code_input.value or "", now=env.clock.now()
             )
-        if user is None:
+        if isinstance(verified, Err):
             logger.warning(
                 "auth.login_failed", method="otp", email=pending_email, ip=ip
             )
@@ -119,6 +126,7 @@ def login_page(request: Request, redirect_to: str = "/"):
                 color="negative",
             )
             return
+        user = verified.value
         audit_log("auth.login", method="otp", user=f"{user.id}:{user.email}", ip=ip)
         finish(user.id, "otp")
 
@@ -192,6 +200,8 @@ def invite_page(token: str, request: Request):
     apply_theme()
     login_url = f"{str(request.base_url).rstrip('/')}/login"
 
+    env = current()
+
     async def redeem() -> None:
         if not agree.value:
             ui.notify(
@@ -205,7 +215,7 @@ def invite_page(token: str, request: Request):
             # The service checks the policy too (it is the choke point); doing
             # it here as well is what turns a 500-shaped surprise into the
             # specific sentence the person needs while the form is still open.
-            weak = passwords.problem(pw)
+            weak = passwords.problem(pw, site_terms=env.password_terms)
             if weak:
                 ui.notify(weak, color="negative", multi_line=True, timeout=8000)
                 return
@@ -213,11 +223,16 @@ def invite_page(token: str, request: Request):
                 ui.notify("The two passwords don't match", color="negative")
                 return
         async with db_session() as session:
-            user = await user_service.redeem_invite(
-                session, token, pw or None, agreed_to_confidentiality=agree.value
+            redeemed = await user_service.redeem_invite(
+                session,
+                token,
+                pw or None,
+                agreed_to_confidentiality=agree.value,
+                now=env.clock.now(),
+                site_terms=env.password_terms,
             )
-        if user is None:
-            logger.warning("auth.invite_invalid")
+        if isinstance(redeemed, Err):
+            logger.warning("auth.invite_invalid", reason=type(redeemed.error).__name__)
             ui.notify(
                 "This link has expired or has already been used. You can still "
                 "sign in: enter your email on the sign-in page and leave the "
@@ -227,6 +242,7 @@ def invite_page(token: str, request: Request):
                 timeout=10000,
             )
             return
+        user = redeemed.value
         audit_log(
             "auth.invite_redeemed",
             user=f"{user.id}:{user.email}",
@@ -308,25 +324,30 @@ async def confirm_email_page(token: str, request: Request):
     """
     apply_theme()
     login_url = f"{str(request.base_url).rstrip('/')}/login"
+    env = current()
     async with db_session() as session:
-        account = await user_service.pending_email_change(session, token)
+        account = await user_service.pending_email_change(
+            session, token, now=env.clock.now()
+        )
         target = account.pending_email if account is not None else None
 
     async def apply() -> None:
-        try:
-            async with db_session() as session:
-                # confirm_email_change hands back the outgoing address: this
-                # mailbox is owed the receipt (§4.1.2) for a binding that just
-                # changed, and the instance is mutated in place
-                result = await user_service.confirm_email_change(session, token)
-        except ValueError as exc:  # the address went to somebody else first
-            _show_dead_link(body, login_url, str(exc))
-            return
-        if result is None:
-            logger.warning("auth.email_change_invalid")
-            _show_dead_link(body, login_url)
-            return
-        user, was = result
+        async with db_session() as session:
+            # confirm_email_change hands back the outgoing address: this
+            # mailbox is owed the receipt (§4.1.2) for a binding that just
+            # changed, and the instance is mutated in place
+            result = await user_service.confirm_email_change(
+                session, token, now=env.clock.now()
+            )
+        match result:
+            case Err(Invalid(text, _)):  # the address went to somebody else first
+                _show_dead_link(body, login_url, text)
+                return
+            case Err():
+                logger.warning("auth.email_change_invalid")
+                _show_dead_link(body, login_url)
+                return
+        user, was = result.value
         audit_log("auth.email_changed", user=f"{user.id}:{user.email}")
         settled = user.email
         if was:

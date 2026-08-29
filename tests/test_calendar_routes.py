@@ -11,6 +11,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 TZ = ZoneInfo("America/Toronto")
@@ -28,7 +29,14 @@ async def _seed() -> dict:
             await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
         )
         ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
-        mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
+        mia_u, _ = ok(
+            await users.create(
+                session,
+                "mia@example.org",
+                volunteer_id=mia.id,
+                invite=mint.fresh_invite(),
+            )
+        )
 
         async def event(team_id: int, title: str, day: int) -> int:
             created = await event_service.create_event(
@@ -52,7 +60,9 @@ async def _seed() -> dict:
         await event_service.sign_up(
             session, None, slot_id=detail.slots[0].slot.id, volunteer_id=mia.id
         )
-        token = await users.ensure_calendar_token(session, mia_u.id)
+        token = ok(
+            await users.ensure_calendar_token(session, mia_u.id, token=mint.token())
+        )
         return {
             "mia_u": mia_u.id,
             "token": token,
@@ -116,7 +126,9 @@ async def test_resetting_the_address_darkens_the_old_one(real_app_client):
     old = await real_app_client.get(f"/calendar/mine/{ids['token']}.ics")
     assert old.status_code == 404
     async with db_session() as session:
-        new_token = await users.ensure_calendar_token(session, ids["mia_u"])
+        new_token = ok(
+            await users.ensure_calendar_token(session, ids["mia_u"], token=mint.token())
+        )
     assert new_token != ids["token"]
     assert (
         await real_app_client.get(f"/calendar/mine/{new_token}.ics")

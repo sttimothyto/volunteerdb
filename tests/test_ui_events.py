@@ -18,6 +18,7 @@ from volunteerdb.services import events as event_service
 from volunteerdb.services import mail, memberships, teams, users, volunteers
 
 from .conftest import SLOW
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -54,10 +55,32 @@ async def _parish(session):
     ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
     ok(await memberships.assign(session, None, noor.id, liturgy.id, TeamRole.member))
     ok(await memberships.assign(session, None, oda.id, choir.id, TeamRole.member))
-    lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
-    mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
-    noor_u, _ = await users.create(session, "noor@example.org", volunteer_id=noor.id)
-    oda_u, _ = await users.create(session, "oda@example.org", volunteer_id=oda.id)
+    lena_u, _ = ok(
+        await users.create(
+            session,
+            "lena@example.org",
+            volunteer_id=lena.id,
+            invite=mint.fresh_invite(),
+        )
+    )
+    mia_u, _ = ok(
+        await users.create(
+            session, "mia@example.org", volunteer_id=mia.id, invite=mint.fresh_invite()
+        )
+    )
+    noor_u, _ = ok(
+        await users.create(
+            session,
+            "noor@example.org",
+            volunteer_id=noor.id,
+            invite=mint.fresh_invite(),
+        )
+    )
+    oda_u, _ = ok(
+        await users.create(
+            session, "oda@example.org", volunteer_id=oda.id, invite=mint.fresh_invite()
+        )
+    )
     return {
         "liturgy": liturgy.id,
         "choir": choir.id,
@@ -216,7 +239,11 @@ async def test_leader_creates_event_via_dialog(database):
         await user.should_see("0/∞", retries=50)
 
     async with db_session() as session:
-        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = ok(
+            await users.create(
+                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
+        )
         from volunteerdb.actors import load_actor
 
         actor = await load_actor(session, admin)

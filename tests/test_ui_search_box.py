@@ -14,6 +14,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -37,11 +38,22 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
         retired = ok(await volunteers.create(session, None, "Pedro", "Alvarez"))
         ok(await volunteers.update(session, None, retired.id, is_active=False))
         ok(await volunteers.create(session, None, "Bruno", "Costa"))
-        admin, _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
-        member, _ = await users.create(
-            session, "member@example.org", password="test-pass-phrase"
+        member, _ = ok(
+            await users.create(
+                session,
+                "member@example.org",
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         maria_id, choir_id = maria.id, choir.id
         admin_id, member_id = admin.id, member.id
@@ -122,8 +134,14 @@ async def test_volunteers_page_search_box_also_suggests(database):
                 session, None, "Maria", "Alvarez", "maria@example.org"
             )
         )
-        admin, _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         maria_id, admin_id = maria.id, admin.id
 
@@ -159,11 +177,22 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
         )
         ok(await memberships.assign(session, None, maria.id, music.id, TeamRole.member))
         ok(await memberships.assign(session, None, bruno.id, music.id, TeamRole.member))
-        admin, _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
-        bruno_u, _ = await users.create(
-            session, "bruno@example.org", volunteer_id=bruno.id
+        bruno_u, _ = ok(
+            await users.create(
+                session,
+                "bruno@example.org",
+                volunteer_id=bruno.id,
+                invite=mint.fresh_invite(),
+            )
         )
         maria_id, bruno_id = maria.id, bruno.id
         admin_id, bruno_uid = admin.id, bruno_u.id

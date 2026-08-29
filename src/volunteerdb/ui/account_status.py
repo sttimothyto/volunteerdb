@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 from nicegui import ui
 
 from ..config import settings
+from ..env import current as current_env
 from ..models import AppUser
 from ..services import users as user_service
 
@@ -79,7 +80,9 @@ def roster_account(
     # link on a live account) would make the roster say an established member
     # was still waiting to set up.
     unused = account is not None and account.is_active and account.last_login_at is None
-    outstanding = unused and user_service.invite_live(account)
+    outstanding = unused and user_service.invite_live(
+        account, now=current_env().clock.now()
+    )
     lapsed = unused and bool(account.invite_token) and not outstanding
     if action is not None and invitable(account):
         action()

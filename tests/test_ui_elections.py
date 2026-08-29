@@ -15,6 +15,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -33,10 +34,32 @@ async def _parish(session):
     ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
     ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
     ok(await memberships.assign(session, None, dan.id, clergy.id, TeamRole.member))
-    lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
-    cora_u, _ = await users.create(session, "cora@example.org", volunteer_id=cora.id)
-    mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
-    admin_u, _ = await users.create(session, "admin@example.org", is_admin=True)
+    lena_u, _ = ok(
+        await users.create(
+            session,
+            "lena@example.org",
+            volunteer_id=lena.id,
+            invite=mint.fresh_invite(),
+        )
+    )
+    cora_u, _ = ok(
+        await users.create(
+            session,
+            "cora@example.org",
+            volunteer_id=cora.id,
+            invite=mint.fresh_invite(),
+        )
+    )
+    mia_u, _ = ok(
+        await users.create(
+            session, "mia@example.org", volunteer_id=mia.id, invite=mint.fresh_invite()
+        )
+    )
+    admin_u, _ = ok(
+        await users.create(
+            session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+        )
+    )
     return {
         "liturgy": liturgy.id,
         "clergy": clergy.id,

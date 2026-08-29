@@ -21,6 +21,7 @@ from volunteerdb.models import (
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 TZ = ZoneInfo("America/Toronto")
@@ -517,13 +518,27 @@ async def test_cancel_sub_and_claimable_visibility(database):
         sub = await event_service.request_sub(
             session, None, assignment_id=a.id, requested_by=None
         )
-        user2, _ = await users.create(session, "vol2@example.org", volunteer_id=vids[2])
+        user2, _ = ok(
+            await users.create(
+                session,
+                "vol2@example.org",
+                volunteer_id=vids[2],
+                invite=mint.fresh_invite(),
+            )
+        )
         actor2 = await load_actor(session, user2)
         claimable = await event_service.claimable_subs(session, actor2)
         assert [c.sub.id for c in claimable] == [sub.id]
         assert claimable[0].volunteer.id == vids[1]
 
-        user1, _ = await users.create(session, "vol1@example.org", volunteer_id=vids[1])
+        user1, _ = ok(
+            await users.create(
+                session,
+                "vol1@example.org",
+                volunteer_id=vids[1],
+                invite=mint.fresh_invite(),
+            )
+        )
         actor1 = await load_actor(session, user1)
         assert await event_service.claimable_subs(session, actor1) == [], (
             "your own request is not claimable by you"
@@ -628,7 +643,11 @@ async def test_list_events_scopes_to_the_actors_teams(database):
                 session, None, other.id, team_b.id, TeamRole.member
             )
         )
-        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = ok(
+            await users.create(
+                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
+        )
     await _one_event(team_a)
     b_start = _at(date.today() + timedelta(days=7), 18)
     async with db_session() as session:
@@ -642,8 +661,13 @@ async def test_list_events_scopes_to_the_actors_teams(database):
             created_by=None,
         )
     async with db_session() as session:
-        member, _ = await users.create(
-            session, "vol1@example.org", volunteer_id=vids_a[1]
+        member, _ = ok(
+            await users.create(
+                session,
+                "vol1@example.org",
+                volunteer_id=vids_a[1],
+                invite=mint.fresh_invite(),
+            )
         )
         member_actor = await load_actor(session, member)
         admin_actor = await load_actor(session, admin)
@@ -667,8 +691,13 @@ async def test_summary_counts_fill_and_capacity(database):
         await event_service.sign_up(
             session, None, slot_id=await _first_slot(event_id), volunteer_id=vids[1]
         )
-        leader, _ = await users.create(
-            session, "vol0@example.org", volunteer_id=vids[0]
+        leader, _ = ok(
+            await users.create(
+                session,
+                "vol0@example.org",
+                volunteer_id=vids[0],
+                invite=mint.fresh_invite(),
+            )
         )
         actor = await load_actor(session, leader)
         summary = (await event_service.list_events(session, actor))[0]
@@ -684,7 +713,11 @@ async def test_summary_counts_fill_and_capacity(database):
 
 
 async def _admin_actor(session):
-    admin, _ = await users.create(session, "checker@example.org", is_admin=True)
+    admin, _ = ok(
+        await users.create(
+            session, "checker@example.org", is_admin=True, invite=mint.fresh_invite()
+        )
+    )
     return await load_actor(session, admin)
 
 
@@ -748,8 +781,13 @@ async def test_similar_events_masks_titles_outside_the_actors_scope(database):
             created_by=None,
         )
     async with db_session() as session:
-        member, _ = await users.create(
-            session, "vol1@example.org", volunteer_id=vids[1]
+        member, _ = ok(
+            await users.create(
+                session,
+                "vol1@example.org",
+                volunteer_id=vids[1],
+                invite=mint.fresh_invite(),
+            )
         )
         actor = await load_actor(session, member)
         hits = await event_service.similar_events(
@@ -1025,7 +1063,14 @@ async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
         )
         await event_service.cancel_event(session, None, elsewhere, cancelled_by=None)
     async with db_session() as session:
-        member, _ = await users.create(session, "m@example.org", volunteer_id=vids[1])
+        member, _ = ok(
+            await users.create(
+                session,
+                "m@example.org",
+                volunteer_id=vids[1],
+                invite=mint.fresh_invite(),
+            )
+        )
         actor = await load_actor(session, member)
         window = dict(from_=start - timedelta(days=1), to=start + timedelta(days=30))
         got = await event_service.calendar_entries(

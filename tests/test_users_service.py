@@ -2,14 +2,14 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
+from volunteerdb import errors
+from volunteerdb.config import settings
 from volunteerdb.db import db_session
-from volunteerdb.passwords import WeakPassword
 from volunteerdb.services import users, volunteers
 from volunteerdb.services.users import _token_digest
 
-from tests.fp_helpers import ok
+from tests import mint
+from tests.fp_helpers import ok, refused
 
 
 async def test_bulk_provision_dedupes_and_skips(database):
@@ -34,9 +34,16 @@ async def test_bulk_provision_dedupes_and_skips(database):
         linked = ok(
             await volunteers.create(session, None, "Eli", "Linked", "eli@example.org")
         )
-        await users.create(session, "eli-account@example.org", volunteer_id=linked.id)
+        ok(
+            await users.create(
+                session,
+                "eli-account@example.org",
+                volunteer_id=linked.id,
+                invite=mint.fresh_invite(),
+            )
+        )
 
-        report = await users.bulk_provision(session, None)
+        report = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
 
         assert [v.id for v, _, _ in report.created] == [family1.id]
         created_user = report.created[0][1]
@@ -53,11 +60,11 @@ async def test_bulk_provision_dedupes_and_skips(database):
 async def test_bulk_provision_second_run_is_noop(database):
     async with db_session() as session:
         ok(await volunteers.create(session, None, "Ana", "Solo", "ana@example.org"))
-        first = await users.bulk_provision(session, None)
+        first = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
         assert len(first.created) == 1
 
     async with db_session() as session:
-        second = await users.bulk_provision(session, None)
+        second = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
         assert second.created == []
         assert [reason for _, reason in second.skipped] == ["already has an account"]
 
@@ -70,7 +77,11 @@ async def test_create_links_to_the_volunteer_at_the_same_address(database):
             )
         )
 
-        user, _ = await users.create(session, "  Bruno@Example.ORG ")
+        user, _ = ok(
+            await users.create(
+                session, "  Bruno@Example.ORG ", invite=mint.fresh_invite()
+            )
+        )
 
         assert user.volunteer_id == v.id, "an account is somebody's login"
 
@@ -90,17 +101,37 @@ async def test_create_declines_ambiguous_or_unavailable_matches(database):
         taken = ok(
             await volunteers.create(session, None, "Cara", "Taken", "cara@example.org")
         )
-        await users.create(session, "cara-old@example.org", volunteer_id=taken.id)
+        ok(
+            await users.create(
+                session,
+                "cara-old@example.org",
+                volunteer_id=taken.id,
+                invite=mint.fresh_invite(),
+            )
+        )
         gone = ok(
             await volunteers.create(session, None, "Dora", "Gone", "dora@example.org")
         )
         ok(await volunteers.update(session, None, gone.id, is_active=False))
 
-        family, _ = await users.create(session, "family@example.org")
-        second, _ = await users.create(session, "cara@example.org")
-        inactive, _ = await users.create(session, "dora@example.org")
-        explicit, _ = await users.create(
-            session, "bruno@example.org", volunteer_id=None
+        family, _ = ok(
+            await users.create(
+                session, "family@example.org", invite=mint.fresh_invite()
+            )
+        )
+        second, _ = ok(
+            await users.create(session, "cara@example.org", invite=mint.fresh_invite())
+        )
+        inactive, _ = ok(
+            await users.create(session, "dora@example.org", invite=mint.fresh_invite())
+        )
+        explicit, _ = ok(
+            await users.create(
+                session,
+                "bruno@example.org",
+                volunteer_id=None,
+                invite=mint.fresh_invite(),
+            )
         )
 
         assert family.volunteer_id is None, "families share an address: no coin flip"
@@ -113,7 +144,14 @@ async def test_create_can_opt_out_of_linking(database):
     async with db_session() as session:
         ok(await volunteers.create(session, None, "Sync", "Bot", "bot@example.org"))
 
-        user, _ = await users.create(session, "bot@example.org", link_by_email=False)
+        user, _ = ok(
+            await users.create(
+                session,
+                "bot@example.org",
+                link_by_email=False,
+                invite=mint.fresh_invite(),
+            )
+        )
 
         assert user.volunteer_id is None
 
@@ -121,7 +159,9 @@ async def test_create_can_opt_out_of_linking(database):
 async def test_bulk_provision_adopts_an_unlinked_account(database):
     """The bcordeiro case: the account was made before the volunteer existed."""
     async with db_session() as session:
-        orphan, _ = await users.create(session, "bruno@example.org")
+        orphan, _ = ok(
+            await users.create(session, "bruno@example.org", invite=mint.fresh_invite())
+        )
         assert orphan.volunteer_id is None
         v = ok(
             await volunteers.create(
@@ -129,14 +169,14 @@ async def test_bulk_provision_adopts_an_unlinked_account(database):
             )
         )
 
-        report = await users.bulk_provision(session, None)
+        report = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
 
         assert report.created == []
         assert [(vol.id, u.id) for vol, u in report.linked] == [(v.id, orphan.id)]
         assert orphan.volunteer_id == v.id
 
     async with db_session() as session:
-        again = await users.bulk_provision(session, None)
+        again = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
         assert again.linked == []
         assert [reason for _, reason in again.skipped] == ["already has an account"]
 
@@ -149,33 +189,43 @@ async def test_set_volunteer_relinks_unlinks_and_refuses_a_taken_volunteer(datab
         pedro = ok(
             await volunteers.create(session, None, "Pedro", "Sousa", "p@example.org")
         )
-        user, _ = await users.create(session, "typo@example.org")
+        user, _ = ok(
+            await users.create(session, "typo@example.org", invite=mint.fresh_invite())
+        )
         assert user.volunteer_id is None
 
-        await users.set_volunteer(session, user.id, maria.id)
+        ok(await users.set_volunteer(session, user.id, maria.id))
         assert user.volunteer_id == maria.id
 
-        await users.set_volunteer(session, user.id, None)
+        ok(await users.set_volunteer(session, user.id, None))
         assert user.volunteer_id is None, "an auto-link can be undone"
 
-        await users.set_volunteer(session, user.id, pedro.id)
-        rival, _ = await users.create(session, "rival@example.org")
-        with pytest.raises(ValueError, match="already linked to typo@example.org"):
-            await users.set_volunteer(session, rival.id, pedro.id)
+        ok(await users.set_volunteer(session, user.id, pedro.id))
+        rival, _ = ok(
+            await users.create(session, "rival@example.org", invite=mint.fresh_invite())
+        )
+        refused(
+            await users.set_volunteer(session, rival.id, pedro.id),
+            errors.Invalid,
+            match="already linked to typo@example.org",
+        )
 
-        with pytest.raises(LookupError):
-            await users.set_volunteer(session, user.id, 424242)
-        with pytest.raises(LookupError):
-            await users.set_volunteer(session, 424242, maria.id)
+        refused(await users.set_volunteer(session, user.id, 424242), errors.NotFound)
+        refused(await users.set_volunteer(session, 424242, maria.id), errors.NotFound)
 
 
 async def test_issue_api_token_revokes_previous(database):
     async with db_session() as session:
-        user, _ = await users.create(
-            session, "api@example.org", password="api-pass-phrase-1"
+        user, _ = ok(
+            await users.create(
+                session,
+                "api@example.org",
+                password="api-pass-phrase-1",
+                invite=mint.fresh_invite(),
+            )
         )
-        first = await users.issue_api_token(session, user.id)
-        second = await users.issue_api_token(session, user.id)
+        first = ok(await users.issue_api_token(session, user.id, token=mint.token()))
+        second = ok(await users.issue_api_token(session, user.id, token=mint.token()))
 
         assert await users.authenticate_token(session, first) is None, (
             "old token is revoked"
@@ -188,69 +238,102 @@ async def test_issue_api_token_revokes_previous(database):
 
 async def test_authenticate_token_rejects_inactive_and_empty(database):
     async with db_session() as session:
-        user, _ = await users.create(
-            session, "victim@example.org", password="api-pass-phrase-1"
+        user, _ = ok(
+            await users.create(
+                session,
+                "victim@example.org",
+                password="api-pass-phrase-1",
+                invite=mint.fresh_invite(),
+            )
         )
-        token = await users.issue_api_token(session, user.id)
+        token = ok(await users.issue_api_token(session, user.id, token=mint.token()))
         assert await users.authenticate_token(session, token) is not None
 
-        await users.set_flags(session, user.id, is_active=False)
+        ok(await users.set_flags(session, user.id, is_active=False))
         assert await users.authenticate_token(session, token) is None
         assert await users.authenticate_token(session, "") is None
 
 
 async def test_reissue_invite_invalidates_password(database):
     async with db_session() as session:
-        user, _ = await users.create(
-            session, "reset@example.org", password="old-pass-phrase-1"
+        user, _ = ok(
+            await users.create(
+                session,
+                "reset@example.org",
+                password="old-pass-phrase-1",
+                invite=mint.fresh_invite(),
+            )
         )
         assert (
-            await users.authenticate(session, "reset@example.org", "old-pass-phrase-1")
-            is not None
-        )
+            await users.authenticate(
+                session, "reset@example.org", "old-pass-phrase-1", now=mint.now()
+            )
+        ).is_ok()
 
-        invite = await users.reissue_invite(session, user.id)
+        invite = ok(
+            await users.reissue_invite(session, user.id, invite=mint.fresh_invite())
+        )
         assert (
-            await users.authenticate(session, "reset@example.org", "old-pass-phrase-1")
-            is None
-        )
+            await users.authenticate(
+                session, "reset@example.org", "old-pass-phrase-1", now=mint.now()
+            )
+        ).is_err()
 
-        redeemed = await users.redeem_invite(
-            session, invite, "new-pass-phrase-1", agreed_to_confidentiality=True
+        redeemed = ok(
+            await users.redeem_invite(
+                session,
+                invite,
+                "new-pass-phrase-1",
+                agreed_to_confidentiality=True,
+                now=mint.now(),
+            )
         )
         assert redeemed is not None and redeemed.invite_token is None
         assert (
             await users.redeem_invite(
-                session, invite, "again", agreed_to_confidentiality=True
+                session,
+                invite,
+                "again",
+                agreed_to_confidentiality=True,
+                now=mint.now(),
             )
-            is None
-        ), "single use"
+        ).is_err(), "single use"
         assert (
-            await users.authenticate(session, "reset@example.org", "new-pass-phrase-1")
-            is not None
-        )
+            await users.authenticate(
+                session, "reset@example.org", "new-pass-phrase-1", now=mint.now()
+            )
+        ).is_ok()
 
 
 async def test_set_password_clears_invite_and_missing_raises(database):
     async with db_session() as session:
-        user, _ = await users.create(session, "invitee@example.org")
+        user, _ = ok(
+            await users.create(
+                session, "invitee@example.org", invite=mint.fresh_invite()
+            )
+        )
         assert user.invite_token is not None and user.password_hash is None
 
-        await users.set_password(session, user.id, "fresh-pass-phrase-1")
+        ok(await users.set_password(session, user.id, "fresh-pass-phrase-1"))
         assert user.invite_token is None
         assert (
             await users.authenticate(
-                session, "invitee@example.org", "fresh-pass-phrase-1"
+                session,
+                "invitee@example.org",
+                "fresh-pass-phrase-1",
+                now=mint.now(),
             )
-            is not None
-        )
+        ).is_ok()
 
-        with pytest.raises(LookupError):
-            await users.set_password(session, 424242, "x")
-        with pytest.raises(LookupError):
-            await users.reissue_invite(session, 424242)
-        with pytest.raises(LookupError):
-            await users.issue_api_token(session, 424242)
+        refused(await users.set_password(session, 424242, "x"), errors.NotFound)
+        refused(
+            await users.reissue_invite(session, 424242, invite=mint.fresh_invite()),
+            errors.NotFound,
+        )
+        refused(
+            await users.issue_api_token(session, 424242, token=mint.token()),
+            errors.NotFound,
+        )
 
 
 async def test_invite_links_expire(database):
@@ -259,24 +342,31 @@ async def test_invite_links_expire(database):
     address at 24 hours."""
     async with db_session() as session:
         # the plaintext comes back from create(); only its digest is stored
-        user, token = await users.create(session, "slow@example.org")
+        user, token = ok(
+            await users.create(session, "slow@example.org", invite=mint.fresh_invite())
+        )
         assert user.invite_expires_at is not None
-        assert users.invite_live(user)
+        assert users.invite_live(user, now=mint.now())
 
         user.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.flush()
-        assert not users.invite_live(user)
+        assert not users.invite_live(user, now=mint.now())
         assert (
             await users.redeem_invite(
-                session, token, None, agreed_to_confidentiality=True
+                session, token, None, agreed_to_confidentiality=True, now=mint.now()
             )
-            is None
-        ), "an expired link is refused exactly like an unknown one"
+        ).is_err(), "an expired link is refused exactly like an unknown one"
         assert user.invite_token is not None, "and is not silently consumed"
 
         # the account is not stranded: an emailed code still signs it in
-        _, code = await users.start_otp_login(session, "slow@example.org")
-        assert await users.verify_otp(session, "slow@example.org", code) is not None
+        _, code = ok(
+            await users.start_otp_login(
+                session, "slow@example.org", now=mint.now(), code=mint.code()
+            )
+        )
+        assert (
+            await users.verify_otp(session, "slow@example.org", code, now=mint.now())
+        ).is_ok()
         assert user.invite_token is None and user.invite_expires_at is None
 
 
@@ -286,13 +376,15 @@ async def test_invite_volunteer_creates_a_linked_passwordless_account(database):
             await volunteers.create(session, None, "Nils", "Nobody", "Nils@Example.org")
         )
 
-        account, token = await users.invite_volunteer(session, nils.id)
+        account, token = ok(
+            await users.invite_volunteer(session, nils.id, invite=mint.fresh_invite())
+        )
 
         assert account.volunteer_id == nils.id, "linked, or they sign in to nothing"
         assert account.email == "nils@example.org", "normalized"
         assert account.password_hash is None, "they choose their own, or none"
         assert not account.is_admin, "a leader can never mint an admin"
-        assert token and users.invite_live(account)
+        assert token and users.invite_live(account, now=mint.now())
         assert await users.account_for_volunteer(session, nils.id) is account
 
 
@@ -304,17 +396,21 @@ async def test_invite_volunteer_rearms_a_link_nobody_used(database):
         nils = ok(
             await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
         )
-        account, first = await users.invite_volunteer(session, nils.id)
+        account, first = ok(
+            await users.invite_volunteer(session, nils.id, invite=mint.fresh_invite())
+        )
 
         # let it lapse unredeemed, as it does after a week of nobody reading email
         account.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.flush()
-        assert not users.invite_live(account)
+        assert not users.invite_live(account, now=mint.now())
 
-        again, second = await users.invite_volunteer(session, nils.id)
+        again, second = ok(
+            await users.invite_volunteer(session, nils.id, invite=mint.fresh_invite())
+        )
         assert again is account, "the same account, not a second one"
         assert second != first, "a genuinely new token"
-        assert users.invite_live(account)
+        assert users.invite_live(account, now=mint.now())
 
 
 async def test_invite_volunteer_never_touches_a_usable_credential(database):
@@ -324,30 +420,48 @@ async def test_invite_volunteer_never_touches_a_usable_credential(database):
         settled = ok(
             await volunteers.create(session, None, "Opal", "Online", "opal@example.org")
         )
-        account, _ = await users.create(
-            session,
-            "opal@example.org",
-            volunteer_id=settled.id,
-            password="settled-pass-phrase-1",
+        account, _ = ok(
+            await users.create(
+                session,
+                "opal@example.org",
+                volunteer_id=settled.id,
+                password="settled-pass-phrase-1",
+                invite=mint.fresh_invite(),
+            )
         )
         held = account.password_hash
 
-        with pytest.raises(ValueError, match="already has a working account"):
-            await users.invite_volunteer(session, settled.id)
+        refused(
+            await users.invite_volunteer(
+                session, settled.id, invite=mint.fresh_invite()
+            ),
+            errors.Invalid,
+            match="already has a working account",
+        )
         assert account.password_hash == held, "the password survived"
 
         # same refusal for a passwordless account that has been signed into
         otp_only = ok(
             await volunteers.create(session, None, "Iris", "Code", "iris@example.org")
         )
-        used, _ = await users.create(
-            session, "iris@example.org", volunteer_id=otp_only.id
+        used, _ = ok(
+            await users.create(
+                session,
+                "iris@example.org",
+                volunteer_id=otp_only.id,
+                invite=mint.fresh_invite(),
+            )
         )
         used.password_hash = None
         used.last_login_at = datetime.now(UTC)
         await session.flush()
-        with pytest.raises(ValueError, match="already has a working account"):
-            await users.invite_volunteer(session, otp_only.id)
+        refused(
+            await users.invite_volunteer(
+                session, otp_only.id, invite=mint.fresh_invite()
+            ),
+            errors.Invalid,
+            match="already has a working account",
+        )
 
 
 async def test_invite_volunteer_refuses_what_only_an_admin_can_fix(database):
@@ -357,28 +471,44 @@ async def test_invite_volunteer_refuses_what_only_an_admin_can_fix(database):
             await volunteers.create(session, None, "Dora", "Gone", "dora@example.org")
         )
         ok(await volunteers.update(session, None, gone.id, is_active=False))
-        with pytest.raises(ValueError, match="archived"):
-            await users.invite_volunteer(session, gone.id)
+        refused(
+            await users.invite_volunteer(session, gone.id, invite=mint.fresh_invite()),
+            errors.Invalid,
+            match="archived",
+        )
 
         # no address to send anything to
         quiet = ok(await volunteers.create(session, None, "Hank", "Host"))
-        with pytest.raises(ValueError, match="no email address"):
-            await users.invite_volunteer(session, quiet.id)
+        refused(
+            await users.invite_volunteer(session, quiet.id, invite=mint.fresh_invite()),
+            errors.Invalid,
+            match="no email address",
+        )
 
         # switched-off account: an admin turned it off deliberately
         off = ok(
             await volunteers.create(session, None, "Quin", "Quiet", "quin@example.org")
         )
-        account, _ = await users.create(
-            session, "quin@example.org", volunteer_id=off.id
+        account, _ = ok(
+            await users.create(
+                session,
+                "quin@example.org",
+                volunteer_id=off.id,
+                invite=mint.fresh_invite(),
+            )
         )
         account.is_active = False
         await session.flush()
-        with pytest.raises(ValueError, match="switched off"):
-            await users.invite_volunteer(session, off.id)
+        refused(
+            await users.invite_volunteer(session, off.id, invite=mint.fresh_invite()),
+            errors.Invalid,
+            match="switched off",
+        )
 
-        with pytest.raises(LookupError):
-            await users.invite_volunteer(session, 424242)
+        refused(
+            await users.invite_volunteer(session, 424242, invite=mint.fresh_invite()),
+            errors.NotFound,
+        )
 
 
 async def test_invite_volunteer_will_not_adopt_a_stranger_at_the_same_address(database):
@@ -397,11 +527,16 @@ async def test_invite_volunteer_will_not_adopt_a_stranger_at_the_same_address(da
                 session, None, "Bob", "Family", "family@example.org"
             )
         )
-        theirs, _ = await users.invite_volunteer(session, parent.id)
+        theirs, _ = ok(
+            await users.invite_volunteer(session, parent.id, invite=mint.fresh_invite())
+        )
         before = theirs.volunteer_id
 
-        with pytest.raises(ValueError, match="already signs in"):
-            await users.invite_volunteer(session, child.id)
+        refused(
+            await users.invite_volunteer(session, child.id, invite=mint.fresh_invite()),
+            errors.Invalid,
+            match="already signs in",
+        )
         assert theirs.volunteer_id == before, "the sibling's account is untouched"
         assert await users.account_for_volunteer(session, child.id) is None
 
@@ -423,24 +558,38 @@ async def test_invitable_agrees_with_what_invite_volunteer_does(database):
         lapsed_v = ok(
             await volunteers.create(session, None, "Lap", "Sed", "lap@example.org")
         )
-        lapsed_a, _ = await users.invite_volunteer(session, lapsed_v.id)
+        lapsed_a, _ = ok(
+            await users.invite_volunteer(
+                session, lapsed_v.id, invite=mint.fresh_invite()
+            )
+        )
         lapsed_a.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
 
         settled_v = ok(
             await volunteers.create(session, None, "Set", "Tled", "set@example.org")
         )
-        await users.create(
-            session,
-            "set@example.org",
-            volunteer_id=settled_v.id,
-            password="settled-pass-phrase-1",
+        ok(
+            await users.create(
+                session,
+                "set@example.org",
+                volunteer_id=settled_v.id,
+                password="settled-pass-phrase-1",
+                invite=mint.fresh_invite(),
+            )
         )
         cases.append(("has a password", settled_v.id))
 
         off_v = ok(
             await volunteers.create(session, None, "Off", "Line", "off@example.org")
         )
-        off_a, _ = await users.create(session, "off@example.org", volunteer_id=off_v.id)
+        off_a, _ = ok(
+            await users.create(
+                session,
+                "off@example.org",
+                volunteer_id=off_v.id,
+                invite=mint.fresh_invite(),
+            )
+        )
         off_a.is_active = False
         cases.append(("switched off", off_v.id))
         await session.flush()
@@ -450,11 +599,9 @@ async def test_invitable_agrees_with_what_invite_volunteer_does(database):
         for label, vid in cases:
             account = await users.account_for_volunteer(session, vid)
             offered = invitable(account)
-            try:
-                await users.invite_volunteer(session, vid)
-                honoured = True
-            except ValueError:
-                honoured = False
+            honoured = (
+                await users.invite_volunteer(session, vid, invite=mint.fresh_invite())
+            ).is_ok()
             assert offered == honoured, (
                 f"{label}: badge offers={offered} but service honours={honoured}"
             )
@@ -462,14 +609,19 @@ async def test_invitable_agrees_with_what_invite_volunteer_does(database):
 
 async def test_reissue_invite_arms_a_fresh_window(database):
     async with db_session() as session:
-        user, _ = await users.create(
-            session, "lost@example.org", password="old-pass-phrase-1"
+        user, _ = ok(
+            await users.create(
+                session,
+                "lost@example.org",
+                password="old-pass-phrase-1",
+                invite=mint.fresh_invite(),
+            )
         )
         assert user.invite_token is None and user.invite_expires_at is None
 
-        await users.reissue_invite(session, user.id)
-        assert users.invite_live(user)
-        expected = datetime.now(UTC) + users.invite_ttl()
+        ok(await users.reissue_invite(session, user.id, invite=mint.fresh_invite()))
+        assert users.invite_live(user, now=mint.now())
+        expected = datetime.now(UTC) + timedelta(hours=settings().invite_ttl_hours)
         assert abs((user.invite_expires_at - expected).total_seconds()) < 60
 
 
@@ -477,23 +629,53 @@ async def test_weak_passwords_are_refused_on_every_path(database):
     """passwords.check is enforced at the service layer, so no caller — GUI,
     API, seed script or deploy bootstrap — can leave a weak one behind."""
     async with db_session() as session:
-        with pytest.raises(WeakPassword, match="too short"):
-            await users.create(session, "weak@example.org", password="short")
+        refused(
+            await users.create(
+                session,
+                "weak@example.org",
+                password="short",
+                invite=mint.fresh_invite(),
+            ),
+            errors.WeakPassword,
+            match="too short",
+        )
         assert await users.get_by_email(session, "weak@example.org") is None
 
-        user, _ = await users.create(
-            session, "coordinator@example.org", password="cedar lamp figs"
-        )
-        with pytest.raises(WeakPassword, match="well-known"):
-            await users.set_password(session, user.id, "passwordpassword")
-        with pytest.raises(WeakPassword, match="email address or the name"):
-            await users.set_password(session, user.id, "coordinator-2026")
-
-        invited, invited_token = await users.create(session, "invited@example.org")
-        with pytest.raises(WeakPassword, match="too short"):
-            await users.redeem_invite(
-                session, invited_token, "short", agreed_to_confidentiality=True
+        user, _ = ok(
+            await users.create(
+                session,
+                "coordinator@example.org",
+                password="cedar lamp figs",
+                invite=mint.fresh_invite(),
             )
+        )
+        refused(
+            await users.set_password(session, user.id, "passwordpassword"),
+            errors.WeakPassword,
+            match="well-known",
+        )
+        refused(
+            await users.set_password(session, user.id, "coordinator-2026"),
+            errors.WeakPassword,
+            match="email address or the name",
+        )
+
+        invited, invited_token = ok(
+            await users.create(
+                session, "invited@example.org", invite=mint.fresh_invite()
+            )
+        )
+        refused(
+            await users.redeem_invite(
+                session,
+                invited_token,
+                "short",
+                agreed_to_confidentiality=True,
+                now=mint.now(),
+            ),
+            errors.WeakPassword,
+            match="too short",
+        )
         assert invited.invite_token is not None, "a refused password spends nothing"
 
 
@@ -502,16 +684,25 @@ async def test_redeem_invite_requires_confidentiality_agreement(database):
     accepting the confidentiality notice, and the acceptance moment lands on
     the account."""
     async with db_session() as session:
-        user, token = await users.create(session, "agrees@example.org")
-        with pytest.raises(ValueError, match="confidentiality"):
-            await users.redeem_invite(
-                session, token, None, agreed_to_confidentiality=False
+        user, token = ok(
+            await users.create(
+                session, "agrees@example.org", invite=mint.fresh_invite()
             )
+        )
+        refused(
+            await users.redeem_invite(
+                session, token, None, agreed_to_confidentiality=False, now=mint.now()
+            ),
+            errors.Invalid,
+            match="confidentiality",
+        )
         assert user.invite_token is not None, "a refused redemption spends nothing"
         assert user.confidentiality_agreed_at is None
 
-        redeemed = await users.redeem_invite(
-            session, token, None, agreed_to_confidentiality=True
+        redeemed = ok(
+            await users.redeem_invite(
+                session, token, None, agreed_to_confidentiality=True, now=mint.now()
+            )
         )
         assert redeemed is not None
         assert redeemed.confidentiality_agreed_at is not None
@@ -519,20 +710,26 @@ async def test_redeem_invite_requires_confidentiality_agreement(database):
 
 async def test_clear_password_drops_api_access_too(database):
     async with db_session() as session:
-        user, _ = await users.create(
-            session, "quits@example.org", password="cedar lamp figs"
+        user, _ = ok(
+            await users.create(
+                session,
+                "quits@example.org",
+                password="cedar lamp figs",
+                invite=mint.fresh_invite(),
+            )
         )
-        token = await users.issue_api_token(session, user.id)
+        token = ok(await users.issue_api_token(session, user.id, token=mint.token()))
 
-        await users.clear_password(session, user.id)
+        ok(await users.clear_password(session, user.id))
         assert user.password_hash is None
         assert await users.authenticate_token(session, token) is None, (
             "tokens are issued against a password; removing it revokes them"
         )
         assert (
-            await users.authenticate(session, "quits@example.org", "cedar lamp figs")
-            is None
-        )
+            await users.authenticate(
+                session, "quits@example.org", "cedar lamp figs", now=mint.now()
+            )
+        ).is_err()
 
 
 async def test_accounts_by_volunteer_maps_only_the_linked_ones(database):
@@ -543,11 +740,23 @@ async def test_accounts_by_volunteer_maps_only_the_linked_ones(database):
         bare = ok(
             await volunteers.create(session, None, "Bare", "Foot", "bare@example.org")
         )
-        account, _ = await users.create(
-            session, "lin@example.org", volunteer_id=linked.id
+        account, _ = ok(
+            await users.create(
+                session,
+                "lin@example.org",
+                volunteer_id=linked.id,
+                invite=mint.fresh_invite(),
+            )
         )
         # an account belonging to nobody must not land in the map
-        await users.create(session, "bot@example.org", link_by_email=False)
+        ok(
+            await users.create(
+                session,
+                "bot@example.org",
+                link_by_email=False,
+                invite=mint.fresh_invite(),
+            )
+        )
 
         by_volunteer = await users.accounts_by_volunteer(session, [linked.id, bare.id])
         assert by_volunteer == {linked.id: account}

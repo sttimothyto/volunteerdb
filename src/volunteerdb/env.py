@@ -19,7 +19,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -27,10 +27,13 @@ import httpx
 import structlog
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from . import db, throttle
+from . import db, passwords, throttle
 from .config import Settings, settings
 from .domain import NotifyMode
 from .services import mail_quota
+
+if TYPE_CHECKING:
+    from .services import users
 
 log = structlog.get_logger(__name__)
 
@@ -185,6 +188,23 @@ class Env:
     def today(self) -> date:
         """The parish day: date-typed things mean 'end of that day HERE'."""
         return self.clock.now().astimezone(self.tz).date()
+
+    def invite(self) -> "users.Invite":
+        """What arming a sign-in link needs: a fresh token, the moment, and
+        the configured lifetime (VDB_INVITE_TTL_HOURS)."""
+        from .services.users import Invite
+
+        return Invite(
+            token=self.rng.token(),
+            now=self.clock.now(),
+            ttl=timedelta(hours=self.settings.invite_ttl_hours),
+        )
+
+    @property
+    def password_terms(self) -> frozenset[str]:
+        """This instance's own names, which the password policy refuses."""
+        s = self.settings
+        return passwords.site_terms(s.org_name, s.mail_from, s.public_base_url)
 
     def with_(self, **changes: object) -> Env:
         return replace(self, **changes)

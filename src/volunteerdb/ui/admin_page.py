@@ -1,6 +1,7 @@
 from fastapi import Request
 from nicegui import ui
 
+from ..env import current as current_env
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from . import invites
@@ -17,7 +18,7 @@ async def users_page(request: Request):
             with frame("Accounts", actor):
                 ui.label("Admins only.").classes("text-gray-500")
             return
-        accounts = await user_service.list_all(session, actor)
+        accounts = (await user_service.list_all(session, actor)).unwrap()
         volunteer_names = await volunteer_service.name_map(
             session, include_inactive=True
         )
@@ -51,7 +52,11 @@ async def users_page(request: Request):
                 if not await confirm_dialog:
                     return
                 async with action_session() as (session, actor):
-                    report = await user_service.bulk_provision(session, actor)
+                    report = (
+                        await user_service.bulk_provision(
+                            session, actor, mint=current_env().invite
+                        )
+                    ).unwrap()
                     # the plaintext token rides in the report: the column
                     # holds only its digest (services.users._issue_invite)
                     created = [(u.email, token) for _, u, token in report.created]
@@ -108,13 +113,16 @@ async def users_page(request: Request):
                 @notify_errors
                 async def save() -> None:
                     async with action_session() as (session, actor):
-                        user, token = await user_service.create(
-                            session,
-                            email.value or "",
-                            actor=actor,
-                            volunteer_id=link.value or None,
-                            is_admin=admin_flag.value,
-                        )
+                        user, token = (
+                            await user_service.create(
+                                session,
+                                email.value or "",
+                                actor=actor,
+                                volunteer_id=link.value or None,
+                                is_admin=admin_flag.value,
+                                invite=current_env().invite(),
+                            )
+                        ).unwrap()
                         addr = user.email
                         matched = user.volunteer_id if not link.value else None
                     dialog.close()
@@ -154,7 +162,7 @@ async def users_page(request: Request):
                 ui.space()
                 if not account.is_active:
                     ui.badge("disabled", color="muted")
-                elif user_service.invite_live(account):
+                elif user_service.invite_live(account, now=current_env().clock.now()):
                     # No link on offer: only its digest is stored
                     # (services.users._issue_invite), so handing one over again
                     # means minting a fresh one — which is what Reinvite does.
@@ -187,9 +195,11 @@ async def users_page(request: Request):
                     _, uid=account.id, current=account.is_admin
                 ) -> None:
                     async with action_session() as (session, actor):
-                        await user_service.set_flags(
-                            session, uid, actor=actor, is_admin=not current
-                        )
+                        (
+                            await user_service.set_flags(
+                                session, uid, actor=actor, is_admin=not current
+                            )
+                        ).unwrap()
                     ui.navigate.reload()
 
                 @notify_errors
@@ -197,9 +207,11 @@ async def users_page(request: Request):
                     _, uid=account.id, current=account.is_active
                 ) -> None:
                     async with action_session() as (session, actor):
-                        await user_service.set_flags(
-                            session, uid, actor=actor, is_active=not current
-                        )
+                        (
+                            await user_service.set_flags(
+                                session, uid, actor=actor, is_active=not current
+                            )
+                        ).unwrap()
                     ui.navigate.reload()
 
                 def relink_dialog(
@@ -221,9 +233,11 @@ async def users_page(request: Request):
                         @notify_errors
                         async def save_link() -> None:
                             async with action_session() as (session, actor):
-                                await user_service.set_volunteer(
-                                    session, uid, pick.value or None, actor=actor
-                                )
+                                (
+                                    await user_service.set_volunteer(
+                                        session, uid, pick.value or None, actor=actor
+                                    )
+                                ).unwrap()
                             dialog.close()
                             ui.notify(
                                 f"{addr} → {volunteer_names.get(pick.value, 'nobody')}",
@@ -239,9 +253,11 @@ async def users_page(request: Request):
                 @notify_errors
                 async def reinvite(_, uid=account.id, addr=account.email) -> None:
                     async with action_session() as (session, actor):
-                        token = await user_service.reissue_invite(
-                            session, uid, actor=actor
-                        )
+                        token = (
+                            await user_service.reissue_invite(
+                                session, uid, actor=actor, invite=current_env().invite()
+                            )
+                        ).unwrap()
                     sent = await email_invite(addr, token)
                     show_invite(token, addr, sent)
 

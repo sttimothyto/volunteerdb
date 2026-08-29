@@ -5,6 +5,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok, refused
 
 
@@ -150,19 +151,42 @@ async def test_search_private_fields_are_scope_aware(database):
         )
         leader = await load_actor(
             session,
-            (await users.create(session, "lena@example.org", volunteer_id=leader_v.id))[
-                0
-            ],
+            (
+                ok(
+                    await users.create(
+                        session,
+                        "lena@example.org",
+                        volunteer_id=leader_v.id,
+                        invite=mint.fresh_invite(),
+                    )
+                )
+            )[0],
         )
         admin = await load_actor(
             session,
-            (await users.create(session, "admin@example.org", is_admin=True))[0],
+            (
+                ok(
+                    await users.create(
+                        session,
+                        "admin@example.org",
+                        is_admin=True,
+                        invite=mint.fresh_invite(),
+                    )
+                )
+            )[0],
         )
         member = await load_actor(
             session,
-            (await users.create(session, "plain@example.org", volunteer_id=plain.id))[
-                0
-            ],
+            (
+                ok(
+                    await users.create(
+                        session,
+                        "plain@example.org",
+                        volunteer_id=plain.id,
+                        invite=mint.fresh_invite(),
+                    )
+                )
+            )[0],
         )
 
         # admins (and trusted internal callers, actor=None) match every column
@@ -321,25 +345,55 @@ async def test_search_or_query_scopes_rows_per_role(database):
         )
         leader = await load_actor(
             session,
-            (await users.create(session, "lena@example.org", volunteer_id=leader_v.id))[
-                0
-            ],
+            (
+                ok(
+                    await users.create(
+                        session,
+                        "lena@example.org",
+                        volunteer_id=leader_v.id,
+                        invite=mint.fresh_invite(),
+                    )
+                )
+            )[0],
         )
         admin = await load_actor(
             session,
-            (await users.create(session, "admin@example.org", is_admin=True))[0],
+            (
+                ok(
+                    await users.create(
+                        session,
+                        "admin@example.org",
+                        is_admin=True,
+                        invite=mint.fresh_invite(),
+                    )
+                )
+            )[0],
         )
         member = await load_actor(
             session,
-            (await users.create(session, "plain@example.org", volunteer_id=plain.id))[
-                0
-            ],
+            (
+                ok(
+                    await users.create(
+                        session,
+                        "plain@example.org",
+                        volunteer_id=plain.id,
+                        invite=mint.fresh_invite(),
+                    )
+                )
+            )[0],
         )
         gard = await load_actor(
             session,
-            (await users.create(session, "gard@example.org", volunteer_id=gardener.id))[
-                0
-            ],
+            (
+                ok(
+                    await users.create(
+                        session,
+                        "gard@example.org",
+                        volunteer_id=gardener.id,
+                        invite=mint.fresh_invite(),
+                    )
+                )
+            )[0],
         )
 
         async def ids(text, actor):

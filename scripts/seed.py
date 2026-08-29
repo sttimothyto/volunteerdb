@@ -1464,15 +1464,17 @@ async def seed_accounts(session: AsyncSession, parish: Parish) -> None:
         else await async_hash_password(ADMIN_PASSWORD)
     )
     for account in ACCOUNTS:
-        user, _ = await users.create(
-            session,
-            account.email,
-            volunteer_id=parish.volunteer_ids[account.person]
-            if account.person
-            else None,
-            is_admin=account.is_admin,
-            link_by_email=False,
-        )
+        user, _ = (
+            await users.create(
+                session,
+                account.email,
+                volunteer_id=parish.volunteer_ids[account.person]
+                if account.person
+                else None,
+                is_admin=account.is_admin,
+                link_by_email=False,
+            )
+        ).unwrap()
         if account.password:
             user.password_hash = admin_hash if account.is_admin else demo_hash
             # a password in hand spends the invite link users.create armed

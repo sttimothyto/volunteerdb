@@ -6,6 +6,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 
@@ -25,11 +26,27 @@ async def _seed() -> dict:
             )
         )
         ok(await memberships.assign(session, None, mia.id, choir.id, TeamRole.member))
-        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
-        lena_u, _ = await users.create(
-            session, "lena@example.org", volunteer_id=lena.id
+        admin, _ = ok(
+            await users.create(
+                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
         )
-        mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
+        lena_u, _ = ok(
+            await users.create(
+                session,
+                "lena@example.org",
+                volunteer_id=lena.id,
+                invite=mint.fresh_invite(),
+            )
+        )
+        mia_u, _ = ok(
+            await users.create(
+                session,
+                "mia@example.org",
+                volunteer_id=mia.id,
+                invite=mint.fresh_invite(),
+            )
+        )
         return {
             "liturgy": liturgy.id,
             "choir": choir.id,

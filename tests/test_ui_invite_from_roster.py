@@ -23,6 +23,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import mail, memberships, teams, users, volunteers
 
 from .conftest import SLOW, mail_to
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -72,14 +73,23 @@ async def _parish(session) -> dict[str, int]:
     for v in (nils, stale, livev, void, mia):
         ok(await memberships.assign(session, None, v.id, music.id, TeamRole.member))
 
-    stale_u, _ = await users.invite_volunteer(session, stale.id)
+    stale_u, _ = ok(
+        await users.invite_volunteer(session, stale.id, invite=mint.fresh_invite())
+    )
     stale_u.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    await users.invite_volunteer(session, livev.id)
+    ok(await users.invite_volunteer(session, livev.id, invite=mint.fresh_invite()))
 
     # actor accounts: password written straight in, so no argon2 pass is spent
     accounts = {}
     for name, v in (("lena", lena), ("cora", cora), ("mia", mia)):
-        u, _ = await users.create(session, f"{name}@example.org", volunteer_id=v.id)
+        u, _ = ok(
+            await users.create(
+                session,
+                f"{name}@example.org",
+                volunteer_id=v.id,
+                invite=mint.fresh_invite(),
+            )
+        )
         u.password_hash = "x"  # never verified; /login-dev establishes the session
         accounts[name] = u
     await session.flush()
@@ -121,7 +131,7 @@ async def test_leader_invites_a_member_and_the_row_catches_up(database, sent):
         assert account is not None, "the account exists now"
         assert account.password_hash is None, "they choose their own"
         assert not account.is_admin
-        assert users.invite_live(account)
+        assert users.invite_live(account, now=mint.now())
         # the mailed link is the only readable copy — the column holds a digest
         # (services.users._issue_invite), and it is a digest OF the mailed token
         mailed = body.split("/invite/", 1)[1].split()[0].rstrip(".,)")
@@ -239,7 +249,11 @@ async def test_only_an_admin_is_shown_the_link_itself(database, sent):
     not the token; admins keep the copy they hand over in person."""
     async with db_session() as session:
         ids = await _parish(session)
-        admin, _ = await users.create(session, "boss@example.org", is_admin=True)
+        admin, _ = ok(
+            await users.create(
+                session, "boss@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
+        )
         admin.password_hash = "x"
         await session.flush()
         admin_id = admin.id

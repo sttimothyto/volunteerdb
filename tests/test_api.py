@@ -10,6 +10,7 @@ from volunteerdb.services import custom_fields as custom_fields_service
 from volunteerdb.services import memberships, users, volunteers
 from volunteerdb.ui.context import parse_as_of
 
+from tests import mint
 from tests.conftest import _token
 from tests.fp_helpers import ok
 
@@ -413,7 +414,15 @@ async def test_a_pending_address_change_shows_on_your_own_account(client, seeded
 
     async with db_session() as session:
         account = await users.get_by_email(session, "member@example.org")
-        await users.start_email_change(session, account.id, "later@example.org")
+        ok(
+            await users.start_email_change(
+                session,
+                account.id,
+                "later@example.org",
+                now=mint.now(),
+                token=mint.token(),
+            )
+        )
 
     r = await client.get("/api/auth/me", headers=member)
     assert r.json()["pending_email"] == "later@example.org"

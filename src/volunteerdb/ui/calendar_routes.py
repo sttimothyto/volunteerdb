@@ -24,6 +24,7 @@ from starlette.responses import RedirectResponse, Response
 from ..actors import load_actor
 from ..config import settings
 from ..db import db_session
+from ..env import current as current_env
 from ..services import events as event_service
 from ..services import gcal, ics
 from ..services import users as user_service
@@ -107,7 +108,11 @@ async def reset_personal(request: Request) -> Response:
         actor = await get_actor(session)
         if actor is None:
             raise HTTPException(401, "sign in to reset your calendar address")
-        await user_service.reset_calendar_token(session, actor.user.id)
+        (
+            await user_service.reset_calendar_token(
+                session, actor.user.id, token=current_env().rng.token()
+            )
+        ).unwrap()
     # back to the page the form was on — same origin only, or /events
     base_url, _ = _origin(request)
     referer = request.headers.get("referer", "")

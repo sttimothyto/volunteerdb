@@ -18,6 +18,7 @@ from volunteerdb.services import (
     volunteers,
 )
 
+from tests import mint
 from tests.fp_helpers import ok
 
 
@@ -60,7 +61,15 @@ async def _parish(session):
 
 
 async def _actor(session, email, **kwargs):
-    user, _ = await users.create(session, email, password="test-pass-phrase", **kwargs)
+    user, _ = ok(
+        await users.create(
+            session,
+            email,
+            password="test-pass-phrase",
+            **kwargs,
+            invite=mint.fresh_invite(),
+        )
+    )
     return await load_actor(session, user)
 
 
@@ -68,11 +77,14 @@ async def test_parish_tier_counts(database):
     async with db_session() as session:
         p = await _parish(session)
         ok(await volunteers.update(session, None, p["solo"].id, is_active=False))
-        await users.create(
-            session,
-            "lea@example.org",
-            volunteer_id=p["lea"].id,
-            password="test-pass-phrase",
+        ok(
+            await users.create(
+                session,
+                "lea@example.org",
+                volunteer_id=p["lea"].id,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         actor = await _actor(session, "admin@example.org", is_admin=True)
 

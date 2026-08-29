@@ -79,12 +79,14 @@ async def ensure_sync_user() -> int:
     async with db_session() as session:
         user = await user_service.get_by_email(session, email)
         if user is None:
-            user, _ = await user_service.create(
-                session,
-                email,
-                password=secrets.token_urlsafe(32),
-                link_by_email=False,  # a bot, never a volunteer's login
-            )
+            user, _ = (
+                await user_service.create(
+                    session,
+                    email,
+                    password=secrets.token_urlsafe(32),
+                    link_by_email=False,  # a bot, never a volunteer's login
+                )
+            ).unwrap()
             user.is_active = False
             await session.flush()
         return user.id

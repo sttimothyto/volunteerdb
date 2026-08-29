@@ -17,6 +17,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -42,16 +43,25 @@ async def _parish(session):
     ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
     ok(await memberships.assign(session, None, mel.id, music.id, TeamRole.member))
 
-    admin, _ = await users.create(
-        session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+    admin, _ = ok(
+        await users.create(
+            session,
+            "admin@example.org",
+            is_admin=True,
+            password="test-pass-phrase",
+            invite=mint.fresh_invite(),
+        )
     )
     accounts = {"admin": admin.id}
     for name, volunteer in (("lea", lea), ("cora", cora), ("mel", mel)):
-        user, _ = await users.create(
-            session,
-            f"{name}@example.org",
-            volunteer_id=volunteer.id,
-            password="test-pass-phrase",
+        user, _ = ok(
+            await users.create(
+                session,
+                f"{name}@example.org",
+                volunteer_id=volunteer.id,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         accounts[name] = user.id
     return accounts

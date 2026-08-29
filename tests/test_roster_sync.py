@@ -19,6 +19,7 @@ from volunteerdb.services import gsheets, memberships, teams, users, volunteers
 from volunteerdb.services import roster_sheets as service
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests import mint
 from tests.fp_helpers import ok
 
 
@@ -90,8 +91,13 @@ async def choir(database):
         )
         ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
         ok(await memberships.assign(session, None, mia.id, team.id, TeamRole.member))
-        lena_u, _ = await users.create(
-            session, "lena@example.org", volunteer_id=lena.id
+        lena_u, _ = ok(
+            await users.create(
+                session,
+                "lena@example.org",
+                volunteer_id=lena.id,
+                invite=mint.fresh_invite(),
+            )
         )
         session.add(TeamSheet(team_id=team.id, file_id="f123"))
         return {
@@ -198,8 +204,13 @@ async def test_an_unknown_direction_is_refused(choir, fake):
 
 async def test_a_plain_member_may_not_sync(choir, fake, database):
     async with db_session() as session:
-        mia_u, _ = await users.create(
-            session, "mia2@example.org", volunteer_id=choir["mia"]
+        mia_u, _ = ok(
+            await users.create(
+                session,
+                "mia2@example.org",
+                volunteer_id=choir["mia"],
+                invite=mint.fresh_invite(),
+            )
         )
         mia_user_id = mia_u.id
 

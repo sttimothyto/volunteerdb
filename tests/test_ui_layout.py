@@ -16,6 +16,7 @@ from volunteerdb.models import MailQuota
 from volunteerdb.services import mail_quota, photos, teams, users, volunteers
 
 from .conftest import SLOW
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -32,7 +33,11 @@ def _png(width: int, height: int) -> bytes:
 async def test_settings_menu_carries_reading_preferences(database):
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
-        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = ok(
+            await users.create(
+                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
+        )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin.id}")
@@ -58,8 +63,13 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
                 session, maria.id, _png(60, 60), uploaded_by=None, now=datetime.now(UTC)
             )
         )
-        account, _ = await users.create(
-            session, "maria@example.org", volunteer_id=maria.id
+        account, _ = ok(
+            await users.create(
+                session,
+                "maria@example.org",
+                volunteer_id=maria.id,
+                invite=mint.fresh_invite(),
+            )
         )
         maria_id, account_id = maria.id, account.id
 
@@ -79,8 +89,13 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
 async def test_the_header_offers_an_upload_when_there_is_no_photo_yet(database):
     async with db_session() as session:
         felix = ok(await volunteers.create(session, None, "Felix", "Garcia"))
-        account, _ = await users.create(
-            session, "felix@example.org", volunteer_id=felix.id
+        account, _ = ok(
+            await users.create(
+                session,
+                "felix@example.org",
+                volunteer_id=felix.id,
+                invite=mint.fresh_invite(),
+            )
         )
         account_id = account.id
 
@@ -98,7 +113,11 @@ async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(databas
     photo could hang off, so nothing renders rather than something broken. The
     address beside it is plain text for the same reason — nowhere to send them."""
     async with db_session() as session:
-        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = ok(
+            await users.create(
+                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
+        )
         admin_id = admin.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -117,8 +136,13 @@ async def test_the_header_address_opens_your_own_record(database):
     """The most natural handle on "me" in the whole app was dead text."""
     async with db_session() as session:
         maria = ok(await volunteers.create(session, None, "Maria", "Alvarez"))
-        account, _ = await users.create(
-            session, "maria@example.org", volunteer_id=maria.id
+        account, _ = ok(
+            await users.create(
+                session,
+                "maria@example.org",
+                volunteer_id=maria.id,
+                invite=mint.fresh_invite(),
+            )
         )
         maria_id, account_id = maria.id, account.id
 
@@ -138,8 +162,13 @@ async def test_the_header_avatar_and_the_profile_avatar_are_addressed_apart(data
     exactly the one on the page."""
     async with db_session() as session:
         maria = ok(await volunteers.create(session, None, "Maria", "Alvarez"))
-        account, _ = await users.create(
-            session, "maria@example.org", volunteer_id=maria.id
+        account, _ = ok(
+            await users.create(
+                session,
+                "maria@example.org",
+                volunteer_id=maria.id,
+                invite=mint.fresh_invite(),
+            )
         )
         maria_id, account_id = maria.id, account.id
 
@@ -173,8 +202,16 @@ async def test_the_mail_allowance_banner_is_for_admins_only(database):
     """A volunteer can neither raise the plan nor stop the nightly digests, so
     a warning they cannot act on is noise on the page they came to read."""
     async with db_session() as session:
-        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
-        member, _ = await users.create(session, "member@example.org")
+        admin, _ = ok(
+            await users.create(
+                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
+        )
+        member, _ = ok(
+            await users.create(
+                session, "member@example.org", invite=mint.fresh_invite()
+            )
+        )
         admin_id, member_id = admin.id, member.id
 
     # One day past the 200/day cap, yesterday. Deliberately one and not a
@@ -198,7 +235,11 @@ async def test_the_mail_allowance_banner_is_for_admins_only(database):
 
 async def test_a_comfortable_instance_shows_no_banner_even_to_an_admin(database):
     async with db_session() as session:
-        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = ok(
+            await users.create(
+                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
+        )
         admin_id = admin.id
 
     for day in range(1, 8):
@@ -213,7 +254,11 @@ async def test_a_comfortable_instance_shows_no_banner_even_to_an_admin(database)
 
 async def test_a_spent_day_reads_louder_than_one_merely_projected(database):
     async with db_session() as session:
-        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = ok(
+            await users.create(
+                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
+        )
         admin_id = admin.id
 
     await _spend(0, mail_quota.DAILY_CAP)  # today's allowance already gone

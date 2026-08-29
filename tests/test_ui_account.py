@@ -18,6 +18,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import mail, memberships, teams, users, volunteers
 
 from .conftest import SLOW, mail_to
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -33,8 +34,13 @@ async def test_otp_session_sets_a_password_without_the_old_one(database, monkeyp
     monkeypatch.setattr(mail, "send_email", fake_send)
 
     async with db_session() as session:
-        user, _ = await users.create(
-            session, "forgetful@example.org", password="cedar lamp figs"
+        user, _ = ok(
+            await users.create(
+                session,
+                "forgetful@example.org",
+                password="cedar lamp figs",
+                invite=mint.fresh_invite(),
+            )
         )
         user_id = user.id
 
@@ -59,16 +65,17 @@ async def test_otp_session_sets_a_password_without_the_old_one(database, monkeyp
     async with db_session() as session:
         assert (
             await users.authenticate(
-                session, "forgetful@example.org", "thistle brook lantern"
+                session,
+                "forgetful@example.org",
+                "thistle brook lantern",
+                now=mint.now(),
             )
-            is not None
-        )
+        ).is_ok()
         assert (
             await users.authenticate(
-                session, "forgetful@example.org", "cedar lamp figs"
+                session, "forgetful@example.org", "cedar lamp figs", now=mint.now()
             )
-            is None
-        ), "the old password is gone"
+        ).is_err(), "the old password is gone"
 
     # §4.1.2: the account's address hears about it, through a channel the
     # browser doing the change does not control
@@ -80,8 +87,13 @@ async def test_password_session_must_retype_the_current_password(database, monke
     monkeypatch.setattr(mail, "send_email", lambda *a, **k: _ok())
 
     async with db_session() as session:
-        user, _ = await users.create(
-            session, "careful@example.org", password="cedar lamp figs"
+        user, _ = ok(
+            await users.create(
+                session,
+                "careful@example.org",
+                password="cedar lamp figs",
+                invite=mint.fresh_invite(),
+            )
         )
         user_id = user.id
 
@@ -104,10 +116,12 @@ async def test_password_session_must_retype_the_current_password(database, monke
     async with db_session() as session:
         assert (
             await users.authenticate(
-                session, "careful@example.org", "thistle brook lantern"
+                session,
+                "careful@example.org",
+                "thistle brook lantern",
+                now=mint.now(),
             )
-            is not None
-        )
+        ).is_ok()
 
 
 async def _ok() -> bool:
@@ -139,8 +153,13 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
                 session, None, maria.id, liturgy.id, TeamRole.leader
             )
         )
-        account, _ = await users.create(
-            session, "maria@example.org", volunteer_id=maria.id
+        account, _ = ok(
+            await users.create(
+                session,
+                "maria@example.org",
+                volunteer_id=maria.id,
+                invite=mint.fresh_invite(),
+            )
         )
         volunteer_id, user_id = maria.id, account.id
 
@@ -211,7 +230,11 @@ async def test_a_pending_address_change_can_be_called_off(database, monkeypatch)
     monkeypatch.setattr(mail, "send_email", lambda *a, **k: _ok())
 
     async with db_session() as session:
-        user, _ = await users.create(session, "unsure@example.org")
+        user, _ = ok(
+            await users.create(
+                session, "unsure@example.org", invite=mint.fresh_invite()
+            )
+        )
         user_id = user.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -235,8 +258,16 @@ async def test_the_address_change_form_refuses_a_typo_and_a_taken_address(
     monkeypatch.setattr(mail, "send_email", lambda *a, **k: _ok())
 
     async with db_session() as session:
-        user, _ = await users.create(session, "hopeful@example.org")
-        await users.create(session, "spoken.for@example.org")
+        user, _ = ok(
+            await users.create(
+                session, "hopeful@example.org", invite=mint.fresh_invite()
+            )
+        )
+        ok(
+            await users.create(
+                session, "spoken.for@example.org", invite=mint.fresh_invite()
+            )
+        )
         user_id = user.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:

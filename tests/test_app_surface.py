@@ -18,6 +18,7 @@ import volunteerdb.ui.logo_route
 from volunteerdb.db import db_session
 from volunteerdb.services import branding
 
+from tests import mint
 from tests.fp_helpers import ok
 
 
@@ -239,7 +240,9 @@ async def test_a_signed_in_browser_is_not_rotated_off_its_own_session(
     from volunteerdb.services import users
 
     async with db_session() as session:
-        user, _ = await users.create(session, "stays@example.org")
+        user, _ = ok(
+            await users.create(session, "stays@example.org", invite=mint.fresh_invite())
+        )
         user_id = user.id
 
     await real_app_client.get(f"/login-dev/{user_id}", follow_redirects=False)

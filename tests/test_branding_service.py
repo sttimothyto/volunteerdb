@@ -23,6 +23,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import SiteLogo
 from volunteerdb.services import branding, users
 
+from tests import mint
 from tests.fp_helpers import ok, refused
 
 # ui/static/theme.css --vdb-header-bg: what the cut has to look right against
@@ -72,7 +73,9 @@ def _opened(data: bytes) -> Image.Image:
 
 
 async def _actor(session, email: str, *, admin: bool):
-    user, _ = await users.create(session, email, is_admin=admin)
+    user, _ = ok(
+        await users.create(session, email, is_admin=admin, invite=mint.fresh_invite())
+    )
     return await load_actor(session, user)
 
 

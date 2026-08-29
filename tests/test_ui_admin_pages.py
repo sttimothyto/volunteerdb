@@ -10,6 +10,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -17,11 +18,22 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 async def test_admin_pages_render(database):
     async with db_session() as session:
-        admin, _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
-        member, _ = await users.create(
-            session, "felix@example.org", password="test-pass-phrase"
+        member, _ = ok(
+            await users.create(
+                session,
+                "felix@example.org",
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         admin_id, member_id = admin.id, member.id
 
@@ -69,11 +81,14 @@ async def test_leader_sees_scoped_export_on_teams_page(database):
                 session, None, lena.id, liturgy.id, TeamRole.leader
             )
         )
-        leader, _ = await users.create(
-            session,
-            "lena@example.org",
-            volunteer_id=lena.id,
-            password="test-pass-phrase",
+        leader, _ = ok(
+            await users.create(
+                session,
+                "lena@example.org",
+                volunteer_id=lena.id,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         leader_id = leader.id
 
@@ -95,8 +110,14 @@ async def test_admin_users_provision_button(database, monkeypatch):
     monkeypatch.setattr(mail, "send_email", fake_send)
 
     async with db_session() as session:
-        admin, _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         ok(
             await volunteers.create(
@@ -121,11 +142,22 @@ async def test_admin_users_provision_button(database, monkeypatch):
 
 async def test_admin_users_relink_dialog(database):
     async with db_session() as session:
-        admin, _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
-        orphan, _ = await users.create(
-            session, "orphan@example.org", password="test-pass-phrase"
+        orphan, _ = ok(
+            await users.create(
+                session,
+                "orphan@example.org",
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         vera = ok(
             await volunteers.create(
@@ -153,15 +185,29 @@ async def test_admin_users_shows_invite_state(database):
     """The account row distinguishes a live invite link from a spent window —
     an admin should not hand out a link that has already stopped working."""
     async with db_session() as session:
-        admin, _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
-        pending, _ = await users.create(session, "pending@example.org")
-        stale, _ = await users.create(session, "stale@example.org")
+        pending, _ = ok(
+            await users.create(
+                session, "pending@example.org", invite=mint.fresh_invite()
+            )
+        )
+        stale, _ = ok(
+            await users.create(session, "stale@example.org", invite=mint.fresh_invite())
+        )
         stale.invite_expires_at = datetime.now(UTC) - timedelta(hours=1)
         await session.flush()
         admin_id = admin.id
-        assert users.invite_live(pending) and not users.invite_live(stale)
+        assert users.invite_live(pending, now=mint.now()) and not users.invite_live(
+            stale, now=mint.now()
+        )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin_id}")

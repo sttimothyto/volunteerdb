@@ -12,6 +12,7 @@ from volunteerdb.services import users, volunteers, workload
 from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests import mint
 from tests.fp_helpers import ok
 
 
@@ -76,11 +77,16 @@ async def test_debug_level_reads_do_not_log_bound_parameters(
     authenticate_token binds the stored SHA-256 token digest, so an unredacted
     dump there turns a debug log into a full API-token compromise."""
     async with db_session() as session:
-        user, _ = await users.create(
-            session, "dbg@example.org", password="test-pass-phrase"
+        user, _ = ok(
+            await users.create(
+                session,
+                "dbg@example.org",
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
     async with db_session() as session:
-        token = await users.issue_api_token(session, user.id)
+        token = ok(await users.issue_api_token(session, user.id, token=mint.token()))
 
     async with db_session() as session:
         found = await users.authenticate_token(session, token)
@@ -99,13 +105,22 @@ async def test_debug_level_reads_do_not_log_bound_parameters(
 
 async def test_secrets_never_logged(database, log_records):
     async with db_session() as session:
-        user, _ = await users.create(
-            session, "sec@example.org", password="hunter2-secret-phrase"
+        user, _ = ok(
+            await users.create(
+                session,
+                "sec@example.org",
+                password="hunter2-secret-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
     async with db_session() as session:
-        token = await users.issue_api_token(session, user.id)
+        token = ok(await users.issue_api_token(session, user.id, token=mint.token()))
     async with db_session() as session:
-        result = await users.start_otp_login(session, "sec@example.org")
+        result = ok(
+            await users.start_otp_login(
+                session, "sec@example.org", now=mint.now(), code=mint.code()
+            )
+        )
     assert result is not None and result[1] is not None
     code = result[1]
 

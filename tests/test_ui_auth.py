@@ -10,14 +10,22 @@ from volunteerdb.services import mail, users
 from volunteerdb.ui.context import clear_session
 
 from .conftest import SLOW, mail_to
+from tests import mint
+from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def test_anonymous_redirect_and_login_guards(database):
     async with db_session() as session:
-        await users.create(
-            session, "admin@example.org", is_admin=True, password="correct-pass-phrase"
+        ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="correct-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -66,7 +74,11 @@ async def test_a_signed_in_browser_is_sent_on_from_the_login_page(real_app_clien
     reading. A reader who already holds a session must not be shown the card
     again: /login itself puts them where the link meant to take them."""
     async with db_session() as session:
-        user, _ = await users.create(session, "cantor@example.org")
+        user, _ = ok(
+            await users.create(
+                session, "cantor@example.org", invite=mint.fresh_invite()
+            )
+        )
         user_id = user.id
 
     anonymous = await real_app_client.get("/login", follow_redirects=False)
@@ -101,7 +113,9 @@ async def test_invite_redemption_flow(database, monkeypatch):
     monkeypatch.setattr(mail, "send_email", fake_send)
 
     async with db_session() as session:
-        invitee, token = await users.create(session, "new@example.org")
+        invitee, token = ok(
+            await users.create(session, "new@example.org", invite=mint.fresh_invite())
+        )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/invite/{token}")

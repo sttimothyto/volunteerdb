@@ -17,6 +17,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamPage, TeamRole, TeamSheet
 from volunteerdb.services import memberships, pages, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -47,9 +48,24 @@ async def _parish(session) -> dict[str, int]:
         )
     )
 
-    admin, _ = await users.create(session, "admin@example.org", is_admin=True)
-    lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
-    mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
+    admin, _ = ok(
+        await users.create(
+            session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+        )
+    )
+    lena_u, _ = ok(
+        await users.create(
+            session,
+            "lena@example.org",
+            volunteer_id=lena.id,
+            invite=mint.fresh_invite(),
+        )
+    )
+    mia_u, _ = ok(
+        await users.create(
+            session, "mia@example.org", volunteer_id=mia.id, invite=mint.fresh_invite()
+        )
+    )
     return {
         "liturgy": liturgy.id,
         "music": music.id,
@@ -475,8 +491,13 @@ async def test_a_core_member_may_export_their_teams(database):
                 session, None, cora.id, ids["hospitality"], TeamRole.core
             )
         )
-        cora_u, _ = await users.create(
-            session, "cora@example.org", volunteer_id=cora.id
+        cora_u, _ = ok(
+            await users.create(
+                session,
+                "cora@example.org",
+                volunteer_id=cora.id,
+                invite=mint.fresh_invite(),
+            )
         )
         ids["cora_u"] = cora_u.id
 

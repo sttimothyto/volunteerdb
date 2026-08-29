@@ -14,10 +14,12 @@ import asyncio
 import os
 import sys
 
+from volunteerdb.config import settings
 from volunteerdb.db import db_session
+from volunteerdb.errors import message
 from volunteerdb.log import init_logging
-from volunteerdb.passwords import WeakPassword
 from volunteerdb.passwords import check as check_password
+from volunteerdb.passwords import site_terms
 from volunteerdb.services import users
 
 
@@ -25,12 +27,12 @@ async def main() -> int:
     init_logging()
     email = os.environ["VDB_ADMIN_EMAIL"]
     password = os.environ["VDB_ADMIN_PASSWORD"]
-    try:
-        # Checked before the database is touched so a rejected VDB_ADMIN_PASSWORD
-        # fails the deploy with one readable line instead of a traceback.
-        check_password(password, email=email)
-    except WeakPassword as exc:
-        print(f"VDB_ADMIN_PASSWORD rejected: {exc}", file=sys.stderr)
+    # Checked before the database is touched so a rejected VDB_ADMIN_PASSWORD
+    # fails the deploy with one readable line instead of a traceback.
+    s = settings()
+    terms = site_terms(s.org_name, s.mail_from, s.public_base_url)
+    if weak := check_password(password, email=email, site_terms=terms):
+        print(f"VDB_ADMIN_PASSWORD rejected: {message(weak.error)}", file=sys.stderr)
         return 2
     async with db_session() as session:
         existing = await users.get_by_email(session, email)
@@ -39,7 +41,11 @@ async def main() -> int:
                 f"admin {existing.email} already exists (id={existing.id}); nothing to do"
             )
             return 0
-        user, _ = await users.create(session, email, is_admin=True, password=password)
+        user, _ = (
+            await users.create(
+                session, email, is_admin=True, password=password, site_terms=terms
+            )
+        ).unwrap()
         print(f"created admin {user.email} (id={user.id})")
     return 0
 

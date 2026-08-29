@@ -11,6 +11,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import Team, TeamRole, TeamSheet
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok, refused
 
 
@@ -262,7 +263,9 @@ async def test_a_leader_may_set_the_roster_sheet(database):
             await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
         ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
-        user, _ = await users.create(session, "lena@example.org")
+        user, _ = ok(
+            await users.create(session, "lena@example.org", invite=mint.fresh_invite())
+        )
         leader = await load_actor(session, user)
 
     async with db_session() as session:
@@ -287,7 +290,9 @@ async def test_a_core_member_may_not_set_the_roster_sheet(database):
             await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
         )
         ok(await memberships.assign(session, None, cora.id, team.id, TeamRole.core))
-        user, _ = await users.create(session, "cora@example.org")
+        user, _ = ok(
+            await users.create(session, "cora@example.org", invite=mint.fresh_invite())
+        )
         core = await load_actor(session, user)
 
     async with db_session() as session:
@@ -366,7 +371,9 @@ async def test_roster_sheet_needs_management_rights(database):
             await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
         )
         ok(await memberships.assign(session, None, mia.id, team.id, TeamRole.member))
-        user, _ = await users.create(session, "mia@example.org")
+        user, _ = ok(
+            await users.create(session, "mia@example.org", invite=mint.fresh_invite())
+        )
         member = await load_actor(session, user)
 
     async with db_session() as session:

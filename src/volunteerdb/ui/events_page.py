@@ -626,7 +626,11 @@ async def events_page(
         )
         # the personal feed address, minted the first time it is shown
         feed_token = (
-            await user_service.ensure_calendar_token(session, actor.user.id)
+            (
+                await user_service.ensure_calendar_token(
+                    session, actor.user.id, token=current_env().rng.token()
+                )
+            ).unwrap()
             if cal_view == "mine"
             else None
         )

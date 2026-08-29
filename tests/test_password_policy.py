@@ -11,9 +11,11 @@ import unicodedata
 import pytest
 from argon2 import PasswordHasher
 
-from volunteerdb import passwords
+from volunteerdb import errors, passwords
 from volunteerdb.auth import hash_password, needs_rehash, verify_password
-from volunteerdb.passwords import MAX_LENGTH, MIN_LENGTH, WeakPassword, check, problem
+from volunteerdb.passwords import MAX_LENGTH, MIN_LENGTH, check, problem
+
+from tests.fp_helpers import refused
 
 pytestmark = pytest.mark.pure
 
@@ -22,8 +24,7 @@ def test_minimum_length_is_fifteen():
     """ "SHALL require passwords that are used as a single-factor authentication
     mechanism to be a minimum of 15 characters in length"."""
     assert MIN_LENGTH == 15
-    with pytest.raises(WeakPassword, match="too short"):
-        check("14 chars: xyzw")
+    refused(check("14 chars: xyzw"), errors.WeakPassword, match="too short")
     check("otter lamp fig quilt")
 
 
@@ -32,8 +33,11 @@ def test_long_passwords_are_accepted_up_to_the_cap():
     the cap is only there to bound the work argon2 is asked to do."""
     assert MAX_LENGTH >= 64
     check("veldt quartz nymph broom sable fjord glint marmot plinth zephyr tundra")
-    with pytest.raises(WeakPassword, match="too long"):
-        check("veldt quartz nymph broom sable fjord glint marmot plinth zephyr " * 3)
+    refused(
+        check("veldt quartz nymph broom sable fjord glint marmot plinth zephyr " * 3),
+        errors.WeakPassword,
+        match="too long",
+    )
 
 
 def test_no_composition_rules():
@@ -58,8 +62,9 @@ def test_unicode_is_accepted_and_counted_by_code_point():
 def test_blocklist_matches_the_whole_password_not_substrings():
     """ "The entire password SHALL be subject to comparison, not substrings or
     words that might be contained therein"."""
-    with pytest.raises(WeakPassword, match="well-known"):
-        check("correct horse battery staple")
+    refused(
+        check("correct horse battery staple"), errors.WeakPassword, match="well-known"
+    )
     check("horse battery cinnamon lathe")  # contains listed words, is not one
 
 
@@ -76,17 +81,22 @@ def test_blocklist_matches_the_whole_password_not_substrings():
     ],
 )
 def test_blocklist_sees_through_padding_and_leetspeak(password):
-    with pytest.raises(WeakPassword, match="well-known"):
-        check(password)
+    refused(check(password), errors.WeakPassword, match="well-known")
 
 
 def test_context_specific_words_are_rejected():
     """ "Context-specific words, such as the name of the service, the username,
     and derivatives thereof"."""
-    with pytest.raises(WeakPassword, match="email address or the name"):
-        check("maria.alvarez2026", email="maria.alvarez@example.org")
-    with pytest.raises(WeakPassword, match="email address or the name"):
-        check("volunteerdb-2026")
+    refused(
+        check("maria.alvarez2026", email="maria.alvarez@example.org"),
+        errors.WeakPassword,
+        match="email address or the name",
+    )
+    refused(
+        check("volunteerdb-2026"),
+        errors.WeakPassword,
+        match="email address or the name",
+    )
     check("maria bakes rhubarb pies", email="maria.alvarez@example.org")
 
 
@@ -124,8 +134,7 @@ def test_the_organisations_own_names_are_context_words(monkeypatch):
     ],
 )
 def test_structurally_weak_passwords_are_rejected(password, reason):
-    with pytest.raises(WeakPassword, match=reason):
-        check(password)
+    refused(check(password), errors.WeakPassword, match=reason)
 
 
 def test_every_rejection_states_a_reason_and_offers_guidance():

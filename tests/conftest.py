@@ -30,6 +30,7 @@ from volunteerdb.log import shared_processors
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 # Go through Settings rather than os.environ so the suite reads .env exactly
@@ -324,14 +325,23 @@ async def seeded(database):
             )
         )
         ok(await memberships.assign(session, None, v.id, team.id, TeamRole.member))
-        await users.create(
-            session, "admin@example.org", is_admin=True, password="secret-pass-phrase"
+        ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="secret-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
-        await users.create(
-            session,
-            "member@example.org",
-            volunteer_id=v.id,
-            password="member-pass-phrase",
+        ok(
+            await users.create(
+                session,
+                "member@example.org",
+                volunteer_id=v.id,
+                password="member-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         return {"team_id": team.id, "volunteer_id": v.id}
 
@@ -367,11 +377,14 @@ async def token_leader(client, seeded) -> dict:
                 session, None, lena.id, seeded["team_id"], TeamRole.leader
             )
         )
-        await users.create(
-            session,
-            "lena@example.org",
-            volunteer_id=lena.id,
-            password="leader-pass-phrase",
+        ok(
+            await users.create(
+                session,
+                "lena@example.org",
+                volunteer_id=lena.id,
+                password="leader-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
     return await _token(client, "lena@example.org", "leader-pass-phrase")
 
@@ -389,10 +402,13 @@ async def token_core(client, seeded) -> dict:
                 session, None, cora.id, seeded["team_id"], TeamRole.core
             )
         )
-        await users.create(
-            session,
-            "cora@example.org",
-            volunteer_id=cora.id,
-            password="core-pass-phrase-1",
+        ok(
+            await users.create(
+                session,
+                "cora@example.org",
+                volunteer_id=cora.id,
+                password="core-pass-phrase-1",
+                invite=mint.fresh_invite(),
+            )
         )
     return await _token(client, "cora@example.org", "core-pass-phrase-1")

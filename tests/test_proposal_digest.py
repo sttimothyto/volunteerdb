@@ -21,6 +21,7 @@ from volunteerdb.models import (
 )
 from volunteerdb.services import elections, mail, memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 TODAY = date(2026, 8, 10)  # nominating
@@ -50,7 +51,11 @@ async def _parish():
         )
         ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
         ok(await memberships.assign(session, None, noel.id, liturgy.id, TeamRole.core))
-        admin, _ = await users.create(session, "admin@example.org", is_admin=True)
+        admin, _ = ok(
+            await users.create(
+                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            )
+        )
         return {
             "liturgy": liturgy.id,
             "lena": lena.id,

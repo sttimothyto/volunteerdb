@@ -25,6 +25,7 @@ from volunteerdb.services import (
 )
 
 from .conftest import TEAM_TREE_SQL, _now, count_sql
+from tests import mint
 from tests.fp_helpers import ok, refused
 
 
@@ -55,11 +56,14 @@ async def parish(database):
                 session, None, lena.id, hospitality.id, TeamRole.leader
             )
         )
-        lena_u, _ = await users.create(
-            session,
-            "lena@example.org",
-            volunteer_id=lena.id,
-            password="test-pass-phrase",
+        lena_u, _ = ok(
+            await users.create(
+                session,
+                "lena@example.org",
+                volunteer_id=lena.id,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         start = datetime.now(UTC) + timedelta(days=7)
         await events.create_event(

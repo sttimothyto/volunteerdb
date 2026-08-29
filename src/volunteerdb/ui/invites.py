@@ -27,6 +27,7 @@ from nicegui import ui
 
 from ..audit import audit_log
 from ..config import settings
+from ..env import current as current_env
 from ..models import AppUser
 from ..permissions import require, volunteer_team_ids
 from ..services import mail
@@ -201,7 +202,11 @@ async def send_invite(
     async with action_session() as (session, actor):
         team_ids = await volunteer_team_ids(session, volunteer_id)
         require(actor.can_invite_volunteer(team_ids), "invite this volunteer")
-        account, token = await user_service.invite_volunteer(session, volunteer_id)
+        account, token = (
+            await user_service.invite_volunteer(
+                session, volunteer_id, invite=current_env().invite()
+            )
+        ).unwrap()
         addr = account.email
         reveal = actor.is_admin
         audit_log(
@@ -252,7 +257,9 @@ def invite_control(
         )
         return
 
-    pending = account is not None and user_service.invite_live(account)
+    pending = account is not None and user_service.invite_live(
+        account, now=current_env().clock.now()
+    )
     mark = f"invite-{where}-{volunteer_id}"
 
     @notify_errors

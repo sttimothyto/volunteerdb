@@ -16,6 +16,7 @@ from volunteerdb.db import db_session
 from volunteerdb.models import AppUser, ProposalStatus, TeamRole
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 TODAY = date(2026, 8, 10)  # nominating
@@ -60,10 +61,35 @@ async def _parish(session) -> Parish:
     ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
     ok(await memberships.assign(session, None, pete.id, clergy.id, TeamRole.member))
     ok(await memberships.assign(session, None, dan.id, clergy.id, TeamRole.member))
-    lena_user, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
-    await users.create(session, "cora@example.org", volunteer_id=cora.id)
-    pete_user, _ = await users.create(session, "pete@example.org", volunteer_id=pete.id)
-    admin_user, _ = await users.create(session, "admin@example.org", is_admin=True)
+    lena_user, _ = ok(
+        await users.create(
+            session,
+            "lena@example.org",
+            volunteer_id=lena.id,
+            invite=mint.fresh_invite(),
+        )
+    )
+    ok(
+        await users.create(
+            session,
+            "cora@example.org",
+            volunteer_id=cora.id,
+            invite=mint.fresh_invite(),
+        )
+    )
+    pete_user, _ = ok(
+        await users.create(
+            session,
+            "pete@example.org",
+            volunteer_id=pete.id,
+            invite=mint.fresh_invite(),
+        )
+    )
+    admin_user, _ = ok(
+        await users.create(
+            session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+        )
+    )
     return Parish(
         liturgy_id=liturgy.id,
         garden_id=garden.id,
@@ -745,8 +771,13 @@ async def test_involving_flags_and_scoping(database):
         assert [i.proposal.id for i in inv] == [liturgy_p.id]
 
         # a plain member has no elections access: nothing, not even about herself
-        mia_user, _ = await users.create(
-            session, "mia@example.org", volunteer_id=p.mia_id
+        mia_user, _ = ok(
+            await users.create(
+                session,
+                "mia@example.org",
+                volunteer_id=p.mia_id,
+                invite=mint.fresh_invite(),
+            )
         )
         mia = await _actor(session, mia_user.id)
         assert await elections.involving(session, mia, p.vera_id, today=TODAY) == []

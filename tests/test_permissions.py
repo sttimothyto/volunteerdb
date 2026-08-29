@@ -10,6 +10,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.permissions import volunteer_team_ids
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 
@@ -50,17 +51,26 @@ async def parish(database):
 
         accounts = {
             name: (
-                await users.create(
-                    session,
-                    f"user-{name}@example.org",
-                    volunteer_id=v.id,
-                    password="test-pass-phrase",
+                ok(
+                    await users.create(
+                        session,
+                        f"user-{name}@example.org",
+                        volunteer_id=v.id,
+                        password="test-pass-phrase",
+                        invite=mint.fresh_invite(),
+                    )
                 )
             )[0]
             for name, v in people.items()
         }
-        accounts["admin"], _ = await users.create(
-            session, "admin@example.org", is_admin=True, password="test-pass-phrase"
+        accounts["admin"], _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="test-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
         ids = {
             "liturgy": liturgy.id,

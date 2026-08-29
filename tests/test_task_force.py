@@ -17,6 +17,7 @@ from volunteerdb.permissions import volunteer_team_ids
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, task_force, teams, users, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok, refused
 
 TZ = ZoneInfo("America/Toronto")
@@ -303,8 +304,13 @@ async def test_a_task_force_lends_a_roster_it_does_not_hand_over_its_people(data
             source_team_id=ids["choir"],
             created_by=None,
         )
-        lena, _ = await users.create(
-            session, "lena@example.org", volunteer_id=ids["lena"]
+        lena, _ = ok(
+            await users.create(
+                session,
+                "lena@example.org",
+                volunteer_id=ids["lena"],
+                invite=mint.fresh_invite(),
+            )
         )
         actor = await load_actor(session, lena)
         oda_teams = await volunteer_team_ids(session, ids["oda"])

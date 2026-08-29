@@ -13,6 +13,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import _token
+from tests import mint
 from tests.fp_helpers import ok
 
 
@@ -44,8 +45,14 @@ async def _second_member(client, seeded) -> tuple[int, dict]:
                 session, None, v.id, seeded["team_id"], TeamRole.member
             )
         )
-        await users.create(
-            session, "noor@example.org", volunteer_id=v.id, password="noor-pass-phrase"
+        ok(
+            await users.create(
+                session,
+                "noor@example.org",
+                volunteer_id=v.id,
+                password="noor-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
     return v.id, await _token(client, "noor@example.org", "noor-pass-phrase")
 
@@ -257,8 +264,13 @@ async def test_attendance_flow_and_hours(client, seeded, token_leader, token_mem
 
     # a stranger with no shared team may not
     async with db_session() as session:
-        await users.create(
-            session, "stranger@example.org", password="stranger-pass-phrase"
+        ok(
+            await users.create(
+                session,
+                "stranger@example.org",
+                password="stranger-pass-phrase",
+                invite=mint.fresh_invite(),
+            )
         )
     token_stranger = await _token(
         client, "stranger@example.org", "stranger-pass-phrase"
