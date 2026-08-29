@@ -18,9 +18,11 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..errors import DomainError, Invalid, invalid, require
+from ..fp import Err, Ok, Result
 from ..history import entity
 from ..models import AppSetting, Membership, Team, TeamRole
-from ..permissions import Actor, require
+from ..permissions import Actor
 
 SETTING_KEY = "workload"
 
@@ -94,13 +96,17 @@ WHITE = "#ffffff"
 MIN_LABEL_CONTRAST = 4.5  # WCAG 2.2 AA, 1.4.3
 
 
-def _luminance(colour: str) -> float:
+def _luminance(colour: str) -> float | None:
+    """Relative luminance of a #rgb/#rrggbb colour; None for anything else."""
     hex6 = colour.strip().lstrip("#")
     if len(hex6) == 3:
         hex6 = "".join(ch * 2 for ch in hex6)
     if len(hex6) != 6:
-        raise ValueError(f"not a colour: {colour!r}")
-    r, g, b = (int(hex6[i : i + 2], 16) / 255 for i in (0, 2, 4))
+        return None
+    try:
+        r, g, b = (int(hex6[i : i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError:
+        return None
 
     def channel(c: float) -> float:
         return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
@@ -108,77 +114,98 @@ def _luminance(colour: str) -> float:
     return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 
 
-def contrast(a: str, b: str) -> float:
+def contrast(a: str, b: str) -> float | None:
+    """WCAG contrast ratio, or None when either is not a colour."""
     la, lb = _luminance(a), _luminance(b)
+    if la is None or lb is None:
+        return None
     hi, lo = max(la, lb), min(la, lb)
     return (hi + 0.05) / (lo + 0.05)
 
 
 def text_colour(colour: str) -> str:
-    """Ink or white, whichever stands out more against `colour`."""
-    return INK if contrast(INK, colour) >= contrast(WHITE, colour) else WHITE
+    """Ink or white, whichever stands out more against `colour` (ink when
+    `colour` is not one at all — a stored band colour always is)."""
+    return (
+        INK if (contrast(INK, colour) or 0) >= (contrast(WHITE, colour) or 0) else WHITE
+    )
 
 
-def contrast_with_label(colour: str) -> float:
+def contrast_with_label(colour: str) -> float | None:
+    """The ratio a badge's text reads at, or None for a non-colour."""
     return contrast(text_colour(colour), colour)
 
 
-def validate_config(config: WorkloadConfig) -> None:
+def validate_config(config: WorkloadConfig) -> Err[Invalid] | None:
     for band in config.bands:
-        try:
-            ratio = contrast_with_label(band.color)
-        except ValueError as exc:
-            raise ValueError(f"band {band.label!r}: {exc}") from exc
+        ratio = contrast_with_label(band.color)
+        if ratio is None:
+            return invalid(f"band {band.label!r}: not a colour: {band.color!r}")
         if ratio < MIN_LABEL_CONTRAST:
-            raise ValueError(
+            return invalid(
                 f"band {band.label!r}: no text reads on {band.color} "
                 f"({ratio:.1f}:1; {MIN_LABEL_CONTRAST}:1 is the floor)"
             )
     if set(config.multipliers) != set(TeamRole):
-        raise ValueError("multipliers must cover all four roles")
+        return invalid("multipliers must cover all four roles")
     if any(m < 0 for m in config.multipliers.values()):
-        raise ValueError("multipliers must not be negative")
+        return invalid("multipliers must not be negative")
     if not config.bands:
-        raise ValueError("at least one band is required")
+        return invalid("at least one band is required")
     if config.bands[-1].upper is not None:
-        raise ValueError("the last band must have no upper threshold")
+        return invalid("the last band must have no upper threshold")
     uppers = [b.upper for b in config.bands[:-1]]
     if any(u is None for u in uppers):
-        raise ValueError("only the last band may be unbounded")
+        return invalid("only the last band may be unbounded")
     if any(u <= 0 for u in uppers) or any(a >= b for a, b in zip(uppers, uppers[1:])):
-        raise ValueError("band thresholds must be positive and ascending")
+        return invalid("band thresholds must be positive and ascending")
     if len({b.label for b in config.bands}) != len(config.bands):
-        raise ValueError("band labels must be unique")
+        return invalid("band labels must be unique")
+    return None
 
 
-async def get_config(
-    session: AsyncSession, actor: Actor | None = None
-) -> WorkloadConfig:
-    """The multipliers and bands. `actor` is optional because the config is read
-    on every page that renders a band — the legend, the volunteers table, the
-    scores themselves — and those already gate on who may see a band at all
-    (visible_scores). Pass an actor where the config is the *subject* of the
-    request rather than a lookup behind one, i.e. GET /api/workload/config and
-    the admin page."""
-    require(
-        actor is None or actor.is_admin or bool(actor.managed_team_ids),
-        "view the workload configuration",
-    )
+async def read_config(session: AsyncSession) -> WorkloadConfig:
+    """The multipliers and bands, ungated: read on every page that renders a
+    band — the legend, the volunteers table, the scores themselves — and those
+    already gate on who may see a band at all (visible_scores)."""
     setting = await session.get(AppSetting, SETTING_KEY)
     return _from_json(setting.value) if setting else DEFAULT_CONFIG
 
 
+async def get_config(
+    session: AsyncSession, actor: Actor | None
+) -> Result[WorkloadConfig, DomainError]:
+    """The config as the *subject* of a request rather than a lookup behind
+    one — GET /api/workload/config and the admin page — so the actor is
+    checked; everything else calls read_config."""
+    if denied := require(
+        actor is None or actor.is_admin or bool(actor.managed_team_ids),
+        "view the workload configuration",
+    ):
+        return denied
+    return Ok(await read_config(session))
+
+
 async def set_config(
-    session: AsyncSession, actor: Actor | None, config: WorkloadConfig
-) -> None:
-    require(actor is None or actor.is_admin, "set the workload configuration")
-    validate_config(config)
+    session: AsyncSession,
+    actor: Actor | None,
+    config: WorkloadConfig,
+    *,
+    now: datetime,
+) -> Result[None, DomainError]:
+    if denied := require(
+        actor is None or actor.is_admin, "set the workload configuration"
+    ):
+        return denied
+    if bad := validate_config(config):
+        return bad
     stmt = pg_insert(AppSetting).values(key=SETTING_KEY, value=_to_json(config))
     stmt = stmt.on_conflict_do_update(
         index_elements=[AppSetting.key],
-        set_={"value": stmt.excluded.value, "updated_at": sa.func.now()},
+        set_={"value": stmt.excluded.value, "updated_at": now},
     )
     await session.execute(stmt)
+    return Ok(None)
 
 
 def band_for(score: Decimal, config: WorkloadConfig) -> Band:
@@ -200,7 +227,7 @@ async def scores(
     if volunteer_ids is not None and not volunteer_ids:
         return {}
     if config is None:
-        config = await get_config(session)
+        config = await read_config(session)
     M, T = entity(Membership, at), entity(Team, at)
     mult = sa.case(
         {
@@ -243,6 +270,6 @@ async def visible_scores(
     ]
     if not permitted:
         return {}
-    config = await get_config(session)
+    config = await read_config(session)
     raw = await scores(session, permitted, at=at, config=config)
     return {vid: (score, band_for(score, config)) for vid, score in raw.items()}

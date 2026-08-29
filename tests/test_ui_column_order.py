@@ -21,6 +21,7 @@ from volunteerdb.ui import column_order
 from volunteerdb.ui.context import clear_session
 
 from .test_ui_teams import SIM_MAIN, _parish, _table
+from tests.fp_helpers import ok
 
 TEAMS_DEFAULT = ["team", "leader", "second", "core", "member", "total", "gaps"]
 
@@ -222,8 +223,10 @@ async def test_a_custom_field_added_since_the_drag_still_appears(database):
         assert [c["name"] for c in _table(user).columns][0] == "status"
 
         async with db_session() as session:
-            await custom_field_service.create_def(
-                session, None, "Diocese", FieldType.text, show_in_list=True
+            ok(
+                await custom_field_service.create_def(
+                    session, None, "Diocese", FieldType.text, show_in_list=True
+                )
             )
 
         await user.open("/volunteers")

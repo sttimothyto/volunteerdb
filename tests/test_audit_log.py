@@ -205,7 +205,11 @@ async def test_reads_skipped_below_info(database, log_records):
 
 async def test_core_upsert_logged(database, log_records):
     async with db_session(user_id=3) as session:
-        await workload.set_config(session, None, workload.DEFAULT_CONFIG)
+        ok(
+            await workload.set_config(
+                session, None, workload.DEFAULT_CONFIG, now=mint.now()
+            )
+        )
     core_writes = [r for r in _by_event(log_records, "db.insert") if r.get("core")]
     assert core_writes and core_writes[0]["table"] == "app_setting"
     assert core_writes[0]["user"] == "3"

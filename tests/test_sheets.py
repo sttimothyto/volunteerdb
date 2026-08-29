@@ -239,14 +239,16 @@ async def test_non_utf8_rejected(database):
 async def test_export_includes_custom_columns_and_reimport_ignores_them(database):
     async with db_session() as session:
         _, _, anna, _ = await _setup(session)
-        await custom_fields.create_def(session, None, "Shirt size", FieldType.text)
-        await custom_fields.create_def(session, None, "Trained", FieldType.checkbox)
-        await custom_fields.create_def(session, None, "Term", FieldType.interval)
-        await custom_fields.set_values(
-            session,
-            None,
-            anna.id,
-            {"shirt_size": "M", "trained": True, "term": "P1DT2H"},
+        ok(await custom_fields.create_def(session, None, "Shirt size", FieldType.text))
+        ok(await custom_fields.create_def(session, None, "Trained", FieldType.checkbox))
+        ok(await custom_fields.create_def(session, None, "Term", FieldType.interval))
+        ok(
+            await custom_fields.set_values(
+                session,
+                None,
+                anna.id,
+                {"shirt_size": "M", "trained": True, "term": "P1DT2H"},
+            )
         )
         content = await exporter.export_csv(session, None)
 

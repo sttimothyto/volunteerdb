@@ -1409,41 +1409,51 @@ async def seed_people(
 
     # admin-extensible volunteer properties, and enough values that the list
     # column and the filters have something to show
-    safeguarding = await custom_fields.create_def(
-        session,
-        None,
-        "Safeguarding training",
-        FieldType.date,
-        show_in_list=True,
-        position=1,
-    )
-    contact = await custom_fields.create_def(
-        session,
-        None,
-        "Preferred contact",
-        FieldType.select,
-        options=["Email", "Phone", "Post"],
-        position=2,
-    )
-    police = await custom_fields.create_def(
-        session,
-        None,
-        "Police check on file",
-        FieldType.checkbox,
-        show_in_list=True,
-        position=3,
-    )
-    shirt = await custom_fields.create_def(
-        session,
-        None,
-        "T-shirt size",
-        FieldType.select,
-        options=["S", "M", "L", "XL", "XXL"],
-        position=4,
-    )
-    years = await custom_fields.create_def(
-        session, None, "Years in the parish", FieldType.number, position=5
-    )
+    safeguarding = (
+        await custom_fields.create_def(
+            session,
+            None,
+            "Safeguarding training",
+            FieldType.date,
+            show_in_list=True,
+            position=1,
+        )
+    ).unwrap()
+    contact = (
+        await custom_fields.create_def(
+            session,
+            None,
+            "Preferred contact",
+            FieldType.select,
+            options=["Email", "Phone", "Post"],
+            position=2,
+        )
+    ).unwrap()
+    police = (
+        await custom_fields.create_def(
+            session,
+            None,
+            "Police check on file",
+            FieldType.checkbox,
+            show_in_list=True,
+            position=3,
+        )
+    ).unwrap()
+    shirt = (
+        await custom_fields.create_def(
+            session,
+            None,
+            "T-shirt size",
+            FieldType.select,
+            options=["S", "M", "L", "XL", "XXL"],
+            position=4,
+        )
+    ).unwrap()
+    years = (
+        await custom_fields.create_def(
+            session, None, "Years in the parish", FieldType.number, position=5
+        )
+    ).unwrap()
     for person in people:
         volunteer_id = parish.volunteer_ids[person.name]
         values: dict[str, object] = {}
@@ -1459,7 +1469,9 @@ async def seed_people(
         if rng.random() < 0.5:
             values[years.key] = rng.randint(1, 45)
         if values:
-            await custom_fields.set_values(session, None, volunteer_id, values)
+            (
+                await custom_fields.set_values(session, None, volunteer_id, values)
+            ).unwrap()
 
 
 async def seed_accounts(session: AsyncSession, parish: Parish) -> None:

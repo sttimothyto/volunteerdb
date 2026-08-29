@@ -67,12 +67,9 @@ RAISE = "raise"  # a refusal is a returned Err, never an exception
 # What the tree carried when the sweep was written: module -> name -> count.
 # Shrinks per phase; a stale entry fails test_the_baseline_has_no_stale_entries.
 BASELINE: dict[str, dict[str, int]] = {
-    "fieldcodec.py": {"raise": 19},
     "fp.py": {"raise": 3},
     "permissions.py": {"raise": 1},
-    "services/custom_fields.py": {"raise": 12},
     "services/roster_sheets.py": {"now": 1, "raise": 3},
-    "services/workload.py": {"now": 1, "raise": 10},
     "sheets/exporter.py": {"raise": 1},
     "sheets/importer.py": {"db_session": 2, "raise": 2},
 }

@@ -53,7 +53,7 @@ async def volunteers_page(request: Request, q: str = "", band: str = ""):
         list_defs = [
             d for d in await custom_field_service.list_defs(session) if d.show_in_list
         ]
-        config = await workload_service.get_config(session)
+        config = await workload_service.read_config(session)
         wl = await workload_service.visible_scores(session, actor, team_sets)
 
     shows_workload = actor.is_admin or bool(actor.managed_team_ids)
@@ -677,9 +677,11 @@ def _edit_dialog(
                     )
                 ).unwrap()
                 if values:
-                    await custom_field_service.set_values(
-                        session, actor, volunteer.id, values
-                    )
+                    (
+                        await custom_field_service.set_values(
+                            session, actor, volunteer.id, values
+                        )
+                    ).unwrap()
             if staged:
                 await _stage_own_email(staged, base_url)
             elif replaced:

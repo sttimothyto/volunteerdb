@@ -307,16 +307,24 @@ async def seed(scale: int) -> None:
             v.phone = "555-0199"
         await session.flush()
 
-        await custom_field_service.create_def(
-            session, None, "Safeguarding training", FieldType.date, show_in_list=True
-        )
-        await custom_field_service.create_def(
-            session,
-            None,
-            "Preferred contact",
-            FieldType.select,
-            options=["Email", "Phone", "Post"],
-        )
+        (
+            await custom_field_service.create_def(
+                session,
+                None,
+                "Safeguarding training",
+                FieldType.date,
+                show_in_list=True,
+            )
+        ).unwrap()
+        (
+            await custom_field_service.create_def(
+                session,
+                None,
+                "Preferred contact",
+                FieldType.select,
+                options=["Email", "Phone", "Post"],
+            )
+        ).unwrap()
 
         (
             await user_service.create(
@@ -435,7 +443,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
             )
             team_sets = await team_ids_map(session, [v.id for v in found])
             [d for d in await custom_field_service.list_defs(session) if d.show_in_list]
-            await workload_service.get_config(session)
+            await workload_service.read_config(session)
             await workload_service.visible_scores(session, actor, team_sets)
 
     async def search_blank():
@@ -515,7 +523,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
             await stats_service.dashboard(
                 session, actor, now=datetime.now(UTC), today=datetime.now(UTC).date()
             )
-            await workload_service.get_config(session)
+            await workload_service.read_config(session)
 
     async def page_events():
         # mirrors the data block of ui/events_page.events_page for a leader who

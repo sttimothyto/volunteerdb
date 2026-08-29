@@ -5,7 +5,10 @@ from datetime import timedelta
 import pytest
 
 from volunteerdb import fieldcodec
+from volunteerdb.errors import Invalid
 from volunteerdb.models import FieldType
+
+from tests.fp_helpers import ok, refused
 
 pytestmark = pytest.mark.pure
 
@@ -19,19 +22,18 @@ def test_duration_round_trips():
         ("PT1.5S", timedelta(seconds=1.5), "PT1.5S"),
         ("P3D", timedelta(days=3), "P3D"),
     ]:
-        assert fieldcodec.parse_duration(text) == td
+        assert ok(fieldcodec.parse_duration(text)) == td
         assert fieldcodec.format_duration(td) == canonical
         # canonical spellings are fixed points
-        assert fieldcodec.format_duration(fieldcodec.parse_duration(canonical)) == (
+        assert fieldcodec.format_duration(ok(fieldcodec.parse_duration(canonical))) == (
             canonical
         )
 
 
 def test_duration_rejects_unfixed_units_and_noise():
     for bad in ["P1Y", "P1M", "P", "PT", "3 days", "P1D2H", "PT2H30", "-P1D", ""]:
-        with pytest.raises(ValueError):
-            fieldcodec.parse_duration(bad)
-    with pytest.raises(ValueError):
+        refused(fieldcodec.parse_duration(bad), Invalid, match="ISO 8601 duration")
+    with pytest.raises(AssertionError):  # a contract, not input: parse never yields one
         fieldcodec.format_duration(timedelta(days=-1))
 
 
@@ -54,4 +56,4 @@ def test_parse_scalar_handles_every_field_type():
     }
     assert set(samples) == set(FieldType)
     for ft, sample in samples.items():
-        assert fieldcodec.parse_scalar(ft, sample) is not None
+        assert ok(fieldcodec.parse_scalar(ft, sample)) is not None

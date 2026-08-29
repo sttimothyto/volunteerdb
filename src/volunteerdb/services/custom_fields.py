@@ -12,18 +12,20 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import fieldcodec
+from ..errors import DomainError, Invalid, invalid, not_found, require
+from ..fp import Err, Ok, Result
 from ..models import CustomFieldDef, FieldType, Volunteer
-from ..permissions import Actor, require, volunteer_team_ids
+from ..permissions import Actor, volunteer_team_ids
 from . import volunteers as volunteer_service
 
 _UNSET: object = object()
 
 
-def _slugify(label: str) -> str:
+def _slugify(label: str) -> Result[str, Invalid]:
     slug = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
     if not slug:
-        raise ValueError("label must contain letters or digits")
-    return slug[:50]
+        return invalid("label must contain letters or digits")
+    return Ok(slug[:50])
 
 
 def _clean_options(options: list | None) -> list[str]:
@@ -58,17 +60,24 @@ async def create_def(
     options: list | None = None,
     show_in_list: bool = False,
     position: int = 0,
-) -> CustomFieldDef:
-    require(actor is None or actor.is_admin, "manage custom fields")
+) -> Result[CustomFieldDef, DomainError]:
+    if denied := require(actor is None or actor.is_admin, "manage custom fields"):
+        return denied
     label = (label or "").strip()
     if not label:
-        raise ValueError("label is required")
-    ft = FieldType(field_type)  # ValueError on unknown type
+        return invalid("label is required")
+    try:
+        ft = FieldType(field_type)
+    except ValueError:
+        return invalid(f"unknown field type: {field_type!r}")
     opts = _clean_options(options) if ft is FieldType.select else None
     if ft is FieldType.select and not opts:
-        raise ValueError("a choice field needs at least one option")
+        return invalid("a choice field needs at least one option")
+    key = _slugify(label)
+    if isinstance(key, Err):
+        return key
     defn = CustomFieldDef(
-        key=_slugify(label),
+        key=key.value,
         label=label,
         field_type=ft.value,
         options=opts,
@@ -77,7 +86,7 @@ async def create_def(
     )
     session.add(defn)
     await session.flush()
-    return defn
+    return Ok(defn)
 
 
 async def update_def(
@@ -90,23 +99,24 @@ async def update_def(
     show_in_list: bool | None = None,
     position: int | None = None,
     is_active: bool | None = None,
-) -> CustomFieldDef:
+) -> Result[CustomFieldDef, DomainError]:
     """key and field_type are immutable — stored values are keyed/typed by them."""
-    require(actor is None or actor.is_admin, "manage custom fields")
+    if denied := require(actor is None or actor.is_admin, "manage custom fields"):
+        return denied
     defn = await get_def(session, field_id)
     if defn is None:
-        raise LookupError(f"custom field {field_id} not found")
+        return not_found("custom field", field_id)
     if label is not None:
         label = label.strip()
         if not label:
-            raise ValueError("label is required")
+            return invalid("label is required")
         defn.label = label
     if options is not _UNSET:
         if defn.field_type != FieldType.select.value:
-            raise ValueError("only choice fields have options")
+            return invalid("only choice fields have options")
         opts = _clean_options(options)  # type: ignore[arg-type]
         if not opts:
-            raise ValueError("a choice field needs at least one option")
+            return invalid("a choice field needs at least one option")
         defn.options = opts
     if show_in_list is not None:
         defn.show_in_list = show_in_list
@@ -115,34 +125,38 @@ async def update_def(
     if is_active is not None:
         defn.is_active = is_active
     await session.flush()
-    return defn
+    return Ok(defn)
 
 
-async def delete_def(session: AsyncSession, actor: Actor | None, field_id: int) -> None:
+async def delete_def(
+    session: AsyncSession, actor: Actor | None, field_id: int
+) -> Result[None, DomainError]:
     """Hard delete; orphaned keys in Volunteer.custom simply stop being rendered."""
-    require(actor is None or actor.is_admin, "manage custom fields")
+    if denied := require(actor is None or actor.is_admin, "manage custom fields"):
+        return denied
     defn = await get_def(session, field_id)
     if defn is None:
-        raise LookupError(f"custom field {field_id} not found")
+        return not_found("custom field", field_id)
     await session.delete(defn)
     await session.flush()
+    return Ok(None)
 
 
-def validate_value(defn: CustomFieldDef, value: Any) -> Any:
-    """Normalize a raw value for storage, or raise ValueError. None clears."""
+def validate_value(defn: CustomFieldDef, value: Any) -> Result[Any, Invalid]:
+    """Normalize a raw value for storage, or the Invalid. None clears."""
     if value is None:
-        return None
+        return Ok(None)
     ft = FieldType(defn.field_type)
     if ft is FieldType.select:
         if value not in (defn.options or []):
-            raise ValueError(
+            return invalid(
                 f"{defn.label} must be one of: {', '.join(defn.options or [])}"
             )
-        return value
-    try:
-        return fieldcodec.parse_scalar(ft, value)
-    except ValueError as exc:
-        raise ValueError(f"{defn.label} {exc}") from None
+        return Ok(value)
+    parsed = fieldcodec.parse_scalar(ft, value)
+    if isinstance(parsed, Err):
+        return invalid(f"{defn.label} {parsed.error.message}")
+    return parsed
 
 
 async def set_values(
@@ -150,7 +164,7 @@ async def set_values(
     actor: Actor | None,
     volunteer_id: int,
     values: dict[str, Any],
-) -> Volunteer:
+) -> Result[Volunteer, DomainError]:
     """Validate and merge values into Volunteer.custom. A None value clears its key.
 
     Custom values are contact-tier data (they are redacted alongside phone and
@@ -158,26 +172,29 @@ async def set_values(
     not the admin right that defining the *fields* takes."""
     volunteer = await volunteer_service.get(session, volunteer_id)
     if volunteer is None:
-        raise LookupError(f"volunteer {volunteer_id} not found")
+        return not_found("volunteer", volunteer_id)
     if actor is not None:
-        require(
+        if denied := require(
             actor.can_edit_volunteer(
                 volunteer_id, await volunteer_team_ids(session, volunteer_id)
             ),
             "edit this volunteer",
-        )
+        ):
+            return denied
     defs = {d.key: d for d in await list_defs(session)}
     # always build a fresh dict: plain JSONB columns don't track in-place mutation
     merged = dict(volunteer.custom or {})
     for key, raw in values.items():
         defn = defs.get(key)
         if defn is None:
-            raise ValueError(f"unknown custom field: {key}")
-        normalized = validate_value(defn, raw)
-        if normalized is None:
+            return invalid(f"unknown custom field: {key}")
+        checked = validate_value(defn, raw)
+        if isinstance(checked, Err):
+            return checked
+        if checked.value is None:
             merged.pop(key, None)
         else:
-            merged[key] = normalized
+            merged[key] = checked.value
     volunteer.custom = merged
     await session.flush()
-    return volunteer
+    return Ok(volunteer)

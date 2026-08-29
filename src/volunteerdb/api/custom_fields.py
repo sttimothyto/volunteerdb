@@ -19,7 +19,9 @@ async def list_custom_fields(
 
 @router.post("", status_code=201)
 async def create_custom_field(ctx: CtxDep, data: CustomFieldDefIn) -> CustomFieldDefOut:
-    defn = await service.create_def(ctx.session, ctx.actor, **data.model_dump())
+    defn = (
+        await service.create_def(ctx.session, ctx.actor, **data.model_dump())
+    ).unwrap()
     return CustomFieldDefOut.model_validate(defn)
 
 
@@ -27,12 +29,14 @@ async def create_custom_field(ctx: CtxDep, data: CustomFieldDefIn) -> CustomFiel
 async def update_custom_field(
     ctx: CtxDep, field_id: int, data: CustomFieldDefPatch
 ) -> CustomFieldDefOut:
-    defn = await service.update_def(
-        ctx.session, ctx.actor, field_id, **data.model_dump(exclude_unset=True)
-    )
+    defn = (
+        await service.update_def(
+            ctx.session, ctx.actor, field_id, **data.model_dump(exclude_unset=True)
+        )
+    ).unwrap()
     return CustomFieldDefOut.model_validate(defn)
 
 
 @router.delete("/{field_id}", status_code=204)
 async def delete_custom_field(ctx: CtxDep, field_id: int) -> None:
-    await service.delete_def(ctx.session, ctx.actor, field_id)
+    (await service.delete_def(ctx.session, ctx.actor, field_id)).unwrap()

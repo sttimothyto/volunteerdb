@@ -137,9 +137,11 @@ async def update_volunteer(
         await service.update(ctx.session, ctx.actor, volunteer_id, **fields)
     ).unwrap()
     if custom is not None:
-        volunteer = await custom_field_service.set_values(
-            ctx.session, ctx.actor, volunteer_id, custom
-        )
+        volunteer = (
+            await custom_field_service.set_values(
+                ctx.session, ctx.actor, volunteer_id, custom
+            )
+        ).unwrap()
     if replaced is not None:
         was, now = replaced
         audit_log(

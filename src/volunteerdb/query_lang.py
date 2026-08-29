@@ -237,7 +237,10 @@ def _literal(
                         return Err(QueryError(f"{name}: times carry no offset"))
                     return Ok(t)
                 case FieldType.interval:
-                    return Ok(fieldcodec.parse_duration(text))
+                    parsed = fieldcodec.parse_duration(text)
+                    if isinstance(parsed, Err):
+                        return Err(QueryError(f"{name}: {parsed.error.message}"))
+                    return parsed
                 case FieldType.uuid:
                     return Ok(uuid_lib.UUID(text))
                 case FieldType.checkbox:

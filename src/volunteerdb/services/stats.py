@@ -295,7 +295,7 @@ async def _leadership(
             )
             for _score, band in scored.values():
                 tally[band.label] = tally.get(band.label, 0) + 1
-        config = await workload_service.get_config(session)
+        config = await workload_service.read_config(session)
         stats = replace(
             stats,
             bands=tuple(

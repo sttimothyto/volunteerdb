@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from nicegui import ui
 
+from ..env import current as current_env
 from ..models import ROLE_LABELS, TeamRole
 from ..services import teams as team_service
 from ..services import workload as workload_service
@@ -18,9 +19,8 @@ def _contrast_note(color: ui.color_input) -> None:
     note = ui.label().classes("text-sm text-gray-500 w-36")
 
     def show() -> None:
-        try:
-            ratio = workload_service.contrast_with_label(color.value or "")
-        except ValueError:
+        ratio = workload_service.contrast_with_label(color.value or "")
+        if ratio is None:
             note.set_text("not a colour")
             return
         floor = workload_service.MIN_LABEL_CONTRAST
@@ -40,7 +40,7 @@ async def workload_page():
             with frame("Workload", actor):
                 ui.label("Admins only.").classes("text-gray-500")
             return
-        config = await workload_service.get_config(session)
+        config = await workload_service.read_config(session)
         tree = await team_service.tree(session)
         all_teams, paths = tree.teams, tree.paths
 
@@ -114,7 +114,11 @@ async def workload_page():
                     ],
                 )
                 async with action_session() as (session, actor):
-                    await workload_service.set_config(session, actor, new_config)
+                    (
+                        await workload_service.set_config(
+                            session, actor, new_config, now=current_env().clock.now()
+                        )
+                    ).unwrap()
                 ui.notify("Workload settings saved", color="positive")
 
             ui.button("Save settings", icon="save", on_click=save_config).props("dense")

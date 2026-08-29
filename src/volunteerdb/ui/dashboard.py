@@ -59,7 +59,7 @@ async def dashboard(request: Request, as_of: str = ""):
         )
         # band chips in the legend, for the viewers who see coloured dots at all
         bands = (
-            (await workload_service.get_config(session)).bands
+            (await workload_service.read_config(session)).bands
             if actor.is_admin or actor.managed_team_ids
             else []
         )

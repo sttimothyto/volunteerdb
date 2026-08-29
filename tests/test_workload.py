@@ -2,8 +2,7 @@
 
 from decimal import Decimal
 
-import pytest
-
+from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
@@ -11,7 +10,7 @@ from volunteerdb.services import graph as graph_service
 from volunteerdb.services import memberships, teams, users, volunteers, workload
 
 from tests import mint
-from tests.fp_helpers import ok
+from tests.fp_helpers import ok, refused
 
 
 def _config(multipliers=None, bands=None) -> workload.WorkloadConfig:
@@ -25,7 +24,7 @@ def _config(multipliers=None, bands=None) -> workload.WorkloadConfig:
 
 async def test_config_default_and_roundtrip(database):
     async with db_session() as session:
-        assert await workload.get_config(session) == workload.DEFAULT_CONFIG
+        assert await workload.read_config(session) == workload.DEFAULT_CONFIG
 
     custom = _config(
         bands=[
@@ -34,15 +33,17 @@ async def test_config_default_and_roundtrip(database):
         ]
     )
     async with db_session() as session:
-        await workload.set_config(session, None, custom)
+        ok(await workload.set_config(session, None, custom, now=mint.now()))
     async with db_session() as session:
-        loaded = await workload.get_config(session)
+        loaded = await workload.read_config(session)
         assert loaded == custom
-        await workload.set_config(
-            session, None, workload.DEFAULT_CONFIG
+        ok(
+            await workload.set_config(
+                session, None, workload.DEFAULT_CONFIG, now=mint.now()
+            )
         )  # upsert overwrites
     async with db_session() as session:
-        assert await workload.get_config(session) == workload.DEFAULT_CONFIG
+        assert await workload.read_config(session) == workload.DEFAULT_CONFIG
 
 
 async def test_config_validation(database):
@@ -71,9 +72,11 @@ async def test_config_validation(database):
         ),
     ]
     for bad in bad_configs:
-        with pytest.raises(ValueError):
-            async with db_session() as session:
-                await workload.set_config(session, None, bad)
+        async with db_session() as session:
+            refused(
+                await workload.set_config(session, None, bad, now=mint.now()),
+                errors.Invalid,
+            )
 
 
 def test_band_for_boundaries():
@@ -128,7 +131,7 @@ async def test_scores_role_multiplied_and_null_weights(database):
         )
         assert await workload.scores(session, []) == {}
 
-        cfg = await workload.get_config(session)
+        cfg = await workload.read_config(session)
         assert workload.band_for(result[ids["busy"]], cfg).label == "red"
         assert workload.band_for(result[ids["light"]], cfg).label == "green"
 

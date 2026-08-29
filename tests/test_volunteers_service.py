@@ -138,9 +138,11 @@ async def test_search_private_fields_are_scope_aware(database):
                 session, None, plain.id, liturgy.id, TeamRole.member
             )
         )
-        await custom_fields.create_def(session, None, "Training", "text")
-        await custom_fields.set_values(
-            session, None, insider.id, {"training": "lector-certified"}
+        ok(await custom_fields.create_def(session, None, "Training", "text"))
+        ok(
+            await custom_fields.set_values(
+                session, None, insider.id, {"training": "lector-certified"}
+            )
         )
 
         leader_v = ok(await volunteers.create(session, None, "Lena", "Leader"))
@@ -333,9 +335,13 @@ async def test_search_or_query_scopes_rows_per_role(database):
                 session, None, plain.id, liturgy.id, TeamRole.member
             )
         )
-        await custom_fields.create_def(session, None, "Years served", "integer")
-        await custom_fields.set_values(session, None, insider.id, {"years_served": 10})
-        await custom_fields.set_values(session, None, plain.id, {"years_served": 9})
+        ok(await custom_fields.create_def(session, None, "Years served", "integer"))
+        ok(
+            await custom_fields.set_values(
+                session, None, insider.id, {"years_served": 10}
+            )
+        )
+        ok(await custom_fields.set_values(session, None, plain.id, {"years_served": 9}))
 
         leader_v = ok(await volunteers.create(session, None, "Lena", "Leader"))
         ok(
