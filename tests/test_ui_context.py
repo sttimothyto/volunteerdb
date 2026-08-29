@@ -2,7 +2,11 @@
 
 from datetime import date, time
 
+import pytest
+
 from volunteerdb.ui.context import parse_as_of
+
+pytestmark = pytest.mark.pure
 
 
 def test_parse_as_of_date_maps_to_end_of_day():

@@ -25,6 +25,8 @@ import pytest
 from volunteerdb.config import LOG_LEVELS, Settings
 from volunteerdb.log import _MODE_NUM
 
+pytestmark = pytest.mark.pure
+
 REPO = Path(__file__).resolve().parent.parent
 ENV_EXAMPLE = REPO / ".env.example"
 CONFIG_DOC = REPO / "docs" / "reference" / "configuration.md"

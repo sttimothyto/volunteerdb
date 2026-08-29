@@ -75,6 +75,11 @@ jobs:
       # Deliberately not setting VDB_TEST_ALLOW_NO_DB or
       # VDB_TEST_ALLOW_NO_BROWSER: a missing database or browser must fail the
       # run, not skip into a green one.
+      # The pure tier needs no database or browser; it runs first because it
+      # is the fast half of the signal, and separately so a regression in it
+      # is named as one.
+      - name: pytest (pure)
+        run: uv run pytest -q -m pure
       - name: pytest
         run: uv run pytest -q
 

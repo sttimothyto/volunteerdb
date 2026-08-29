@@ -12,6 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..asof_param import parse_as_of
 from ..db import sessionmaker
+from ..errors import (
+    BadCredentials,
+    Conflict,
+    DomainError,
+    DomainErrorRaised,
+    External,
+    Invalid,
+    NotFound,
+    QueryError,
+    Throttled,
+    WeakPassword,
+    message,
+)
+from ..errors import Forbidden as ForbiddenValue
 from ..log import bind_actor
 from ..permissions import Actor, Forbidden, load_actor
 from ..services import users as user_service
@@ -84,7 +98,49 @@ def as_of_param(
 AsOf = Annotated[datetime | None, Depends(as_of_param)]
 
 
+def status_of(err: DomainError) -> int:
+    """The one place a refusal becomes an HTTP status."""
+    match err:
+        case ForbiddenValue():
+            return 403
+        case NotFound():
+            return 404
+        case Invalid() | WeakPassword() | QueryError():
+            return 422
+        case Conflict():
+            return 409
+        case Throttled():
+            return 429
+        case External():
+            return 502
+        case BadCredentials():
+            return 401
+    raise AssertionError(f"not a DomainError: {err!r}")  # pragma: no cover
+
+
+def to_http(err: DomainError) -> HTTPException:
+    headers = (
+        {"WWW-Authenticate": "Bearer"} if isinstance(err, BadCredentials) else None
+    )
+    if isinstance(err, Throttled):
+        headers = {"Retry-After": str(err.retry_after_s)}
+    return HTTPException(status_of(err), message(err), headers=headers)
+
+
 def install_exception_handlers(app: FastAPI) -> None:
+    # Transition: a converted service called by an unconverted route raises
+    # the carrier from Err.unwrap(); it maps exactly as the value would.
+    @app.exception_handler(DomainErrorRaised)
+    async def _domain_error(request: Request, exc: DomainErrorRaised):
+        from fastapi.responses import JSONResponse
+
+        http = to_http(exc.error)
+        return JSONResponse(
+            status_code=http.status_code,
+            content={"detail": http.detail},
+            headers=http.headers,
+        )
+
     @app.exception_handler(Forbidden)
     async def _forbidden(request: Request, exc: Forbidden):
         from fastapi.responses import JSONResponse

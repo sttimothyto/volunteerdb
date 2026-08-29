@@ -1,6 +1,10 @@
 """STAR tally protocol: pure arithmetic, no database."""
 
+import pytest
+
 from volunteerdb.star import star_tally
+
+pytestmark = pytest.mark.pure
 
 A, B, C = 1, 2, 3
 

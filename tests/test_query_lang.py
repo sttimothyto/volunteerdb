@@ -17,6 +17,8 @@ from volunteerdb.models import (
 )
 from volunteerdb.permissions import Actor
 
+pytestmark = pytest.mark.pure
+
 DEFS = {
     "years_served": CustomFieldDef(key="years_served", label="Y", field_type="integer"),
     "term": CustomFieldDef(key="term", label="T", field_type="interval"),

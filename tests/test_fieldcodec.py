@@ -7,6 +7,8 @@ import pytest
 from volunteerdb import fieldcodec
 from volunteerdb.models import FieldType
 
+pytestmark = pytest.mark.pure
+
 
 def test_duration_round_trips():
     for text, td, canonical in [

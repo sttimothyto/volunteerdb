@@ -54,6 +54,8 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
+# `pure` tests need no database: `uv run pytest -m pure` runs with Postgres down.
+markers = ["pure: needs no database"]
 
 [tool.ruff]
 # Ruff's default width, stated explicitly so it cannot drift under us. The

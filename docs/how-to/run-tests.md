@@ -32,6 +32,14 @@ uv run pytest -k roster             # by keyword
 uv run pytest --cov                 # with coverage (skip_covered configured)
 ```
 
+Tests marked `pure` (`pytestmark = pytest.mark.pure`) never touch the
+database and run with the container down — the toolkit, the parsers, the
+structural sweeps:
+
+```sh
+uv run pytest -m pure                    # no Postgres, no browser, seconds
+```
+
 The browser tests take the same arguments plus Playwright's own:
 
 ```sh

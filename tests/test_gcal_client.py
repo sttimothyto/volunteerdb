@@ -10,6 +10,8 @@ import pytest
 from volunteerdb.config import settings
 from volunteerdb.services import gcal, google_api
 
+pytestmark = pytest.mark.pure
+
 CID = "abc123@group.calendar.google.com"
 OWNER = {
     "id": "user:admin@example.org",

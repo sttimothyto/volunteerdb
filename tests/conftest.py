@@ -170,7 +170,18 @@ async def all_tables(database) -> tuple[str, ...]:
 
 
 @pytest.fixture(autouse=True)
-async def clean_tables(database, all_tables):
+def clean_tables(request):
+    """Every test starts from truncated tables -- except one marked `pure`,
+    which never touches the database at all. The database fixture is pulled
+    on demand rather than declared, so `uv run pytest -m pure` runs with no
+    Postgres in sight (docs/how-to/run-tests.md)."""
+    if request.node.get_closest_marker("pure"):
+        return
+    request.getfixturevalue("_truncated_tables")
+
+
+@pytest.fixture
+async def _truncated_tables(database, all_tables):
     async with database.begin() as conn:
         await conn.execute(
             sa.text(f"TRUNCATE {', '.join(all_tables)} RESTART IDENTITY CASCADE")

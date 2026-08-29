@@ -5,9 +5,13 @@ parish one. Pure functions over transient Event rows — no database."""
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from volunteerdb.models import Event
 from volunteerdb.services import ics
 from volunteerdb.services.events import CalendarEntry
+
+pytestmark = pytest.mark.pure
 
 TZ = ZoneInfo("America/Toronto")
 NOW = datetime(2026, 8, 24, 12, 0, tzinfo=UTC)

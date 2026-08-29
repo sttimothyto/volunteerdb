@@ -17,6 +17,8 @@ import pytest
 
 from volunteerdb.services import workload
 
+pytestmark = pytest.mark.pure
+
 ROOT = Path(__file__).resolve().parents[1] / "src" / "volunteerdb"
 THEME = (ROOT / "ui" / "static" / "theme.css").read_text()
 MAIN = (ROOT / "main.py").read_text()

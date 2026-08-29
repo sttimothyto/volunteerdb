@@ -15,6 +15,8 @@ from volunteerdb import passwords
 from volunteerdb.auth import hash_password, needs_rehash, verify_password
 from volunteerdb.passwords import MAX_LENGTH, MIN_LENGTH, WeakPassword, check, problem
 
+pytestmark = pytest.mark.pure
+
 
 def test_minimum_length_is_fifteen():
     """ "SHALL require passwords that are used as a single-factor authentication

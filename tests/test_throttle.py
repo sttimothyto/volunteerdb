@@ -4,6 +4,8 @@ import pytest
 
 from volunteerdb import throttle
 
+pytestmark = pytest.mark.pure
+
 
 class FakeClock:
     def __init__(self, start: float = 1000.0):

@@ -11,6 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import asof_param
 from ..db import db_session
+from ..errors import (
+    DomainError,
+    DomainErrorRaised,
+    Invalid,
+    QueryError,
+    Throttled,
+    WeakPassword,
+    message,
+)
 from ..log import bind_actor
 from ..permissions import Actor, Forbidden, load_actor
 from ..services import users as user_service
@@ -117,6 +126,14 @@ async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
 action_session = page_session  # same contract, used from event handlers
 
 
+def toast(err: DomainError) -> None:
+    """The one place a refusal becomes a toast: a rule the reader can fix
+    (bad input, a weak password, a query typo, a throttle) is a warning;
+    anything else is a refusal in red."""
+    soft = isinstance(err, (Invalid, WeakPassword, QueryError, Throttled))
+    ui.notify(message(err), color="warning" if soft else "negative")
+
+
 def notify_errors(handler: Callable) -> Callable:
     """Wrap an event handler: service-layer errors become toast notifications."""
 
@@ -124,6 +141,8 @@ def notify_errors(handler: Callable) -> Callable:
     async def wrapper(*args, **kwargs):
         try:
             return await handler(*args, **kwargs)
+        except DomainErrorRaised as exc:  # transition: a converted service's Err
+            toast(exc.error)
         except Forbidden as exc:
             ui.notify(str(exc), color="negative")
         except LookupError as exc:

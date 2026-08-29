@@ -143,9 +143,11 @@ Propagation idiom, documented once and used everywhere (no do-notation, no
 
 ```python
 r = await team_service.get(session, team_id)
-if isinstance(r, Err): return r
+if isinstance(r, Err):
+    return r
 team = r.value
-if denied := require(actor.can_manage_team(team.id), "manage this team"): return denied
+if denied := require(actor.can_manage_team(team.id), "manage this team"):
+    return denied
 ```
 
 `match` is reserved for branching on the *error* (`case Err(NotFound()):`).
@@ -414,13 +416,25 @@ call sites touched once, 152 `pytest.raises` in 64 test modules.
 ```python
 async def save() -> None:
     async def command(ctx: PageCtx):
-        return await event_service.request_sub(ctx.session, ctx.actor, assignment_id=assignment_id,
-                                               requested_by=ctx.actor.user.id, note=note.value, now=ctx.now)
-    def done(sub, effects):                     # the toast is a pure function of the effects
+        return await event_service.request_sub(
+            ctx.session,
+            ctx.actor,
+            assignment_id=assignment_id,
+            requested_by=ctx.actor.user.id,
+            note=note.value,
+            now=ctx.now,
+        )
+
+    def done(sub, effects):  # the toast is a pure function of the effects
         dialog.close()
         mailed = sum(isinstance(e, SendMail) for e in effects)
-        ui.notify(CAPPED_TEXT if mailed == 0 else f"Asked {mailed} teammate(s)", color=...)
-    await run_command(command, on_ok=done)      # rollback on Err → toast; effects after commit; reload
+        ui.notify(
+            CAPPED_TEXT if mailed == 0 else f"Asked {mailed} teammate(s)", color=...
+        )
+
+    await run_command(
+        command, on_ok=done
+    )  # rollback on Err → toast; effects after commit; reload
 ```
 
   `request_sub` gathers audience/paths/asker/slot itself and returns

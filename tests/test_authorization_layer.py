@@ -16,6 +16,10 @@ add a test.
 import ast
 import pathlib
 
+import pytest
+
+pytestmark = pytest.mark.pure
+
 SRC = pathlib.Path(__file__).resolve().parent.parent / "src" / "volunteerdb"
 
 # The vocabulary a service uses to refuse: require() itself, and the per-module
@@ -84,6 +88,28 @@ EDGE_ALLOWLIST = {
     # (masking titles it may not show), so there is no per-team right to check
     # — only "do you create events at all"
     ("api/events.py", "can_create_events"),
+}
+
+
+# Gate calls whose result is thrown away, per module, when gates began returning
+# `Err | None` instead of raising (FUNCTIONAL_REFACTORING.md, Phase 2). A raising
+# gate as a bare statement was correct; a value-returning one is a check that
+# never refuses. The count may only fall; an entry at zero must be deleted.
+DISCARDED_GATE_BASELINE: dict[str, int] = {
+    "services/branding.py": 2,
+    "services/custom_fields.py": 4,
+    "services/elections.py": 7,
+    "services/events.py": 16,
+    "services/memberships.py": 3,
+    "services/pages.py": 3,
+    "services/roster_sheets.py": 1,
+    "services/task_force.py": 2,
+    "services/teams.py": 6,
+    "services/users.py": 7,
+    "services/volunteers.py": 5,
+    "services/workload.py": 2,
+    "sheets/exporter.py": 2,
+    "sheets/importer.py": 1,
 }
 
 
@@ -182,3 +208,41 @@ def test_the_front_doors_do_not_decide_who_may_do_what():
         "enforced here is a rule the other surface can forget: move it into the "
         f"service both surfaces call. {stray}"
     )
+
+
+def _discarded_gate_calls(path: pathlib.Path) -> int:
+    """Bare expression statements (awaited or not) that call a gate."""
+    n = 0
+    for node in ast.walk(ast.parse(path.read_text())):
+        if not isinstance(node, ast.Expr):
+            continue
+        call = node.value.value if isinstance(node.value, ast.Await) else node.value
+        if isinstance(call, ast.Call) and _called_names(call) & GATES:
+            n += 1
+    return n
+
+
+def test_a_gate_result_is_never_discarded():
+    """A gate that returns its refusal has to be looked at.
+
+    `require(...)` used to raise, so calling it as a statement was the whole
+    check. Once it returns `Err | None`, the same statement checks nothing --
+    the refusal is computed and dropped. Every remaining bare call is on the
+    baseline from before the change; the number can only go down.
+    """
+    grown, stale = [], []
+    for path in sorted(SRC.rglob("*.py")):
+        if "services" not in path.parts and "sheets" not in path.parts:
+            continue
+        rel = str(path.relative_to(SRC))
+        n = _discarded_gate_calls(path)
+        allowed = DISCARDED_GATE_BASELINE.get(rel, 0)
+        if n > allowed:
+            grown.append(f"{rel}: {n} (baseline {allowed})")
+        if n == 0 and rel in DISCARDED_GATE_BASELINE:
+            stale.append(rel)
+    assert not grown, (
+        "a gate's result is thrown away here; bind it -- "
+        f"`if denied := require(...): return denied`: {grown}"
+    )
+    assert not stale, f"delete these DISCARDED_GATE_BASELINE entries: {stale}"

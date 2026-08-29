@@ -17,6 +17,10 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.pure
+
 UI_DIR = Path(__file__).resolve().parents[1] / "src" / "volunteerdb" / "ui"
 THEME_CSS = UI_DIR / "static" / "theme.css"
 

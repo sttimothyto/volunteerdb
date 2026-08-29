@@ -23,6 +23,8 @@ sys.path.insert(0, str(DEPLOY))
 
 import siteconf  # noqa: E402  (needs the sys.path line above)
 
+pytestmark = pytest.mark.pure
+
 SITE_FILES = sorted(siteconf.SITES_DIR.glob("*.toml"))
 SITE_NAMES = [p.stem for p in SITE_FILES]
 
