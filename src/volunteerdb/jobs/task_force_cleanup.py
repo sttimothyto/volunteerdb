@@ -29,13 +29,13 @@ logger = structlog.get_logger(__name__)
 async def main(env: Env) -> int:
     init_logging()
     async with db_session() as session:
-        due = await task_force.teardown_due(session)
+        due = await task_force.teardown_due(session, now=env.clock.now())
 
     done = failed = 0
     for event_id in due:
         try:
             async with db_session() as session:  # one transaction each
-                await task_force.teardown(session, event_id)
+                (await task_force.teardown(session, event_id)).unwrap()
         except LookupError:
             continue  # a concurrent run got there first
         except Exception:

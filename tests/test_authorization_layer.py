@@ -99,7 +99,6 @@ DISCARDED_GATE_BASELINE: dict[str, int] = {
     "services/custom_fields.py": 4,
     "services/elections.py": 7,
     "services/roster_sheets.py": 1,
-    "services/task_force.py": 2,
     "services/workload.py": 2,
     "sheets/exporter.py": 2,
     "sheets/importer.py": 1,

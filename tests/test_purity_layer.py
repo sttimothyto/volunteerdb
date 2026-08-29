@@ -85,7 +85,6 @@ BASELINE: dict[str, dict[str, int]] = {
         "settings": 1,
         "token_urlsafe": 1,
     },
-    "services/task_force.py": {"now": 2, "raise": 9, "settings": 1},
     "services/workload.py": {"now": 1, "raise": 10},
     "sheets/exporter.py": {"raise": 1},
     "sheets/importer.py": {"db_session": 2, "raise": 2},

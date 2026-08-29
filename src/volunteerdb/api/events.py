@@ -561,13 +561,17 @@ async def add_collaborator(
     event, deliberately not on the team being invited — and gives none over that
     team's people, which is what makes asking safe (permissions.Actor).
     """
-    await task_force_service.add_collaborating_team(
-        ctx.session,
-        ctx.actor,
-        event_id=event_id,
-        source_team_id=data.team_id,
-        created_by=ctx.actor.user.id,
-    )
+    (
+        await task_force_service.add_collaborating_team(
+            ctx.session,
+            ctx.actor,
+            event_id=event_id,
+            source_team_id=data.team_id,
+            created_by=ctx.actor.user.id,
+            now=ctx.now,
+            tz=ctx.env.tz,
+        )
+    ).unwrap()
     audit_log(
         "event.collaboration_added",
         event_id=event_id,
@@ -587,7 +591,9 @@ async def refresh_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut:
     Additive: the strongest role a person holds across the sources wins, an
     existing role is never downgraded, and nobody is removed — leaving a task
     force is roster management on the meta team itself."""
-    await task_force_service.refresh_rosters(ctx.session, ctx.actor, event_id)
+    (
+        await task_force_service.refresh_rosters(ctx.session, ctx.actor, event_id)
+    ).unwrap()
     return await _task_force_out(ctx, event_id)  # type: ignore[return-value]
 
 

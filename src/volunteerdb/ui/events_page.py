@@ -1158,13 +1158,17 @@ def _collaboration_card(
         if not await _confirm_add_collaborator(label):
             return
         async with action_session() as (session, actor):
-            meta = await task_force_service.add_collaborating_team(
-                session,
-                actor,
-                event_id=event_id,
-                source_team_id=team_id_value,
-                created_by=actor.user.id,
-            )
+            meta = (
+                await task_force_service.add_collaborating_team(
+                    session,
+                    actor,
+                    event_id=event_id,
+                    source_team_id=team_id_value,
+                    created_by=actor.user.id,
+                    now=current_env().clock.now(),
+                    tz=_tz(),
+                )
+            ).unwrap()
             audit_log(
                 "event.collaboration_added",
                 event_id=event_id,
@@ -1177,7 +1181,9 @@ def _collaboration_card(
     @notify_errors
     async def _sync_rosters() -> None:
         async with action_session() as (session, actor):
-            added = await task_force_service.refresh_rosters(session, actor, event_id)
+            added = (
+                await task_force_service.refresh_rosters(session, actor, event_id)
+            ).unwrap()
         ui.notify(f"Rosters synced — {added} member(s) added", color="positive")
         ui.navigate.reload()
 

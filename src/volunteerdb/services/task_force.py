@@ -21,13 +21,14 @@ attendance record) dies with the team.
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
+from ..errors import DomainError, Invalid, invalid, not_found, require
+from ..fp import Err, Ok, Result
 from ..models import (
     Event,
     EventStatus,
@@ -36,7 +37,7 @@ from ..models import (
     Team,
     TeamRole,
 )
-from ..permissions import Actor, require
+from ..permissions import Actor
 from . import mail, memberships
 from . import teams as team_service
 
@@ -58,11 +59,12 @@ class TaskForceView:
     sources: list[Team]
 
 
-def _require_upcoming(event: Event, action: str) -> None:
+def _require_upcoming(event: Event, action: str, now: datetime) -> Err[Invalid] | None:
     if event.status != EventStatus.scheduled.value:
-        raise ValueError(f"cannot {action}: event is cancelled")
-    if event.ends_at <= datetime.now(UTC):
-        raise ValueError(f"cannot {action}: event has already ended")
+        return invalid(f"cannot {action}: event is cancelled")
+    if event.ends_at <= now:
+        return invalid(f"cannot {action}: event has already ended")
+    return None
 
 
 async def get_for_event(session: AsyncSession, event_id: int) -> TaskForceView | None:
@@ -87,9 +89,8 @@ async def get_for_event(session: AsyncSession, event_id: int) -> TaskForceView |
 
 
 async def _create_meta_team(
-    session: AsyncSession, event: Event, owner_team_id: int
-) -> Team:
-    tz = ZoneInfo(settings().timezone)
+    session: AsyncSession, event: Event, owner_team_id: int, tz: ZoneInfo
+) -> Result[Team, DomainError]:
     day = event.starts_at.astimezone(tz).date()
     base = f"{event.title} ({day}) task force"[:TEAM_NAME_MAX]
     name = base
@@ -107,17 +108,15 @@ async def _create_meta_team(
         f"{mail.event_when(event.starts_at, event.ends_at)}{where}. Managed "
         "from the event page; removed automatically after the event ends."
     )
-    return (
-        await team_service.create(
-            # None: the caller already holds manage rights on the event whose task
-            # force this is, and the meta team exists only to carry its roster
-            session,
-            None,
-            name,
-            parent_team_id=owner_team_id,
-            description=description,
-        )
-    ).unwrap()
+    return await team_service.create(
+        # None: the caller already holds manage rights on the event whose task
+        # force this is, and the meta team exists only to carry its roster
+        session,
+        None,
+        name,
+        parent_team_id=owner_team_id,
+        description=description,
+    )
 
 
 async def add_collaborating_team(
@@ -127,7 +126,9 @@ async def add_collaborating_team(
     event_id: int,
     source_team_id: int,
     created_by: int | None,
-) -> Team:
+    now: datetime,
+    tz: ZoneInfo,
+) -> Result[Team, DomainError]:
     """First collaborator: create the meta team, seed sources with the owner
     and the newcomer, copy both rosters, repoint the event. Later ones: add
     the source and copy its roster. Returns the meta team.
@@ -144,20 +145,25 @@ async def add_collaborating_team(
     """
     event = await session.get(Event, event_id)
     if event is None:
-        raise LookupError(f"event {event_id} not found")
-    require(
+        return not_found("event", event_id)
+    if denied := require(
         actor is None or actor.can_manage_team(event.team_id),
         "manage this event",
-    )
-    _require_upcoming(event, "add a collaborating team")
+    ):
+        return denied
+    if closed := _require_upcoming(event, "add a collaborating team", now):
+        return closed
     if await session.get(Team, source_team_id) is None:
-        raise LookupError(f"team {source_team_id} not found")
+        return not_found("team", source_team_id)
 
     if event.task_force_team_id is None:
         if source_team_id == event.team_id:
-            raise ValueError("that team already staffs this event")
+            return invalid("that team already staffs this event")
         owner_team_id = event.team_id
-        meta = await _create_meta_team(session, event, owner_team_id)
+        made = await _create_meta_team(session, event, owner_team_id, tz)
+        if isinstance(made, Err):
+            return made
+        meta = made.value
         session.add(EventTaskForceSource(event_id=event.id, team_id=owner_team_id))
         session.add(EventTaskForceSource(event_id=event.id, team_id=source_team_id))
         event.owner_team_id = owner_team_id
@@ -166,7 +172,7 @@ async def add_collaborating_team(
         await session.flush()
     else:
         if source_team_id == event.task_force_team_id:
-            raise ValueError("that is the task force itself")
+            return invalid("that is the task force itself")
         already = await session.scalar(
             sa.select(sa.literal(1))
             .select_from(EventTaskForceSource)
@@ -176,28 +182,33 @@ async def add_collaborating_team(
             )
         )
         if already is not None:
-            raise ValueError("that team already staffs this event")
+            return invalid("that team already staffs this event")
         session.add(EventTaskForceSource(event_id=event_id, team_id=source_team_id))
         await session.flush()
-    await refresh_rosters(session, None, event_id)  # authorized above
-    return await session.get(Team, event.task_force_team_id)  # type: ignore[arg-type]
+    refreshed = await refresh_rosters(session, None, event_id)  # authorized above
+    if isinstance(refreshed, Err):
+        return refreshed
+    meta_team = await session.get(Team, event.task_force_team_id)  # type: ignore[arg-type]
+    assert meta_team is not None  # just created or repointed to
+    return Ok(meta_team)
 
 
 async def refresh_rosters(
     session: AsyncSession, actor: Actor | None, event_id: int
-) -> int:
+) -> Result[int, DomainError]:
     """Copy the union of the source rosters into the meta team, additively:
     highest role wins per person, an existing meta role is never downgraded,
     nobody is removed (leaving the task force is roster management on the
     meta team itself). Returns how many people were added."""
     event = await session.get(Event, event_id)
     if event is None or event.task_force_team_id is None:
-        raise LookupError(f"event {event_id} has no task force")
+        return not_found("task force for event", event_id)
     meta_team_id = event.task_force_team_id
-    require(
+    if denied := require(
         actor is None or actor.can_manage_team(meta_team_id),
         "manage this event",
-    )
+    ):
+        return denied
     source_ids = list(
         await session.scalars(
             sa.select(EventTaskForceSource.team_id).where(
@@ -222,22 +233,22 @@ async def refresh_rosters(
     for volunteer_id, role in wanted.items():
         current = existing.get(volunteer_id)
         if current is None:
-            (
-                await memberships.assign(
-                    session, None, volunteer_id, meta_team_id, role, existing=None
-                )
-            ).unwrap()
+            put = await memberships.assign(
+                session, None, volunteer_id, meta_team_id, role, existing=None
+            )
+            if isinstance(put, Err):
+                return put
             added += 1
         elif ROLE_RANK[role] < ROLE_RANK[current.role]:
-            (
-                await memberships.assign(
-                    session, None, volunteer_id, meta_team_id, role, existing=current
-                )
-            ).unwrap()
-    return added
+            put = await memberships.assign(
+                session, None, volunteer_id, meta_team_id, role, existing=current
+            )
+            if isinstance(put, Err):
+                return put
+    return Ok(added)
 
 
-async def teardown_due(session: AsyncSession) -> list[int]:
+async def teardown_due(session: AsyncSession, *, now: datetime) -> list[int]:
     """Event ids whose task force should be dismantled: the event ended, or
     was cancelled."""
     return list(
@@ -245,7 +256,7 @@ async def teardown_due(session: AsyncSession) -> list[int]:
             sa.select(Event.id).where(
                 Event.task_force_team_id.is_not(None),
                 sa.or_(
-                    Event.ends_at <= sa.func.now(),
+                    Event.ends_at <= now,
                     Event.status == EventStatus.cancelled,
                 ),
             )
@@ -253,13 +264,13 @@ async def teardown_due(session: AsyncSession) -> list[int]:
     )
 
 
-async def teardown(session: AsyncSession, event_id: int) -> None:
+async def teardown(session: AsyncSession, event_id: int) -> Result[None, DomainError]:
     """Restore the owner, then dismantle the meta team. Assignments and
     RSVPs reference the volunteer and the event, never the team, so the
     attendance record survives intact."""
     event = await session.get(Event, event_id)
     if event is None or event.task_force_team_id is None:
-        raise LookupError(f"event {event_id} has no task force")
+        return not_found("task force for event", event_id)
     meta_team_id = event.task_force_team_id
     if event.owner_team_id is None:
         # The owner team was deleted while the task force was live, so there is
@@ -270,7 +281,7 @@ async def teardown(session: AsyncSession, event_id: int) -> None:
         # attendance history with it.
         event.task_force_team_id = None
         await session.flush()
-        return
+        return Ok(None)
     # repoint FIRST, then let go of the meta team. The columns are ON DELETE SET
     # NULL now (models.Event), so this is no longer the load-bearing ordering it
     # once was — but the event still has to point somewhere real before the team
@@ -283,6 +294,6 @@ async def teardown(session: AsyncSession, event_id: int) -> None:
         sa.delete(EventTaskForceSource).where(EventTaskForceSource.event_id == event_id)
     )
     await session.flush()
-    (
-        await team_service.delete(session, None, meta_team_id)
-    ).unwrap()  # teardown, not a user act
+    return await team_service.delete(
+        session, None, meta_team_id
+    )  # teardown, not a user act
