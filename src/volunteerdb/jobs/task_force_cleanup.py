@@ -16,7 +16,9 @@ import sys
 
 import structlog
 
+from .. import env as env_mod
 from ..db import db_session
+from ..env import Env
 from ..log import audit_log, init_logging
 from ..services import task_force
 from . import job_lock
@@ -24,7 +26,7 @@ from . import job_lock
 logger = structlog.get_logger(__name__)
 
 
-async def main() -> int:
+async def main(env: Env) -> int:
     init_logging()
     async with db_session() as session:
         due = await task_force.teardown_due(session)
@@ -55,7 +57,7 @@ def cli(argv: list[str] | None = None) -> int:
             if not acquired:
                 print("skipped: another task_force_cleanup run holds the job lock")
                 return 0
-            return await main()
+            return await main(env_mod.build())
 
     return asyncio.run(locked())
 

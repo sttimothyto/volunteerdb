@@ -33,7 +33,9 @@ from datetime import UTC, datetime, timedelta
 import sqlalchemy as sa
 import structlog
 
+from .. import env as env_mod
 from ..db import db_session
+from ..env import Env
 from ..log import init_logging
 from ..models import Event, EventStatus
 from ..services import gcal
@@ -75,7 +77,7 @@ async def _ensure_calendar(token: str) -> str:
     return calendar_id
 
 
-async def main() -> int:
+async def main(env: Env) -> int:
     init_logging()
     if not gcal.enabled():
         print("calendar sync: not configured (VDB_SHEETS_* unset)")
@@ -200,7 +202,7 @@ def cli(argv: list[str] | None = None) -> int:
             if not acquired:
                 print("skipped: another calendar_sync run holds the job lock")
                 return 0
-            return await main()
+            return await main(env_mod.build())
 
     return asyncio.run(locked())
 

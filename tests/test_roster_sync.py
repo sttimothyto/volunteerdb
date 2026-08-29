@@ -217,7 +217,7 @@ async def test_the_leader_may_sync(choir, fake):
 # --- the job -----------------------------------------------------------------
 
 
-async def test_the_job_creates_a_sheet_for_a_team_that_has_none(database, fake):
+async def test_the_job_creates_a_sheet_for_a_team_that_has_none(database, fake, env):
     async with db_session() as session:
         team = await teams.create(session, None, "Choir")
         lena = await volunteers.create(
@@ -226,7 +226,7 @@ async def test_the_job_creates_a_sheet_for_a_team_that_has_none(database, fake):
         await memberships.assign(session, None, lena.id, team.id, TeamRole.leader)
         team_id = team.id
 
-    assert await roster_sync.main() == 0
+    assert await roster_sync.main(env) == 0
     assert fake.created == ["choir-membership-list"]
     assert fake.shared == ["new-file-id"], "link sharing IS the leaders' access"
     async with db_session() as session:
@@ -234,7 +234,9 @@ async def test_the_job_creates_a_sheet_for_a_team_that_has_none(database, fake):
     assert sheet.file_id == "new-file-id"
 
 
-async def test_the_job_never_gives_a_task_force_a_sheet(database, fake, monkeypatch):
+async def test_the_job_never_gives_a_task_force_a_sheet(
+    database, fake, monkeypatch, env
+):
     """A meta team holds a borrowed roster; a link-shared sheet of it would
     publish the collaborating teams' contact details."""
     async with db_session() as session:
@@ -247,18 +249,18 @@ async def test_the_job_never_gives_a_task_force_a_sheet(database, fake, monkeypa
         return {meta_id}
 
     monkeypatch.setattr(roster_sync.team_service, "meta_team_ids", only_meta)
-    assert await roster_sync.main() == 0
+    assert await roster_sync.main(env) == 0
     async with db_session() as session:
         assert await session.get(TeamSheet, meta_id) is None
         assert (await session.get(TeamSheet, team_id)) is not None
 
 
-async def test_the_job_is_a_noop_when_unconfigured(database, monkeypatch):
+async def test_the_job_is_a_noop_when_unconfigured(database, monkeypatch, env):
     monkeypatch.setattr(gsheets, "enabled", lambda: False)
-    assert await roster_sync.main() == 0
+    assert await roster_sync.main(env) == 0
 
 
-async def test_one_broken_sheet_does_not_stop_the_others(database, fake):
+async def test_one_broken_sheet_does_not_stop_the_others(database, fake, env):
     async with db_session() as session:
         good = await teams.create(session, None, "Choir")
         bad = await teams.create(session, None, "Altar")
@@ -276,7 +278,7 @@ async def test_one_broken_sheet_does_not_stop_the_others(database, fake):
     fake.read_csv = selective
     fake.content = _csv_bytes([])
 
-    assert await roster_sync.main() == 0
+    assert await roster_sync.main(env) == 0
     async with db_session() as session:
         assert (await session.get(TeamSheet, bad_id)).last_status == SyncStatus.error
         assert (await session.get(TeamSheet, good_id)).last_status != SyncStatus.error

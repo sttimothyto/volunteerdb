@@ -88,7 +88,7 @@ async def test_search_limit_caps_rows_in_name_order(database):
 
 
 async def test_search_private_fields_are_scope_aware(database):
-    from volunteerdb.permissions import load_actor
+    from volunteerdb.actors import load_actor
     from volunteerdb.services import custom_fields, users
 
     async with db_session() as session:
@@ -225,7 +225,7 @@ async def test_search_or_query_scopes_rows_per_role(database):
     """The WHERE-filter twin of test_search_private_fields_are_scope_aware:
     a private-field predicate is false outside the actor's visibility, in
     both polarities, and membership predicates see only visible rosters."""
-    from volunteerdb.permissions import load_actor
+    from volunteerdb.actors import load_actor
     from volunteerdb.query_lang import QueryError
     from volunteerdb.services import custom_fields, users
 

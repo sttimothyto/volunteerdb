@@ -11,9 +11,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session, sessionmaker
 from volunteerdb.models import Team, TeamRole
-from volunteerdb.permissions import load_actor
 from volunteerdb.services import (
     events,
     memberships,
@@ -70,7 +70,7 @@ async def parish(database):
 
 
 async def test_the_events_prologue_reads_the_team_table_once(parish):
-    """The worst stack measured before the memo: permissions.load_actor, then
+    """The worst stack measured before the memo: actors.load_actor, then
     claimable_subs, then list_events, then the page's own read — four full reads
     of the team table inside one session.
 

@@ -4,9 +4,9 @@ from decimal import Decimal
 
 import pytest
 
+from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
-from volunteerdb.permissions import load_actor
 from volunteerdb.services import graph as graph_service
 from volunteerdb.services import memberships, teams, users, volunteers, workload
 

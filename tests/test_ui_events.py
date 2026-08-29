@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
-from volunteerdb import throttle
 from volunteerdb.db import db_session
+from volunteerdb.env import current
 from volunteerdb.models import EventSubRequest, SubRequestStatus, TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import mail, memberships, teams, users, volunteers
@@ -210,7 +210,7 @@ async def test_leader_creates_event_via_dialog(database):
 
     async with db_session() as session:
         admin, _ = await users.create(session, "admin@example.org", is_admin=True)
-        from volunteerdb.permissions import load_actor
+        from volunteerdb.actors import load_actor
 
         actor = await load_actor(session, admin)
         picnics = [
@@ -460,8 +460,9 @@ async def test_a_teams_substitute_calls_are_capped_for_the_day(database, sent_ma
         from volunteerdb.ui import events_page
 
         # the team has already spent today's calls
+        env = current()
         for _ in range(events_page.SUB_REQUESTS_PER_TEAM_PER_DAY):
-            throttle.hit(f"sub-req:{ids['liturgy']}")
+            env.throttle.hit(f"sub-req:{ids['liturgy']}", env.clock.now())
 
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open("/events")

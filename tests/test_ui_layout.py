@@ -6,7 +6,6 @@ from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 
-import pytest
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 from PIL import Image
@@ -163,7 +162,6 @@ async def _spend(day_offset: int, messages: int) -> None:
             .values(day=day, sent=messages)
             .on_conflict_do_update(index_elements=["day"], set_={"sent": messages})
         )
-    mail_quota.clear_cache()
 
 
 async def test_the_mail_allowance_banner_is_for_admins_only(database):
@@ -221,12 +219,3 @@ async def test_a_spent_day_reads_louder_than_one_merely_projected(database):
         await user.should_see(marker="mail-quota-banner")
         await user.should_see("is over its limit")
         await user.should_see("including sign-in codes")
-
-
-@pytest.fixture(autouse=True)
-def _no_leaking_quota_memo():
-    """The projection is memoised for a minute; a test must not read the
-    previous one's numbers."""
-    mail_quota.clear_cache()
-    yield
-    mail_quota.clear_cache()

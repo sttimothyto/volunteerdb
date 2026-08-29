@@ -108,7 +108,7 @@ def _mail_quota_banner(actor: Actor) -> None:
     and both belong to whoever set the instance up.
 
     `Actor.mail_quota` is None for everybody else and for an instance that is
-    comfortably inside its allowance (permissions.load_actor), so this draws
+    comfortably inside its allowance (actors.load_actor), so this draws
     nothing at all on a normal page for a normal user. Non-admins are not shown
     it deliberately: a volunteer can neither raise the plan nor stop the
     nightly digests, and a warning you cannot act on is just noise on the page

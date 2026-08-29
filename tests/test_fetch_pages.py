@@ -34,7 +34,7 @@ async def _team(name: str, doc_id: str | None, active: bool = True) -> int:
         return team.id
 
 
-async def test_one_bad_doc_does_not_poison_the_batch(database, monkeypatch):
+async def test_one_bad_doc_does_not_poison_the_batch(database, monkeypatch, env):
     good_id = await _team("Choir", "goodoc")
     bad_id = await _team("Ushers", "badoc")
 
@@ -45,7 +45,7 @@ async def test_one_bad_doc_does_not_poison_the_batch(database, monkeypatch):
         return httpx.Response(200, text=GOOD.format(doc_id=doc_id))
 
     _mock_transport(monkeypatch, handler)
-    assert await fetch_pages.main() == 0, "per-team failures are not job failures"
+    assert await fetch_pages.main(env) == 0, "per-team failures are not job failures"
 
     async with db_session() as session:
         good = await session.get(TeamPage, good_id)
@@ -55,7 +55,7 @@ async def test_one_bad_doc_does_not_poison_the_batch(database, monkeypatch):
 
 
 async def test_second_run_with_unchanged_docs_succeeds_and_keeps_pages(
-    database, monkeypatch
+    database, monkeypatch, env
 ):
     team_id = await _team("Choir", "gooddoc")
 
@@ -63,15 +63,15 @@ async def test_second_run_with_unchanged_docs_succeeds_and_keeps_pages(
         return httpx.Response(200, text=GOOD.format(doc_id="gooddoc"))
 
     _mock_transport(monkeypatch, handler)
-    assert await fetch_pages.main() == 0
-    assert await fetch_pages.main() == 0, "an all-unchanged night is a success"
+    assert await fetch_pages.main(env) == 0
+    assert await fetch_pages.main(env) == 0, "an all-unchanged night is a success"
 
     async with db_session() as session:
         page = await session.get(TeamPage, team_id)
         assert page.status == "ok" and "Doc for gooddoc" in page.html
 
 
-async def test_job_skips_inactive_and_doc_less_teams(database, monkeypatch):
+async def test_job_skips_inactive_and_doc_less_teams(database, monkeypatch, env):
     no_doc = await _team("No Doc", None)
     inactive = await _team("Gone", "gonedoc", active=False)
 
@@ -82,7 +82,7 @@ async def test_job_skips_inactive_and_doc_less_teams(database, monkeypatch):
         return httpx.Response(200, text=GOOD.format(doc_id="x"))
 
     _mock_transport(monkeypatch, handler)
-    assert await fetch_pages.main() == 0
+    assert await fetch_pages.main(env) == 0
 
     assert calls == [], "nothing to fetch"
     async with db_session() as session:

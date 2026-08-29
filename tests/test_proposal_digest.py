@@ -110,12 +110,12 @@ def _capture(monkeypatch, ok=True):
     return sent
 
 
-async def test_added_notice_once_and_voting_notice_once(database, monkeypatch):
+async def test_added_notice_once_and_voting_notice_once(database, monkeypatch, env):
     ids = await _parish()
     pid = await _proposal(ids)
     sent = _capture(monkeypatch)
 
-    await proposal_digest.main(today=TODAY)
+    await proposal_digest.main(env, today=TODAY)
     assert {to for to, _, _ in sent} == {"lena@example.org", "cora@example.org"}, (
         "every roll member with an email — and nobody else (Noel has none)"
     )
@@ -127,10 +127,10 @@ async def test_added_notice_once_and_voting_notice_once(database, monkeypatch):
     assert stamps[ids["noel"]] == (False, False), "no email, nothing stamped"
 
     sent.clear()
-    await proposal_digest.main(today=TODAY)
+    await proposal_digest.main(env, today=TODAY)
     assert sent == [], "idempotent: the second night has nothing to say"
 
-    await proposal_digest.main(today=VOTING_DAY)
+    await proposal_digest.main(env, today=VOTING_DAY)
     assert {to for to, _, _ in sent} == {"lena@example.org", "cora@example.org"}
     body = next(b for to, _, b in sent if to == "lena@example.org")
     assert "Voting is now open" in body and "added to the voting roll" not in body
@@ -138,36 +138,38 @@ async def test_added_notice_once_and_voting_notice_once(database, monkeypatch):
     assert (await _stamps(pid))[ids["lena"]] == (True, True)
 
     sent.clear()
-    await proposal_digest.main(today=VOTING_DAY)
+    await proposal_digest.main(env, today=VOTING_DAY)
     assert sent == []
 
 
-async def test_added_and_voting_same_night_is_one_combined_email(database, monkeypatch):
+async def test_added_and_voting_same_night_is_one_combined_email(
+    database, monkeypatch, env
+):
     ids = await _parish()
     pid = await _proposal(ids)
     sent = _capture(monkeypatch)
 
-    await proposal_digest.main(today=VOTING_DAY)  # first run ever, already voting
+    await proposal_digest.main(env, today=VOTING_DAY)  # first run ever, already voting
     assert len([to for to, _, _ in sent if to == "lena@example.org"]) == 1
     body = next(b for to, _, b in sent if to == "lena@example.org")
     assert "voting is already open" in body
     assert (await _stamps(pid))[ids["lena"]] == (True, True), "both stamped at once"
 
 
-async def test_two_proposals_one_email(database, monkeypatch):
+async def test_two_proposals_one_email(database, monkeypatch, env):
     ids = await _parish()
     await _proposal(ids, role=TeamRole.second)
     await _proposal(ids, role=TeamRole.leader)
     sent = _capture(monkeypatch)
 
-    await proposal_digest.main(today=TODAY)
+    await proposal_digest.main(env, today=TODAY)
     lena_mails = [b for to, _, b in sent if to == "lena@example.org"]
     assert len(lena_mails) == 1, "one email per person per night, never per proposal"
     assert "Second-in-command — Liturgy" in lena_mails[0]
     assert "Ministry leader — Liturgy" in lena_mails[0]
 
 
-async def test_decided_and_concluded_proposals_stay_silent(database, monkeypatch):
+async def test_decided_and_concluded_proposals_stay_silent(database, monkeypatch, env):
     ids = await _parish()
     cancelled = await _proposal(ids, role=TeamRole.second)
     concluded = await _proposal(ids, role=TeamRole.leader)
@@ -181,33 +183,35 @@ async def test_decided_and_concluded_proposals_stay_silent(database, monkeypatch
         )
     sent = _capture(monkeypatch)
 
-    await proposal_digest.main(today=AFTER)  # `concluded` is past its voting deadline
+    await proposal_digest.main(
+        env, today=AFTER
+    )  # `concluded` is past its voting deadline
     assert sent == []
     assert all(s == (False, False) for s in (await _stamps(concluded)).values()), (
         "awaiting-decision proposals neither notify nor stamp"
     )
 
 
-async def test_failed_send_leaves_stamps_for_retry(database, monkeypatch):
+async def test_failed_send_leaves_stamps_for_retry(database, monkeypatch, env):
     ids = await _parish()
     pid = await _proposal(ids)
     _capture(monkeypatch, ok=False)
 
-    await proposal_digest.main(today=TODAY)
+    await proposal_digest.main(env, today=TODAY)
     assert all(s == (False, False) for s in (await _stamps(pid)).values())
 
     sent = _capture(monkeypatch, ok=True)
-    await proposal_digest.main(today=TODAY)
+    await proposal_digest.main(env, today=TODAY)
     assert {to for to, _, _ in sent} == {"lena@example.org", "cora@example.org"}, (
         "the next night retries exactly the failed people"
     )
 
 
-async def test_new_round_renotifies_its_fresh_roll(database, monkeypatch):
+async def test_new_round_renotifies_its_fresh_roll(database, monkeypatch, env):
     ids = await _parish()
     pid = await _proposal(ids)
     sent = _capture(monkeypatch)
-    await proposal_digest.main(today=TODAY)
+    await proposal_digest.main(env, today=TODAY)
     sent.clear()
 
     async with db_session() as session:
@@ -222,7 +226,7 @@ async def test_new_round_renotifies_its_fresh_roll(database, monkeypatch):
         )
         fresh_id = fresh.id
 
-    await proposal_digest.main(today=date(2026, 9, 1))
+    await proposal_digest.main(env, today=date(2026, 9, 1))
     assert {to for to, _, _ in sent} == {"lena@example.org", "cora@example.org"}, (
         "cloned voter rows carry NULL stamps — a new round is new news"
     )

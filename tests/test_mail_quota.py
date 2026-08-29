@@ -10,7 +10,6 @@ nightly-job front-loading must not make every morning look like an emergency.
 
 from datetime import date, timedelta
 
-import pytest
 import sqlalchemy as sa
 
 from volunteerdb.db import db_session
@@ -157,25 +156,38 @@ async def test_read_counts_spans_the_month_and_the_trailing_week(database):
         for _ in range(n):
             await mail_quota.record_send(day)
 
-    counts = await mail_quota.read_counts(today)
+    async with db_session() as session:
+        counts = await mail_quota.read_counts(session, today)
     assert counts == {date(2026, 5, 28): 2, date(2026, 6, 1): 3, date(2026, 6, 3): 4}
 
 
-async def test_projection_is_memoised_and_droppable(database):
-    mail_quota.clear_cache()
-    today = mail_quota.local_today()
+async def test_projection_is_memoised_and_droppable(env):
+    """The gauge is memoised for a minute in the Env's cell -- one holder,
+    dropped on demand -- never in this module."""
+    cell, today, now = env.quota, env.today(), env.clock.now()
     await mail_quota.record_send(today)
-    assert (await mail_quota.projection()).today == 1
+    assert (await cell.projection(env.sessions, today, now)).today == 1
 
     await mail_quota.record_send(today)
-    assert (await mail_quota.projection()).today == 1, "served from the memo"
+    assert (await cell.projection(env.sessions, today, now)).today == 1, (
+        "served from the memo"
+    )
 
-    mail_quota.clear_cache()
-    assert (await mail_quota.projection()).today == 2
+    cell.reset()
+    assert (await cell.projection(env.sessions, today, now)).today == 2
 
 
-@pytest.fixture(autouse=True)
-def _no_leaking_memo():
-    mail_quota.clear_cache()
-    yield
-    mail_quota.clear_cache()
+async def test_the_cell_records_and_never_raises(env, monkeypatch):
+    day = date(2026, 3, 4)
+    await env.quota.record(env.sessions, day)
+    await env.quota.record(env.sessions, day)
+    async with db_session() as session:
+        assert dict(
+            (await session.execute(sa.select(MailQuota.day, MailQuota.sent))).all()
+        ) == {day: 2}
+
+    def explode(*a, **k):
+        raise RuntimeError("db is gone")
+
+    monkeypatch.setattr(mail_quota, "record", explode)
+    await env.quota.record(env.sessions, day)  # no exception escapes

@@ -15,14 +15,16 @@ import sys
 import httpx
 import sqlalchemy as sa
 
+from .. import env as env_mod
 from ..db import db_session
+from ..env import Env
 from ..log import init_logging
 from ..models import Team
 from ..services import pages as page_service
 from . import job_lock
 
 
-async def main() -> int:
+async def main(env: Env) -> int:
     init_logging()
     async with db_session() as session:
         team_ids = list(
@@ -57,7 +59,7 @@ def cli() -> int:
             if not acquired:
                 print("skipped: another fetch_pages run holds the job lock")
                 return 0
-            return await main()
+            return await main(env_mod.build())
 
     return asyncio.run(locked())
 

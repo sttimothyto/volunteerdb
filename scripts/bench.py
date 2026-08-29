@@ -35,6 +35,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from volunteerdb import db
+from volunteerdb.actors import load_actor
 from volunteerdb.config import settings
 from volunteerdb.db import db_session
 from volunteerdb.models import (
@@ -46,7 +47,7 @@ from volunteerdb.models import (
     TeamRole,
     Volunteer,
 )
-from volunteerdb.permissions import load_actor, team_ids_map
+from volunteerdb.permissions import team_ids_map
 from volunteerdb.services import custom_fields as custom_field_service
 from volunteerdb.services import events as event_service
 from volunteerdb.services import graph as graph_service

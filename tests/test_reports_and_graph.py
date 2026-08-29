@@ -4,9 +4,9 @@ from io import BytesIO
 
 from PIL import Image
 
+from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
-from volunteerdb.permissions import load_actor
 from volunteerdb.services import (
     graph,
     memberships,

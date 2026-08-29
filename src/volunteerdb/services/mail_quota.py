@@ -34,7 +34,6 @@ in the day the mail goes.
 """
 
 import calendar
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -43,6 +42,7 @@ from zoneinfo import ZoneInfo
 import sqlalchemy as sa
 import structlog
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..db import db_session
@@ -61,8 +61,9 @@ MONTHLY_CAP = 1000
 # a shorter window would read a quiet Tuesday as the norm.
 TRAILING_DAYS = 7
 
-# projection() is read on every admin page load; recomputing it per request
+# The projection is read on every admin page load; recomputing it per request
 # would put two counts in front of every navigation for no new information.
+# The memo itself lives in env.QuotaCell -- the one holder -- for this long.
 CACHE_TTL_SECONDS = 60.0
 
 
@@ -164,70 +165,49 @@ def local_today() -> date:
     return datetime.now(ZoneInfo(settings().timezone)).date()
 
 
+async def record(session: AsyncSession, day: date) -> None:
+    """One more message on `day`'s row -- an upsert, so the first message of a
+    parish day creates it. Pure over the session it is handed; the edge that
+    performed the send owns the transaction (env.QuotaCell.record)."""
+    await session.execute(
+        pg_insert(MailQuota)
+        .values(day=day, sent=1)
+        .on_conflict_do_update(
+            index_elements=["day"],
+            set_={"sent": MailQuota.__table__.c.sent + 1},
+        )
+    )
+
+
 async def record_send(when: date | None = None) -> None:
     """Count one message that actually left. Never raises.
 
-    Called from `mail.send_email` on the success path only: a message the
-    provider rejected consumed no allowance, and a ledger that counted attempts
-    would raise the alarm hardest exactly when nothing was being sent.
-
-    A failure here must never turn into a failed send — the counter exists to
-    protect the mail, not the other way round — so everything is swallowed and
-    logged.
+    Transition: the mail transport's own counter, on its own transaction,
+    until the mailer's interpreter records a send through env.QuotaCell
+    (FUNCTIONAL_REFACTORING.md, Phase 3). Called from `mail.send_email` on
+    the success path only: a message the provider rejected consumed no
+    allowance. A failure here must never turn into a failed send -- the
+    counter exists to protect the mail, not the other way round -- so
+    everything is swallowed and logged.
     """
     day = when or local_today()
     try:
         async with db_session() as session:
-            await session.execute(
-                pg_insert(MailQuota)
-                .values(day=day, sent=1)
-                .on_conflict_do_update(
-                    index_elements=["day"],
-                    set_={"sent": MailQuota.__table__.c.sent + 1},
-                )
-            )
+            await record(session, day)
     except Exception:  # noqa: BLE001 — see the docstring
         log.warning("mail_quota.record_failed", day=str(day), exc_info=True)
 
 
-async def read_counts(today: date) -> dict[date, int]:
+async def read_counts(session: AsyncSession, today: date) -> dict[date, int]:
     """Every ledger row the projection can use: this month, plus the trailing
     week where it reaches back into the last one."""
     start = min(today.replace(day=1), today - timedelta(days=TRAILING_DAYS))
-    async with db_session() as session:
-        rows = await session.execute(
-            sa.select(MailQuota.day, MailQuota.sent).where(
-                MailQuota.day >= start, MailQuota.day <= today
-            )
+    rows = await session.execute(
+        sa.select(MailQuota.day, MailQuota.sent).where(
+            MailQuota.day >= start, MailQuota.day <= today
         )
+    )
     return {day: sent for day, sent in rows}
-
-
-_cache: tuple[float, Projection] | None = None
-
-
-def clear_cache() -> None:
-    """Drop the memo. For tests, and for anything that has just changed the
-    ledger and wants the next read to see it."""
-    global _cache
-    _cache = None
-
-
-async def projection() -> Projection:
-    """The cached gauge every admin page header reads. Never raises: a banner
-    that cannot be computed is simply not shown."""
-    global _cache
-    now = time.monotonic()
-    if _cache is not None and now - _cache[0] < CACHE_TTL_SECONDS:
-        return _cache[1]
-    try:
-        today = local_today()
-        result = project(await read_counts(today), today)
-    except Exception:  # noqa: BLE001 — a gauge must not break the page it sits on
-        log.warning("mail_quota.projection_failed", exc_info=True)
-        return Projection(0, 0, 0, 0, "", "")
-    _cache = (now, result)
-    return result
 
 
 def support_contact() -> str:

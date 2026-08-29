@@ -10,8 +10,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..actors import load_actor
 from ..asof_param import parse_as_of
-from ..db import sessionmaker
+from ..env import Env
 from ..errors import (
     BadCredentials,
     Conflict,
@@ -27,16 +28,33 @@ from ..errors import (
 )
 from ..errors import Forbidden as ForbiddenValue
 from ..log import bind_actor
-from ..permissions import Actor, Forbidden, load_actor
+from ..permissions import Actor, Forbidden
 from ..services import users as user_service
 
 logger = structlog.get_logger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Ctx:
+    """One authenticated request: its transaction, who is asking, the Env the
+    edge performs effects with, the moment the request began (one clock read,
+    passed to every service that needs a `now`), and the origin links are
+    built on."""
+
     session: AsyncSession
     actor: Actor
+    env: Env
+    now: datetime
+    base_url: str
+
+
+def env_of(request: Request) -> Env:
+    """The Env the app serving this request holds (main.create_app sets it;
+    the test harness sets it on its bare router app)."""
+    env = getattr(request.app.state, "env", None)
+    if env is None:
+        raise RuntimeError("no Env on this app: create_app() did not run")
+    return env
 
 
 async def api_ctx(
@@ -45,13 +63,16 @@ async def api_ctx(
 ) -> AsyncIterator[Ctx]:
     """Authenticated request context: one transaction, actor loaded, and the
     user id recorded transaction-locally for the history triggers."""
+    env = env_of(request)
+    now = env.clock.now()
+    base_url = str(request.base_url).rstrip("/")
     ip = request.client.host if request.client else "-"
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(
             401, "missing Bearer token", headers={"WWW-Authenticate": "Bearer"}
         )
-    async with sessionmaker()() as session:
+    async with env.sessions() as session:
         # ExitStack outlives the transaction block, so the actor identity is
         # still bound when the commit (and its audit marker line) fires.
         with ExitStack() as stack:
@@ -68,7 +89,19 @@ async def api_ctx(
                 stack.enter_context(
                     bind_actor(f"{user.id}:{user.email}", ip=ip, via="api")
                 )
-                yield Ctx(session=session, actor=await load_actor(session, user))
+                # admins only: nobody else can raise the plan or cut the sending
+                quota = (
+                    await env.quota.projection(env.sessions, env.today(), now)
+                    if user.is_admin
+                    else None
+                )
+                yield Ctx(
+                    session=session,
+                    actor=await load_actor(session, user, mail_quota=quota),
+                    env=env,
+                    now=now,
+                    base_url=base_url,
+                )
 
 
 CtxDep = Annotated[Ctx, Depends(api_ctx)]

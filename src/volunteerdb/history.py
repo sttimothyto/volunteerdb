@@ -18,7 +18,6 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from .db import sessionmaker
 from .models import HISTORY_TABLES, Base
 
 
@@ -60,7 +59,11 @@ async def fetch(
     """
     if at is None:
         return list((await session.execute(stmt)).all())
-    async with sessionmaker()() as snapshot_session:
+    # a sibling session on the caller's own engine, so this module needs no
+    # process-global to reach the database
+    async with AsyncSession(
+        bind=session.bind, expire_on_commit=False
+    ) as snapshot_session:
         rows = list((await snapshot_session.execute(stmt)).all())
         snapshot_session.expunge_all()
         return rows

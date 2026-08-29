@@ -20,8 +20,9 @@ import structlog
 from fastapi import Request
 from nicegui import ui
 
-from .. import passwords, throttle
+from .. import passwords
 from ..auth import async_verify_password
+from ..env import current as current_env
 from ..log import audit_log
 from ..services import mail
 from ..services import users as user_service
@@ -62,7 +63,9 @@ async def account_page(request: Request):
         # The budget is on *sends*, not failures: what is worth abusing here is
         # the parish's sender, one address at a time.
         key = f"email-change:{user_id}"
-        if throttle.blocked(key, 5, 900):
+        env = current_env()
+        now = env.clock.now()
+        if env.throttle.blocked(key, now):
             ui.notify(
                 "Too many address changes requested — try again in a few minutes.",
                 color="negative",
@@ -71,7 +74,7 @@ async def account_page(request: Request):
         # charge every attempt, before the service can reveal whether the
         # address is taken: a failed probe must count too, or it is an
         # unthrottled account-existence oracle.
-        throttle.hit(key)
+        env.throttle.hit(key, now)
         async with action_session() as (session, actor):
             account, token = await user_service.start_email_change(
                 session, actor.user.id, addr
@@ -122,7 +125,9 @@ async def account_page(request: Request):
             # sign-ins for this account (SP 800-63B §3.2.2): the per-account
             # bucket AND the per-IP flood bucket, exactly as the login page does.
             keys = (f"pw:{email.lower()}", f"pw-ip:{ip}")
-            if throttle.blocked(keys[0], 5, 900) or throttle.blocked(keys[1], 30, 900):
+            env = current_env()
+            now = env.clock.now()
+            if env.throttle.blocked(keys[0], now) or env.throttle.blocked(keys[1], now):
                 ui.notify(
                     "Too many failed attempts — try again in a few minutes.",
                     color="negative",
@@ -130,7 +135,7 @@ async def account_page(request: Request):
                 return
             if not await async_verify_password(stored_hash, current.value or ""):
                 for key in keys:
-                    throttle.hit(key)
+                    env.throttle.hit(key, now)
                 logger.warning("auth.password_change_denied", email=email)
                 ui.notify("That is not your current password", color="negative")
                 return

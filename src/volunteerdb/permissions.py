@@ -25,10 +25,6 @@ from .history import entity
 from .models import (
     AppUser,
     Membership,
-    ProposalVoter,
-    TeamRole,
-    Volunteer,
-    VolunteerPhoto,
 )
 
 if TYPE_CHECKING:  # the shape belongs to services.mail_quota; importing it here
@@ -141,105 +137,6 @@ class Actor:
         volunteer themself — workload is a leadership planning signal.
         people_team_ids, so a task force never reveals a borrowed member's."""
         return self.is_admin or bool(self.people_team_ids & volunteer_team_ids)
-
-
-async def load_actor(session: AsyncSession, user: AppUser) -> Actor:
-    roles_by_team: dict[int, TeamRole] = {}
-    voter_proposal_ids: frozenset[int] = frozenset()
-    volunteer_name: str | None = None
-    photo_at: datetime | None = None
-    if user.volunteer_id is not None:
-        rows = await session.execute(
-            sa.select(Membership.team_id, Membership.role).where(
-                Membership.volunteer_id == user.volunteer_id
-            )
-        )
-        roles_by_team = dict(rows.all())
-        rolls = await session.execute(
-            sa.select(ProposalVoter.proposal_id).where(
-                ProposalVoter.volunteer_id == user.volunteer_id
-            )
-        )
-        voter_proposal_ids = frozenset(rolls.scalars())
-        # one indexed lookup, and never the image bytes: the header wants a
-        # name for the dialog title and a timestamp for the ?v= cache-buster
-        me = (
-            await session.execute(
-                sa.select(
-                    Volunteer.first_name,
-                    Volunteer.last_name,
-                    VolunteerPhoto.uploaded_at,
-                )
-                .outerjoin(VolunteerPhoto, VolunteerPhoto.volunteer_id == Volunteer.id)
-                .where(Volunteer.id == user.volunteer_id)
-            )
-        ).first()
-        if me is not None:
-            volunteer_name = f"{me.first_name} {me.last_name}"
-            photo_at = me.uploaded_at
-
-    managed: set[int] = set()
-    full_view: set[int] = set()
-    names_view: set[int] = set()
-    if roles_by_team:
-        # Imported here, not at module scope, and the cycle is the real reason:
-        # authorization needs the team tree to expand a role into a subtree,
-        # while every service — services.teams included — needs `Actor` and
-        # `require` to enforce its own rules. That mutual need is the point of
-        # the design (one check, in the one place both front doors pass
-        # through), so it is resolved at the single point of use.
-        from .services import teams as team_service
-
-        tree = await team_service.tree(session)
-        for team_id, role in roles_by_team.items():
-            subtree = tree.descendants(team_id)
-            if role in (TeamRole.leader, TeamRole.second):
-                managed |= subtree
-            elif role == TeamRole.core:
-                full_view |= subtree
-            else:
-                names_view.add(team_id)
-    full_view |= managed
-
-    # Task-force teams are borrowed rosters, not ministries anyone owns (see
-    # the Actor field comments). They stay in `managed` so their event is still
-    # managed and in `names_view` so you can see who is staffing it, but they
-    # are cut out of `people` and `full_view` — no contact details through the
-    # meta roster, no edit rights over somebody else's members. team_service
-    # owns the one definition of "this is a borrowed task-force roster"; the
-    # exporter and Drive sync exclude the same teams through it.
-    scope = managed | full_view
-    meta_ids: set[int] = set()
-    if scope:
-        from .services import teams as team_service
-
-        meta_ids = await team_service.meta_team_ids(session, scope)
-    people = managed - meta_ids
-    names_view |= full_view & meta_ids
-    full_view -= meta_ids
-
-    # Admins only: nobody else can raise the plan or cut the sending, so
-    # nobody else is shown it. Memoised for a minute inside the service, so
-    # this costs one small query a minute however many pages an admin opens.
-    quota = None
-    if user.is_admin:
-        from .services import mail_quota as quota_service
-
-        projection = await quota_service.projection()
-        quota = projection if projection.alarming else None
-
-    return Actor(
-        user=user,
-        volunteer_id=user.volunteer_id,
-        managed_team_ids=managed,
-        people_team_ids=people,
-        full_view_team_ids=full_view,
-        names_view_team_ids=names_view,
-        voter_proposal_ids=voter_proposal_ids,
-        volunteer_name=volunteer_name,
-        photo_at=photo_at,
-        mail_quota=quota,
-    )
 
 
 async def team_ids_map(

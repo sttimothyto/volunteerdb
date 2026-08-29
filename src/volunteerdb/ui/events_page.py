@@ -27,6 +27,7 @@ from starlette.requests import Request
 
 from .. import query_lang, throttle
 from ..config import settings
+from ..env import current as current_env
 from ..log import audit_log
 from ..models import (
     Event,
@@ -50,15 +51,10 @@ from .date_input import date_input, time_input
 from .layout import frame
 from .volunteer_panel import VolunteerPanel, volunteer_link
 
-# Substitute calls a single team may broadcast in a rolling day. Every one of
-# them mails the whole roster minus the people already serving — up to 28
-# messages a click on the largest team here — which makes this the one place a
-# handful of clicks can eat a day's mail allowance (services/mail_quota.py).
-# Six leaves an ordinary weekend's worth of genuine asks untouched; past that
-# the request is still posted on /events, it is simply not announced.
-# In-process and sliding, like every other throttle here: a restart forgives,
-# and at parish scale that is the right trade for keeping this out of the db.
-SUB_REQUESTS_PER_TEAM_PER_DAY = 6
+# Substitute calls a single team may broadcast in a rolling day; the limit and
+# its reasons live with the other families in throttle.LIMITS. Past it the
+# request is still posted on /events, it is simply not announced.
+SUB_REQUESTS_PER_TEAM_PER_DAY = throttle.LIMITS["sub-req"].hits
 
 
 def _tz() -> ZoneInfo:
@@ -232,9 +228,9 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
                 # events page whether or not it is announced — but the blast is
                 # capped. A team that has already sent its allowance today gets
                 # the row and no mail, and the asker is told so plainly.
-                capped = throttle.blocked(
-                    f"sub-req:{event.team_id}", SUB_REQUESTS_PER_TEAM_PER_DAY, 86_400
-                )
+                env = current_env()
+                now = env.clock.now()
+                capped = env.throttle.blocked(f"sub-req:{event.team_id}", now)
                 audience = (
                     []
                     if capped
@@ -258,7 +254,7 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
                     f"{base_url}/events",
                 )
             if not capped:
-                throttle.hit(f"sub-req:{event.team_id}")
+                env.throttle.hit(f"sub-req:{event.team_id}", now)
             for address in audience:  # after commit; send_email never raises
                 await mail.send_email(address, *message)
             dialog.close()

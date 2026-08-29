@@ -11,9 +11,9 @@ from datetime import date
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.models import AppUser, ProposalStatus, TeamRole
-from volunteerdb.permissions import load_actor
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 TODAY = date(2026, 8, 10)  # nominating

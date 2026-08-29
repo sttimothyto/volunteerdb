@@ -23,7 +23,9 @@ import sys
 
 import sqlalchemy as sa
 
+from .. import env as env_mod
 from ..db import db_session
+from ..env import Env
 from ..log import init_logging
 from ..models import SyncStatus, TeamSheet
 from ..services import gsheets
@@ -38,7 +40,7 @@ async def _syncable_teams() -> list[tuple[int, str, str | None]]:
     A task-force meta team is a borrowed roster, not a ministry with its own
     sheet: syncing one would publish the collaborating teams' contact details
     into a link-shared file and let a sheet editor rewrite borrowed members'
-    addresses — exactly the escalation permissions.load_actor cuts out. Never
+    addresses — exactly the escalation actors.load_actor cuts out. Never
     give one a sheet.
     """
     async with db_session() as session:
@@ -55,7 +57,7 @@ async def _syncable_teams() -> list[tuple[int, str, str | None]]:
         ]
 
 
-async def main() -> int:
+async def main(env: Env) -> int:
     init_logging()
     if not gsheets.enabled():
         print("roster_sync: not configured (VDB_SHEETS_*) — nothing to do")
@@ -104,7 +106,7 @@ def cli() -> int:
             if not acquired:
                 print("skipped: another roster_sync run holds the job lock")
                 return 0
-            return await main()
+            return await main(env_mod.build())
 
     return asyncio.run(locked())
 

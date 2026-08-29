@@ -27,11 +27,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import StringIO
 
+from ..actors import load_actor
 from ..config import settings
 from ..db import db_session
 from ..log import audit_log
 from ..models import AppUser, SyncStatus, TeamSheet
-from ..permissions import load_actor, require
+from ..permissions import require
 from ..services import gsheets
 from ..services import pages as page_service
 from ..services import teams as team_service

@@ -10,6 +10,7 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles
 
+from . import env as env_mod
 from . import scheduler
 from .api import api_router
 from .api.deps import install_exception_handlers
@@ -200,8 +201,14 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             return response
 
 
-def create_app() -> None:
+def create_app(env: env_mod.Env | None = None) -> None:
+    """Assemble the app around one Env. Called with none by the test harness
+    (tests/ui_sim_main.py), which gets the real thing over whatever engine
+    db.init() was last given; run() below builds its own."""
     init_logging()
+    # The app object is the carrier: a @ui.page function has no dependency
+    # injection, so env.current() reads it back from here.
+    app.state.env = env if env is not None else env_mod.build()
     install_exception_handlers(app)
     app.include_router(api_router)
     # 30 days, safe because mutable assets are referenced via assets.static_url
@@ -261,8 +268,9 @@ def create_app() -> None:
 
 def run() -> None:
     init_logging()
-    create_app()
     s = settings()
+    env = env_mod.build(s)
+    create_app(env)
     secret = s.storage_secret
     if not secret or secret in (
         "dev-secret-change-me",
@@ -275,7 +283,7 @@ def run() -> None:
     # Registered here, not in create_app(): tests boot create_app() and must
     # never start real job loops against the test database.
     if s.scheduler_enabled and not s.reload:
-        app.on_startup(scheduler.start)
+        app.on_startup(lambda: scheduler.start(env))
         app.on_shutdown(scheduler.stop)
     elif s.scheduler_enabled:
         logger.info(

@@ -5,9 +5,10 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.models import Team, TeamRole, TeamSheet
-from volunteerdb.permissions import Forbidden, load_actor
+from volunteerdb.permissions import Forbidden
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.services.teams import CycleError
 

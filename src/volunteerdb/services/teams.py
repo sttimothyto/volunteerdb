@@ -134,7 +134,7 @@ async def meta_team_ids(
     A meta team is a borrowed roster copied from several real teams to staff one
     event (services.task_force); it confers rights over the EVENT, never over
     the people it borrowed. Every consumer that WIDENS scope over a team subtree
-    — permissions.load_actor, roster export, the Drive-sheet enumeration — must
+    — actors.load_actor, roster export, the Drive-sheet enumeration — must
     exclude these, or the collaboration hands out contact details it must not.
     One definition, so no consumer forgets. Pass `candidates` to restrict the
     check to a set of ids already in hand."""

@@ -21,9 +21,9 @@ from fastapi import HTTPException, Request
 from nicegui import app
 from starlette.responses import RedirectResponse, Response
 
+from ..actors import load_actor
 from ..config import settings
 from ..db import db_session
-from ..permissions import load_actor
 from ..services import events as event_service
 from ..services import gcal, ics
 from ..services import users as user_service

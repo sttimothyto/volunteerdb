@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import sqlalchemy as sa
 
+from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.models import (
     EventSubRequest,
@@ -17,7 +18,6 @@ from volunteerdb.models import (
     SubRequestStatus,
     TeamRole,
 )
-from volunteerdb.permissions import load_actor
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 

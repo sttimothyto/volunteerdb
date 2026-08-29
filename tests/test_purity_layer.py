@@ -67,7 +67,6 @@ RAISE = "raise"  # a refusal is a returned Err, never an exception
 BASELINE: dict[str, dict[str, int]] = {
     "fieldcodec.py": {"raise": 19},
     "fp.py": {"raise": 3},
-    "history.py": {"sessionmaker": 1},
     "passwords.py": {"raise": 7, "settings": 1},
     "permissions.py": {"raise": 1},
     "query_lang.py": {"raise": 30},
@@ -80,12 +79,7 @@ BASELINE: dict[str, dict[str, int]] = {
     "services/gsheets.py": {"AsyncClient": 5, "raise": 13, "settings": 2},
     "services/ics.py": {"now": 1, "settings": 1},
     "services/mail.py": {"AsyncClient": 1, "print": 1, "settings": 4},
-    "services/mail_quota.py": {
-        "db_session": 2,
-        "monotonic": 1,
-        "now": 1,
-        "settings": 2,
-    },
+    "services/mail_quota.py": {"db_session": 1, "now": 1, "settings": 2},
     "services/memberships.py": {"raise": 1},
     "services/pages.py": {"now": 1, "raise": 9},
     "services/photos.py": {"now": 2, "raise": 5},

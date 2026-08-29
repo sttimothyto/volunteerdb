@@ -48,6 +48,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .config import settings
 from .db import db_session
+from .env import Env
 from .jobs import (
     calendar_sync,
     event_reminders,
@@ -72,7 +73,7 @@ EXIT_EXCEPTION = -1  # sentinel exit code recorded for an uncaught exception
 class Job:
     name: str  # job_run.job_name; also the log/alert label
     at_setting: str | None  # Settings attribute holding the parish-local run time
-    run: Callable[[], Awaitable[int]]
+    run: Callable[[Env], Awaitable[int]]
     # interval mode — exactly one of at_setting/every is set. A literal, not
     # a Setting: a reconcile cadence has no parish-local coupling to tune,
     # and the daily jobs' positional construction stays untouched.
@@ -107,6 +108,9 @@ class JobState:
 
 _task: asyncio.Task | None = None
 _state: dict[str, JobState] = {}
+# The Env the loop was started with; the jobs run with it. Goes with the two
+# above when the loop becomes an object (FUNCTIONAL_REFACTORING.md, Phase 6).
+_env: Env | None = None
 
 
 def local_now() -> datetime:
@@ -226,7 +230,8 @@ async def _run_job(job: Job, now: datetime) -> None:
         )
         started = perf_counter()
         try:
-            code = await job.run()
+            assert _env is not None, "start(env) was never called"
+            code = await job.run(_env)
         except Exception:
             logger.exception("scheduler.job_crashed", job=job.name)
             code = EXIT_EXCEPTION
@@ -288,9 +293,10 @@ async def _loop() -> None:
         await asyncio.sleep(TICK_SECONDS)
 
 
-def start() -> None:
+def start(env: Env) -> None:
     """Idempotent; registered as a NiceGUI startup hook (main.run)."""
-    global _task
+    global _task, _env
+    _env = env
     if _task is None:
         _task = asyncio.get_running_loop().create_task(_loop(), name="vdb-scheduler")
 

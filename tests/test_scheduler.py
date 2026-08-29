@@ -27,13 +27,15 @@ def _now(day: date, hh: int = 4, mm: int = 0) -> datetime:
 
 
 @pytest.fixture(autouse=True)
-def reset_scheduler():
+def reset_scheduler(env):
     """Scheduler state is module-global and would bleed across tests."""
     scheduler._state.clear()
     scheduler._task = None
+    scheduler._env = env
     yield
     scheduler._state.clear()
     scheduler._task = None
+    scheduler._env = None
 
 
 @pytest.fixture
@@ -65,7 +67,7 @@ def _patch_jobs(monkeypatch, behaviors: dict[str, int | Exception]) -> list[str]
     calls: list[str] = []
 
     def make(name: str, outcome: int | Exception):
-        async def run() -> int:
+        async def run(env) -> int:
             calls.append(name)
             if isinstance(outcome, Exception):
                 raise outcome
@@ -258,7 +260,7 @@ def _patch_interval_job(
 ) -> list[str]:
     calls: list[str] = []
 
-    async def run() -> int:
+    async def run(env) -> int:
         calls.append("i")
         if isinstance(outcome, Exception):
             raise outcome

@@ -1,7 +1,7 @@
 """Session-scoped memo of the team tree, dropped by SQLAlchemy session events.
 
 The team table is a few dozen rows, and one request used to read it up to four
-times: `permissions.load_actor` expands an actor's roles over the tree on every
+times: `actors.load_actor` expands an actor's roles over the tree on every
 authenticated request, then each service a page composes read it again, then the
 page body read it once more. Reading it once per session is a plain win — but
 only if it can never be stale, so the memo is dropped by a listener rather than

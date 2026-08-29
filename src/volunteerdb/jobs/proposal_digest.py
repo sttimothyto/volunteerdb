@@ -23,7 +23,9 @@ from datetime import date
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from .. import env as env_mod
 from ..db import db_session
+from ..env import Env
 from ..log import init_logging
 from ..models import (
     ROLE_LABELS,
@@ -47,7 +49,7 @@ def _unsent(stage: NotificationStage):
     )
 
 
-async def main(today: date | None = None) -> int:
+async def main(env: Env, today: date | None = None) -> int:
     init_logging()
     if today is None:
         today = elections.local_today()
@@ -161,7 +163,7 @@ def cli(argv: list[str] | None = None) -> int:
             if not acquired:
                 print("skipped: another proposal_digest run holds the job lock")
                 return 0
-            return await main(today=args.today)
+            return await main(env_mod.build(), today=args.today)
 
     return asyncio.run(locked())
 

@@ -3,7 +3,8 @@ from urllib.parse import quote_plus
 from fastapi import Request
 from nicegui import app, ui
 
-from .. import query_lang, throttle
+from .. import query_lang
+from ..env import current
 from ..log import audit_log
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import team_ids_map, volunteer_team_ids
@@ -634,14 +635,16 @@ def _edit_dialog(
                 # on every attempt (before the service reveals whether the
                 # address is taken), so this door is not the loose one.
                 key = f"email-change:{own_user_id}"
-                if throttle.blocked(key, 5, 900):
+                env = current()
+                now = env.clock.now()
+                if env.throttle.blocked(key, now):
                     ui.notify(
                         "Too many address changes requested — try again in a "
                         "few minutes.",
                         color="negative",
                     )
                     return
-                throttle.hit(key)
+                env.throttle.hit(key, now)
             fields = {} if staged else {"email": email.value or None}
             # somebody else's address moving is worth a word to the address it
             # moved away from; see _notify_replaced_address

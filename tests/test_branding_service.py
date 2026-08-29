@@ -17,9 +17,10 @@ import pytest
 import sqlalchemy as sa
 from PIL import Image, ImageDraw, ImageFilter
 
+from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.models import SiteLogo
-from volunteerdb.permissions import Forbidden, load_actor
+from volunteerdb.permissions import Forbidden
 from volunteerdb.services import branding, users
 
 # ui/static/theme.css --vdb-header-bg: what the cut has to look right against

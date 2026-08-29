@@ -8,10 +8,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.jobs import task_force_cleanup
 from volunteerdb.models import Event, TeamRole
-from volunteerdb.permissions import load_actor, volunteer_team_ids
+from volunteerdb.permissions import volunteer_team_ids
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, task_force, teams, users, volunteers
 
@@ -180,7 +181,7 @@ async def test_refresh_picks_up_source_drift_without_downgrades(database):
         assert by_vid[ids["oda"]] == TeamRole.core, "never downgraded"
 
 
-async def test_teardown_restores_the_event_and_keeps_history(database):
+async def test_teardown_restores_the_event_and_keeps_history(database, env):
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
@@ -203,7 +204,7 @@ async def test_teardown_restores_the_event_and_keeps_history(database):
         await event_service.update_event(
             session, None, event_id, starts_at=past, ends_at=past + timedelta(hours=2)
         )
-    assert await task_force_cleanup.main() == 0
+    assert await task_force_cleanup.main(env) == 0
 
     async with db_session() as session:
         event = await session.get(Event, event_id)
@@ -220,7 +221,7 @@ async def test_teardown_restores_the_event_and_keeps_history(database):
         assert await teams.get(session, meta_id, at=before_teardown) is not None
 
 
-async def test_cancelled_events_tear_down_too(database):
+async def test_cancelled_events_tear_down_too(database, env):
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
@@ -232,7 +233,7 @@ async def test_cancelled_events_tear_down_too(database):
             created_by=None,
         )
         await event_service.cancel_event(session, None, event_id, cancelled_by=None)
-    assert await task_force_cleanup.main() == 0
+    assert await task_force_cleanup.main(env) == 0
     async with db_session() as session:
         assert await task_force.get_for_event(session, event_id) is None
         event = await session.get(Event, event_id)

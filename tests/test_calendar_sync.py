@@ -130,8 +130,8 @@ async def _remembered() -> dict | None:
         return await gcal.stored_calendar(session)
 
 
-async def test_unconfigured_sync_is_a_quiet_noop(database, capsys):
-    assert await calendar_sync.main() == 0
+async def test_unconfigured_sync_is_a_quiet_noop(database, capsys, env):
+    assert await calendar_sync.main(env) == 0
     assert "not configured" in capsys.readouterr().out
 
 
@@ -139,10 +139,10 @@ async def test_unconfigured_sync_is_a_quiet_noop(database, capsys):
 
 
 async def test_first_run_creates_the_calendar_and_remembers_it(
-    database, fake_gcal, capsys
+    database, fake_gcal, capsys, env
 ):
     assert await _remembered() is None
-    assert await calendar_sync.main() == 0
+    assert await calendar_sync.main(env) == 0
     assert fake_gcal.created == [CALENDAR_ID]
     row = await _remembered()
     assert row["calendar_id"] == CALENDAR_ID
@@ -152,20 +152,20 @@ async def test_first_run_creates_the_calendar_and_remembers_it(
     assert fake_gcal.verified == [CALENDAR_ID]
     assert "ACL ok" in capsys.readouterr().out
 
-    assert await calendar_sync.main() == 0
+    assert await calendar_sync.main(env) == 0
     assert fake_gcal.created == [CALENDAR_ID], "the second run reuses it"
 
 
 async def test_a_deleted_calendar_is_replaced_and_everything_repushed(
-    database, fake_gcal, log_records
+    database, fake_gcal, log_records, env
 ):
     _, event_id = await _team_and_event()
-    await calendar_sync.main()
+    await calendar_sync.main(env)
     gid, _ = await _stored(event_id)
     assert gid == "g1" and fake_gcal.calendar_ids == [CALENDAR_ID]
 
     fake_gcal.existing.discard(CALENDAR_ID)  # somebody deleted it in Google
-    assert await calendar_sync.main() == 0
+    assert await calendar_sync.main(env) == 0
     assert fake_gcal.created == [CALENDAR_ID, "cal1@g"]
     assert (await _remembered())["calendar_id"] == "cal1@g"
     gid, _ = await _stored(event_id)
@@ -178,11 +178,11 @@ async def test_a_deleted_calendar_is_replaced_and_everything_repushed(
 
 
 async def test_a_sharing_problem_fails_the_run_but_still_syncs(
-    database, fake_gcal, log_records, capsys
+    database, fake_gcal, log_records, capsys, env
 ):
     _, event_id = await _team_and_event()
     fake_gcal.problems = ["user somebody@example.org may write"]
-    assert await calendar_sync.main() == 1, "so the scheduler's alert mail fires"
+    assert await calendar_sync.main(env) == 1, "so the scheduler's alert mail fires"
     assert len(fake_gcal.inserted) == 1, "the events still went up"
     problem_logs = [r for r in log_records if r["event"] == "calendar_sync.acl_problem"]
     assert problem_logs and problem_logs[0]["problem"].startswith("user somebody")
@@ -193,11 +193,11 @@ async def test_a_sharing_problem_fails_the_run_but_still_syncs(
 
 
 async def test_hand_added_entries_are_reported_not_removed(
-    database, fake_gcal, log_records, capsys
+    database, fake_gcal, log_records, capsys, env
 ):
     await _team_and_event()
     fake_gcal.unmanaged = [{"id": "byhand", "summary": "Parish retreat"}]
-    assert await calendar_sync.main() == 0, "a warning, not a failure"
+    assert await calendar_sync.main(env) == 0, "a warning, not a failure"
     assert "byhand" not in fake_gcal.deleted
     assert "1 unmanaged" in capsys.readouterr().out
     reports = [r for r in log_records if r["event"] == "calendar_sync.unmanaged_entry"]
@@ -207,9 +207,9 @@ async def test_hand_added_entries_are_reported_not_removed(
 # --- events -------------------------------------------------------------------
 
 
-async def test_first_run_pushes_then_second_run_is_idle(database, fake_gcal):
+async def test_first_run_pushes_then_second_run_is_idle(database, fake_gcal, env):
     _, event_id = await _team_and_event()
-    assert await calendar_sync.main() == 0
+    assert await calendar_sync.main(env) == 0
     assert [p["summary"] for p in fake_gcal.inserted] == ["Sunday Mass"]
     payload = fake_gcal.inserted[0]
     assert payload["location"] == "Main church"
@@ -218,32 +218,32 @@ async def test_first_run_pushes_then_second_run_is_idle(database, fake_gcal):
     gid, fp = await _stored(event_id)
     assert gid == "g1" and fp == gcal.fingerprint(payload)
 
-    assert await calendar_sync.main() == 0
+    assert await calendar_sync.main(env) == 0
     assert len(fake_gcal.inserted) == 1 and not fake_gcal.patched, (
         "an unchanged event costs no API call"
     )
 
 
-async def test_edit_patches_and_cancel_deletes(database, fake_gcal):
+async def test_edit_patches_and_cancel_deletes(database, fake_gcal, env):
     _, event_id = await _team_and_event()
-    await calendar_sync.main()
+    await calendar_sync.main(env)
 
     async with db_session() as session:
         await event_service.update_event(
             session, None, event_id, location="Parish Hall"
         )
-    await calendar_sync.main()
+    await calendar_sync.main(env)
     assert [gid for gid, _ in fake_gcal.patched] == ["g1"]
     assert fake_gcal.patched[0][1]["location"] == "Parish Hall"
 
     async with db_session() as session:
         await event_service.cancel_event(session, None, event_id, cancelled_by=None)
-    await calendar_sync.main()
+    await calendar_sync.main(env)
     assert fake_gcal.deleted == ["g1"]
     assert await _stored(event_id) == (None, None)
 
 
-async def test_orphaned_calendar_entries_are_collected(database, fake_gcal):
+async def test_orphaned_calendar_entries_are_collected(database, fake_gcal, env):
     await _team_and_event()
     fake_gcal.listed = [
         {
@@ -251,15 +251,15 @@ async def test_orphaned_calendar_entries_are_collected(database, fake_gcal):
             "extendedProperties": {"private": {"vdb_id": "99999", "vdb_managed": "1"}},
         }
     ]
-    await calendar_sync.main()
+    await calendar_sync.main(env)
     assert fake_gcal.deleted == ["gone"], (
         "a managed entry with no live event behind it (team CASCADE) is removed"
     )
 
 
-async def test_live_events_survive_the_gc_sweep(database, fake_gcal):
+async def test_live_events_survive_the_gc_sweep(database, fake_gcal, env):
     _, event_id = await _team_and_event()
-    await calendar_sync.main()
+    await calendar_sync.main(env)
     fake_gcal.listed = [
         {
             "id": "g1",
@@ -268,19 +268,21 @@ async def test_live_events_survive_the_gc_sweep(database, fake_gcal):
             },
         }
     ]
-    await calendar_sync.main()
+    await calendar_sync.main(env)
     assert fake_gcal.deleted == []
 
 
-async def test_failed_insert_leaves_no_stamp_and_exits_nonzero(database, fake_gcal):
+async def test_failed_insert_leaves_no_stamp_and_exits_nonzero(
+    database, fake_gcal, env
+):
     _, event_id = await _team_and_event()
     fake_gcal.insert_error = True
-    assert await calendar_sync.main() == 1
+    assert await calendar_sync.main(env) == 1
     assert await _stored(event_id) == (None, None), (
         "NULL stamps mean the next run retries the push"
     )
     fake_gcal.insert_error = False
-    assert await calendar_sync.main() == 0
+    assert await calendar_sync.main(env) == 0
     assert len(fake_gcal.inserted) == 1
 
 

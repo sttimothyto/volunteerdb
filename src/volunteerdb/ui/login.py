@@ -3,9 +3,10 @@ from fastapi import Request
 from nicegui import ui
 from starlette.responses import RedirectResponse
 
-from .. import passwords, throttle
+from .. import passwords
 from ..config import settings
 from ..db import db_session
+from ..env import current
 from ..log import audit_log
 from ..services import mail
 from ..services import users as user_service
@@ -39,19 +40,21 @@ def login_page(request: Request, redirect_to: str = "/"):
 
     pending_email = ""
     ip = request.client.host if request.client else "unknown"
+    env = current()
 
     def finish(user_id: int, method: str) -> None:
         establish_session(user_id, remember=remember.value, method=method)
         ui.navigate.to(_safe_target(redirect_to))
 
     async def submit() -> None:
+        now = env.clock.now()
         addr = (email.value or "").strip()
         if not addr:
             ui.notify("Enter your email address", color="warning")
             return
         if password.value:
             keys = (f"pw:{addr.lower()}", f"pw-ip:{ip}")
-            if throttle.blocked(keys[0], 5, 900) or throttle.blocked(keys[1], 30, 900):
+            if env.throttle.blocked(keys[0], now) or env.throttle.blocked(keys[1], now):
                 logger.warning("auth.throttled", method="password", email=addr, ip=ip)
                 ui.notify(
                     "Too many failed attempts — try again in a few minutes.",
@@ -62,7 +65,7 @@ def login_page(request: Request, redirect_to: str = "/"):
                 user = await user_service.authenticate(session, addr, password.value)
             if user is None:
                 for key in keys:
-                    throttle.hit(key)
+                    env.throttle.hit(key, now)
                 logger.warning(
                     "auth.login_failed", method="password", email=addr, ip=ip
                 )
@@ -77,15 +80,16 @@ def login_page(request: Request, redirect_to: str = "/"):
 
     async def send_code() -> None:
         nonlocal pending_email
+        now = env.clock.now()
         addr = (email.value or "").strip()
-        if throttle.blocked(f"otp-ip:{ip}", 10, 3600):
+        if env.throttle.blocked(f"otp-ip:{ip}", now):
             logger.warning("auth.throttled", method="otp", email=addr, ip=ip)
             ui.notify(
                 "Too many code requests from this device — try again later.",
                 color="negative",
             )
             return
-        throttle.hit(f"otp-ip:{ip}")
+        env.throttle.hit(f"otp-ip:{ip}", now)
         audit_log("auth.otp_requested", email=addr, ip=ip)
         async with db_session() as session:
             result = await user_service.start_otp_login(session, addr)

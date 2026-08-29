@@ -1,13 +1,12 @@
 import structlog
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
-from .. import throttle
 from ..auth import async_verify_password
 from ..db import db_session
 from ..log import audit_log
 from ..services import mail
 from ..services import users as service
-from .deps import CtxDep
+from .deps import CtxDep, env_of
 from .schemas import (
     EmailChangeConfirmIn,
     EmailChangeIn,
@@ -29,15 +28,17 @@ async def login(data: LoginIn, request: Request) -> TokenOut:
     the token is stored, so a new one is issued (revoking the old) on every
     login."""
     ip = request.client.host if request.client else "unknown"
+    env = env_of(request)
+    now = env.clock.now()
     keys = (f"pw:{data.email.strip().lower()}", f"pw-ip:{ip}")
-    if throttle.blocked(keys[0], 5, 900) or throttle.blocked(keys[1], 30, 900):
+    if env.throttle.blocked(keys[0], now) or env.throttle.blocked(keys[1], now):
         logger.warning("auth.throttled", method="api", email=data.email, ip=ip)
         raise HTTPException(429, "too many failed attempts; try again in a few minutes")
     async with db_session() as session:
         user = await service.authenticate(session, data.email, data.password)
         if user is None:
             for key in keys:
-                throttle.hit(key)
+                env.throttle.hit(key, now)
             logger.warning("auth.login_failed", method="api", email=data.email, ip=ip)
             raise HTTPException(401, "invalid credentials")
         token = await service.issue_api_token(session, user.id)
@@ -84,13 +85,14 @@ async def set_own_password(
     # limit and the per-IP flood limit, so a spray of current-password guesses
     # across many accounts from one IP is throttled at the IP too.
     keys = (f"pw:{email.lower()}", f"pw-ip:{ip}")
-    if throttle.blocked(keys[0], 5, 900) or throttle.blocked(keys[1], 30, 900):
+    env, now = ctx.env, ctx.now
+    if env.throttle.blocked(keys[0], now) or env.throttle.blocked(keys[1], now):
         raise HTTPException(429, "too many failed attempts; try again in a few minutes")
     if user.password_hash is None or not await async_verify_password(
         user.password_hash, data.current_password
     ):
         for key in keys:
-            throttle.hit(key)
+            env.throttle.hit(key, now)
         logger.warning("auth.password_change_denied", email=email, via="api")
         raise HTTPException(403, "that is not your current password")
     await service.set_password(ctx.session, user.id, data.new_password)
@@ -135,13 +137,14 @@ async def request_email_change(
     user = ctx.actor.user
     was = user.email
     key = f"email-change:{user.id}"
-    if throttle.blocked(key, 5, 900):
+    env, now = ctx.env, ctx.now
+    if env.throttle.blocked(key, now):
         raise HTTPException(429, "too many address changes requested; try again later")
     # charge the budget on every attempt, before the service can reveal whether
     # the address exists: a probe that fails ("another account already signs in
     # with that address") must count too, or the budget is only on successful
     # sends and this is an unthrottled account-existence oracle.
-    throttle.hit(key)
+    env.throttle.hit(key, now)
     account, token = await service.start_email_change(
         ctx.session, user.id, data.new_email
     )

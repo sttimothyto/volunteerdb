@@ -18,17 +18,21 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Protocol
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
+import structlog
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from . import db
+from . import db, throttle
 from .config import Settings, settings
 from .domain import NotifyMode
+from .services import mail_quota
+
+log = structlog.get_logger(__name__)
 
 
 class Clock(Protocol):
@@ -89,6 +93,78 @@ class _SendEmailMailer:
         return await mail.send_email(to, subject, body)
 
 
+class ThrottleCell:
+    """The one mutable holder of the throttle ledger (throttle.py is the
+    arithmetic). One process, one event loop: an update between awaits is
+    atomic, and a restart forgives."""
+
+    SWEEP_EVERY = 512
+
+    def __init__(self) -> None:
+        self._ledger = throttle.Ledger()
+        self._since_sweep = 0
+
+    def snapshot(self) -> throttle.Ledger:
+        return self._ledger
+
+    def blocked(self, key: str, now: datetime) -> bool:
+        return throttle.blocked(self._ledger, key, now)
+
+    def hit(self, key: str, now: datetime) -> None:
+        self._ledger = throttle.hit(self._ledger, key, now)
+        self._since_sweep += 1
+        if self._since_sweep >= self.SWEEP_EVERY:
+            self._since_sweep = 0
+            self._ledger = throttle.prune(self._ledger, now)
+
+    def reset(self) -> None:
+        self._ledger = throttle.Ledger()
+        self._since_sweep = 0
+
+
+class QuotaCell:
+    """The mail-allowance gauge every admin page header reads, memoised for a
+    minute (services/mail_quota.py is the arithmetic and the ledger rows).
+    Never raises: a gauge that cannot be computed is simply not shown."""
+
+    TTL = timedelta(seconds=mail_quota.CACHE_TTL_SECONDS)
+
+    def __init__(self) -> None:
+        self._memo: tuple[datetime, mail_quota.Projection] | None = None
+
+    async def projection(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        today: date,
+        now: datetime,
+    ) -> mail_quota.Projection:
+        if self._memo is not None and now - self._memo[0] < self.TTL:
+            return self._memo[1]
+        try:
+            async with sessions() as session:
+                counts = await mail_quota.read_counts(session, today)
+            result = mail_quota.project(counts, today)
+        except Exception:  # noqa: BLE001 — a gauge must not break the page it sits on
+            log.warning("mail_quota.projection_failed", exc_info=True)
+            return mail_quota.Projection(0, 0, 0, 0, "", "")
+        self._memo = (now, result)
+        return result
+
+    async def record(
+        self, sessions: async_sessionmaker[AsyncSession], day: date
+    ) -> None:
+        """Count one message that actually left. Never raises: the counter
+        exists to protect the mail, not the other way round."""
+        try:
+            async with sessions.begin() as session:
+                await mail_quota.record(session, day)
+        except Exception:  # noqa: BLE001 — see the docstring
+            log.warning("mail_quota.record_failed", day=str(day), exc_info=True)
+
+    def reset(self) -> None:
+        self._memo = None
+
+
 @dataclass(frozen=True, slots=True)
 class Env:
     settings: Settings
@@ -98,11 +174,17 @@ class Env:
     http: HttpClients
     engine: AsyncEngine
     sessions: async_sessionmaker[AsyncSession]
+    throttle: ThrottleCell
+    quota: QuotaCell
     notify: NotifyMode = NotifyMode.direct
 
     @property
     def tz(self) -> ZoneInfo:
         return ZoneInfo(self.settings.timezone)
+
+    def today(self) -> date:
+        """The parish day: date-typed things mean 'end of that day HERE'."""
+        return self.clock.now().astimezone(self.tz).date()
 
     def with_(self, **changes: object) -> Env:
         return replace(self, **changes)
@@ -133,6 +215,8 @@ def build(
         http=http if http is not None else HttpxClients(),
         engine=engine,
         sessions=sessions,
+        throttle=ThrottleCell(),
+        quota=QuotaCell(),
         notify=notify,
     )
 

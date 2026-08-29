@@ -26,10 +26,11 @@ from io import StringIO
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..actors import load_actor
 from ..db import db_session
 from ..log import audit_log
 from ..models import AppUser, Membership, Volunteer
-from ..permissions import Actor, load_actor, require
+from ..permissions import Actor, require
 from ..services import memberships as membership_service
 from ..services import teams as team_service
 from .common import ROSTER_HEADERS, ROSTER_SHEET, clean_cell, parse_role

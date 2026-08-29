@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import ExitStack, asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 
@@ -10,7 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import asof_param
-from ..db import db_session
+from ..actors import load_actor
+from ..db import transaction
+from ..env import Env, current
 from ..errors import (
     DomainError,
     DomainErrorRaised,
@@ -21,7 +24,7 @@ from ..errors import (
     message,
 )
 from ..log import bind_actor
-from ..permissions import Actor, Forbidden, load_actor
+from ..permissions import Actor, Forbidden
 from ..services import users as user_service
 from . import column_order
 
@@ -86,14 +89,20 @@ def session_user_id() -> int | None:
     return user_id
 
 
-async def get_actor(session: AsyncSession) -> Actor | None:
+async def get_actor(session: AsyncSession, *, env: Env | None = None) -> Actor | None:
+    """The signed-in actor, or None. With an `env`, an admin's actor also
+    carries the mail-allowance gauge (the page frame shows it; the asset
+    routes, which pass none, never do)."""
     user_id = session_user_id()
     if user_id is None:
         return None
     user = await user_service.get(session, user_id)
     if user is None or not user.is_active:
         return None
-    return await load_actor(session, user)
+    quota = None
+    if env is not None and user.is_admin:
+        quota = await env.quota.projection(env.sessions, env.today(), env.clock.now())
+    return await load_actor(session, user, mail_quota=quota)
 
 
 def _client_ip() -> str:
@@ -103,14 +112,41 @@ def _client_ip() -> str:
         return "-"
 
 
+def _base_url() -> str:
+    """The origin the page was requested on, for links in mail and toasts. A
+    handler over the websocket still sees the page's original request."""
+    try:
+        return str(context.client.request.base_url).rstrip("/")
+    except Exception:  # background task or no client scope
+        return ""
+
+
+@dataclass(frozen=True)
+class PageCtx:
+    """One page load or one action: its transaction, who is asking, the Env
+    the edge performs effects with, the moment it began (one clock read for
+    every service that needs a `now`), the origin links are built on, and the
+    as-of instant a time-travelling page was opened at."""
+
+    session: AsyncSession
+    actor: Actor
+    env: Env
+    now: datetime
+    base_url: str
+    as_of: datetime | None = None
+
+
 @asynccontextmanager
-async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
-    """For page builders: session + actor, or redirects to /login and raises."""
-    # ExitStack outlives db_session, so the actor identity is still bound when
-    # the commit (and its audit marker line) fires.
+async def page_ctx(as_of: datetime | None = None) -> AsyncIterator[PageCtx]:
+    """For page builders and action handlers: the unit of work with the actor
+    loaded, or a redirect to /login and a raise."""
+    env = current()
+    now = env.clock.now()
+    # ExitStack outlives the transaction, so the actor identity is still bound
+    # when the commit (and its audit marker line) fires.
     with ExitStack() as stack:
-        async with db_session(session_user_id()) as session:
-            actor = await get_actor(session)
+        async with transaction(env, session_user_id()) as session:
+            actor = await get_actor(session, env=env)
             if actor is None:
                 clear_session()
                 ui.navigate.to("/login")
@@ -120,7 +156,23 @@ async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
                     f"{actor.user.id}:{actor.user.email}", ip=_client_ip(), via="gui"
                 )
             )
-            yield session, actor
+            yield PageCtx(
+                session=session,
+                actor=actor,
+                env=env,
+                now=now,
+                base_url=_base_url(),
+                as_of=as_of,
+            )
+
+
+@asynccontextmanager
+async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
+    """page_ctx() for the pages and handlers that still take (session, actor);
+    each moves to page_ctx() as it becomes a load/render pair
+    (FUNCTIONAL_REFACTORING.md, Phase 5)."""
+    async with page_ctx() as ctx:
+        yield ctx.session, ctx.actor
 
 
 action_session = page_session  # same contract, used from event handlers
