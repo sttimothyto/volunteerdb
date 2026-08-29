@@ -14,6 +14,7 @@ from datetime import datetime
 import anyio.to_thread
 from nicegui import events, ui
 
+from ..env import current as current_env
 from ..services import photos as photo_service
 from .context import action_session, notify_errors
 
@@ -42,9 +43,9 @@ def open_photo_dialog(
         @notify_errors
         async def on_upload(e: events.UploadEventArguments) -> None:
             raw = await e.file.read()
-            state["image"] = await anyio.to_thread.run_sync(
-                photo_service.normalize, raw
-            )
+            state["image"] = (
+                await anyio.to_thread.run_sync(photo_service.normalize, raw)
+            ).unwrap()
             preview.set_source(
                 "data:image/jpeg;base64,"
                 + base64.b64encode(state["image"]).decode("ascii")
@@ -69,13 +70,16 @@ def open_photo_dialog(
                 ui.notify("Please confirm the declaration first", color="warning")
                 return
             async with action_session() as (session, actor):
-                await photo_service.set_photo(
-                    session,
-                    volunteer_id,
-                    state["image"],
-                    uploaded_by=actor.user.id,
-                    normalized=True,
-                )
+                (
+                    await photo_service.set_photo(
+                        session,
+                        volunteer_id,
+                        state["image"],
+                        uploaded_by=actor.user.id,
+                        normalized=True,
+                        now=current_env().clock.now(),
+                    )
+                ).unwrap()
             dialog.close()
             ui.notify("Photo saved", color="positive")
             await on_change()
@@ -83,7 +87,7 @@ def open_photo_dialog(
         @notify_errors
         async def remove() -> None:
             async with action_session() as (session, _actor):
-                await photo_service.delete_photo(session, volunteer_id)
+                (await photo_service.delete_photo(session, volunteer_id)).unwrap()
             dialog.close()
             ui.notify("Photo removed", color="positive")
             await on_change()

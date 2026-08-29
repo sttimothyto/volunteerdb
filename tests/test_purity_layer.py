@@ -69,7 +69,6 @@ BASELINE: dict[str, dict[str, int]] = {
     "fp.py": {"raise": 3},
     "passwords.py": {"raise": 7, "settings": 1},
     "permissions.py": {"raise": 1},
-    "services/branding.py": {"now": 1, "raise": 3},
     "services/custom_fields.py": {"raise": 12},
     "services/elections.py": {"now": 5, "raise": 17, "settings": 1},
     "services/events.py": {"now": 8, "raise": 52, "settings": 2, "uuid4": 1},
@@ -80,7 +79,6 @@ BASELINE: dict[str, dict[str, int]] = {
     "services/mail.py": {"AsyncClient": 1, "print": 1, "settings": 4},
     "services/mail_quota.py": {"db_session": 1, "now": 1, "settings": 2},
     "services/pages.py": {"now": 1, "raise": 9},
-    "services/photos.py": {"now": 2, "raise": 5},
     "services/roster_sheets.py": {
         "db_session": 7,
         "now": 1,

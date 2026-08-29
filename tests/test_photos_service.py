@@ -1,16 +1,17 @@
 """Headshot service: normalization invariants and storage semantics."""
 
+from datetime import UTC, datetime
 from io import BytesIO
 
-import pytest
 import sqlalchemy as sa
 from PIL import Image
 
+from volunteerdb import errors
 from volunteerdb.db import db_session
 from volunteerdb.models import VolunteerPhoto
 from volunteerdb.services import photos, volunteers
 
-from tests.fp_helpers import ok
+from tests.fp_helpers import ok, refused
 
 
 def _png(width: int, height: int, mode: str = "RGBA") -> bytes:
@@ -31,7 +32,7 @@ def _jpeg_with_orientation(width: int, height: int) -> bytes:
 
 
 def test_normalize_produces_square_jpeg_within_cap():
-    out = photos.normalize(_png(800, 500))
+    out = ok(photos.normalize(_png(800, 500)))
     image = Image.open(BytesIO(out))
     assert image.format == "JPEG"
     assert image.size == (photos.PHOTO_SIZE, photos.PHOTO_SIZE), (
@@ -42,7 +43,7 @@ def test_normalize_produces_square_jpeg_within_cap():
 
 
 def test_normalize_strips_exif_and_honors_orientation():
-    out = photos.normalize(_jpeg_with_orientation(600, 400))
+    out = ok(photos.normalize(_jpeg_with_orientation(600, 400)))
     image = Image.open(BytesIO(out))
     assert image.size == (photos.PHOTO_SIZE, photos.PHOTO_SIZE)
     assert dict(image.getexif()) == {}, (
@@ -51,12 +52,9 @@ def test_normalize_strips_exif_and_honors_orientation():
 
 
 def test_normalize_rejects_garbage_and_oversize():
-    with pytest.raises(ValueError):
-        photos.normalize(b"this is not an image at all")
-    with pytest.raises(ValueError):
-        photos.normalize(b"")
-    with pytest.raises(ValueError):
-        photos.normalize(b"x" * (photos.MAX_UPLOAD_BYTES + 1))
+    refused(photos.normalize(b"this is not an image at all"), errors.Invalid)
+    refused(photos.normalize(b""), errors.Invalid)
+    refused(photos.normalize(b"x" * (photos.MAX_UPLOAD_BYTES + 1)), errors.Invalid)
 
 
 async def test_set_get_delete_and_versions(database):
@@ -65,8 +63,14 @@ async def test_set_get_delete_and_versions(database):
             await volunteers.create(session, None, "Pia", "Photo", "pia@example.org")
         )
         volunteer_id = v.id
-        stored = await photos.set_photo(
-            session, volunteer_id, _png(500, 500), uploaded_by=None
+        stored = ok(
+            await photos.set_photo(
+                session,
+                volunteer_id,
+                _png(500, 500),
+                uploaded_by=None,
+                now=datetime.now(UTC),
+            )
         )
         assert len(stored.image) <= photos.PHOTO_MAX_BYTES
         assert stored.content_type == "image/jpeg"
@@ -78,25 +82,34 @@ async def test_set_get_delete_and_versions(database):
         assert await photos.versions(session, []) == {}
 
         # replace: bytes change and uploaded_at moves (drives the ?v= cache-buster)
-        replaced = await photos.set_photo(
-            session, volunteer_id, _png(300, 700), uploaded_by=None
+        replaced = ok(
+            await photos.set_photo(
+                session,
+                volunteer_id,
+                _png(300, 700),
+                uploaded_by=None,
+                now=datetime.now(UTC),
+            )
         )
         assert replaced.uploaded_at >= first_at
         assert (await photos.images(session, [volunteer_id]))[
             volunteer_id
         ] == replaced.image
 
-        await photos.delete_photo(session, volunteer_id)
+        ok(await photos.delete_photo(session, volunteer_id))
         assert await photos.get(session, volunteer_id) is None
-        await photos.delete_photo(session, volunteer_id)  # idempotent
+        ok(await photos.delete_photo(session, volunteer_id))  # idempotent
 
 
 async def test_unknown_volunteer_raises_lookup_error(database):
     async with db_session() as session:
-        with pytest.raises(LookupError):
-            await photos.set_photo(session, 424242, _png(400, 400), uploaded_by=None)
-        with pytest.raises(LookupError):
-            await photos.delete_photo(session, 424242)
+        refused(
+            await photos.set_photo(
+                session, 424242, _png(400, 400), uploaded_by=None, now=datetime.now(UTC)
+            ),
+            errors.NotFound,
+        )
+        refused(await photos.delete_photo(session, 424242), errors.NotFound)
 
 
 async def test_deleting_the_volunteer_cascades_the_photo(database):
@@ -104,7 +117,11 @@ async def test_deleting_the_volunteer_cascades_the_photo(database):
         v = ok(
             await volunteers.create(session, None, "Gone", "Soon", "gone@example.org")
         )
-        await photos.set_photo(session, v.id, _png(400, 400), uploaded_by=None)
+        ok(
+            await photos.set_photo(
+                session, v.id, _png(400, 400), uploaded_by=None, now=datetime.now(UTC)
+            )
+        )
         volunteer_id = v.id
     async with db_session() as session:
         ok(await volunteers.delete(session, None, volunteer_id))
@@ -119,8 +136,6 @@ async def test_deleting_the_volunteer_cascades_the_photo(database):
 
 
 def test_photo_url_changes_when_uploaded_at_moves():
-    from datetime import UTC, datetime
-
     a = datetime(2026, 7, 31, 12, 0, 0, 100_000, tzinfo=UTC)
     b = datetime(2026, 7, 31, 12, 0, 0, 900_000, tzinfo=UTC)
     assert photos.photo_url(1, a) != photos.photo_url(1, b), (

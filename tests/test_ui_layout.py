@@ -2,7 +2,7 @@
 on the pages that can time-travel — the as-of date picker. The address is the
 way to your own record, and the headshot beside it is how you change it."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
@@ -53,7 +53,11 @@ async def test_settings_menu_carries_reading_preferences(database):
 async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
     async with db_session() as session:
         maria = ok(await volunteers.create(session, None, "Maria", "Alvarez"))
-        await photos.set_photo(session, maria.id, _png(60, 60), uploaded_by=None)
+        ok(
+            await photos.set_photo(
+                session, maria.id, _png(60, 60), uploaded_by=None, now=datetime.now(UTC)
+            )
+        )
         account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
         )

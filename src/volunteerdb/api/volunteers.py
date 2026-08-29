@@ -171,9 +171,15 @@ async def put_photo(ctx: CtxDep, volunteer_id: int, file: UploadFile) -> PhotoMe
     content = await file.read(photo_service.MAX_UPLOAD_BYTES + 1)
     if len(content) > photo_service.MAX_UPLOAD_BYTES:
         raise HTTPException(413, "image file larger than 10 MB")
-    record = await photo_service.set_photo(
-        ctx.session, volunteer_id, content, uploaded_by=ctx.actor.user.id
-    )
+    record = (
+        await photo_service.set_photo(
+            ctx.session,
+            volunteer_id,
+            content,
+            uploaded_by=ctx.actor.user.id,
+            now=ctx.now,
+        )
+    ).unwrap()
     return PhotoMetaOut(
         volunteer_id=record.volunteer_id,
         content_type=record.content_type,
@@ -194,7 +200,7 @@ async def get_photo(ctx: CtxDep, volunteer_id: int) -> Response:
 @router.delete("/{volunteer_id}/photo", status_code=204)
 async def delete_photo(ctx: CtxDep, volunteer_id: int) -> None:
     """Remove the headshot (idempotent). Open to every signed-in account."""
-    await photo_service.delete_photo(ctx.session, volunteer_id)
+    (await photo_service.delete_photo(ctx.session, volunteer_id)).unwrap()
 
 
 @router.get("/{volunteer_id}/assignments")

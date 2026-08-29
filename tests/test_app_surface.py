@@ -8,6 +8,7 @@ seam: no route answers an anonymous caller, and the real app still routes.
 """
 
 import re
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from PIL import Image
 import volunteerdb.ui.logo_route
 from volunteerdb.db import db_session
 from volunteerdb.services import branding
+
+from tests.fp_helpers import ok
 
 
 def _logo_png() -> bytes:
@@ -174,7 +177,7 @@ async def test_the_logo_revalidates_so_an_upload_is_seen_at_once(real_app_client
     assert revalidated.status_code == 304, "an unchanged logo costs no body"
 
     async with db_session() as session:
-        await branding.set_logo(session, None, _logo_png())
+        ok(await branding.set_logo(session, None, _logo_png(), now=datetime.now(UTC)))
 
     after = await real_app_client.get(
         "/logo", headers={"If-None-Match": placeholder_etag}
@@ -184,7 +187,7 @@ async def test_the_logo_revalidates_so_an_upload_is_seen_at_once(real_app_client
     assert after.headers["content-type"] == "image/png"
 
     async with db_session() as session:
-        await branding.delete_logo(session, None)
+        ok(await branding.delete_logo(session, None))
     back = await real_app_client.get("/logo")
     assert back.headers["etag"] == placeholder_etag, "removal restores the placeholder"
 

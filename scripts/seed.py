@@ -1495,12 +1495,15 @@ async def seed_photos(
 ) -> None:
     by_name = {person.name: person for person in people}
     for index, name in enumerate(PHOTOGRAPHED):
-        await photos.set_photo(
-            session,
-            parish.volunteer_ids[name],
-            _avatar(by_name[name], AVATAR_COLOURS[index % len(AVATAR_COLOURS)]),
-            uploaded_by=parish.admin_id,
-        )
+        (
+            await photos.set_photo(
+                session,
+                parish.volunteer_ids[name],
+                _avatar(by_name[name], AVATAR_COLOURS[index % len(AVATAR_COLOURS)]),
+                uploaded_by=parish.admin_id,
+                now=datetime.now(UTC),
+            )
+        ).unwrap()
 
 
 async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:

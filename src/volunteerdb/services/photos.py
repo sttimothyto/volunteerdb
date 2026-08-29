@@ -8,7 +8,7 @@ and round-trips are byte-identical.
 """
 
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import datetime
 from io import BytesIO
 
 import anyio.to_thread
@@ -16,6 +16,8 @@ import sqlalchemy as sa
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..errors import DomainError, Invalid, invalid, not_found
+from ..fp import Err, Ok, Result
 from ..models import Volunteer, VolunteerPhoto
 
 PHOTO_SIZE = 400
@@ -26,10 +28,10 @@ MAX_UPLOAD_BYTES = 10_000_000
 _QUALITY_STEPS = (85, 75, 65, 55, 45, 35)
 
 
-def normalize(data: bytes) -> bytes:
+def normalize(data: bytes) -> Result[bytes, Invalid]:
     """Sync and CPU-bound — call via anyio.to_thread.run_sync from handlers."""
     if len(data) > MAX_UPLOAD_BYTES:
-        raise ValueError("image file larger than 10 MB")
+        return invalid("image file larger than 10 MB")
     try:
         img = Image.open(BytesIO(data))
         img = ImageOps.exif_transpose(img)
@@ -43,15 +45,15 @@ def normalize(data: bytes) -> bytes:
         Image.DecompressionBombError,
         OSError,
         ValueError,
-    ) as exc:
-        raise ValueError("not a readable image") from exc
+    ):
+        return invalid("not a readable image")
     for quality in _QUALITY_STEPS:
         buffer = BytesIO()
         img.save(buffer, format="JPEG", quality=quality, optimize=True)
         encoded = buffer.getvalue()
         if len(encoded) <= PHOTO_MAX_BYTES:
-            return encoded
-    raise ValueError("image does not compress to a storable size")
+            return Ok(encoded)
+    return invalid("image does not compress to a storable size")
 
 
 async def get(session: AsyncSession, volunteer_id: int) -> VolunteerPhoto | None:
@@ -64,11 +66,18 @@ async def set_photo(
     data: bytes,
     *,
     uploaded_by: int | None,
+    now: datetime,
     normalized: bool = False,
-) -> VolunteerPhoto:
+) -> Result[VolunteerPhoto, DomainError]:
     if await session.get(Volunteer, volunteer_id) is None:
-        raise LookupError(f"volunteer {volunteer_id} not found")
-    image = data if normalized else await anyio.to_thread.run_sync(normalize, data)
+        return not_found("volunteer", volunteer_id)
+    if normalized:
+        image = data
+    else:
+        made = await anyio.to_thread.run_sync(normalize, data)
+        if isinstance(made, Err):
+            return made
+        image = made.value
     photo = await session.get(VolunteerPhoto, volunteer_id)
     # uploaded_at is set app-side (not left to onupdate) because it feeds the
     # ?v= cache-buster: a replace must always move it
@@ -77,25 +86,28 @@ async def set_photo(
             volunteer_id=volunteer_id,
             image=image,
             uploaded_by=uploaded_by,
-            uploaded_at=datetime.now(UTC),
+            uploaded_at=now,
         )
         session.add(photo)
     else:
         photo.image = image
         photo.uploaded_by = uploaded_by
-        photo.uploaded_at = datetime.now(UTC)
+        photo.uploaded_at = now
     await session.flush()
-    return photo
+    return Ok(photo)
 
 
-async def delete_photo(session: AsyncSession, volunteer_id: int) -> None:
+async def delete_photo(
+    session: AsyncSession, volunteer_id: int
+) -> Result[None, DomainError]:
     """Idempotent: no photo is fine; only an unknown volunteer is an error."""
     if await session.get(Volunteer, volunteer_id) is None:
-        raise LookupError(f"volunteer {volunteer_id} not found")
+        return not_found("volunteer", volunteer_id)
     photo = await session.get(VolunteerPhoto, volunteer_id)
     if photo is not None:
         await session.delete(photo)
         await session.flush()
+    return Ok(None)
 
 
 async def versions(

@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 import anyio.to_thread
 from nicegui import events, ui
 
+from ..env import current as current_env
 from ..permissions import Actor
 from ..services import branding
 from .context import action_session, notify_errors
@@ -55,7 +56,9 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
         @notify_errors
         async def on_upload(e: events.UploadEventArguments) -> None:
             raw = await e.file.read()
-            state["image"] = await anyio.to_thread.run_sync(branding.normalize, raw)
+            state["image"] = (
+                await anyio.to_thread.run_sync(branding.normalize, raw)
+            ).unwrap()
             data_url = "data:image/png;base64," + base64.b64encode(
                 state["image"]
             ).decode("ascii")
@@ -75,7 +78,15 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
                 ui.notify("Choose an image first", color="warning")
                 return
             async with action_session() as (session, actor):
-                await branding.set_logo(session, actor, state["image"], normalized=True)
+                (
+                    await branding.set_logo(
+                        session,
+                        actor,
+                        state["image"],
+                        normalized=True,
+                        now=current_env().clock.now(),
+                    )
+                ).unwrap()
             dialog.close()
             ui.notify("Logo saved", color="positive")
             await on_change()
@@ -83,7 +94,7 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
         @notify_errors
         async def remove() -> None:
             async with action_session() as (session, actor):
-                await branding.delete_logo(session, actor)
+                (await branding.delete_logo(session, actor)).unwrap()
             dialog.close()
             ui.notify("Logo removed", color="positive")
             await on_change()

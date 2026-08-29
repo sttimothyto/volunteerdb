@@ -21,6 +21,7 @@ a logo is not a headshot:
 """
 
 from collections import Counter
+from datetime import datetime
 from io import BytesIO
 
 import sqlalchemy as sa
@@ -35,8 +36,10 @@ from PIL import (
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..errors import DomainError, Invalid, invalid, require
+from ..fp import Err, Ok, Result
 from ..models import SiteLogo
-from ..permissions import Actor, require
+from ..permissions import Actor
 
 # Far more than any placement needs today (the header renders it at 32px, the
 # login page at 64px, so a retina screen asks for 128 at most), and that is the
@@ -73,10 +76,10 @@ GROUND_SHARE = 0.9
 RIM = 5
 
 
-def normalize(data: bytes) -> bytes:
+def normalize(data: bytes) -> Result[bytes, Invalid]:
     """Sync and CPU-bound — call via anyio.to_thread.run_sync from handlers."""
     if len(data) > MAX_UPLOAD_BYTES:
-        raise ValueError("image file larger than 10 MB")
+        return invalid("image file larger than 10 MB")
     try:
         img = Image.open(BytesIO(data))
         img = ImageOps.exif_transpose(img)
@@ -93,18 +96,18 @@ def normalize(data: bytes) -> bytes:
         Image.DecompressionBombError,
         OSError,
         ValueError,
-    ) as exc:
-        raise ValueError("not a readable image") from exc
+    ):
+        return invalid("not a readable image")
     return _encode(img)
 
 
-def _encode(img: Image.Image) -> bytes:
+def _encode(img: Image.Image) -> Result[bytes, Invalid]:
     """PNG under the byte ceiling, if there is any way to get it there."""
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
     encoded = buffer.getvalue()
     if len(encoded) <= LOGO_MAX_BYTES:
-        return encoded
+        return Ok(encoded)
     # A drawn mark never gets here; a photographed or scanned one does, because
     # its grain is noise no PNG predictor can model, and at LOGO_BOX² there is
     # a lot of it. 256 colours picked from the image (alpha included, which is
@@ -117,11 +120,11 @@ def _encode(img: Image.Image) -> bytes:
     )
     encoded = buffer.getvalue()
     if len(encoded) > LOGO_MAX_BYTES:
-        raise ValueError(
+        return invalid(
             "logo is too detailed to store — try a flatter image, or one with "
             "fewer colours"
         )
-    return encoded
+    return Ok(encoded)
 
 
 def _cut_flat_ground(img: Image.Image) -> Image.Image:
@@ -299,13 +302,21 @@ async def set_logo(
     actor: Actor | None,
     image: bytes,
     *,
+    now: datetime,
     normalized: bool = False,
-) -> None:
+) -> Result[None, DomainError]:
     """Replace the site logo. `normalized=True` is the web dialog saying it
     already ran normalize() to build its preview, so the bytes shown are
     exactly the bytes stored."""
-    require(actor is None or actor.is_admin, "set the site logo")
-    stored = image if normalized else normalize(image)
+    if denied := require(actor is None or actor.is_admin, "set the site logo"):
+        return denied
+    if normalized:
+        stored = image
+    else:
+        made = normalize(image)
+        if isinstance(made, Err):
+            return made
+        stored = made.value
     stmt = pg_insert(SiteLogo).values(
         id=ROW_ID,
         image=stored,
@@ -318,13 +329,18 @@ async def set_logo(
             "image": stmt.excluded.image,
             "content_type": stmt.excluded.content_type,
             "uploaded_by": stmt.excluded.uploaded_by,
-            "uploaded_at": sa.func.now(),
+            "uploaded_at": now,
         },
     )
     await session.execute(stmt)
+    return Ok(None)
 
 
-async def delete_logo(session: AsyncSession, actor: Actor | None) -> None:
+async def delete_logo(
+    session: AsyncSession, actor: Actor | None
+) -> Result[None, DomainError]:
     """Back to the shipped placeholder (ui/static/logo-placeholder.svg)."""
-    require(actor is None or actor.is_admin, "set the site logo")
+    if denied := require(actor is None or actor.is_admin, "set the site logo"):
+        return denied
     await session.execute(sa.delete(SiteLogo).where(SiteLogo.id == ROW_ID))
+    return Ok(None)

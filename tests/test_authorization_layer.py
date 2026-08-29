@@ -96,7 +96,6 @@ EDGE_ALLOWLIST = {
 # gate as a bare statement was correct; a value-returning one is a check that
 # never refuses. The count may only fall; an entry at zero must be deleted.
 DISCARDED_GATE_BASELINE: dict[str, int] = {
-    "services/branding.py": 2,
     "services/custom_fields.py": 4,
     "services/elections.py": 7,
     "services/events.py": 16,

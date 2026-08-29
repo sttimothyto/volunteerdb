@@ -1,5 +1,6 @@
 """Coverage report and Cytoscape graph: counts, sorting, and visibility scoping."""
 
+from datetime import UTC, datetime
 from io import BytesIO
 
 from PIL import Image
@@ -144,8 +145,14 @@ async def test_graph_photo_datum_only_on_photographed_volunteers(database):
         parent, child, other, on_parent, on_child, on_other = await _parish(session)
         buffer = BytesIO()
         Image.new("RGB", (500, 500), (50, 100, 150)).save(buffer, format="PNG")
-        await photos.set_photo(
-            session, on_parent.id, buffer.getvalue(), uploaded_by=None
+        ok(
+            await photos.set_photo(
+                session,
+                on_parent.id,
+                buffer.getvalue(),
+                uploaded_by=None,
+                now=datetime.now(UTC),
+            )
         )
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
