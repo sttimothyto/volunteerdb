@@ -15,10 +15,11 @@ from volunteerdb.db import db_session
 from volunteerdb.env import current
 from volunteerdb.models import EventSubRequest, SubRequestStatus, TeamRole
 from volunteerdb.services import events as event_service
-from volunteerdb.services import mail, memberships, teams, users, volunteers
+from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import SLOW
 from tests import mint
+from tests.fakes import SIM_MAILER
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
@@ -26,15 +27,11 @@ TZ = ZoneInfo("America/Toronto")
 
 
 @pytest.fixture
-def sent_mail(monkeypatch):
-    sent: list[tuple[str, str, str]] = []
-
-    async def fake(to: str, subject: str, text_body: str) -> bool:
-        sent.append((to, subject, text_body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake)
-    return sent
+def sent_mail() -> list[tuple[str, str, str]]:
+    """What the simulated app mailed: its Env's recording mailer (tests/fakes.py),
+    emptied for this test."""
+    SIM_MAILER.sent.clear()
+    return SIM_MAILER.sent
 
 
 async def _parish(session):

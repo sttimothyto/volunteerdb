@@ -20,27 +20,22 @@ from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
-from volunteerdb.services import mail, memberships, teams, users, volunteers
+from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import SLOW, mail_to
 from tests import mint
+from tests.fakes import SIM_MAILER
 from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 @pytest.fixture
-def sent(monkeypatch) -> list[tuple[str, str, str]]:
-    """Capture outbound mail. mail.send_email is looked up as a module
-    attribute at call time, which is what makes this patch land."""
-    captured: list[tuple[str, str, str]] = []
-
-    async def fake_send(to: str, subject: str, body: str) -> bool:
-        captured.append((to, subject, body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake_send)
-    return captured
+def sent() -> list[tuple[str, str, str]]:
+    """What the simulated app mailed: its Env's recording mailer (tests/fakes.py),
+    emptied for this test."""
+    SIM_MAILER.sent.clear()
+    return SIM_MAILER.sent
 
 
 async def _parish(session) -> dict[str, int]:

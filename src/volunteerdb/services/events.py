@@ -33,7 +33,15 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..domain import NotifyMode
+from ..domain import (
+    EventCancelled,
+    NotifyMode,
+    Outcome,
+    SelfRemoved,
+    SlotHandedOver,
+    SubClaimed,
+    SubRequested,
+)
 from ..errors import (
     DomainError,
     Forbidden,
@@ -357,10 +365,11 @@ async def cancel_event(
     *,
     cancelled_by: int | None,
     now: datetime,
-) -> Result[tuple[Event, list[str]], DomainError]:
+) -> Result[Outcome[Event], DomainError]:
     """Cancel the event and resolve its open substitution requests in the
-    same transaction. Returns the assignees' emails so the caller can tell
-    them AFTER the transaction commits (mail never rides a transaction)."""
+    same transaction. The EventCancelled event carries the assignees'
+    addresses; the policy mails them AFTER the transaction commits (mail
+    never rides a transaction), and not at all for an event already over."""
     managed = await _managed(session, actor, event_id)
     if isinstance(managed, Err):
         return managed
@@ -389,7 +398,22 @@ async def cancel_event(
         )
     )
     await session.flush()
-    return Ok((event, sorted(emails)))
+    paths = (await team_service.tree(session)).paths
+    return Ok(
+        Outcome(
+            event,
+            (
+                EventCancelled(
+                    event_id=event.id,
+                    title=event.title,
+                    path=paths.get(event.team_id, ""),
+                    starts_at=event.starts_at,
+                    ends_at=event.ends_at,
+                    emails=tuple(sorted(emails)),
+                ),
+            ),
+        )
+    )
 
 
 async def get(session: AsyncSession, event_id: int) -> Event | None:
@@ -1369,10 +1393,19 @@ async def get_assignment(
 
 
 async def remove_assignment(
-    session: AsyncSession, actor: Actor | None, assignment_id: int, *, now: datetime
-) -> Result[Event, DomainError]:
+    session: AsyncSession,
+    actor: Actor | None,
+    assignment_id: int,
+    *,
+    now: datetime,
+    reason: str | None = None,
+) -> Result[Outcome[Event], DomainError]:
     """Withdraw/remove a future assignment (its sub requests cascade away).
-    Past rosters are frozen — they are the attendance record."""
+    Past rosters are frozen — they are the attendance record.
+
+    With a `reason`, this is somebody taking THEMSELVES off a slot and saying
+    why: the SelfRemoved event carries the reason and the team's leaders'
+    addresses, so the policy can tell them and they can fill the gap."""
     assignment = await session.get(EventAssignment, assignment_id)
     if assignment is None:
         return not_found("assignment", assignment_id)
@@ -1386,9 +1419,30 @@ async def remove_assignment(
         return denied
     if closed := _require_open(event, "leave this event", now):
         return closed
+    events: tuple[SelfRemoved, ...] = ()
+    if reason:
+        slot = await session.get(EventSlot, assignment.slot_id)
+        who = await session.get(Volunteer, assignment.volunteer_id)
+        paths = (await team_service.tree(session)).paths
+        events = (
+            SelfRemoved(
+                event_id=event.id,
+                title=event.title,
+                path=paths.get(event.team_id, ""),
+                slot=slot.name if slot else "volunteer",
+                starts_at=event.starts_at,
+                ends_at=event.ends_at,
+                who=who.full_name if who else "A volunteer",
+                volunteer_id=assignment.volunteer_id,
+                reason=reason,
+                leader_emails=tuple(
+                    await team_service.leader_emails(session, event.team_id)
+                ),
+            ),
+        )
     await session.delete(assignment)
     await session.flush()
-    return Ok(event)
+    return Ok(Outcome(event, events))
 
 
 # --- substitutions ------------------------------------------------------------
@@ -1402,9 +1456,15 @@ async def request_sub(
     requested_by: int | None,
     note: str | None = None,
     now: datetime,
-) -> Result[EventSubRequest, DomainError]:
+) -> Result[Outcome[EventSubRequest], DomainError]:
     """Open a substitution call. The friendly pre-check keeps repeat clicks
-    from re-mailing the team; uq_event_sub_request_open backstops the race."""
+    from re-mailing the team; uq_event_sub_request_open backstops the race.
+
+    The SubRequested event carries what the call needs to be announced: the
+    teammates not already serving (gathered here, NOT via the roster-gated
+    detail(): an assignee since removed from the team may still hand off
+    their own slot), the asker, the slot and the note. Whether it is
+    announced -- the team's daily allowance -- is the policy's call."""
     assignment = await session.get(EventAssignment, assignment_id)
     if assignment is None:
         return not_found("assignment", assignment_id)
@@ -1433,7 +1493,33 @@ async def request_sub(
     )
     session.add(sub)
     await session.flush()
-    return Ok(sub)
+    asker = await session.get(Volunteer, assignment.volunteer_id)
+    slot = await session.get(EventSlot, assignment.slot_id)
+    paths = (await team_service.tree(session)).paths
+    audience = await member_emails(
+        session,
+        event.team_id,
+        exclude_volunteer_ids=await assigned_volunteer_ids(session, event.id),
+    )
+    return Ok(
+        Outcome(
+            sub,
+            (
+                SubRequested(
+                    team_id=event.team_id,
+                    event_id=event.id,
+                    title=event.title,
+                    path=paths.get(event.team_id, f"team {event.team_id}"),
+                    slot=slot.name if slot else "volunteer",
+                    starts_at=event.starts_at,
+                    ends_at=event.ends_at,
+                    asker=asker.full_name if asker else "A teammate",
+                    note=sub.note,
+                    audience=tuple(audience),
+                ),
+            ),
+        )
+    )
 
 
 async def claim_sub(
@@ -1443,12 +1529,12 @@ async def claim_sub(
     sub_request_id: int,
     volunteer_id: int | None,
     now: datetime,
-) -> Result[tuple[EventSubRequest, EventAssignment, Volunteer], DomainError]:
+) -> Result[Outcome[tuple[EventSubRequest, EventAssignment, Volunteer]], DomainError]:
     """First-come claim: the guarded UPDATE ... WHERE status='open' decides
     the race (the loser's rowcount is 0), and the assignment moves to the
     claimant in the same transaction — they commit or roll back together
-    (the appoint() pattern). Returns the person who asked, for the caller's
-    post-commit mail."""
+    (the appoint() pattern). The SubClaimed event names the person who
+    asked; the policy tells them after commit."""
     sub = await session.get(EventSubRequest, sub_request_id)
     if sub is None:
         return not_found("substitute request", sub_request_id)
@@ -1504,7 +1590,26 @@ async def claim_sub(
     await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
     await _reset_reminders(session, assignment.id)  # the claimant has had none
     await session.refresh(sub)
-    return Ok((sub, assignment, asker))
+    slot = await session.get(EventSlot, assignment.slot_id)
+    claimant = await session.get(Volunteer, vid)
+    return Ok(
+        Outcome(
+            (sub, assignment, asker),
+            (
+                SubClaimed(
+                    event_id=event.id,
+                    sub_request_id=sub.id,
+                    title=event.title,
+                    slot=slot.name if slot else "volunteer",
+                    starts_at=event.starts_at,
+                    ends_at=event.ends_at,
+                    claimant=claimant.full_name if claimant else "A teammate",
+                    asker=asker.full_name,
+                    asker_email=asker.email,
+                ),
+            ),
+        )
+    )
 
 
 async def substitute(
@@ -1516,11 +1621,12 @@ async def substitute(
     acted_by: int | None,
     notify: NotifyMode,
     now: datetime,
-) -> Result[tuple[EventAssignment, Volunteer, Volunteer], DomainError]:
+) -> Result[Outcome[tuple[EventAssignment, Volunteer, Volunteer]], DomainError]:
     """Hand a slot directly to a chosen teammate — the claim flow minus the
     open call. Any open substitute request on the assignment is cancelled in
-    the same transaction. Returns (assignment, outgoing, incoming) for the
-    caller's post-commit mail to the person now on the hook.
+    the same transaction. Returns (assignment, outgoing, incoming); the
+    SlotHandedOver event is what the policy logs and, in `direct` mode,
+    mails to the person now on the hook.
 
     The incoming volunteer did not act, so they must be told they are now
     scheduled. `notify` says how (domain.NotifyMode): `direct` when the caller
@@ -1590,7 +1696,27 @@ async def substitute(
             )
         )
     await _reset_reminders(session, assignment.id)
-    return Ok((assignment, outgoing, incoming))
+    slot = await session.get(EventSlot, assignment.slot_id)
+    return Ok(
+        Outcome(
+            (assignment, outgoing, incoming),
+            (
+                SlotHandedOver(
+                    event_id=event.id,
+                    assignment_id=assignment.id,
+                    title=event.title,
+                    slot=slot.name if slot else "volunteer",
+                    starts_at=event.starts_at,
+                    ends_at=event.ends_at,
+                    outgoing_id=outgoing.id,
+                    outgoing_name=outgoing.full_name,
+                    incoming_id=incoming.id,
+                    incoming_email=incoming.email,
+                    notify=notify,
+                ),
+            ),
+        )
+    )
 
 
 async def cancel_sub(

@@ -23,7 +23,7 @@ from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
-from tests.fp_helpers import ok, refused
+from tests.fp_helpers import done, ok, refused
 
 TZ = ZoneInfo("America/Toronto")
 
@@ -520,18 +520,20 @@ async def test_cancel_resolves_open_subs_and_returns_assignee_emails(database):
                 session, None, slot_id=slot_id, volunteer_id=vids[1], now=mint.now()
             )
         )
-        sub = ok(
+        sub = done(
             await event_service.request_sub(
                 session, None, assignment_id=a.id, requested_by=None, now=mint.now()
             )
-        )
+        ).value
         sub_id = sub.id
     async with db_session() as session:
-        event, emails = ok(
+        cancelled = done(
             await event_service.cancel_event(
                 session, None, event_id, cancelled_by=None, now=mint.now()
             )
         )
+        event, (notice,) = cancelled.value, cancelled.events
+        emails = list(notice.emails)
         assert event.status == "cancelled" and event.cancelled_at is not None
         assert emails == ["vol1@example.org"]
         resolved = await session.get(EventSubRequest, sub_id)
@@ -582,7 +584,7 @@ async def test_claim_moves_the_assignment_and_records_who(database):
                 session, None, slot_id=slot_id, volunteer_id=vids[1], now=mint.now()
             )
         )
-        sub = ok(
+        sub = done(
             await event_service.request_sub(
                 session,
                 None,
@@ -591,7 +593,7 @@ async def test_claim_moves_the_assignment_and_records_who(database):
                 note="out of town",
                 now=mint.now(),
             )
-        )
+        ).value
         refused(
             await event_service.request_sub(
                 session, None, assignment_id=a.id, requested_by=None, now=mint.now()
@@ -600,7 +602,7 @@ async def test_claim_moves_the_assignment_and_records_who(database):
             match="already open",
         )
     async with db_session() as session:
-        claimed, assignment, asker = ok(
+        claimed, assignment, asker = done(
             await event_service.claim_sub(
                 session,
                 None,
@@ -608,7 +610,7 @@ async def test_claim_moves_the_assignment_and_records_who(database):
                 volunteer_id=vids[2],
                 now=mint.now(),
             )
-        )
+        ).value
         assert asker.id == vids[1], "the caller mails the person who asked"
         assert claimed.status == SubRequestStatus.claimed.value
         assert claimed.claimed_by_volunteer_id == vids[2]
@@ -657,11 +659,11 @@ async def test_claim_rejects_own_slot_and_double_booking(database):
                 session, None, slot_id=greeter, volunteer_id=vids[2], now=mint.now()
             )
         )
-        sub = ok(
+        sub = done(
             await event_service.request_sub(
                 session, None, assignment_id=a1.id, requested_by=None, now=mint.now()
             )
-        )
+        ).value
         refused(
             await event_service.claim_sub(
                 session,
@@ -696,11 +698,11 @@ async def test_cancel_sub_and_claimable_visibility(database):
                 session, None, slot_id=slot_id, volunteer_id=vids[1], now=mint.now()
             )
         )
-        sub = ok(
+        sub = done(
             await event_service.request_sub(
                 session, None, assignment_id=a.id, requested_by=None, now=mint.now()
             )
-        )
+        ).value
         user2, _ = ok(
             await users.create(
                 session,
@@ -851,7 +853,7 @@ async def test_hours_sum_past_uncancelled_events_only(database):
             )
         )
     async with db_session() as session:
-        ok(
+        done(
             await event_service.cancel_event(
                 session, None, cancelled, cancelled_by=None, now=mint.now()
             )
@@ -1106,14 +1108,14 @@ async def test_substitute_hands_the_slot_over(database):
                 now=mint.now(),
             )
         )
-        sub = ok(
+        sub = done(
             await event_service.request_sub(
                 session, None, assignment_id=a.id, requested_by=None, now=mint.now()
             )
-        )
+        ).value
         assignment_id, sub_id = a.id, sub.id
     async with db_session() as session:
-        assignment, outgoing, incoming = ok(
+        assignment, outgoing, incoming = done(
             await event_service.substitute(
                 session,
                 None,
@@ -1123,7 +1125,7 @@ async def test_substitute_hands_the_slot_over(database):
                 notify=NotifyMode.direct,  # the GUI mails the incoming volunteer directly
                 now=mint.now(),
             )
-        )
+        ).value
         assert (assignment.volunteer_id, outgoing.id, incoming.id) == (
             vids[2],
             vids[1],
@@ -1170,7 +1172,7 @@ async def test_substitute_default_lets_the_digest_reach_the_new_person(database)
     # the self sign-up stamped event_scheduled for the outgoing volunteer
     assert NotificationStage.event_scheduled in await _notices(assignment_id)
     async with db_session() as session:
-        assignment, _outgoing, _incoming = ok(
+        assignment, _outgoing, _incoming = done(
             await event_service.substitute(
                 session,
                 None,
@@ -1180,7 +1182,7 @@ async def test_substitute_default_lets_the_digest_reach_the_new_person(database)
                 now=mint.now(),
                 notify=NotifyMode.digest,
             )
-        )
+        ).value
         handed_over_id = assignment.id
     notices = await _notices(handed_over_id)
     assert NotificationStage.event_scheduled not in notices, (
@@ -1414,7 +1416,7 @@ async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
                 now=mint.now(),
             )
         )
-        ok(
+        done(
             await event_service.cancel_event(
                 session, None, elsewhere, cancelled_by=None, now=mint.now()
             )

@@ -27,9 +27,9 @@ from starlette.requests import Request
 
 from .. import query_lang, throttle
 from ..config import settings
-from ..domain import NotifyMode
+from ..effects import Effect, SendMail, ThrottleHit
 from ..env import current as current_env
-from ..errors import NotFound
+from ..errors import NotFound, not_found, require
 from ..fp import Err
 from ..log import audit_log
 from ..models import (
@@ -41,7 +41,6 @@ from ..models import (
     EventSubRequest,
     Volunteer,
 )
-from ..permissions import require
 from ..services import events as event_service
 from ..services import gcal, mail
 from ..services import task_force as task_force_service
@@ -49,7 +48,7 @@ from ..services import teams as team_service
 from ..services import users as user_service
 from . import calendar_grid, column_order
 from .calendar_panel import subscribe_panel
-from .context import action_session, notify_errors, page_session
+from .context import PageCtx, action_session, notify_errors, page_session, run_command
 from .date_input import date_input, time_input
 from .layout import frame
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -184,13 +183,14 @@ def _share_panel(base_url: str, event_id: int) -> None:
     ).mark("share-event")
 
 
-async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
-    """Open a substitution call and mail the teammates who could take it.
+async def _sub_request_dialog(assignment_id: int) -> None:
+    """Open a substitution call; the policy mails the teammates who could
+    take it.
 
     This is the widest fan-out in the app — one click mails every teammate not
     already serving, and the largest roster here is 28 people — so it is the
     one action rate-limited by volume rather than by abuse: see
-    SUB_REQUESTS_PER_TEAM_PER_DAY."""
+    SUB_REQUESTS_PER_TEAM_PER_DAY (policy.py decides from the ledger)."""
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label("Ask for a substitute").classes("text-lg font-medium")
         ui.label(
@@ -203,83 +203,42 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
             .classes("w-full")
         )
 
-        @notify_errors
         async def save() -> None:
-            async with action_session() as (session, actor):
-                assignment = await event_service.get_assignment(session, assignment_id)
-                if assignment is None:
-                    raise LookupError("assignment vanished")
-                sub = (
-                    await event_service.request_sub(
-                        session,
-                        actor,
-                        assignment_id=assignment_id,
-                        requested_by=actor.user.id,
-                        note=note.value,
-                        now=current_env().clock.now(),
-                    )
-                ).unwrap()
-                # Gather what the mail needs directly, NOT via the roster-gated
-                # detail(): an assignee who was since removed from the team may
-                # still hand off their own slot (request_sub authorized them),
-                # but detail()'s view check would 403 here and roll the just-
-                # created request back.
-                event = await event_service.get(session, assignment.event_id)
-                if event is None:
-                    raise LookupError("event vanished")
-                asker = await session.get(Volunteer, assignment.volunteer_id)
-                slot = await session.get(EventSlot, assignment.slot_id)
-                paths = (await team_service.tree(session)).paths
+            async def command(ctx: PageCtx):
+                return await event_service.request_sub(
+                    ctx.session,
+                    ctx.actor,
+                    assignment_id=assignment_id,
+                    requested_by=ctx.actor.user.id,
+                    note=note.value,
+                    now=ctx.now,
+                )
+
+            def done(_sub, effects: tuple[Effect, ...]) -> None:
                 # The request itself is never refused — it belongs on the
-                # events page whether or not it is announced — but the blast is
-                # capped. A team that has already sent its allowance today gets
-                # the row and no mail, and the asker is told so plainly.
-                env = current_env()
-                now = env.clock.now()
-                capped = env.throttle.blocked(f"sub-req:{event.team_id}", now)
-                audience = (
-                    []
-                    if capped
-                    else await event_service.member_emails(
-                        session,
-                        event.team_id,
-                        exclude_volunteer_ids=(
-                            await event_service.assigned_volunteer_ids(
-                                session, event.id
-                            )
-                        ),
+                # events page whether or not it is announced — but the blast
+                # is capped: a team that has already sent its allowance today
+                # gets the row and no mail, and the asker is told so plainly.
+                dialog.close()
+                capped = not any(isinstance(e, ThrottleHit) for e in effects)
+                if capped:
+                    ui.notify(
+                        "Your request is posted on the Events page, but this team "
+                        f"has already sent its {SUB_REQUESTS_PER_TEAM_PER_DAY} "
+                        "substitute emails for today — nobody was mailed. Ask a "
+                        "teammate directly, or try again tomorrow.",
+                        color="warning",
+                        multi_line=True,
+                        timeout=10000,
                     )
-                )
-                message = mail.sub_request_email(
-                    event.title,
-                    paths.get(event.team_id, f"team {event.team_id}"),
-                    slot.name if slot else "volunteer",
-                    mail.event_when(event.starts_at, event.ends_at, tz=_tz()),
-                    asker.full_name if asker else "A teammate",
-                    sub.note,
-                    f"{base_url}/events",
-                )
-            if not capped:
-                env.throttle.hit(f"sub-req:{event.team_id}", now)
-            for address in audience:  # after commit; send_email never raises
-                await mail.send_email(address, *message)
-            dialog.close()
-            if capped:
-                ui.notify(
-                    "Your request is posted on the Events page, but this team "
-                    f"has already sent its {SUB_REQUESTS_PER_TEAM_PER_DAY} "
-                    "substitute emails for today — nobody was mailed. Ask a "
-                    "teammate directly, or try again tomorrow.",
-                    color="warning",
-                    multi_line=True,
-                    timeout=10000,
-                )
-            else:
-                ui.notify(
-                    f"Asked {len(audience)} teammate(s) for a substitute",
-                    color="positive",
-                )
-            ui.navigate.reload()
+                else:
+                    mailed = sum(isinstance(e, SendMail) for e in effects)
+                    ui.notify(
+                        f"Asked {mailed} teammate(s) for a substitute",
+                        color="positive",
+                    )
+
+            await run_command(command, on_ok=done)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -287,9 +246,7 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
     dialog.open()
 
 
-async def _substitute_dialog(
-    assignment_id: int, options: dict[int, str], base_url: str
-) -> None:
+async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> None:
     """Hand a slot straight to a chosen teammate — no open call, no race."""
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label("Hand this slot to a teammate").classes("text-lg font-medium")
@@ -304,51 +261,28 @@ async def _substitute_dialog(
             .classes("w-full")
         )
 
-        @notify_errors
         async def save() -> None:
             if not pick.value:
                 ui.notify("Pick a teammate first", color="warning")
                 return
-            async with action_session() as (session, actor):
-                assignment = await event_service.get_assignment(session, assignment_id)
-                if assignment is None:
-                    raise LookupError("assignment vanished")
-                event = await event_service.get(session, assignment.event_id)
-                if event is None:
-                    raise LookupError("event vanished")
-                assignment, outgoing, incoming = (
-                    await event_service.substitute(
-                        session,
-                        actor,
-                        assignment_id=assignment_id,
-                        new_volunteer_id=pick.value,
-                        acted_by=actor.user.id,
-                        notify=NotifyMode.direct,  # the mail below tells the incoming volunteer
-                        now=current_env().clock.now(),
-                    )
-                ).unwrap()
-                slot = await session.get(EventSlot, assignment.slot_id)
-                message = mail.substituted_in_email(
-                    event.title,
-                    slot.name if slot else "volunteer",
-                    mail.event_when(event.starts_at, event.ends_at, tz=_tz()),
-                    outgoing.full_name,
-                    f"{base_url}/events",
-                )
-                incoming_email = incoming.email
-                incoming_name = incoming.full_name
-                audit_log(
-                    "event.substitute",
-                    event_id=event.id,
+
+            async def command(ctx: PageCtx):
+                return await event_service.substitute(
+                    ctx.session,
+                    ctx.actor,
                     assignment_id=assignment_id,
-                    from_volunteer_id=outgoing.id,
-                    to_volunteer_id=incoming.id,
+                    new_volunteer_id=pick.value,
+                    acted_by=ctx.actor.user.id,
+                    notify=ctx.env.notify,  # direct: the policy mails the incoming volunteer
+                    now=ctx.now,
                 )
-            if incoming_email:  # after commit; send_email never raises
-                await mail.send_email(incoming_email, *message)
-            dialog.close()
-            ui.notify(f"{incoming_name} now holds the slot", color="positive")
-            ui.navigate.reload()
+
+            def done(value, _effects) -> None:
+                _assignment, _outgoing, incoming = value
+                dialog.close()
+                ui.notify(f"{incoming.full_name} now holds the slot", color="positive")
+
+            await run_command(command, on_ok=done)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -370,56 +304,37 @@ async def _self_removal_dialog(assignment_id: int) -> None:
             .classes("w-full")
         )
 
-        @notify_errors
         async def save() -> None:
             text = (reason.value or "").strip()
             if not text:
                 ui.notify("A reason is required", color="warning")
                 return
-            async with action_session() as (session, actor):
-                assignment = await event_service.get_assignment(session, assignment_id)
+
+            async def command(ctx: PageCtx):
+                assignment = await event_service.get_assignment(
+                    ctx.session, assignment_id
+                )
                 if assignment is None:
-                    raise LookupError("assignment vanished")
+                    return not_found("assignment", assignment_id)
                 # remove_assignment allows a manager too; taking YOURSELF off
                 # is the flow this dialog serves, and the reason it collects
-                require(
-                    assignment.volunteer_id == actor.volunteer_id,
+                if denied := require(
+                    assignment.volunteer_id == ctx.actor.volunteer_id,
                     "take somebody else off their slot",
+                ):
+                    return denied
+                return await event_service.remove_assignment(
+                    ctx.session, ctx.actor, assignment_id, now=ctx.now, reason=text
                 )
-                event = await event_service.get(session, assignment.event_id)
-                if event is None:
-                    raise LookupError("event vanished")
-                slot = await session.get(EventSlot, assignment.slot_id)
-                me = await session.get(Volunteer, assignment.volunteer_id)
-                paths = (await team_service.tree(session)).paths
-                audience = await team_service.leader_emails(session, event.team_id)
-                message = mail.self_removal_email(
-                    event.title,
-                    paths.get(event.team_id, ""),
-                    slot.name if slot else "volunteer",
-                    mail.event_when(event.starts_at, event.ends_at, tz=_tz()),
-                    me.full_name if me else "A volunteer",
-                    text,
+
+            def done(_event, _effects) -> None:
+                dialog.close()
+                ui.notify(
+                    "You're off the slot — the leaders have been told",
+                    color="positive",
                 )
-                (
-                    await event_service.remove_assignment(
-                        session, actor, assignment_id, now=current_env().clock.now()
-                    )
-                ).unwrap()
-                audit_log(
-                    "event.self_removal",
-                    event_id=event.id,
-                    volunteer_id=actor.volunteer_id,
-                    reason=text[:500],
-                )
-            for address in audience:  # after commit; send_email never raises
-                await mail.send_email(address, *message)
-            dialog.close()
-            ui.notify(
-                "You're off the slot — the leaders have been told",
-                color="positive",
-            )
-            ui.navigate.reload()
+
+            await run_command(command, on_ok=done)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -427,50 +342,33 @@ async def _self_removal_dialog(assignment_id: int) -> None:
     dialog.open()
 
 
-@notify_errors
 async def _claim_sub(sub_request_id: int) -> None:
-    async with action_session() as (session, actor):
-        sub, assignment, asker = (
-            await event_service.claim_sub(
-                session,
-                actor,
-                sub_request_id=sub_request_id,
-                volunteer_id=actor.volunteer_id,
-                now=current_env().clock.now(),
-            )
-        ).unwrap()
-        event = await event_service.get(session, assignment.event_id)
-        slot = await session.get(EventSlot, assignment.slot_id)
-        claimant = await session.get(Volunteer, actor.volunteer_id)
-        message = mail.sub_claimed_email(
-            event.title,
-            slot.name,
-            mail.event_when(event.starts_at, event.ends_at, tz=_tz()),
-            claimant.full_name if claimant else "A teammate",
-            asker.full_name,
+    async def command(ctx: PageCtx):
+        return await event_service.claim_sub(
+            ctx.session,
+            ctx.actor,
+            sub_request_id=sub_request_id,
+            volunteer_id=ctx.actor.volunteer_id,
+            now=ctx.now,
         )
-        # The asker only. The team's leaders were copied here once and were the
-        # only recipients with nothing to do — the message says a gap they
-        # never had to fill has been filled — which on a three-leader team was
-        # four messages for one useful one. The event page carries the same
-        # fact, live, for whoever wants it.
-        recipient = asker.email
-    if recipient:  # after commit
-        await mail.send_email(recipient, *message)
-    ui.notify("The slot is yours — thank you!", color="positive")
-    ui.navigate.reload()
+
+    await run_command(
+        command,
+        on_ok=lambda _v, _e: ui.notify(
+            "The slot is yours — thank you!", color="positive"
+        ),
+    )
 
 
-@notify_errors
 async def _withdraw_sub(sub_request_id: int) -> None:
-    async with action_session() as (session, actor):
-        (
-            await event_service.cancel_sub(
-                session, actor, sub_request_id, now=current_env().clock.now()
-            )
-        ).unwrap()
-    ui.notify("Request withdrawn", color="positive")
-    ui.navigate.reload()
+    async def command(ctx: PageCtx):
+        return await event_service.cancel_sub(
+            ctx.session, ctx.actor, sub_request_id, now=ctx.now
+        )
+
+    await run_command(
+        command, on_ok=lambda _v, _e: ui.notify("Request withdrawn", color="positive")
+    )
 
 
 async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
@@ -712,7 +610,7 @@ async def events_page(
                                 "Need a sub",
                                 icon="campaign",
                                 on_click=lambda _, aid=duty.assignment.id: (
-                                    _sub_request_dialog(aid, base_url)
+                                    _sub_request_dialog(aid)
                                 ),
                             ).props("dense outline")
 
@@ -1545,32 +1443,20 @@ async def _cancel_event(event_id: int) -> None:
     await _do_cancel(event_id)
 
 
-@notify_errors
 async def _do_cancel(event_id: int) -> None:
-    async with action_session() as (session, actor):
-        current = await event_service.get(session, event_id)
-        if current is None:
-            raise LookupError("event vanished")
-        was_upcoming = not event_service.is_past(current, now=current_env().clock.now())
-        cancelled, emails = (
-            await event_service.cancel_event(
-                session,
-                actor,
-                event_id,
-                cancelled_by=actor.user.id,
-                now=current_env().clock.now(),
-            )
-        ).unwrap()
-        paths = (await team_service.tree(session)).paths
-        message = mail.event_cancelled_email(
-            cancelled.title,
-            paths.get(cancelled.team_id, ""),
-            mail.event_when(cancelled.starts_at, cancelled.ends_at, tz=_tz()),
+    """The policy mails everyone signed up — unless the event was already
+    over, when nobody needs mail about it."""
+
+    async def command(ctx: PageCtx):
+        return await event_service.cancel_event(
+            ctx.session,
+            ctx.actor,
+            event_id,
+            cancelled_by=ctx.actor.user.id,
+            now=ctx.now,
         )
-    if was_upcoming:  # after commit; nobody needs mail about a past event
-        for address in emails:
-            await mail.send_email(address, *message)
-    ui.navigate.reload()
+
+    await run_command(command)
 
 
 @ui.page("/events/{event_id}")
@@ -1752,7 +1638,7 @@ async def event_detail_page(request: Request, event_id: int):
                                 "Need a sub",
                                 icon="campaign",
                                 on_click=lambda _, aid=assignment.id: (
-                                    _sub_request_dialog(aid, base_url)
+                                    _sub_request_dialog(aid)
                                 ),
                             ).props("dense outline")
                         if upcoming and volunteer.id == actor.volunteer_id:
@@ -1762,7 +1648,7 @@ async def event_detail_page(request: Request, event_id: int):
                                 icon="swap_horiz",
                                 on_click=lambda _, aid=assignment.id: (
                                     _substitute_dialog(
-                                        aid, picker_options(assigned_vids), base_url
+                                        aid, picker_options(assigned_vids)
                                     )
                                 ),
                             ).props("dense outline")

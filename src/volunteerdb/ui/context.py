@@ -1,6 +1,6 @@
 """Per-page/per-action helpers bridging NiceGUI sessions and the service layer."""
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -10,11 +10,14 @@ from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import asof_param
+from .. import asof_param, effects, policy
 from ..actors import load_actor
 from ..db import transaction
+from ..domain import Outcome
+from ..effects import Effect
 from ..env import Env, current
 from ..errors import (
+    Conflict,
     DomainError,
     DomainErrorRaised,
     Invalid,
@@ -23,6 +26,8 @@ from ..errors import (
     WeakPassword,
     message,
 )
+from ..errors import Forbidden as ForbiddenValue
+from ..fp import Err, Ok, Result, as_result
 from ..log import bind_actor
 from ..permissions import Actor, Forbidden
 from ..services import users as user_service
@@ -135,6 +140,17 @@ class PageCtx:
     base_url: str
     as_of: datetime | None = None
 
+    def policy_ctx(self) -> policy.PolicyCtx:
+        """What the rules need, as values: the moment, the link base, this
+        door's notify mode, a snapshot of the throttle ledger, the copy."""
+        return policy.PolicyCtx(
+            now=self.now,
+            base_url=self.base_url,
+            notify=self.env.notify,
+            throttle=self.env.throttle.snapshot(),
+            copy=self.env.mail_context(),
+        )
+
 
 @asynccontextmanager
 async def page_ctx(as_of: datetime | None = None) -> AsyncIterator[PageCtx]:
@@ -176,6 +192,58 @@ async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
 
 
 action_session = page_session  # same contract, used from event handlers
+
+
+def split_outcome[T](value: Outcome[T] | T) -> tuple[T, tuple]:
+    """A service's plain value, or its Outcome's value and events."""
+    if isinstance(value, Outcome):
+        return value.value, value.events
+    return value, ()
+
+
+async def run_command[T](
+    command: Callable[[PageCtx], Awaitable[Result[Outcome[T] | T, DomainError]]],
+    *,
+    reload: bool = True,
+    on_ok: Callable[[T, tuple[Effect, ...]], None] | None = None,
+) -> Result[T, DomainError]:
+    """One GUI action, start to finish.
+
+    The command runs inside a page_ctx() unit of work and returns the
+    service's Result. An Err rolls the transaction back and becomes a toast.
+    An Ok is planned (policy.plan over its events) inside the transaction and
+    committed; the effects -- mail, audit lines, throttle charges -- run AFTER
+    the commit, so mail never rides a transaction; then `on_ok` (the success
+    toast, a dialog to close: a pure function of the value and the effects)
+    and, unless told otherwise, a reload. A conflict at commit (IntegrityError)
+    is a Conflict toast. A command may still call .unwrap() on the way
+    (transition); the carrier is read back as the Err it wraps.
+    """
+    env = current()
+    try:
+        async with page_ctx() as ctx:
+            try:
+                result = as_result(await command(ctx))
+            except DomainErrorRaised as exc:
+                result = Err(exc.error)
+            if isinstance(result, Err):
+                await ctx.session.rollback()
+                toast(result.error)
+                return result
+            value, events = split_outcome(result.value)
+            planned = policy.plan(events, ctx.policy_ctx())
+    except IntegrityError:
+        conflict = Conflict()
+        toast(conflict)
+        return Err(conflict)
+    except Forbidden as exc:  # page_ctx: not signed in; it already redirected
+        return Err(ForbiddenValue(str(exc)))
+    await effects.run(planned, env)
+    if on_ok is not None:
+        on_ok(value, planned)
+    if reload:
+        ui.navigate.reload()
+    return Ok(value)
 
 
 def toast(err: DomainError) -> None:

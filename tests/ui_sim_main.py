@@ -6,10 +6,14 @@ inside its reset context so the @ui.page routes register against the fresh app.
 
 from nicegui import ui
 
+from volunteerdb import env as env_mod
 from volunteerdb.main import create_app
 from volunteerdb.ui.context import establish_session
 
-create_app()
+from tests.fakes import SIM_MAILER
+
+# the real Env over the test engine, except that its mail is recorded
+create_app(env_mod.build(mailer=SIM_MAILER))
 
 
 @ui.page("/login-dev/{user_id}")

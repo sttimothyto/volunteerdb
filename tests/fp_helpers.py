@@ -9,6 +9,7 @@ and leaves with them.
 
 import re
 
+from volunteerdb.domain import Outcome
 from volunteerdb.errors import DomainError, message
 from volunteerdb.fp import Err, Ok
 
@@ -30,3 +31,11 @@ def refused(r: Ok | Err, kind: type, *, match: str | None = None) -> DomainError
         text = message(err)
         assert re.search(match, text), f"{match!r} not in {text!r}"
     return err
+
+
+def done[T](r: Ok[Outcome[T]] | Err) -> Outcome[T]:
+    """An Ok whose value is an Outcome, for a test that reads the value and
+    the events a mutation established."""
+    outcome = ok(r)
+    assert isinstance(outcome, Outcome), f"not an Outcome: {outcome!r}"
+    return outcome

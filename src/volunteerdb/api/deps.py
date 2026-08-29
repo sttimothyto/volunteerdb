@@ -6,12 +6,22 @@ from typing import Annotated
 
 import sqlalchemy as sa
 import structlog
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import effects, policy
 from ..actors import load_actor
 from ..asof_param import parse_as_of
+from ..domain import NotifyMode, Outcome
 from ..env import Env
 from ..errors import (
     BadCredentials,
@@ -27,6 +37,7 @@ from ..errors import (
     message,
 )
 from ..errors import Forbidden as ForbiddenValue
+from ..fp import Err, Result, as_result
 from ..log import bind_actor
 from ..permissions import Actor, Forbidden
 from ..services import users as user_service
@@ -46,6 +57,21 @@ class Ctx:
     env: Env
     now: datetime
     base_url: str
+    # This door sends no roster mail of its own: a volunteer an API call
+    # scheduled hears about it from the nightly digest (docs/reference/
+    # http-api.md). The GUI's PageCtx runs the Env's mode, `direct`.
+    notify: NotifyMode = NotifyMode.digest
+
+    def policy_ctx(self) -> policy.PolicyCtx:
+        """What the rules need, as values: the moment, the link base, this
+        door's notify mode, a snapshot of the throttle ledger, the copy."""
+        return policy.PolicyCtx(
+            now=self.now,
+            base_url=self.base_url,
+            notify=self.notify,
+            throttle=self.env.throttle.snapshot(),
+            copy=self.env.mail_context(),
+        )
 
 
 def env_of(request: Request) -> Env:
@@ -158,6 +184,36 @@ def to_http(err: DomainError) -> HTTPException:
     if isinstance(err, Throttled):
         headers = {"Retry-After": str(err.retry_after_s)}
     return HTTPException(status_of(err), message(err), headers=headers)
+
+
+def raise_http[T](result: Result[T, DomainError] | T) -> T:
+    """The value, or the refusal as the HTTPException it maps to (the
+    transaction unwinds with it, so nothing partial commits)."""
+    r = as_result(result)
+    if isinstance(r, Err):
+        raise to_http(r.error)
+    return r.value
+
+
+def dispatch[T](
+    ctx: Ctx, background: BackgroundTasks, result: Result[Outcome[T] | T, DomainError]
+) -> T:
+    """A mutation's Result, seen through: the refusal becomes its status, the
+    Outcome's events are planned (policy.plan) now and its effects run as
+    background tasks -- after the response, which is after api_ctx committed
+    -- so mail never rides a transaction. The plain value comes back for the
+    response body."""
+    value, events = _split(raise_http(result))
+    planned = policy.plan(events, ctx.policy_ctx())
+    if planned:
+        background.add_task(effects.run, planned, ctx.env)
+    return value
+
+
+def _split[T](value: Outcome[T] | T) -> tuple[T, tuple]:
+    if isinstance(value, Outcome):
+        return value.value, value.events
+    return value, ()
 
 
 def install_exception_handlers(app: FastAPI) -> None:

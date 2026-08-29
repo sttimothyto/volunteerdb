@@ -9,7 +9,7 @@ import os
 import re
 import subprocess
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -31,6 +31,11 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
+from tests.fakes import (  # noqa: F401 -- re-exported for the tests that import them from here
+    FakeClock,
+    FakeRng,
+    RecordingMailer,
+)
 from tests.fp_helpers import ok
 
 # Go through Settings rather than os.environ so the suite reads .env exactly
@@ -222,55 +227,6 @@ def log_records():
 # the bare router app below is handed this one, whose mailer records instead
 # of sending. The clock is the real one unless a test installs a FakeClock,
 # which is how "now" becomes an input rather than a race.
-
-
-class FakeClock:
-    """A clock a test moves by hand."""
-
-    def __init__(self, at: datetime | None = None) -> None:
-        self.at = at if at is not None else datetime.now(UTC)
-
-    def now(self) -> datetime:
-        return self.at
-
-    def advance(self, **delta) -> None:
-        self.at += timedelta(**delta)
-
-
-class FakeRng:
-    """Predictable tokens and codes, numbered in the order they were minted."""
-
-    def __init__(self) -> None:
-        self.n = 0
-
-    def _next(self) -> int:
-        self.n += 1
-        return self.n
-
-    def token(self) -> str:
-        return f"token-{self._next():04d}"
-
-    def otp_code(self) -> str:
-        return f"{self._next():06d}"
-
-    def uuid(self):
-        from uuid import UUID
-
-        return UUID(int=self._next())
-
-    def hex(self, n: int) -> str:
-        return f"{self._next():0{2 * n}x}"[-2 * n :]
-
-
-class RecordingMailer:
-    """Every message the app would have sent, as (to, subject, body)."""
-
-    def __init__(self) -> None:
-        self.sent: list[tuple[str, str, str]] = []
-
-    async def send(self, to: str, subject: str, body: str) -> bool:
-        self.sent.append((to, subject, body))
-        return True
 
 
 @pytest.fixture

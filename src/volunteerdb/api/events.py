@@ -15,7 +15,7 @@ jobs.event_reminders' "you have been scheduled" notice.
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, BackgroundTasks, Query
 
 from ..log import audit_log
 from ..models import Event, EventSlot, EventStatus, EventSubRequest, Volunteer
@@ -23,7 +23,7 @@ from ..permissions import require
 from ..services import events as event_service
 from ..services import task_force as task_force_service
 from ..services import teams as team_service
-from .deps import CtxDep
+from .deps import CtxDep, dispatch
 from .schemas import (
     AttendanceIn,
     AttendanceRowOut,
@@ -275,16 +275,20 @@ async def update_event(ctx: CtxDep, event_id: int, data: EventPatch) -> EventOut
 
 
 @router.post("/{event_id}/cancel")
-async def cancel_event(ctx: CtxDep, event_id: int) -> EventOut:
-    event, _emails = (
+async def cancel_event(
+    ctx: CtxDep, event_id: int, background: BackgroundTasks
+) -> EventOut:
+    event = dispatch(
+        ctx,
+        background,
         await event_service.cancel_event(
             ctx.session,
             ctx.actor,
             event_id,
             cancelled_by=ctx.actor.user.id,
             now=ctx.now,
-        )
-    ).unwrap()
+        ),
+    )
     return EventOut.model_validate(event)
 
 
@@ -409,14 +413,18 @@ async def create_assignment(
 
 
 @router.delete("/assignments/{assignment_id}", status_code=204)
-async def remove_assignment(ctx: CtxDep, assignment_id: int) -> None:
+async def remove_assignment(
+    ctx: CtxDep, assignment_id: int, background: BackgroundTasks
+) -> None:
     """Withdraw yourself, or (as a manager) remove anyone — future events
     only; past rosters are the attendance record."""
-    (
+    dispatch(
+        ctx,
+        background,
         await event_service.remove_assignment(
             ctx.session, ctx.actor, assignment_id, now=ctx.now
-        )
-    ).unwrap()
+        ),
+    )
 
 
 # --- substitutions ------------------------------------------------------------
@@ -424,10 +432,11 @@ async def remove_assignment(ctx: CtxDep, assignment_id: int) -> None:
 
 @router.post("/assignments/{assignment_id}/sub-request", status_code=201)
 async def request_sub(
-    ctx: CtxDep, assignment_id: int, data: SubRequestIn
+    ctx: CtxDep, assignment_id: int, data: SubRequestIn, background: BackgroundTasks
 ) -> SubRequestOut:
     """Open a substitution call for your own assignment (or, as a manager,
-    anyone's). NOTE: unlike the GUI, no teammate email goes out."""
+    anyone's). NOTE: unlike the GUI, no teammate email goes out (this door
+    runs NotifyMode.digest; policy.plan sends no roster mail for it)."""
     assignment = await event_service.get_assignment(ctx.session, assignment_id)
     if assignment is None:
         raise LookupError(f"assignment {assignment_id} not found")
@@ -437,7 +446,9 @@ async def request_sub(
         or ctx.actor.can_manage_team(event.team_id),
         "ask for a substitute for someone else",
     )
-    sub = (
+    sub = dispatch(
+        ctx,
+        background,
         await event_service.request_sub(
             ctx.session,
             ctx.actor,
@@ -445,23 +456,27 @@ async def request_sub(
             requested_by=ctx.actor.user.id,
             note=data.note,
             now=ctx.now,
-        )
-    ).unwrap()
+        ),
+    )
     return SubRequestOut.model_validate(sub)
 
 
 @router.post("/sub-requests/{sub_request_id}/claim")
-async def claim_sub(ctx: CtxDep, sub_request_id: int) -> SubRequestOut:
+async def claim_sub(
+    ctx: CtxDep, sub_request_id: int, background: BackgroundTasks
+) -> SubRequestOut:
     """First-come claim; the assignment moves to the caller."""
-    sub, _assignment, _asker = (
+    sub, _assignment, _asker = dispatch(
+        ctx,
+        background,
         await event_service.claim_sub(
             ctx.session,
             ctx.actor,
             sub_request_id=sub_request_id,
             volunteer_id=ctx.actor.volunteer_id,
             now=ctx.now,
-        )
-    ).unwrap()
+        ),
+    )
     return SubRequestOut.model_validate(sub)
 
 
@@ -599,7 +614,7 @@ async def refresh_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut:
 
 @router.post("/assignments/{assignment_id}/substitute")
 async def substitute(
-    ctx: CtxDep, assignment_id: int, data: SubstituteIn
+    ctx: CtxDep, assignment_id: int, data: SubstituteIn, background: BackgroundTasks
 ) -> EventAssignmentOut:
     """Hand this slot straight to a named teammate — the claim flow without the
     open call, for when the assignee has already found their own cover.
@@ -608,7 +623,9 @@ async def substitute(
     volunteer must really be a member of the event's team, admin or not. Any
     open substitution request on the assignment is cancelled with it.
     """
-    assignment, _outgoing, _incoming = (
+    assignment, _outgoing, _incoming = dispatch(
+        ctx,
+        background,
         await event_service.substitute(
             ctx.session,
             ctx.actor,
@@ -616,13 +633,7 @@ async def substitute(
             new_volunteer_id=data.volunteer_id,
             acted_by=ctx.actor.user.id,
             now=ctx.now,
-            notify=ctx.env.notify,
-        )
-    ).unwrap()
-    audit_log(
-        "event.slot_handed_over",
-        assignment_id=assignment_id,
-        to_volunteer_id=data.volunteer_id,
-        via="api",
+            notify=ctx.notify,
+        ),
     )
     return EventAssignmentOut.model_validate(assignment)
