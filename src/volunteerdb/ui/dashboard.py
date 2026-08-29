@@ -1,4 +1,4 @@
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
 
 from fastapi import Request
 from nicegui import ui
@@ -14,7 +14,7 @@ from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from .a11y import icon_button
 from .assets import static_url
-from .context import action_session, page_session, parse_as_of, toast
+from .context import page_ctx, parse_as_of, toast
 from .cytoscape_element import CytoscapeGraph
 from .layout import frame
 from .search_box import search_box
@@ -28,16 +28,39 @@ AS_OF_NOTE = (
 )
 
 
+def _dashboard_href(*, as_of: str = "", q: str = "") -> str:
+    """The dashboard with its graph filter in the URL -- the one place the
+    filter lives, so a reload, a shared link and the back button all agree."""
+    params = {k: v for k, v in (("as_of", as_of), ("q", q)) if v}
+    return "/" + (f"?{urlencode(params)}" if params else "")
+
+
 @ui.page("/")
-async def dashboard(request: Request, as_of: str = ""):
+async def dashboard(request: Request, as_of: str = "", q: str = ""):
     # the graph library is loaded via dynamic import() at Vue mount, far too
     # late for the browser's preload scanner — announce it in the head instead
     ui.add_head_html(
         f'<link rel="modulepreload" href="{static_url("cytoscape.esm.min.js")}">'
     )
     at = parse_as_of(as_of)
-    async with page_session() as (session, actor):
-        elements = await graph_service.elements(session, actor, at=at)
+    # ?q= is a WHERE filter narrowing the graph in place (plain text goes to
+    # the volunteers list instead, see submit); an unparsable one is ignored
+    query = q.strip() if query_lang.parse(q.strip()) is not None else ""
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
+        filtered_ids: set[int] | None = None
+        if query:
+            found = await volunteer_service.search_or_query(
+                session, query, at=at, include_inactive=actor.is_admin, actor=actor
+            )
+            if isinstance(found, Err):
+                toast(found.error)
+                query = ""
+            else:
+                filtered_ids = {v.id for v in found.value}
+        elements = await graph_service.elements(
+            session, actor, at=at, volunteer_ids=filtered_ids
+        )
         tree = await team_service.tree(session, at=at)
         paths = tree.paths
         team_options = {0: "— whole parish —"} | {
@@ -65,52 +88,25 @@ async def dashboard(request: Request, as_of: str = ""):
         )
 
     panel = VolunteerPanel(as_of, str(request.base_url).rstrip("/"))
-    # a submitted WHERE filter narrows the graph in place; plain text still
-    # navigates to the volunteers list like it always has
-    active: dict = {"ids": None, "text": ""}
 
     async def refresh_graph() -> None:
-        async with action_session() as (session, actor):
+        async with page_ctx() as ctx:
             new_elements = await graph_service.elements(
-                session,
-                actor,
+                ctx.session,
+                ctx.actor,
                 team_id=team_filter.value or None,
                 at=at,
-                volunteer_ids=active["ids"],
+                volunteer_ids=filtered_ids,
             )
         graph.refresh(new_elements)
 
     async def submit(text: str) -> None:
+        # a WHERE filter narrows the graph in place, by way of the URL; plain
+        # text still navigates to the volunteers list like it always has
         if query_lang.parse(text) is None:
             ui.navigate.to(f"/volunteers?q={quote_plus(text)}")
             return
-        async with action_session() as (session, actor):
-            result = await volunteer_service.search_or_query(
-                session, text, at=at, include_inactive=actor.is_admin, actor=actor
-            )
-        if isinstance(result, Err):
-            toast(result.error)
-            return
-        active["ids"] = {v.id for v in result.value}
-        active["text"] = text
-        render_chip()
-        await refresh_graph()
-
-    def render_chip() -> None:
-        chip_holder.clear()
-        if active["ids"] is None:
-            return
-
-        async def remove() -> None:
-            active["ids"] = None
-            active["text"] = ""
-            chip_holder.clear()
-            await refresh_graph()
-
-        with chip_holder:
-            ui.chip(active["text"], removable=True, icon="filter_alt").mark(
-                "graph-query-chip"
-            ).on("remove", remove)
+        ui.navigate.to(_dashboard_href(as_of=as_of, q=text))
 
     with frame("Dashboard", actor, as_of=at, asof_path="/"):
         with ui.row().classes("items-center gap-2 w-full"):
@@ -152,7 +148,10 @@ async def dashboard(request: Request, as_of: str = ""):
                 "Fit the whole graph in view",
                 on_click=lambda: graph.fit(),
             ).props("dense flat")
-            chip_holder = ui.row().classes("items-center")
+            if query:
+                ui.chip(query, removable=True, icon="filter_alt").mark(
+                    "graph-query-chip"
+                ).on("remove", lambda _: ui.navigate.to(_dashboard_href(as_of=as_of)))
             ui.space()
             with ui.row().classes("items-center gap-3 flex-wrap"):
                 _legend_entry("team", "background: var(--vdb-graph-team)")

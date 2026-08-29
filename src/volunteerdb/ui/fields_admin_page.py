@@ -4,7 +4,7 @@ from nicegui import ui
 
 from ..models import FIELD_TYPE_LABELS, FieldType
 from ..services import custom_fields as custom_field_service
-from .context import PageCtx, page_session, run_command
+from .context import PageCtx, page_ctx, run_command
 from .layout import frame
 
 TYPE_OPTIONS = {ft.value: FIELD_TYPE_LABELS[ft] for ft in FieldType}
@@ -12,12 +12,17 @@ TYPE_OPTIONS = {ft.value: FIELD_TYPE_LABELS[ft] for ft in FieldType}
 
 @ui.page("/admin/fields")
 async def fields_page():
-    async with page_session() as (session, actor):
-        if not actor.is_admin:
-            with frame("Custom fields", actor):
-                ui.label("Admins only.").classes("text-gray-500")
-            return
-        defs = await custom_field_service.list_defs(session, include_inactive=True)
+    async with page_ctx() as ctx:
+        actor = ctx.actor
+        defs = (
+            await custom_field_service.list_defs(ctx.session, include_inactive=True)
+            if actor.is_admin
+            else []
+        )
+    if not actor.is_admin:
+        with frame("Custom fields", actor):
+            ui.label("Admins only.").classes("text-gray-500")
+        return
 
     with frame("Custom fields", actor):
         ui.label(

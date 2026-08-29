@@ -30,7 +30,7 @@ from ..config import settings
 from ..effects import Effect, SendMail, ThrottleHit
 from ..env import current as current_env
 from ..errors import NotFound, not_found, require
-from ..fp import Err
+from ..fp import Err, Ok
 from ..models import (
     Event,
     EventAssignment,
@@ -47,7 +47,7 @@ from ..services import teams as team_service
 from ..services import users as user_service
 from . import calendar_grid, column_order
 from .calendar_panel import subscribe_panel
-from .context import PageCtx, page_session, run_command
+from .context import PageCtx, page_ctx, run_command
 from .date_input import date_input, time_input
 from .layout import frame
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -528,7 +528,8 @@ async def events_page(
     show_past = past == "1"
     team_filter = int(team) if team.isdigit() else None
     cal_view = view if view in dict(calendar_grid.VIEWS) else "mine"
-    async with page_session() as (session, actor):
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         duties = (
             await event_service.my_upcoming(
                 session, actor.volunteer_id, now=current_env().clock.now()
@@ -1465,64 +1466,78 @@ async def _do_cancel(event_id: int) -> None:
 @ui.page("/events/{event_id}")
 async def event_detail_page(request: Request, event_id: int):
     base_url = str(request.base_url).rstrip("/")
-    async with page_session() as (session, actor):
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         shown = await event_service.detail(session, actor, event_id)
-        match shown:
-            case Err(NotFound()):
-                with frame("Event not found", actor):
-                    ui.label(f"No event with id {event_id}.")
-                return
-            case Err():
-                # the service decides; the page only chooses how to say it, and
-                # a whole page reads better than a toast on an empty frame
-                with frame("Events", actor):
-                    ui.label(
-                        "This event is visible to the members of its team."
-                    ).classes("text-gray-500")
-                return
-        view = shown.value
-        event = view.event
-        can_manage = actor.can_manage_team(event.team_id)
-        am_member = actor.volunteer_id is not None and await event_service.is_member(
-            session, actor.volunteer_id, event.team_id
-        )
-        am_assigned = actor.volunteer_id is not None and any(
-            v.id == actor.volunteer_id for sv in view.slots for _, v in sv.entries
-        )
-        # members holding a slot need the roster too: the hand-off picker
-        # shows names, which everyone past can_view_roster_names may see
-        roster = (
-            (await team_service.roster(session, actor, event.team_id)).unwrap()
-            if can_manage or am_assigned
-            else []
-        )
-        attendance = (
-            (await event_service.attendance_rows(session, actor, event_id)).unwrap()
-            if can_manage
-            and event_service.is_past(event, now=current_env().clock.now())
-            and event.status == EventStatus.scheduled.value
-            else None
-        )
-        tf_view = await task_force_service.get_for_event(session, event_id)
+        can_manage = am_member = am_assigned = False
+        roster, attendance, tf_view = [], None, None
         collaborator_options: dict[int, str] = {}
-        if can_manage:
-            tree = await team_service.tree(session)
-            paths = tree.paths
-            staffing = {t.id for t in tf_view.sources} if tf_view else {event.team_id}
-            if tf_view:
-                staffing.add(tf_view.team_id)
-            collaborator_options = {
-                t.id: paths[t.id]
-                for t in tree.teams
-                if t.is_active and t.id not in staffing
-            }
-            source_paths = (
-                [paths.get(t.id, t.name) for t in tf_view.sources] if tf_view else []
+        source_paths: list[str] = []
+        if isinstance(shown, Ok):
+            view = shown.value
+            event = view.event
+            can_manage = actor.can_manage_team(event.team_id)
+            am_member = (
+                actor.volunteer_id is not None
+                and await event_service.is_member(
+                    session, actor.volunteer_id, event.team_id
+                )
             )
+            am_assigned = actor.volunteer_id is not None and any(
+                v.id == actor.volunteer_id for sv in view.slots for _, v in sv.entries
+            )
+            # members holding a slot need the roster too: the hand-off picker
+            # shows names, which everyone past can_view_roster_names may see
+            roster = (
+                (await team_service.roster(session, actor, event.team_id)).unwrap()
+                if can_manage or am_assigned
+                else []
+            )
+            attendance = (
+                (await event_service.attendance_rows(session, actor, event_id)).unwrap()
+                if can_manage
+                and event_service.is_past(event, now=ctx.now)
+                and event.status == EventStatus.scheduled.value
+                else None
+            )
+            tf_view = await task_force_service.get_for_event(session, event_id)
+            if can_manage:
+                tree = await team_service.tree(session)
+                paths = tree.paths
+                staffing = (
+                    {t.id for t in tf_view.sources} if tf_view else {event.team_id}
+                )
+                if tf_view:
+                    staffing.add(tf_view.team_id)
+                collaborator_options = {
+                    t.id: paths[t.id]
+                    for t in tree.teams
+                    if t.is_active and t.id not in staffing
+                }
+                source_paths = (
+                    [paths.get(t.id, t.name) for t in tf_view.sources]
+                    if tf_view
+                    else []
+                )
+    match shown:
+        case Err(NotFound()):
+            with frame("Event not found", actor):
+                ui.label(f"No event with id {event_id}.")
+            return
+        case Err():
+            # the service decides; the page only chooses how to say it, and
+            # a whole page reads better than a toast on an empty frame
+            with frame("Events", actor):
+                ui.label("This event is visible to the members of its team.").classes(
+                    "text-gray-500"
+                )
+            return
+    view = shown.value
+    event = view.event
 
     upcoming = (
         event.status == EventStatus.scheduled.value
-        and not event_service.is_past(event, now=current_env().clock.now())
+        and not event_service.is_past(event, now=ctx.now)
     )
     sub_wanted = {a.id: sub for sub, a in view.open_subs}
     rsvp_by_vid = {v.id: r for r, v in view.rsvps}

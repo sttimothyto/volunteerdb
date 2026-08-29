@@ -5,7 +5,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from functools import wraps
 
 from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
@@ -183,18 +182,6 @@ async def page_ctx(as_of: datetime | None = None) -> AsyncIterator[PageCtx]:
             )
 
 
-@asynccontextmanager
-async def page_session() -> AsyncIterator[tuple[AsyncSession, Actor]]:
-    """page_ctx() for the pages and handlers that still take (session, actor);
-    each moves to page_ctx() as it becomes a load/render pair
-    (FUNCTIONAL_REFACTORING.md, Phase 5)."""
-    async with page_ctx() as ctx:
-        yield ctx.session, ctx.actor
-
-
-action_session = page_session  # same contract, used from event handlers
-
-
 def split_outcome[T](value: Outcome[T] | T) -> tuple[T, tuple]:
     """A service's plain value, or its Outcome's value and events."""
     if isinstance(value, Outcome):
@@ -280,27 +267,6 @@ def toast(err: DomainError) -> None:
     anything else is a refusal in red."""
     soft = isinstance(err, (Invalid, WeakPassword, QueryError, Throttled))
     ui.notify(message(err), color="warning" if soft else "negative")
-
-
-def notify_errors(handler: Callable) -> Callable:
-    """Wrap an event handler: service-layer errors become toast notifications."""
-
-    @wraps(handler)
-    async def wrapper(*args, **kwargs):
-        try:
-            return await handler(*args, **kwargs)
-        except DomainErrorRaised as exc:  # transition: a converted service's Err
-            toast(exc.error)
-        except Forbidden as exc:
-            ui.notify(str(exc), color="negative")
-        except LookupError as exc:
-            ui.notify(str(exc), color="negative")
-        except IntegrityError:
-            ui.notify("conflicts with existing data (duplicate?)", color="negative")
-        except ValueError as exc:
-            ui.notify(str(exc), color="warning")
-
-    return wrapper
 
 
 def parse_as_of(raw: str) -> datetime | None:

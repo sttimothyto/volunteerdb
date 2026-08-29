@@ -15,14 +15,14 @@ from nicegui import ui
 
 from ..env import current as current_env
 from ..errors import NotFound
-from ..fp import Err
+from ..fp import Err, Ok
 from ..models import ROLE_LABELS, ProposalStatus, TeamRole
 from ..permissions import team_ids_map
 from ..services import elections as elections_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from ..star import StarResult
-from .context import PageCtx, page_session, run_command
+from .context import PageCtx, page_ctx, run_command
 from .date_input import date_input
 from .layout import frame
 
@@ -76,24 +76,30 @@ def _parse_deadlines(d1: ui.input, d2: ui.input) -> tuple[date, date] | None:
 
 @ui.page("/elections")
 async def elections_page():
-    async with page_session() as (session, actor):
-        if not actor.can_access_elections:
-            with frame("Elections", actor):
-                ui.label(
-                    "Elections are available to admins, team leaders/seconds, "
-                    "and the voting members of a proposal."
-                ).classes("text-gray-500")
-            return
-        can_create = actor.is_admin or bool(actor.managed_team_ids)
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
+        allowed = actor.can_access_elections
+        can_create = allowed and (actor.is_admin or bool(actor.managed_team_ids))
         vacancy_rows = (
             await elections_service.vacancies(session, actor) if can_create else []
         )
-        summaries = await elections_service.list_proposals(
-            session, actor, today=current_env().today()
+        summaries = (
+            await elections_service.list_proposals(
+                session, actor, today=ctx.env.today()
+            )
+            if allowed
+            else []
         )
         volunteer_options = (
             await volunteer_service.name_map(session) if can_create else {}
         )
+    if not allowed:
+        with frame("Elections", actor):
+            ui.label(
+                "Elections are available to admins, team leaders/seconds, "
+                "and the voting members of a proposal."
+            ).classes("text-gray-500")
+        return
 
     open_rows = [s for s in summaries if s.proposal.status == ProposalStatus.open.value]
     decided_rows = [
@@ -369,45 +375,53 @@ def _ballot_section(
 
 @ui.page("/elections/{proposal_id}")
 async def proposal_detail(proposal_id: int):
-    async with page_session() as (session, actor):
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         shown = await elections_service.detail(
-            session, actor, proposal_id, today=current_env().today()
+            session, actor, proposal_id, today=ctx.env.today()
         )
-        match shown:
-            case Err(NotFound()):
-                with frame("Proposal not found", actor):
-                    ui.label(f"No proposal with id {proposal_id}.")
-                return
-            case Err():
-                # the service decides; the page only chooses how to say it, and
-                # a whole page reads better than a toast on an empty frame
-                with frame("Elections", actor):
-                    ui.label(
-                        "This proposal is visible to its voting members and to "
-                        "the team's managers."
-                    ).classes("text-gray-500")
-                return
-        view = shown.value
-        can_manage = actor.can_manage_team(view.proposal.team_id)
-        is_voter = (
-            actor.volunteer_id is not None and proposal_id in actor.voter_proposal_ids
-        )
-        my = (
-            (
-                await elections_service.my_scores(
-                    session, actor, proposal_id, actor.volunteer_id
-                )
-            ).unwrap()
-            if is_voter
-            else {}
-        )
-        team_sets = await team_ids_map(
-            session, [cv.volunteer.id for cv in view.candidates]
-        )
-        wl = await workload_service.visible_scores(session, actor, team_sets)
-        volunteer_options = (
-            await volunteer_service.name_map(session) if can_manage or is_voter else {}
-        )
+        can_manage = is_voter = False
+        my, team_sets, wl, volunteer_options = {}, {}, {}, {}
+        if isinstance(shown, Ok):
+            view = shown.value
+            can_manage = actor.can_manage_team(view.proposal.team_id)
+            is_voter = (
+                actor.volunteer_id is not None
+                and proposal_id in actor.voter_proposal_ids
+            )
+            my = (
+                (
+                    await elections_service.my_scores(
+                        session, actor, proposal_id, actor.volunteer_id
+                    )
+                ).unwrap()
+                if is_voter
+                else {}
+            )
+            team_sets = await team_ids_map(
+                session, [cv.volunteer.id for cv in view.candidates]
+            )
+            wl = await workload_service.visible_scores(session, actor, team_sets)
+            volunteer_options = (
+                await volunteer_service.name_map(session)
+                if can_manage or is_voter
+                else {}
+            )
+    match shown:
+        case Err(NotFound()):
+            with frame("Proposal not found", actor):
+                ui.label(f"No proposal with id {proposal_id}.")
+            return
+        case Err():
+            # the service decides; the page only chooses how to say it, and
+            # a whole page reads better than a toast on an empty frame
+            with frame("Elections", actor):
+                ui.label(
+                    "This proposal is visible to its voting members and to "
+                    "the team's managers."
+                ).classes("text-gray-500")
+            return
+    view = shown.value
 
     p = view.proposal
     phase = view.phase

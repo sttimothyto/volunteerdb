@@ -34,7 +34,6 @@ def logo_img(src: str, classes: str) -> ui.element:
 
 
 def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
-    state: dict = {"image": None}
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label("Site logo").classes("text-lg font-medium")
         ui.label(
@@ -59,12 +58,12 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
             if isinstance(shaped, Err):
                 toast(shaped.error)
                 return
-            state["image"] = shaped.value
-            data_url = "data:image/png;base64," + base64.b64encode(
-                state["image"]
-            ).decode("ascii")
+            data_url = "data:image/png;base64," + base64.b64encode(shaped.value).decode(
+                "ascii"
+            )
             preview.props(f'src="{data_url}"')
             preview.update()
+            render_actions(shaped.value)  # the Upload button now carries this image
 
         ui.upload(
             label="Drop a logo here (stored as PNG, at most 1000×1000)",
@@ -73,18 +72,14 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
             max_file_size=branding.MAX_UPLOAD_BYTES,
         ).props('accept="image/*" max-files=1').classes("w-full")
 
-        async def save() -> None:
-            if state["image"] is None:
+        async def save(image: bytes | None) -> None:
+            if image is None:
                 ui.notify("Choose an image first", color="warning")
                 return
 
             async def command(ctx: PageCtx):
                 return await branding.set_logo(
-                    ctx.session,
-                    ctx.actor,
-                    state["image"],
-                    normalized=True,
-                    now=ctx.now,
+                    ctx.session, ctx.actor, image, normalized=True, now=ctx.now
                 )
 
             async def done(_value, _effects, _report) -> None:
@@ -106,10 +101,17 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
 
             await run_command(command, on_ok=done, reload=False)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Remove logo", on_click=remove).props("flat color=negative")
-            ui.button("Upload", on_click=save)
+        actions = ui.row().classes("justify-end w-full gap-2")
+
+        def render_actions(image: bytes | None) -> None:
+            """The buttons, rebuilt with the picked image captured."""
+            actions.clear()
+            with actions:
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+                ui.button("Remove logo", on_click=remove).props("flat color=negative")
+                ui.button("Upload", on_click=lambda: save(image))
+
+        render_actions(None)
     dialog.open()
 
 

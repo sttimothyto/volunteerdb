@@ -21,13 +21,7 @@ from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from . import column_order, invites
 from .account_status import invitable, last_login_text
-from .context import (
-    PageCtx,
-    page_session,
-    perform,
-    run_command,
-    throttled,
-)
+from .context import PageCtx, page_ctx, perform, run_command, throttled
 from .date_input import date_input, time_input
 from .elections_page import phase_badge
 from .layout import frame
@@ -43,7 +37,8 @@ ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 async def volunteers_page(request: Request, q: str = "", band: str = ""):
     is_query = query_lang.parse(q) is not None
     query_error: str | None = None
-    async with page_session() as (session, actor):
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         result = await volunteer_service.search_or_query(
             session, q, include_inactive=actor.is_admin, actor=actor
         )
@@ -258,12 +253,15 @@ def _new_volunteer_dialog() -> None:
 @ui.page("/volunteers/{volunteer_id}")
 async def volunteer_detail(request: Request, volunteer_id: int):
     base_url = str(request.base_url).rstrip("/")
-    async with page_session() as (session, actor):
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         volunteer = await volunteer_service.get(session, volunteer_id)
-        if volunteer is None:
-            with frame("Volunteer not found", actor):
-                ui.label(f"No volunteer with id {volunteer_id}.")
-            return
+    if volunteer is None:
+        with frame("Volunteer not found", actor):
+            ui.label(f"No volunteer with id {volunteer_id}.")
+        return
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         team_ids = await volunteer_team_ids(session, volunteer_id)
         can_view = actor.can_view_volunteer(volunteer_id, team_ids)
         can_edit = actor.can_edit_volunteer(volunteer_id, team_ids)

@@ -8,7 +8,7 @@ from ..fp import Err, Ok
 from ..models import ROLE_LABELS, TeamRole
 from ..services import teams as team_service
 from ..services import workload as workload_service
-from .context import PageCtx, page_session, run_command
+from .context import PageCtx, page_ctx, run_command
 from .layout import frame
 
 
@@ -35,14 +35,15 @@ def _contrast_note(color: ui.color_input) -> None:
 
 @ui.page("/admin/workload")
 async def workload_page():
-    async with page_session() as (session, actor):
-        if not actor.is_admin:
-            with frame("Workload", actor):
-                ui.label("Admins only.").classes("text-gray-500")
-            return
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         config = await workload_service.read_config(session)
         tree = await team_service.tree(session)
         all_teams, paths = tree.teams, tree.paths
+    if not actor.is_admin:
+        with frame("Workload", actor):
+            ui.label("Admins only.").classes("text-gray-500")
+        return
 
     with frame("Workload", actor):
         ui.label(

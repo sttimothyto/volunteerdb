@@ -30,7 +30,6 @@ def open_photo_dialog(
     photo_at: datetime | None,
     on_change: Callable[[], Awaitable[None]],
 ) -> None:
-    state: dict = {"image": None}
     with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
         ui.label(f"Photo — {full_name}").classes("text-lg font-medium")
         # current photo until a file is picked, then the normalized preview
@@ -46,12 +45,12 @@ def open_photo_dialog(
             if isinstance(shaped, Err):
                 toast(shaped.error)
                 return
-            state["image"] = shaped.value
             preview.set_source(
                 "data:image/jpeg;base64,"
-                + base64.b64encode(state["image"]).decode("ascii")
+                + base64.b64encode(shaped.value).decode("ascii")
             )
             preview.classes(remove="hidden")
+            render_actions(shaped.value)  # the Upload button now carries this image
 
         ui.upload(
             label="Drop a headshot here (stored as 400×400 JPEG)",
@@ -62,8 +61,8 @@ def open_photo_dialog(
 
         agree = ui.checkbox(DISCLAIMER).classes("text-sm")
 
-        async def save() -> None:
-            if state["image"] is None:
+        async def save(image: bytes | None) -> None:
+            if image is None:
                 ui.notify("Choose a photo first", color="warning")
                 return
             if not agree.value:
@@ -74,7 +73,7 @@ def open_photo_dialog(
                 return await photo_service.set_photo(
                     ctx.session,
                     volunteer_id,
-                    state["image"],
+                    image,
                     uploaded_by=ctx.actor.user.id,
                     normalized=True,
                     now=ctx.now,
@@ -99,11 +98,23 @@ def open_photo_dialog(
 
             await run_command(command, on_ok=done, reload=False)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            if photo_at is not None:
-                ui.button("Remove photo", on_click=remove).props("flat color=negative")
-            ui.button("Upload", on_click=save).bind_enabled_from(agree, "value")
+        actions = ui.row().classes("justify-end w-full gap-2")
+
+        def render_actions(image: bytes | None) -> None:
+            """The buttons, rebuilt with the picked image captured: the
+            widgets are the state, so nothing is stored on the side."""
+            actions.clear()
+            with actions:
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+                if photo_at is not None:
+                    ui.button("Remove photo", on_click=remove).props(
+                        "flat color=negative"
+                    )
+                ui.button("Upload", on_click=lambda: save(image)).bind_enabled_from(
+                    agree, "value"
+                )
+
+        render_actions(None)
     dialog.open()
 
 

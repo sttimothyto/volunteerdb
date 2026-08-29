@@ -9,22 +9,29 @@ from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from . import invites
 from .a11y import icon_button
-from .context import PageCtx, page_session, run_command
+from .context import PageCtx, page_ctx, run_command
 from .layout import frame
 
 
 @ui.page("/admin/users")
 async def users_page(request: Request):
     base_url = str(request.base_url).rstrip("/")
-    async with page_session() as (session, actor):
-        if not actor.is_admin:
-            with frame("Accounts", actor):
-                ui.label("Admins only.").classes("text-gray-500")
-            return
-        accounts = (await user_service.list_all(session, actor)).unwrap()
-        volunteer_names = await volunteer_service.name_map(
-            session, include_inactive=True
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
+        accounts = (
+            (await user_service.list_all(session, actor)).unwrap()
+            if actor.is_admin
+            else []
         )
+        volunteer_names = (
+            await volunteer_service.name_map(session, include_inactive=True)
+            if actor.is_admin
+            else {}
+        )
+    if not actor.is_admin:
+        with frame("Accounts", actor):
+            ui.label("Admins only.").classes("text-gray-500")
+        return
 
     def show_invite(token: str, email: str, sent: bool | None = None) -> None:
         invites.show_invite(base_url, token, email, sent)

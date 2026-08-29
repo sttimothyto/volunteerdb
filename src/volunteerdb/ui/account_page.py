@@ -28,7 +28,7 @@ from ..services import users as user_service
 from .calendar_panel import subscribe_panel
 from .context import (
     PageCtx,
-    page_session,
+    page_ctx,
     perform,
     run_command,
     session_auth_method,
@@ -43,7 +43,8 @@ logger = structlog.get_logger(__name__)
 async def account_page(request: Request):
     base_url = str(request.base_url).rstrip("/")
     ip = request.client.host if request.client else "unknown"
-    async with page_session() as (session, actor):
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         user = actor.user
         user_id = user.id
         stored_hash = user.password_hash

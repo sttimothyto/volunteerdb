@@ -20,7 +20,7 @@ from nicegui import ui
 from .. import query_lang
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
-from .context import action_session, notify_errors
+from .context import page_ctx
 
 SUGGEST_MIN_CHARS = 2
 SUGGEST_LIMIT = 6  # per category
@@ -60,13 +60,7 @@ def search_box(
             .mark("suggest-menu")
         )
 
-    latest = 0  # only the newest in-flight lookup may render
-
-    @notify_errors
     async def suggest() -> None:
-        nonlocal latest
-        latest += 1
-        token = latest
         text = (search.value or "").strip()
         if len(text) < SUGGEST_MIN_CHARS:
             menu.close()
@@ -87,20 +81,20 @@ def search_box(
             menu.open()
             return
 
-        async with action_session() as (session, actor):
+        async with page_ctx() as ctx:
             found = await volunteer_service.search(
-                session,
+                ctx.session,
                 text,
                 at=at,
-                include_inactive=actor.is_admin,
-                actor=actor,
+                include_inactive=ctx.actor.is_admin,
+                actor=ctx.actor,
                 limit=SUGGEST_LIMIT,
             )
-            team_hits = (await team_service.search(session, text, at=at))[
+            team_hits = (await team_service.search(ctx.session, text, at=at))[
                 :SUGGEST_LIMIT
             ]
-        if token != latest:
-            return  # a later keystroke is already on its way
+        if (search.value or "").strip() != text:
+            return  # a later keystroke is already on its way; the box is the state
 
         menu.clear()
         with menu:

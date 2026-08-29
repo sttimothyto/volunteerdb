@@ -1,8 +1,6 @@
-from datetime import UTC, datetime
 from decimal import Decimal
 from functools import partial
 from urllib.parse import quote
-from zoneinfo import ZoneInfo
 
 from fastapi import Request
 from nicegui import events, ui
@@ -28,7 +26,6 @@ from .account_status import roster_account
 from .context import (
     PageCtx,
     page_ctx,
-    page_session,
     parse_as_of,
     run_command,
     toast,
@@ -160,7 +157,8 @@ def _wire_search(
 @ui.page("/teams")
 async def teams_page(as_of: str = ""):
     at = parse_as_of(as_of)
-    async with page_session() as (session, actor):
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         tree = await team_service.tree(session, at)
         show_coverage = actor.is_admin or bool(actor.managed_team_ids)
         coverage = await report_service.coverage(session, at) if show_coverage else []
@@ -577,7 +575,6 @@ def _sheet_import_block(is_admin: bool) -> None:
     reach anybody else's roster, and the dry-run -> preview -> apply flow is
     the one already covered by tests.
     """
-    state: dict = {"content": None, "filename": None}
     ui.label("Import a .csv").classes("text-md font-medium mt-2")
     ui.label(
         "1. DO NOT edit the ID Column. "
@@ -595,7 +592,11 @@ def _sheet_import_block(is_admin: bool) -> None:
 
     report_area = ui.column().classes("w-full gap-2")
 
-    async def render_report(report: importer.ImportReport) -> None:
+    async def render_report(
+        report: importer.ImportReport, *, content: bytes, filename: str
+    ) -> None:
+        """The report, and -- for a clean dry run -- the Apply button with the
+        very file it will apply captured, so nothing has to be remembered."""
         report_area.clear()
         with report_area:
             if report.applied:
@@ -639,9 +640,11 @@ def _sheet_import_block(is_admin: bool) -> None:
                 ui.label(f"⚠️ {issue.sheet} row {issue.row}: {issue.message}").classes(
                     "text-amber-700 text-sm"
                 )
-            if not report.applied and not report.has_errors and state["content"]:
+            if not report.applied and not report.has_errors and content:
                 ui.button(
-                    "Apply this import", icon="publish", on_click=apply_import
+                    "Apply this import",
+                    icon="publish",
+                    on_click=lambda: apply_import(content, filename),
                 ).props("color=positive")
 
     async def _import(content: bytes, *, dry_run: bool):
@@ -658,19 +661,18 @@ def _sheet_import_block(is_admin: bool) -> None:
         return report.value
 
     async def on_upload(e: events.UploadEventArguments) -> None:
-        state["content"] = await e.file.read()
-        state["filename"] = e.file.name
-        report = await _import(state["content"], dry_run=True)
+        content, filename = await e.file.read(), e.file.name
+        report = await _import(content, dry_run=True)
         if report is not None:
-            await render_report(report)
+            await render_report(report, content=content, filename=filename)
 
-    async def apply_import() -> None:
-        report = await _import(state["content"], dry_run=False)
+    async def apply_import(content: bytes, filename: str) -> None:
+        report = await _import(content, dry_run=False)
         if report is None:
             return
-        await render_report(report)
+        await render_report(report, content=content, filename=filename)
         if report.applied:
-            ui.notify(f"Imported {state['filename']}", color="positive")
+            ui.notify(f"Imported {filename}", color="positive")
 
     ui.upload(
         label="Drop a .csv file here (validated before anything is written)",
@@ -828,17 +830,20 @@ async def _fetch_home_page(team_id: int) -> None:
 async def team_detail(request: Request, team_id: int, as_of: str = ""):
     at = parse_as_of(as_of)
     base_url = str(request.base_url).rstrip("/")
-    async with page_session() as (session, actor):
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         # out of the tree rather than team_service.get(): the page reads the whole
         # table either way, and get() is a second round trip for a row in hand
         tree = await team_service.tree(session, at=at)
         team = tree.by_id.get(team_id)
         if team is None:
-            with frame(
-                "Team not found", actor, as_of=at, asof_path=f"/teams/{team_id}"
-            ):
-                ui.label(f"No team with id {team_id} at this time.")
-            return
+            await session.rollback()  # nothing to read; the frame says so below
+    if team is None:
+        with frame("Team not found", actor, as_of=at, asof_path=f"/teams/{team_id}"):
+            ui.label(f"No team with id {team_id} at this time.")
+        return
+    async with page_ctx() as ctx:
+        session, actor = ctx.session, ctx.actor
         paths = tree.paths
         slug = page_service.slug_map(paths).get(team_id)
         can_names = actor.can_view_roster_names(team_id)
@@ -872,17 +877,14 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         team_sheet = await session.get(TeamSheet, team_id) if can_manage else None
         anniversaries = (
             await volunteer_service.team_anniversaries(
-                session,
-                team_id,
-                current_env().today(),
-                tz=ZoneInfo(settings().timezone),
+                session, team_id, ctx.env.today(), tz=ctx.env.tz
             )
             if can_manage
             else []
         )
         upcoming_events = (
             await event_service.list_events(
-                session, actor, team_id=team_id, from_=datetime.now(UTC)
+                session, actor, team_id=team_id, from_=ctx.now
             )
             if can_names and at is None
             else []

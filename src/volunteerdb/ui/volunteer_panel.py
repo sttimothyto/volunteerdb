@@ -18,7 +18,7 @@ from ..services import workload as workload_service
 from . import invites
 from .a11y import icon_button
 from .account_status import invitable, last_login_text
-from .context import action_session, notify_errors, parse_as_of
+from .context import page_ctx, parse_as_of
 from .photo_dialog import photo_avatar
 
 
@@ -65,16 +65,18 @@ class VolunteerPanel:
         with self.drawer:
             self.content = ui.column().classes("w-full gap-1")
 
-    @notify_errors
     async def open(self, volunteer_id: int) -> None:
-        async with action_session() as (session, actor):
+        async with page_ctx() as ctx:
+            session, actor = ctx.session, ctx.actor
             volunteer = await volunteer_service.get(session, volunteer_id, at=self.at)
-            if volunteer is None:
-                ui.notify(
-                    f"No volunteer with id {volunteer_id} at this time.",
-                    color="warning",
-                )
-                return
+        if volunteer is None:
+            ui.notify(
+                f"No volunteer with id {volunteer_id} at this time.",
+                color="warning",
+            )
+            return
+        async with page_ctx() as ctx:
+            session, actor = ctx.session, ctx.actor
             team_ids = await volunteer_team_ids(session, volunteer_id)
             can_view = actor.can_view_volunteer(volunteer_id, team_ids)
             can_edit = actor.can_edit_volunteer(volunteer_id, team_ids)

@@ -58,13 +58,12 @@ def show_invite(
     the reader learns that an invite is out and can send another, but the link
     itself only reaches the volunteer's mailbox.
 
-    `reload_on_close` refreshes the page once the reader is done with the link —
-    the row behind this dialog still says "no account" and wants redrawing, but
-    reloading any earlier would tear the link away before it was copied.
+    `reload_on_close` refreshes the page when the reader closes the link with
+    the button — the row behind this dialog still says "no account" and wants
+    redrawing, but reloading any earlier would tear the link away before it
+    was copied. "Send again" closes this dialog without a reload and opens the
+    fresh link's own, whose Close does it.
     """
-    # "Send again" opens its own dialog on top of this one; reloading out from
-    # under that would throw away the link it just produced.
-    resent = {"yes": False}
     with ui.dialog() as dialog, ui.card().classes("gap-2 w-[34rem]"):
         ui.label(f"Invite link for {email}").classes("font-medium")
         url = invite_url(base_url, token)
@@ -108,17 +107,19 @@ def show_invite(
             if on_resend is not None:
 
                 async def resend() -> None:
-                    resent["yes"] = True
                     dialog.close()
                     await on_resend()
 
                 ui.button("Send again", icon="mail", on_click=resend).props(
                     "dense outline"
                 )
-            ui.button("Close", on_click=dialog.close).props("flat dense")
 
-    if reload_on_close:
-        dialog.on("hide", lambda _: None if resent["yes"] else ui.navigate.reload())
+            def close() -> None:
+                dialog.close()
+                if reload_on_close:
+                    ui.navigate.reload()
+
+            ui.button("Close", on_click=close).props("flat dense")
     dialog.open()
 
 

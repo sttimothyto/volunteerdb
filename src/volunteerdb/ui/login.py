@@ -39,7 +39,6 @@ def login_page(request: Request, redirect_to: str = "/"):
 
     apply_theme()
 
-    pending_email = ""
     ip = request.client.host if request.client else "unknown"
     base_url = str(request.base_url).rstrip("/")
     env = current()
@@ -86,7 +85,6 @@ def login_page(request: Request, redirect_to: str = "/"):
             await send_code()
 
     async def send_code() -> None:
-        nonlocal pending_email
         now = env.clock.now()
         addr = (email.value or "").strip()
         if throttled(f"otp-ip:{ip}", now=now):
@@ -108,13 +106,14 @@ def login_page(request: Request, redirect_to: str = "/"):
             events.extend(result.value.events)
         await perform(events, base_url=base_url, now=now)
         # Identical response whether or not the account exists (no enumeration).
-        pending_email = addr
         code_hint.set_text(f"Enter the 6-digit code emailed to {addr}")
         code_input.value = ""
         show_step(code_step)
         ui.notify("If that address has an account, a sign-in code is on its way.")
 
     async def verify() -> None:
+        # the address the code went to is the one still in the (hidden) box
+        pending_email = (email.value or "").strip()
         now = env.clock.now()
         async with transaction(env, None) as session:
             verified = await user_service.verify_otp(
