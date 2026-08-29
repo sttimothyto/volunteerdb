@@ -11,13 +11,14 @@ from datetime import date
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.models import AppUser, ProposalStatus, TeamRole
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
-from tests.fp_helpers import ok
+from tests.fp_helpers import ok, refused
 
 TODAY = date(2026, 8, 10)  # nominating
 D1 = date(2026, 8, 15)  # nomination deadline
@@ -108,16 +109,19 @@ async def _parish(session) -> Parish:
 
 
 async def _open_proposal(session, p: Parish, *, team_id=None, candidates=None):
-    return await elections.create_proposal(
-        session,
-        None,
-        team_id=team_id or p.liturgy_id,
-        role=TeamRole.second,
-        nomination_deadline=D1,
-        voting_deadline=D2,
-        created_by=p.admin_user_id,
-        candidates=candidates or [elections.CandidateInput(p.vera_id, "steady hands")],
-        today=TODAY,
+    return ok(
+        await elections.create_proposal(
+            session,
+            None,
+            team_id=team_id or p.liturgy_id,
+            role=TeamRole.second,
+            nomination_deadline=D1,
+            voting_deadline=D2,
+            created_by=p.admin_user_id,
+            candidates=candidates
+            or [elections.CandidateInput(p.vera_id, "steady hands")],
+            today=TODAY,
+        )
     )
 
 
@@ -132,7 +136,7 @@ async def test_default_roll_leadership_core_plus_clergy(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        view = await elections.detail(session, None, proposal.id, today=TODAY)
+        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
         roll = {v.volunteer.id for v in view.voters}
         assert roll == {p.lena_id, p.cora_id, p.pete_id, p.dan_id}, (
             "leader + core of the target team plus all clergy; plain members excluded"
@@ -152,7 +156,7 @@ async def test_default_roll_without_a_clergy_team(database):
         p = await _parish(session)
         ok(await teams.delete(session, None, p.clergy_id))
         proposal = await _open_proposal(session, p)
-        view = await elections.detail(session, None, proposal.id, today=TODAY)
+        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
         assert {v.volunteer.id for v in view.voters} == {p.lena_id, p.cora_id}
 
 
@@ -165,7 +169,7 @@ async def test_roll_dedupes_clergy_who_also_lead(database):
             )
         )
         proposal = await _open_proposal(session, p)
-        view = await elections.detail(session, None, proposal.id, today=TODAY)
+        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
         assert [v.volunteer.id for v in view.voters].count(p.pete_id) == 1
 
 
@@ -188,7 +192,7 @@ async def test_renaming_the_clergy_team_retires_the_standing(database):
             proposal.id: {
                 v.volunteer.id
                 for v in (
-                    await elections.detail(session, None, proposal.id, today=TODAY)
+                    ok(await elections.detail(session, None, proposal.id, today=TODAY))
                 ).voters
             }
             for proposal in (before, after)
@@ -206,7 +210,7 @@ async def test_a_team_renamed_to_clergy_takes_up_the_standing(database):
         ok(await teams.delete(session, None, p.clergy_id))
         ok(await teams.update(session, None, p.liturgy_id, name="Clergy"))
         proposal = await _open_proposal(session, p, team_id=p.garden_id)
-        view = await elections.detail(session, None, proposal.id, today=TODAY)
+        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
         assert {v.volunteer.id for v in view.voters} == {
             p.lena_id,
             p.cora_id,
@@ -223,7 +227,7 @@ async def test_create_validations(database):
             created_by=p.admin_user_id,
             today=TODAY,
         )
-        with pytest.raises(ValueError, match="at least one candidate"):
+        refused(
             await elections.create_proposal(
                 session,
                 None,
@@ -231,8 +235,11 @@ async def test_create_validations(database):
                 voting_deadline=D2,
                 candidates=[],
                 **common,
-            )
-        with pytest.raises(ValueError, match="only once"):
+            ),
+            errors.Invalid,
+            match="at least one candidate",
+        )
+        refused(
             await elections.create_proposal(
                 session,
                 None,
@@ -243,8 +250,11 @@ async def test_create_validations(database):
                     elections.CandidateInput(p.vera_id),
                 ],
                 **common,
-            )
-        with pytest.raises(ValueError, match="in the past"):
+            ),
+            errors.Invalid,
+            match="only once",
+        )
+        refused(
             await elections.create_proposal(
                 session,
                 None,
@@ -252,8 +262,11 @@ async def test_create_validations(database):
                 voting_deadline=D2,
                 candidates=[elections.CandidateInput(p.vera_id)],
                 **common,
-            )
-        with pytest.raises(ValueError, match="must fall after"):
+            ),
+            errors.Invalid,
+            match="in the past",
+        )
+        refused(
             await elections.create_proposal(
                 session,
                 None,
@@ -261,7 +274,10 @@ async def test_create_validations(database):
                 voting_deadline=D1,
                 candidates=[elections.CandidateInput(p.vera_id)],
                 **common,
-            )
+            ),
+            errors.Invalid,
+            match="must fall after",
+        )
 
 
 async def test_one_open_proposal_per_seat(database):
@@ -275,7 +291,11 @@ async def test_one_open_proposal_per_seat(database):
             await _open_proposal(session, p)  # Parish holds plain ints
 
     async with db_session() as session:
-        await elections.cancel(session, None, first_id, decided_by=p.admin_user_id)
+        ok(
+            await elections.cancel(
+                session, None, first_id, decided_by=p.admin_user_id, now=mint.now()
+            )
+        )
         again = await _open_proposal(session, p)
         assert again.id != first_id, "the partial unique index only guards OPEN seats"
 
@@ -287,17 +307,19 @@ async def test_nomination_window(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        c = await elections.add_candidate(
-            session,
-            None,
-            proposal.id,
-            volunteer_id=p.victor_id,
-            nominated_by=p.pete_user_id,
-            note="knows the garden",
-            today=D1,  # deadline day itself still nominates
+        c = ok(
+            await elections.add_candidate(
+                session,
+                None,
+                proposal.id,
+                volunteer_id=p.victor_id,
+                nominated_by=p.pete_user_id,
+                note="knows the garden",
+                today=D1,  # deadline day itself still nominates
+            )
         )
         assert c.note == "knows the garden"
-        with pytest.raises(ValueError, match="is voting, not nominating"):
+        refused(
             await elections.add_candidate(
                 session,
                 None,
@@ -305,8 +327,28 @@ async def test_nomination_window(database):
                 volunteer_id=p.mia_id,
                 nominated_by=p.pete_user_id,
                 today=VOTING_DAY,
-            )
+            ),
+            errors.Invalid,
+            match="is voting, not nominating",
+        )
         with pytest.raises(IntegrityError):
+            ok(
+                await elections.add_candidate(
+                    session,
+                    None,
+                    proposal.id,
+                    volunteer_id=p.victor_id,
+                    nominated_by=p.admin_user_id,
+                    today=TODAY,
+                )
+            )
+
+
+async def test_candidate_removal_only_while_nominating(database):
+    async with db_session() as session:
+        p = await _parish(session)
+        proposal = await _open_proposal(session, p)
+        extra = ok(
             await elections.add_candidate(
                 session,
                 None,
@@ -315,28 +357,20 @@ async def test_nomination_window(database):
                 nominated_by=p.admin_user_id,
                 today=TODAY,
             )
-
-
-async def test_candidate_removal_only_while_nominating(database):
-    async with db_session() as session:
-        p = await _parish(session)
-        proposal = await _open_proposal(session, p)
-        extra = await elections.add_candidate(
-            session,
-            None,
-            proposal.id,
-            volunteer_id=p.victor_id,
-            nominated_by=p.admin_user_id,
-            today=TODAY,
         )
-        with pytest.raises(ValueError, match="cannot remove a candidate"):
+        refused(
             await elections.remove_candidate(
                 session, None, proposal.id, extra.id, today=VOTING_DAY
-            )
-        await elections.remove_candidate(
-            session, None, proposal.id, extra.id, today=TODAY
+            ),
+            errors.Invalid,
+            match="cannot remove a candidate",
         )
-        view = await elections.detail(session, None, proposal.id, today=TODAY)
+        ok(
+            await elections.remove_candidate(
+                session, None, proposal.id, extra.id, today=TODAY
+            )
+        )
+        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
         assert [c.volunteer.id for c in view.candidates] == [p.vera_id]
 
 
@@ -344,16 +378,22 @@ async def test_roll_freezes_when_voting_begins(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        added = await elections.add_voter(
-            session,
-            None,
-            proposal.id,
-            volunteer_id=p.mia_id,
-            added_by=p.admin_user_id,
-            today=TODAY,
+        added = ok(
+            await elections.add_voter(
+                session,
+                None,
+                proposal.id,
+                volunteer_id=p.mia_id,
+                added_by=p.admin_user_id,
+                today=TODAY,
+            )
         )
-        await elections.remove_voter(session, None, proposal.id, added.id, today=TODAY)
-        with pytest.raises(ValueError, match="cannot add a voter"):
+        ok(
+            await elections.remove_voter(
+                session, None, proposal.id, added.id, today=TODAY
+            )
+        )
+        refused(
             await elections.add_voter(
                 session,
                 None,
@@ -361,7 +401,10 @@ async def test_roll_freezes_when_voting_begins(database):
                 volunteer_id=p.mia_id,
                 added_by=p.admin_user_id,
                 today=VOTING_DAY,
-            )
+            ),
+            errors.Invalid,
+            match="cannot add a voter",
+        )
 
 
 # --- voting ------------------------------------------------------------------
@@ -369,7 +412,7 @@ async def test_roll_freezes_when_voting_begins(database):
 
 async def _candidate_ids(session, proposal_id) -> dict[int, int]:
     """volunteer id -> candidate id"""
-    view = await elections.detail(session, None, proposal_id, today=AFTER)
+    view = ok(await elections.detail(session, None, proposal_id, today=AFTER))
     return {c.volunteer.id: c.candidate.id for c in view.candidates}
 
 
@@ -380,7 +423,7 @@ async def test_cast_ballot_phase_and_validation(database):
         cand = await _candidate_ids(session, proposal.id)
         vera_c = cand[p.vera_id]
 
-        with pytest.raises(ValueError, match="is nominating, not voting"):
+        refused(
             await elections.cast_ballot(
                 session,
                 None,
@@ -388,8 +431,12 @@ async def test_cast_ballot_phase_and_validation(database):
                 voter_volunteer_id=p.lena_id,
                 scores={vera_c: 5},
                 today=TODAY,
-            )
-        with pytest.raises(ValueError, match="is concluded, not voting"):
+                now=mint.now(),
+            ),
+            errors.Invalid,
+            match="is nominating, not voting",
+        )
+        refused(
             await elections.cast_ballot(
                 session,
                 None,
@@ -397,8 +444,12 @@ async def test_cast_ballot_phase_and_validation(database):
                 voter_volunteer_id=p.lena_id,
                 scores={vera_c: 5},
                 today=AFTER,
-            )
-        with pytest.raises(ValueError, match="between 0 and 5"):
+                now=mint.now(),
+            ),
+            errors.Invalid,
+            match="is concluded, not voting",
+        )
+        refused(
             await elections.cast_ballot(
                 session,
                 None,
@@ -406,8 +457,12 @@ async def test_cast_ballot_phase_and_validation(database):
                 voter_volunteer_id=p.lena_id,
                 scores={vera_c: 6},
                 today=VOTING_DAY,
-            )
-        with pytest.raises(ValueError, match="not candidates"):
+                now=mint.now(),
+            ),
+            errors.Invalid,
+            match="between 0 and 5",
+        )
+        refused(
             await elections.cast_ballot(
                 session,
                 None,
@@ -415,8 +470,12 @@ async def test_cast_ballot_phase_and_validation(database):
                 voter_volunteer_id=p.lena_id,
                 scores={424242: 3},
                 today=VOTING_DAY,
-            )
-        with pytest.raises(LookupError, match="voting roll"):
+                now=mint.now(),
+            ),
+            errors.Invalid,
+            match="not candidates",
+        )
+        refused(
             await elections.cast_ballot(
                 session,
                 None,
@@ -424,52 +483,64 @@ async def test_cast_ballot_phase_and_validation(database):
                 voter_volunteer_id=p.mia_id,
                 scores={vera_c: 3},
                 today=VOTING_DAY,
-            )
+                now=mint.now(),
+            ),
+            errors.NotFound,
+            match="voting roll",
+        )
 
 
 async def test_ballot_revision_and_zero_defaults(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        await elections.add_candidate(
-            session,
-            None,
-            proposal.id,
-            volunteer_id=p.victor_id,
-            nominated_by=p.admin_user_id,
-            today=TODAY,
+        ok(
+            await elections.add_candidate(
+                session,
+                None,
+                proposal.id,
+                volunteer_id=p.victor_id,
+                nominated_by=p.admin_user_id,
+                today=TODAY,
+            )
         )
         cand = await _candidate_ids(session, proposal.id)
 
         # missing keys are written as explicit 0s — an all-zero ballot counts
-        await elections.cast_ballot(
-            session,
-            None,
-            proposal.id,
-            voter_volunteer_id=p.lena_id,
-            scores={},
-            today=VOTING_DAY,
+        ok(
+            await elections.cast_ballot(
+                session,
+                None,
+                proposal.id,
+                voter_volunteer_id=p.lena_id,
+                scores={},
+                today=VOTING_DAY,
+                now=mint.now(),
+            )
         )
-        assert await elections.my_scores(session, None, proposal.id, p.lena_id) == {
+        assert ok(await elections.my_scores(session, None, proposal.id, p.lena_id)) == {
             cand[p.vera_id]: 0,
             cand[p.victor_id]: 0,
         }
-        view = await elections.detail(session, None, proposal.id, today=VOTING_DAY)
+        view = ok(await elections.detail(session, None, proposal.id, today=VOTING_DAY))
         by_vol = {v.volunteer.id: v for v in view.voters}
         assert by_vol[p.lena_id].has_voted
         assert not by_vol[p.cora_id].has_voted
         assert view.tally is None, "no aggregates while voting is open"
 
         # revision upserts over the previous scores
-        await elections.cast_ballot(
-            session,
-            None,
-            proposal.id,
-            voter_volunteer_id=p.lena_id,
-            scores={cand[p.vera_id]: 5, cand[p.victor_id]: 2},
-            today=VOTING_DAY,
+        ok(
+            await elections.cast_ballot(
+                session,
+                None,
+                proposal.id,
+                voter_volunteer_id=p.lena_id,
+                scores={cand[p.vera_id]: 5, cand[p.victor_id]: 2},
+                today=VOTING_DAY,
+                now=mint.now(),
+            )
         )
-        assert await elections.my_scores(session, None, proposal.id, p.lena_id) == {
+        assert ok(await elections.my_scores(session, None, proposal.id, p.lena_id)) == {
             cand[p.vera_id]: 5,
             cand[p.victor_id]: 2,
         }
@@ -479,13 +550,15 @@ async def test_tally_gated_then_correct(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        await elections.add_candidate(
-            session,
-            None,
-            proposal.id,
-            volunteer_id=p.victor_id,
-            nominated_by=p.admin_user_id,
-            today=TODAY,
+        ok(
+            await elections.add_candidate(
+                session,
+                None,
+                proposal.id,
+                volunteer_id=p.victor_id,
+                nominated_by=p.admin_user_id,
+                today=TODAY,
+            )
         )
         cand = await _candidate_ids(session, proposal.id)
         vera_c, victor_c = cand[p.vera_id], cand[p.victor_id]
@@ -495,20 +568,27 @@ async def test_tally_gated_then_correct(database):
             p.pete_id: {vera_c: 0, victor_c: 3},
         }
         for voter_id, scores in ballots.items():
-            await elections.cast_ballot(
-                session,
-                None,
-                proposal.id,
-                voter_volunteer_id=voter_id,
-                scores=scores,
-                today=VOTING_DAY,
+            ok(
+                await elections.cast_ballot(
+                    session,
+                    None,
+                    proposal.id,
+                    voter_volunteer_id=voter_id,
+                    scores=scores,
+                    today=VOTING_DAY,
+                    now=mint.now(),
+                )
             )
 
         # aggregates stay hidden while ballots may still change
-        during = await elections.detail(session, None, proposal.id, today=VOTING_DAY)
+        during = ok(
+            await elections.detail(session, None, proposal.id, today=VOTING_DAY)
+        )
         assert during.tally is None
 
-        result = (await elections.detail(session, None, proposal.id, today=AFTER)).tally
+        result = (
+            ok(await elections.detail(session, None, proposal.id, today=AFTER))
+        ).tally
         assert result is not None
         assert result.ballot_count == 3
         assert result.totals == {vera_c: 6, victor_c: 9}
@@ -532,7 +612,7 @@ async def test_appoint_concluded_only_and_creates_membership(database):
         proposal = await _open_proposal(session, p)
         cand = await _candidate_ids(session, proposal.id)
 
-        with pytest.raises(ValueError, match="cannot appoint"):
+        refused(
             await elections.appoint(
                 session,
                 None,
@@ -540,23 +620,13 @@ async def test_appoint_concluded_only_and_creates_membership(database):
                 cand[p.vera_id],
                 decided_by=p.admin_user_id,
                 today=VOTING_DAY,
-            )
-
-        appointed = await elections.appoint(
-            session,
-            None,
-            proposal.id,
-            cand[p.vera_id],
-            decided_by=p.admin_user_id,
-            today=AFTER,
+                now=mint.now(),
+            ),
+            errors.Invalid,
+            match="cannot appoint",
         )
-        assert appointed.status == ProposalStatus.appointed.value
-        assert appointed.appointed_candidate_id == cand[p.vera_id]
-        assert appointed.decided_at is not None
-        m = await memberships.find(session, p.vera_id, p.liturgy_id)
-        assert m.role == TeamRole.second, "assign() upserts: the role is upgraded"
 
-        with pytest.raises(ValueError, match="is appointed"):
+        appointed = ok(
             await elections.appoint(
                 session,
                 None,
@@ -564,7 +634,28 @@ async def test_appoint_concluded_only_and_creates_membership(database):
                 cand[p.vera_id],
                 decided_by=p.admin_user_id,
                 today=AFTER,
+                now=mint.now(),
             )
+        )
+        assert appointed.status == ProposalStatus.appointed.value
+        assert appointed.appointed_candidate_id == cand[p.vera_id]
+        assert appointed.decided_at is not None
+        m = await memberships.find(session, p.vera_id, p.liturgy_id)
+        assert m.role == TeamRole.second, "assign() upserts: the role is upgraded"
+
+        refused(
+            await elections.appoint(
+                session,
+                None,
+                proposal.id,
+                cand[p.vera_id],
+                decided_by=p.admin_user_id,
+                today=AFTER,
+                now=mint.now(),
+            ),
+            errors.Invalid,
+            match="is appointed",
+        )
 
 
 async def test_appoint_foreign_candidate_refused(database):
@@ -573,7 +664,7 @@ async def test_appoint_foreign_candidate_refused(database):
         liturgy_p = await _open_proposal(session, p)
         garden_p = await _open_proposal(session, p, team_id=p.garden_id)
         garden_cand = (await _candidate_ids(session, garden_p.id))[p.vera_id]
-        with pytest.raises(LookupError, match="not found"):
+        refused(
             await elections.appoint(
                 session,
                 None,
@@ -581,21 +672,30 @@ async def test_appoint_foreign_candidate_refused(database):
                 garden_cand,
                 decided_by=p.admin_user_id,
                 today=AFTER,
-            )
+                now=mint.now(),
+            ),
+            errors.NotFound,
+            match="not found",
+        )
 
 
 async def test_cancel(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        cancelled = await elections.cancel(
-            session, None, proposal.id, decided_by=p.admin_user_id
+        cancelled = ok(
+            await elections.cancel(
+                session, None, proposal.id, decided_by=p.admin_user_id, now=mint.now()
+            )
         )
         assert cancelled.status == ProposalStatus.cancelled.value
-        with pytest.raises(ValueError, match="already cancelled"):
+        refused(
             await elections.cancel(
-                session, None, proposal.id, decided_by=p.admin_user_id
-            )
+                session, None, proposal.id, decided_by=p.admin_user_id, now=mint.now()
+            ),
+            errors.Invalid,
+            match="already cancelled",
+        )
 
 
 async def test_new_round_clones_candidates_and_roll_not_ballots(database):
@@ -603,16 +703,19 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
         cand = await _candidate_ids(session, proposal.id)
-        await elections.cast_ballot(
-            session,
-            None,
-            proposal.id,
-            voter_volunteer_id=p.lena_id,
-            scores={cand[p.vera_id]: 4},
-            today=VOTING_DAY,
+        ok(
+            await elections.cast_ballot(
+                session,
+                None,
+                proposal.id,
+                voter_volunteer_id=p.lena_id,
+                scores={cand[p.vera_id]: 4},
+                today=VOTING_DAY,
+                now=mint.now(),
+            )
         )
 
-        with pytest.raises(ValueError, match="cannot start a new round"):
+        refused(
             await elections.new_round(
                 session,
                 None,
@@ -621,23 +724,30 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
                 nomination_deadline=date(2026, 9, 5),
                 voting_deadline=date(2026, 9, 15),
                 today=VOTING_DAY,
-            )
+                now=mint.now(),
+            ),
+            errors.Invalid,
+            match="cannot start a new round",
+        )
 
-        fresh = await elections.new_round(
-            session,
-            None,
-            proposal.id,
-            created_by=p.admin_user_id,
-            nomination_deadline=date(2026, 9, 5),
-            voting_deadline=date(2026, 9, 15),
-            today=AFTER,
+        fresh = ok(
+            await elections.new_round(
+                session,
+                None,
+                proposal.id,
+                created_by=p.admin_user_id,
+                nomination_deadline=date(2026, 9, 5),
+                voting_deadline=date(2026, 9, 15),
+                today=AFTER,
+                now=mint.now(),
+            )
         )
         assert fresh.id != proposal.id
         assert fresh.status == ProposalStatus.open.value
         source = await elections.get(session, proposal.id)
         assert source.status == ProposalStatus.cancelled.value
 
-        view = await elections.detail(session, None, fresh.id, today=AFTER)
+        view = ok(await elections.detail(session, None, fresh.id, today=AFTER))
         assert [c.volunteer.id for c in view.candidates] == [p.vera_id]
         assert view.candidates[0].candidate.note == "steady hands"
         assert {v.volunteer.id for v in view.voters} == {
@@ -653,57 +763,77 @@ async def test_update_proposal_guards(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        updated = await elections.update_proposal(
-            session,
-            None,
-            proposal.id,
-            nomination_deadline=date(2026, 8, 18),
-            notes="take our time",
-            today=TODAY,
+        updated = ok(
+            await elections.update_proposal(
+                session,
+                None,
+                proposal.id,
+                nomination_deadline=date(2026, 8, 18),
+                notes="take our time",
+                today=TODAY,
+            )
         )
         assert updated.nomination_deadline == date(2026, 8, 18)
         assert updated.notes == "take our time"
 
-        with pytest.raises(ValueError, match="must fall after"):
+        refused(
             await elections.update_proposal(
                 session,
                 None,
                 proposal.id,
                 voting_deadline=date(2026, 8, 17),
                 today=TODAY,
-            )
+            ),
+            errors.Invalid,
+            match="must fall after",
+        )
 
         cand = await _candidate_ids(session, proposal.id)
-        await elections.cast_ballot(
-            session,
-            None,
-            proposal.id,
-            voter_volunteer_id=p.lena_id,
-            scores={cand[p.vera_id]: 4},
-            today=date(2026, 8, 20),
+        ok(
+            await elections.cast_ballot(
+                session,
+                None,
+                proposal.id,
+                voter_volunteer_id=p.lena_id,
+                scores={cand[p.vera_id]: 4},
+                today=date(2026, 8, 20),
+                now=mint.now(),
+            )
         )
-        with pytest.raises(ValueError, match="cannot reopen"):
+        refused(
             await elections.update_proposal(
                 session,
                 None,
                 proposal.id,
                 nomination_deadline=date(2026, 8, 22),
                 today=date(2026, 8, 21),
-            )
+            ),
+            errors.Invalid,
+            match="cannot reopen",
+        )
         # extending only the voting deadline is fine even with ballots cast
-        await elections.update_proposal(
-            session,
-            None,
-            proposal.id,
-            voting_deadline=date(2026, 8, 28),
-            today=date(2026, 8, 21),
+        ok(
+            await elections.update_proposal(
+                session,
+                None,
+                proposal.id,
+                voting_deadline=date(2026, 8, 28),
+                today=date(2026, 8, 21),
+            )
         )
 
-        await elections.cancel(session, None, proposal.id, decided_by=p.admin_user_id)
-        with pytest.raises(ValueError, match="already cancelled"):
+        ok(
+            await elections.cancel(
+                session, None, proposal.id, decided_by=p.admin_user_id, now=mint.now()
+            )
+        )
+        refused(
             await elections.update_proposal(
                 session, None, proposal.id, notes="too late", today=TODAY
-            )
+            ),
+            errors.Invalid,
+            match="already cancelled",
+        )
 
 
 # --- listing and scoping -----------------------------------------------------
@@ -736,7 +866,11 @@ async def test_list_proposals_scoping(database):
             for s in await elections.list_proposals(session, pete, today=TODAY)
         } == {liturgy_p.id, garden_p.id}, "clergy sit on every template roll"
 
-        await elections.cancel(session, None, garden_p.id, decided_by=p.admin_user_id)
+        ok(
+            await elections.cancel(
+                session, None, garden_p.id, decided_by=p.admin_user_id, now=mint.now()
+            )
+        )
         open_only = await elections.list_proposals(
             session, admin, status=ProposalStatus.open.value, today=TODAY
         )
@@ -784,13 +918,16 @@ async def test_involving_flags_and_scoping(database):
 
         # appointment flips the winner's flag on that proposal only
         cand = await _candidate_ids(session, liturgy_p.id)
-        await elections.appoint(
-            session,
-            None,
-            liturgy_p.id,
-            cand[p.vera_id],
-            decided_by=p.admin_user_id,
-            today=AFTER,
+        ok(
+            await elections.appoint(
+                session,
+                None,
+                liturgy_p.id,
+                cand[p.vera_id],
+                decided_by=p.admin_user_id,
+                today=AFTER,
+                now=mint.now(),
+            )
         )
         inv = await elections.involving(session, admin, p.vera_id, today=AFTER)
         appointed = {i.proposal.id: i.appointed for i in inv}

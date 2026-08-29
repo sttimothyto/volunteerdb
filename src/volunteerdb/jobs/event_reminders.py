@@ -51,7 +51,7 @@ from ..models import (
     NotificationStage,
     Volunteer,
 )
-from ..services import elections, mail
+from ..services import mail
 from ..services import teams as team_service
 from . import job_lock
 
@@ -73,7 +73,7 @@ def _unsent(stage: NotificationStage):
 async def main(env: Env, today: date | None = None) -> int:
     init_logging()
     if today is None:
-        today = elections.local_today()
+        today = env.today()
     tz = ZoneInfo(settings().timezone)
 
     async with db_session() as session:

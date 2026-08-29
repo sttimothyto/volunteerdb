@@ -17,7 +17,7 @@ so under a snapshot they come back None and the page says why.
 """
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -142,6 +142,7 @@ async def dashboard(
     *,
     at: datetime | None = None,
     now: datetime,
+    today: date,
 ) -> DashboardStats:
     """Every statistic `actor` may see, and nothing else. `now` is the
     edge's clock read: the upcoming window and the service record hang off it."""
@@ -149,12 +150,12 @@ async def dashboard(
 
     parish = await _parish(session, at=at) if actor.is_admin else None
     leadership = (
-        await _leadership(session, actor, at=at, now=now)
+        await _leadership(session, actor, at=at, now=now, today=today)
         if actor.is_admin or actor.full_view_team_ids
         else None
     )
     personal = (
-        await _personal(session, actor, now=now)
+        await _personal(session, actor, now=now, today=today)
         if live and actor.volunteer_id is not None
         else None
     )
@@ -217,7 +218,12 @@ async def _parish(session: AsyncSession, *, at: datetime | None) -> ParishStats:
 
 
 async def _leadership(
-    session: AsyncSession, actor: Actor, *, at: datetime | None, now: datetime
+    session: AsyncSession,
+    actor: Actor,
+    *,
+    at: datetime | None,
+    now: datetime,
+    today: date,
 ) -> LeadershipStats:
     # None means "no team filter": an admin's scope is the whole parish, and
     # their managed/full-view sets are empty precisely because they need none
@@ -317,7 +323,9 @@ async def _leadership(
     if actor.can_access_elections:
         # list_proposals scopes itself to managed teams plus the rolls the
         # actor sits on, so no further filtering is needed here
-        proposals = await election_service.list_proposals(session, actor, status="open")
+        proposals = await election_service.list_proposals(
+            session, actor, status="open", today=today
+        )
         counts: dict[str, int] = {}
         for p in proposals:
             if p.phase is not None:
@@ -338,7 +346,7 @@ async def _leadership(
 
 
 async def _personal(
-    session: AsyncSession, actor: Actor, *, now: datetime
+    session: AsyncSession, actor: Actor, *, now: datetime, today: date
 ) -> PersonalStats:
     volunteer_id = actor.volunteer_id
     assert volunteer_id is not None  # guarded by the caller
@@ -353,7 +361,9 @@ async def _personal(
     # ballots the actor still owes: proposals they sit on the roll for, in the
     # voting phase, with nothing cast yet. involving() already scopes to what
     # they may see, so a roll they cannot read cannot appear here either.
-    involvements = await election_service.involving(session, actor, volunteer_id)
+    involvements = await election_service.involving(
+        session, actor, volunteer_id, today=today
+    )
     votable = {
         i.proposal.id
         for i in involvements

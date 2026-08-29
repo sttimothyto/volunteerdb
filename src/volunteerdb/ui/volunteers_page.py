@@ -273,7 +273,9 @@ async def volunteer_detail(request: Request, volunteer_id: int):
             else []
         )
         # scoped inside the service: only proposals this actor may see
-        involvements = await elections_service.involving(session, actor, volunteer_id)
+        involvements = await elections_service.involving(
+            session, actor, volunteer_id, today=current_env().today()
+        )
         hours = (
             (
                 await event_service.hours_for_volunteer(

@@ -68,16 +68,18 @@ async def _parish():
 
 async def _proposal(ids, role=TeamRole.second) -> int:
     async with db_session() as session:
-        proposal = await elections.create_proposal(
-            session,
-            None,
-            team_id=ids["liturgy"],
-            role=role,
-            nomination_deadline=D1,
-            voting_deadline=D2,
-            created_by=ids["admin_u"],
-            candidates=[elections.CandidateInput(volunteer_id=ids["vera"])],
-            today=TODAY,
+        proposal = ok(
+            await elections.create_proposal(
+                session,
+                None,
+                team_id=ids["liturgy"],
+                role=role,
+                nomination_deadline=D1,
+                voting_deadline=D2,
+                created_by=ids["admin_u"],
+                candidates=[elections.CandidateInput(volunteer_id=ids["vera"])],
+                today=TODAY,
+            )
         )
         return proposal.id
 
@@ -226,14 +228,17 @@ async def test_new_round_renotifies_its_fresh_roll(database, monkeypatch, env):
     sent.clear()
 
     async with db_session() as session:
-        fresh = await elections.new_round(
-            session,
-            None,
-            pid,
-            created_by=ids["admin_u"],
-            nomination_deadline=date(2026, 9, 5),
-            voting_deadline=date(2026, 9, 15),
-            today=AFTER,
+        fresh = ok(
+            await elections.new_round(
+                session,
+                None,
+                pid,
+                created_by=ids["admin_u"],
+                nomination_deadline=date(2026, 9, 5),
+                voting_deadline=date(2026, 9, 15),
+                today=AFTER,
+                now=mint.now(),
+            )
         )
         fresh_id = fresh.id
 

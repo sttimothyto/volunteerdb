@@ -1,7 +1,7 @@
 """What a test hands a service where the edge would hand its clock and its
 random source: a moment, a token, a code, an invite."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -32,3 +32,7 @@ def tz() -> ZoneInfo:
 
 def uuid() -> UUID:
     return uuid4()
+
+
+def today() -> date:
+    return datetime.now(tz()).date()

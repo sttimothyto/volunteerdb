@@ -7,7 +7,8 @@ nomination deadline, then the voting roll scores every candidate 0-5 until
 the voting deadline (STAR, see star.py), then a manager appoints or starts
 a new round: the Ignatian rhythm of pray, vote, debate, repeat. The phase
 of an open proposal derives from today's date in the parish timezone;
-nothing runs on a clock.
+nothing runs on a clock -- `today` is the parish day the edge read, and
+`now` the moment it read it, both parameters.
 
 Ballots are secret: individual scores leave this module only as their
 owner's my_scores() or as post-conclusion aggregates.
@@ -21,14 +22,14 @@ back your own ballot — is your own seat and nobody else's.
 import enum
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
-from zoneinfo import ZoneInfo
+from datetime import date, datetime
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
+from ..errors import DomainError, Invalid, NotFound, invalid, not_found, require
+from ..fp import Err, Ok, Result
 from ..models import (
     AppUser,
     Membership,
@@ -41,7 +42,7 @@ from ..models import (
     TeamRole,
     Volunteer,
 )
-from ..permissions import Actor, require
+from ..permissions import Actor
 from ..star import StarResult, star_tally
 from . import memberships as membership_service
 from . import reports as report_service
@@ -76,11 +77,6 @@ PHASE_LABELS: dict[ProposalPhase, str] = {
 }
 
 
-def local_today() -> date:
-    """Today in the parish's day (settings().timezone), not the container's."""
-    return datetime.now(ZoneInfo(settings().timezone)).date()
-
-
 def phase_of(proposal: Proposal, today: date) -> ProposalPhase | None:
     """The open proposal's phase; None once decided. Deadlines are inclusive:
     the seat nominates through the end of d1 and votes through the end of d2."""
@@ -95,20 +91,22 @@ def phase_of(proposal: Proposal, today: date) -> ProposalPhase | None:
 
 def _require_phase(
     proposal: Proposal, today: date, expected: ProposalPhase, action: str
-) -> None:
+) -> Err[Invalid] | None:
     phase = phase_of(proposal, today)
     if phase != expected:
         state = phase.value if phase else proposal.status
-        raise ValueError(f"cannot {action}: proposal is {state}, not {expected.value}")
+        return invalid(f"cannot {action}: proposal is {state}, not {expected.value}")
+    return None
 
 
 def _check_deadlines(
     nomination_deadline: date, voting_deadline: date, today: date
-) -> None:
+) -> Err[Invalid] | None:
     if nomination_deadline < today:
-        raise ValueError("nomination deadline is in the past")
+        return invalid("nomination deadline is in the past")
     if voting_deadline <= nomination_deadline:
-        raise ValueError("voting deadline must fall after the nomination deadline")
+        return invalid("voting deadline must fall after the nomination deadline")
+    return None
 
 
 # --- the clergy team ----------------------------------------------------------
@@ -184,38 +182,44 @@ async def get(session: AsyncSession, proposal_id: int) -> Proposal | None:
 
 async def _managed(
     session: AsyncSession, actor: Actor | None, proposal_id: int
-) -> Proposal:
+) -> Result[Proposal, DomainError]:
     """The proposal, for a caller who runs the seat's team.
 
     Managing a proposal — deadlines, the roll, the candidate list, appointing,
     cancelling, starting a round — is the same right as editing that team's
     roster, because appointing *is* a roster write."""
-    proposal = await _get_or_raise(session, proposal_id)
-    require(
-        actor is None or actor.can_manage_team(proposal.team_id),
+    found = await _get(session, proposal_id)
+    if isinstance(found, Err):
+        return found
+    if denied := require(
+        actor is None or actor.can_manage_team(found.value.team_id),
         "manage proposals for this team",
-    )
-    return proposal
+    ):
+        return denied
+    return found
 
 
 async def _viewable(
     session: AsyncSession, actor: Actor | None, proposal_id: int
-) -> Proposal:
+) -> Result[Proposal, DomainError]:
     """The proposal, for a manager of its team or somebody on its roll. Voters
     keep access after the decision, to see the result they voted on."""
-    proposal = await _get_or_raise(session, proposal_id)
-    require(
-        actor is None or actor.can_view_proposal(proposal_id, proposal.team_id),
+    found = await _get(session, proposal_id)
+    if isinstance(found, Err):
+        return found
+    if denied := require(
+        actor is None or actor.can_view_proposal(proposal_id, found.value.team_id),
         "view this proposal",
-    )
-    return proposal
+    ):
+        return denied
+    return found
 
 
-async def _get_or_raise(session: AsyncSession, proposal_id: int) -> Proposal:
+async def _get(session: AsyncSession, proposal_id: int) -> Result[Proposal, NotFound]:
     proposal = await get(session, proposal_id)
     if proposal is None:
-        raise LookupError(f"proposal {proposal_id} not found")
-    return proposal
+        return not_found("proposal", proposal_id)
+    return Ok(proposal)
 
 
 async def _counts(
@@ -266,12 +270,11 @@ async def list_proposals(
     *,
     team_id: int | None = None,
     status: str | None = None,
-    today: date | None = None,
+    today: date,
 ) -> list[ProposalSummary]:
     """Proposals joined for display, newest first. Admins see all; everyone
     else sees their managed subtree plus any roll they sit on. Live-only:
     an election is about now, so there is no as-of variant."""
-    today = today or local_today()
     if (
         not actor.is_admin
         and not actor.managed_team_ids
@@ -316,12 +319,11 @@ async def involving(
     actor: Actor,
     volunteer_id: int,
     *,
-    today: date | None = None,
+    today: date,
 ) -> list[ProposalInvolvement]:
     """Proposals where the volunteer is a candidate or sits on the voting
     roll, newest first, scoped exactly like list_proposals — so a nominee
     without elections access never learns of their own nomination."""
-    today = today or local_today()
     if (
         not actor.is_admin
         and not actor.managed_team_ids
@@ -386,11 +388,12 @@ async def detail(
     actor: Actor | None,
     proposal_id: int,
     *,
-    today: date | None = None,
-) -> ProposalDetail:
-    await _viewable(session, actor, proposal_id)
-    today = today or local_today()
-    proposal = await _get_or_raise(session, proposal_id)
+    today: date,
+) -> Result[ProposalDetail, DomainError]:
+    shown = await _viewable(session, actor, proposal_id)
+    if isinstance(shown, Err):
+        return shown
+    proposal = shown.value
     # tree() first: it loads every Team into the identity map, so the get() below
     # is served from it rather than costing a second round trip on a cold memo
     paths = (await team_service.tree(session)).paths
@@ -454,26 +457,28 @@ async def detail(
         ).scalars()
     )
 
-    return ProposalDetail(
-        proposal=proposal,
-        team=team,
-        path=paths.get(team.id, team.name),
-        phase=phase_of(proposal, today),
-        creator_email=emails.get(proposal.created_by),
-        decider_email=emails.get(proposal.decided_by),
-        candidates=[
-            CandidateView(c, v, email, commitments[v.id])
-            for c, v, email in candidate_rows
-        ],
-        voters=[
-            VoterView(pv, v, v.id in account_ids, pv.id in voted_ids)
-            for pv, v in voter_rows
-        ],
-        tally=(
-            await _tally(session, proposal_id)
-            if _tally_visible(proposal, today)
-            else None
-        ),
+    return Ok(
+        ProposalDetail(
+            proposal=proposal,
+            team=team,
+            path=paths.get(team.id, team.name),
+            phase=phase_of(proposal, today),
+            creator_email=emails.get(proposal.created_by),
+            decider_email=emails.get(proposal.decided_by),
+            candidates=[
+                CandidateView(c, v, email, commitments[v.id])
+                for c, v, email in candidate_rows
+            ],
+            voters=[
+                VoterView(pv, v, v.id in account_ids, pv.id in voted_ids)
+                for pv, v in voter_rows
+            ],
+            tally=(
+                await _tally(session, proposal_id)
+                if _tally_visible(proposal, today)
+                else None
+            ),
+        )
     )
 
 
@@ -515,22 +520,23 @@ async def create_proposal(
     created_by: int,
     candidates: Sequence[CandidateInput],
     notes: str | None = None,
-    today: date | None = None,
-) -> Proposal:
+    today: date,
+) -> Result[Proposal, DomainError]:
     """Open a proposal for the seat with its initial candidates and the
     template voting roll. A second OPEN proposal for the same (team, role)
     violates uq_proposal_open and surfaces as IntegrityError (409 / toast)."""
-    require(
+    if denied := require(
         actor is None or actor.can_manage_team(team_id),
         "open proposals for this team",
-    )
-    today = today or local_today()
+    ):
+        return denied
     if not candidates:
-        raise ValueError("at least one candidate is required")
+        return invalid("at least one candidate is required")
     volunteer_ids = [c.volunteer_id for c in candidates]
     if len(set(volunteer_ids)) != len(volunteer_ids):
-        raise ValueError("a volunteer can be a candidate only once")
-    _check_deadlines(nomination_deadline, voting_deadline, today)
+        return invalid("a volunteer can be a candidate only once")
+    if bad := _check_deadlines(nomination_deadline, voting_deadline, today):
+        return bad
 
     proposal = Proposal(
         team_id=team_id,
@@ -560,7 +566,7 @@ async def create_proposal(
             )
         )
     await session.flush()
-    return proposal
+    return Ok(proposal)
 
 
 async def update_proposal(
@@ -571,28 +577,30 @@ async def update_proposal(
     nomination_deadline: date | None = None,
     voting_deadline: date | None = None,
     notes: str | None = _UNSET,  # type: ignore[assignment]
-    today: date | None = None,
-) -> Proposal:
+    today: date,
+) -> Result[Proposal, DomainError]:
     """Adjust deadlines/notes while open. Deadlines may move either way —
     pulling the voting deadline into the past concludes voting early,
     extending it past today reopens it — but nominations cannot reopen once
     ballots exist (the candidate set is frozen under cast ballots)."""
-    today = today or local_today()
-    proposal = await _managed(session, actor, proposal_id)
+    managed = await _managed(session, actor, proposal_id)
+    if isinstance(managed, Err):
+        return managed
+    proposal = managed.value
     if proposal.status != ProposalStatus.open.value:
-        raise ValueError(f"proposal already {proposal.status}")
+        return invalid(f"proposal already {proposal.status}")
     new_d1 = nomination_deadline or proposal.nomination_deadline
     new_d2 = voting_deadline or proposal.voting_deadline
     if new_d2 <= new_d1:
-        raise ValueError("voting deadline must fall after the nomination deadline")
+        return invalid("voting deadline must fall after the nomination deadline")
     if new_d1 >= today and await _has_ballots(session, proposal_id):
-        raise ValueError("nominations cannot reopen once ballots are cast")
+        return invalid("nominations cannot reopen once ballots are cast")
     proposal.nomination_deadline = new_d1
     proposal.voting_deadline = new_d2
     if notes is not _UNSET:
         proposal.notes = (notes or "").strip() or None
     await session.flush()
-    return proposal
+    return Ok(proposal)
 
 
 async def _has_ballots(session: AsyncSession, proposal_id: int) -> bool:
@@ -613,23 +621,27 @@ async def add_candidate(
     volunteer_id: int,
     nominated_by: int,
     note: str | None = None,
-    today: date | None = None,
-) -> ProposalCandidate:
+    today: date,
+) -> Result[ProposalCandidate, DomainError]:
     """Nominate during the nominating phase. A duplicate (proposal, volunteer)
     violates uq_proposal_candidate and surfaces as IntegrityError.
 
     Wider than the other roll edits: a manager OR anybody on this proposal's
     voting roll may nominate, because putting a name forward is what the roll
     exists to do. Removing one stays with the managers."""
-    today = today or local_today()
-    proposal = await _get_or_raise(session, proposal_id)
-    require(
+    found = await _get(session, proposal_id)
+    if isinstance(found, Err):
+        return found
+    proposal = found.value
+    if denied := require(
         actor is None
         or actor.can_manage_team(proposal.team_id)
         or proposal_id in actor.voter_proposal_ids,
         "nominate on this proposal",
-    )
-    _require_phase(proposal, today, ProposalPhase.nominating, "nominate")
+    ):
+        return denied
+    if wrong := _require_phase(proposal, today, ProposalPhase.nominating, "nominate"):
+        return wrong
     candidate = ProposalCandidate(
         proposal_id=proposal_id,
         volunteer_id=volunteer_id,
@@ -638,7 +650,7 @@ async def add_candidate(
     )
     session.add(candidate)
     await session.flush()
-    return candidate
+    return Ok(candidate)
 
 
 async def remove_candidate(
@@ -647,16 +659,21 @@ async def remove_candidate(
     proposal_id: int,
     candidate_id: int,
     *,
-    today: date | None = None,
-) -> None:
-    today = today or local_today()
-    proposal = await _managed(session, actor, proposal_id)
-    _require_phase(proposal, today, ProposalPhase.nominating, "remove a candidate")
+    today: date,
+) -> Result[None, DomainError]:
+    managed = await _managed(session, actor, proposal_id)
+    if isinstance(managed, Err):
+        return managed
+    if wrong := _require_phase(
+        managed.value, today, ProposalPhase.nominating, "remove a candidate"
+    ):
+        return wrong
     candidate = await session.get(ProposalCandidate, candidate_id)
     if candidate is None or candidate.proposal_id != proposal_id:
-        raise LookupError(f"candidate {candidate_id} not found")
+        return not_found("candidate", candidate_id)
     await session.delete(candidate)
     await session.flush()
+    return Ok(None)
 
 
 async def add_voter(
@@ -666,19 +683,23 @@ async def add_voter(
     *,
     volunteer_id: int,
     added_by: int,
-    today: date | None = None,
-) -> ProposalVoter:
+    today: date,
+) -> Result[ProposalVoter, DomainError]:
     """Roll edits are allowed only while nominating: the roll freezes when
     voting begins. Duplicates violate uq_proposal_voter (IntegrityError)."""
-    today = today or local_today()
-    proposal = await _managed(session, actor, proposal_id)
-    _require_phase(proposal, today, ProposalPhase.nominating, "add a voter")
+    managed = await _managed(session, actor, proposal_id)
+    if isinstance(managed, Err):
+        return managed
+    if wrong := _require_phase(
+        managed.value, today, ProposalPhase.nominating, "add a voter"
+    ):
+        return wrong
     voter = ProposalVoter(
         proposal_id=proposal_id, volunteer_id=volunteer_id, added_by=added_by
     )
     session.add(voter)
     await session.flush()
-    return voter
+    return Ok(voter)
 
 
 async def remove_voter(
@@ -687,16 +708,21 @@ async def remove_voter(
     proposal_id: int,
     voter_id: int,
     *,
-    today: date | None = None,
-) -> None:
-    today = today or local_today()
-    proposal = await _managed(session, actor, proposal_id)
-    _require_phase(proposal, today, ProposalPhase.nominating, "remove a voter")
+    today: date,
+) -> Result[None, DomainError]:
+    managed = await _managed(session, actor, proposal_id)
+    if isinstance(managed, Err):
+        return managed
+    if wrong := _require_phase(
+        managed.value, today, ProposalPhase.nominating, "remove a voter"
+    ):
+        return wrong
     voter = await session.get(ProposalVoter, voter_id)
     if voter is None or voter.proposal_id != proposal_id:
-        raise LookupError(f"voter {voter_id} not found")
+        return not_found("voter", voter_id)
     await session.delete(voter)
     await session.flush()
+    return Ok(None)
 
 
 # --- voting ------------------------------------------------------------------
@@ -709,8 +735,9 @@ async def cast_ballot(
     *,
     voter_volunteer_id: int,
     scores: Mapping[int, int],
-    today: date | None = None,
-) -> None:
+    today: date,
+    now: datetime,
+) -> Result[None, DomainError]:
     """Write the voter's whole ballot: one row per candidate, missing keys
     scored 0, revisable until the voting deadline (upsert).
 
@@ -718,17 +745,20 @@ async def cast_ballot(
     against the actor rather than trusted, so no caller — however privileged —
     can cast somebody else's ballot. Ballots are secret; a manager who could
     write one could also read it back by writing it."""
-    require(
+    if denied := require(
         actor is None
         or (
             actor.volunteer_id == voter_volunteer_id
             and proposal_id in actor.voter_proposal_ids
         ),
         "vote on this proposal",
-    )
-    today = today or local_today()
-    proposal = await _get_or_raise(session, proposal_id)
-    _require_phase(proposal, today, ProposalPhase.voting, "vote")
+    ):
+        return denied
+    found = await _get(session, proposal_id)
+    if isinstance(found, Err):
+        return found
+    if wrong := _require_phase(found.value, today, ProposalPhase.voting, "vote"):
+        return wrong
     voter = (
         await session.execute(
             sa.select(ProposalVoter).where(
@@ -738,7 +768,7 @@ async def cast_ballot(
         )
     ).scalar_one_or_none()
     if voter is None:
-        raise LookupError("not on this proposal's voting roll")
+        return not_found("seat on this proposal's voting roll")
     candidate_ids = list(
         (
             await session.execute(
@@ -749,11 +779,11 @@ async def cast_ballot(
         ).scalars()
     )
     if not candidate_ids:
-        raise ValueError("proposal has no candidates")
+        return invalid("proposal has no candidates")
     if unknown := set(scores) - set(candidate_ids):
-        raise ValueError(f"not candidates of this proposal: {sorted(unknown)}")
+        return invalid(f"not candidates of this proposal: {sorted(unknown)}")
     if any(not (0 <= s <= 5) for s in scores.values()):
-        raise ValueError("scores must be between 0 and 5")
+        return invalid("scores must be between 0 and 5")
     stmt = pg_insert(ProposalBallot).values(
         [
             {
@@ -767,9 +797,10 @@ async def cast_ballot(
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=[ProposalBallot.voter_id, ProposalBallot.candidate_id],
-        set_={"score": stmt.excluded.score, "updated_at": sa.func.now()},
+        set_={"score": stmt.excluded.score, "updated_at": now},
     )
     await session.execute(stmt)
+    return Ok(None)
 
 
 async def my_scores(
@@ -777,17 +808,18 @@ async def my_scores(
     actor: Actor | None,
     proposal_id: int,
     voter_volunteer_id: int,
-) -> dict[int, int]:
+) -> Result[dict[int, int], DomainError]:
     """The voter's own scores, candidate id -> 0-5 (a ballot is not secret
     to its owner); empty if they have not voted.
 
     Only your own, and the id is checked against the actor rather than trusted:
     this is the one function that returns individual scores, so the whole
     secrecy guarantee rests on it."""
-    require(
+    if denied := require(
         actor is None or actor.volunteer_id == voter_volunteer_id,
         "read this ballot",
-    )
+    ):
+        return denied
     rows = await session.execute(
         sa.select(ProposalBallot.candidate_id, ProposalBallot.score)
         .join(ProposalVoter, ProposalVoter.id == ProposalBallot.voter_id)
@@ -796,7 +828,7 @@ async def my_scores(
             ProposalVoter.volunteer_id == voter_volunteer_id,
         )
     )
-    return dict(rows.all())
+    return Ok(dict(rows.all()))
 
 
 def _tally_visible(proposal: Proposal, today: date) -> bool:
@@ -839,49 +871,61 @@ async def appoint(
     candidate_id: int,
     *,
     decided_by: int,
-    today: date | None = None,
-) -> Proposal:
+    today: date,
+    now: datetime,
+) -> Result[Proposal, DomainError]:
     """Appoint a candidate once voting has concluded AND create the
     membership — both flush in the caller's session, so they commit (or
     roll back) together. assign() upserts: a volunteer already on the team
     gets their role updated. The tally is advisory: any candidate may be
     appointed, not just the STAR winner."""
-    today = today or local_today()
-    proposal = await _managed(session, actor, proposal_id)
-    _require_phase(proposal, today, ProposalPhase.concluded, "appoint")
+    managed = await _managed(session, actor, proposal_id)
+    if isinstance(managed, Err):
+        return managed
+    proposal = managed.value
+    if wrong := _require_phase(proposal, today, ProposalPhase.concluded, "appoint"):
+        return wrong
     candidate = await session.get(ProposalCandidate, candidate_id)
     if candidate is None or candidate.proposal_id != proposal_id:
-        raise LookupError(f"candidate {candidate_id} not found")
+        return not_found("candidate", candidate_id)
     proposal.status = ProposalStatus.appointed.value
     proposal.appointed_candidate_id = candidate.id
     proposal.decided_by = decided_by
-    proposal.decided_at = datetime.now(UTC)
-    (
-        await membership_service.assign(
-            # None: the caller of appoint() holds manage rights on this seat's team,
-            # which is the same right the membership write would ask for
-            session,
-            None,
-            candidate.volunteer_id,
-            proposal.team_id,
-            TeamRole(proposal.role),
-        )
-    ).unwrap()
+    proposal.decided_at = now
+    seated = await membership_service.assign(
+        # None: the caller of appoint() holds manage rights on this seat's team,
+        # which is the same right the membership write would ask for
+        session,
+        None,
+        candidate.volunteer_id,
+        proposal.team_id,
+        TeamRole(proposal.role),
+    )
+    if isinstance(seated, Err):
+        return seated
     await session.flush()
-    return proposal
+    return Ok(proposal)
 
 
 async def cancel(
-    session: AsyncSession, actor: Actor | None, proposal_id: int, *, decided_by: int
-) -> Proposal:
-    proposal = await _managed(session, actor, proposal_id)
+    session: AsyncSession,
+    actor: Actor | None,
+    proposal_id: int,
+    *,
+    decided_by: int,
+    now: datetime,
+) -> Result[Proposal, DomainError]:
+    managed = await _managed(session, actor, proposal_id)
+    if isinstance(managed, Err):
+        return managed
+    proposal = managed.value
     if proposal.status != ProposalStatus.open.value:
-        raise ValueError(f"proposal already {proposal.status}")
+        return invalid(f"proposal already {proposal.status}")
     proposal.status = ProposalStatus.cancelled.value
     proposal.decided_by = decided_by
-    proposal.decided_at = datetime.now(UTC)
+    proposal.decided_at = now
     await session.flush()
-    return proposal
+    return Ok(proposal)
 
 
 async def new_round(
@@ -892,19 +936,26 @@ async def new_round(
     created_by: int,
     nomination_deadline: date,
     voting_deadline: date,
-    today: date | None = None,
-) -> Proposal:
+    today: date,
+    now: datetime,
+) -> Result[Proposal, DomainError]:
     """The Ignatian "debate together, then repeat": close a concluded round
     and open a fresh one for the same seat, cloning candidates (notes and
     nominators travel) and the roll — never the ballots."""
-    today = today or local_today()
-    source = await _managed(session, actor, proposal_id)
-    _require_phase(source, today, ProposalPhase.concluded, "start a new round")
-    _check_deadlines(nomination_deadline, voting_deadline, today)
+    managed = await _managed(session, actor, proposal_id)
+    if isinstance(managed, Err):
+        return managed
+    source = managed.value
+    if wrong := _require_phase(
+        source, today, ProposalPhase.concluded, "start a new round"
+    ):
+        return wrong
+    if bad := _check_deadlines(nomination_deadline, voting_deadline, today):
+        return bad
 
     source.status = ProposalStatus.cancelled.value
     source.decided_by = created_by
-    source.decided_at = datetime.now(UTC)
+    source.decided_at = now
     await session.flush()  # frees uq_proposal_open for the fresh round
 
     fresh = Proposal(
@@ -939,4 +990,4 @@ async def new_round(
             )
         )
     await session.flush()
-    return fresh
+    return Ok(fresh)

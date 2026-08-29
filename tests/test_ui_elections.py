@@ -76,29 +76,34 @@ async def _parish(session):
 async def _seed_proposal(ids, *, d1_offset: int, d2_offset: int, ballots=None):
     """A Liturgy/second proposal with Vera as candidate, deadlines placed
     relative to local_today(); optional ballots cast while backdated."""
-    today = elections.local_today()
+    today = mint.today()
     async with db_session() as session:
-        proposal = await elections.create_proposal(
-            session,
-            None,
-            team_id=ids["liturgy"],
-            role=TeamRole.second,
-            nomination_deadline=today + timedelta(days=d1_offset),
-            voting_deadline=today + timedelta(days=d2_offset),
-            created_by=ids["admin_u"],
-            candidates=[elections.CandidateInput(ids["vera"], "steady hands")],
-            today=today + timedelta(days=min(d1_offset, 0)),
-        )
-        for voter_vol_id, score in (ballots or {}).items():
-            view = await elections.detail(session, None, proposal.id, today=today)
-            cand_id = view.candidates[0].candidate.id
-            await elections.cast_ballot(
+        proposal = ok(
+            await elections.create_proposal(
                 session,
                 None,
-                proposal.id,
-                voter_volunteer_id=voter_vol_id,
-                scores={cand_id: score},
-                today=today + timedelta(days=d1_offset + 1),
+                team_id=ids["liturgy"],
+                role=TeamRole.second,
+                nomination_deadline=today + timedelta(days=d1_offset),
+                voting_deadline=today + timedelta(days=d2_offset),
+                created_by=ids["admin_u"],
+                candidates=[elections.CandidateInput(ids["vera"], "steady hands")],
+                today=today + timedelta(days=min(d1_offset, 0)),
+            )
+        )
+        for voter_vol_id, score in (ballots or {}).items():
+            view = ok(await elections.detail(session, None, proposal.id, today=today))
+            cand_id = view.candidates[0].candidate.id
+            ok(
+                await elections.cast_ballot(
+                    session,
+                    None,
+                    proposal.id,
+                    voter_volunteer_id=voter_vol_id,
+                    scores={cand_id: score},
+                    today=today + timedelta(days=d1_offset + 1),
+                    now=mint.now(),
+                )
             )
         return proposal.id
 
@@ -222,13 +227,17 @@ async def test_profile_lists_proposals_involving_the_volunteer(database):
     # and as the newly appointed second she sits on the fresh round's roll
     pid_done = await _seed_proposal(ids, d1_offset=-10, d2_offset=-5)
     async with db_session() as session:
-        view = await elections.detail(session, None, pid_done)
-        await elections.appoint(
-            session,
-            None,
-            pid_done,
-            view.candidates[0].candidate.id,
-            decided_by=ids["admin_u"],
+        view = ok(await elections.detail(session, None, pid_done, today=mint.today()))
+        ok(
+            await elections.appoint(
+                session,
+                None,
+                pid_done,
+                view.candidates[0].candidate.id,
+                decided_by=ids["admin_u"],
+                today=mint.today(),
+                now=mint.now(),
+            )
         )
     await _seed_proposal(ids, d1_offset=5, d2_offset=10)
 

@@ -13,7 +13,6 @@ from ..config import settings
 from ..env import current as current_env
 from ..fp import Err
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
-from ..services import elections as elections_service
 from ..services import events as event_service
 from ..services import mail, roster_sheets
 from ..services import memberships as membership_service
@@ -856,7 +855,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             await volunteer_service.team_anniversaries(
                 session,
                 team_id,
-                elections_service.local_today(),
+                current_env().today(),
                 tz=ZoneInfo(settings().timezone),
             )
             if can_manage

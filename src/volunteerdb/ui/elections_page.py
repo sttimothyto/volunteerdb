@@ -13,8 +13,11 @@ from datetime import date, timedelta
 
 from nicegui import ui
 
+from ..env import current as current_env
+from ..errors import NotFound
+from ..fp import Err
 from ..models import ROLE_LABELS, ProposalStatus, TeamRole
-from ..permissions import Forbidden, team_ids_map
+from ..permissions import team_ids_map
 from ..services import elections as elections_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
@@ -85,7 +88,9 @@ async def elections_page():
         vacancy_rows = (
             await elections_service.vacancies(session, actor) if can_create else []
         )
-        summaries = await elections_service.list_proposals(session, actor)
+        summaries = await elections_service.list_proposals(
+            session, actor, today=current_env().today()
+        )
         volunteer_options = (
             await volunteer_service.name_map(session) if can_create else {}
         )
@@ -123,7 +128,7 @@ async def elections_page():
                 .classes("w-full")
             )
             why = ui.input("Why them?").props("outlined dense").classes("w-full")
-            today = elections_service.local_today()
+            today = current_env().today()
             d1, d2 = _deadline_inputs(
                 today + timedelta(days=14), today + timedelta(days=28)
             )
@@ -153,19 +158,22 @@ async def elections_page():
                 if (deadlines := _parse_deadlines(d1, d2)) is None:
                     return
                 async with action_session() as (session, actor):
-                    proposal = await elections_service.create_proposal(
-                        session,
-                        actor,
-                        team_id=team_id,
-                        role=TeamRole(role.value),
-                        nomination_deadline=deadlines[0],
-                        voting_deadline=deadlines[1],
-                        created_by=actor.user.id,
-                        candidates=[
-                            elections_service.CandidateInput(who.value, why.value)
-                        ],
-                        notes=notes.value or None,
-                    )
+                    proposal = (
+                        await elections_service.create_proposal(
+                            session,
+                            actor,
+                            team_id=team_id,
+                            role=TeamRole(role.value),
+                            nomination_deadline=deadlines[0],
+                            voting_deadline=deadlines[1],
+                            created_by=actor.user.id,
+                            candidates=[
+                                elections_service.CandidateInput(who.value, why.value)
+                            ],
+                            notes=notes.value or None,
+                            today=current_env().today(),
+                        )
+                    ).unwrap()
                 dialog.close()
                 ui.navigate.to(f"/elections/{proposal.id}")
 
@@ -239,14 +247,17 @@ def _nominate_row(proposal_id: int, volunteer_options: dict[int, str]) -> None:
                 ui.notify("Pick a volunteer", color="warning")
                 return
             async with action_session() as (session, actor):
-                await elections_service.add_candidate(
-                    session,
-                    actor,
-                    proposal_id,
-                    volunteer_id=who.value,
-                    nominated_by=actor.user.id,
-                    note=why.value,
-                )
+                (
+                    await elections_service.add_candidate(
+                        session,
+                        actor,
+                        proposal_id,
+                        volunteer_id=who.value,
+                        nominated_by=actor.user.id,
+                        note=why.value,
+                        today=current_env().today(),
+                    )
+                ).unwrap()
             ui.navigate.reload()
 
         ui.button("Nominate", icon="person_add", on_click=nominate).props("dense")
@@ -295,13 +306,16 @@ def _voters_section(
                         ui.notify("Pick a volunteer", color="warning")
                         return
                     async with action_session() as (session, actor):
-                        await elections_service.add_voter(
-                            session,
-                            actor,
-                            proposal_id,
-                            volunteer_id=extra.value,
-                            added_by=actor.user.id,
-                        )
+                        (
+                            await elections_service.add_voter(
+                                session,
+                                actor,
+                                proposal_id,
+                                volunteer_id=extra.value,
+                                added_by=actor.user.id,
+                                today=current_env().today(),
+                            )
+                        ).unwrap()
                     ui.navigate.reload()
 
                 ui.button("Add voter", icon="person_add", on_click=add_voter).props(
@@ -334,13 +348,17 @@ def _ballot_section(
         scores = {c: t.value or 0 for c, t in toggles.items()}
         async with action_session() as (session, actor):
             # cast_ballot checks the seat, and that the seat is *yours*
-            await elections_service.cast_ballot(
-                session,
-                actor,
-                proposal_id,
-                voter_volunteer_id=actor.volunteer_id,
-                scores=scores,
-            )
+            (
+                await elections_service.cast_ballot(
+                    session,
+                    actor,
+                    proposal_id,
+                    voter_volunteer_id=actor.volunteer_id,
+                    scores=scores,
+                    today=current_env().today(),
+                    now=current_env().clock.now(),
+                )
+            ).unwrap()
         ui.notify(
             f"Ballot recorded — you may revise it until {voting_deadline}",
             color="positive",
@@ -353,29 +371,34 @@ def _ballot_section(
 @ui.page("/elections/{proposal_id}")
 async def proposal_detail(proposal_id: int):
     async with page_session() as (session, actor):
-        try:
-            view = await elections_service.detail(session, actor, proposal_id)
-        except LookupError:
-            with frame("Proposal not found", actor):
-                ui.label(f"No proposal with id {proposal_id}.")
-            return
-        except Forbidden:
-            # the service decides; the page only chooses how to say it, and a
-            # whole page reads better than a toast on an empty frame
-            with frame("Elections", actor):
-                ui.label(
-                    "This proposal is visible to its voting members and to the "
-                    "team's managers."
-                ).classes("text-gray-500")
-            return
+        shown = await elections_service.detail(
+            session, actor, proposal_id, today=current_env().today()
+        )
+        match shown:
+            case Err(NotFound()):
+                with frame("Proposal not found", actor):
+                    ui.label(f"No proposal with id {proposal_id}.")
+                return
+            case Err():
+                # the service decides; the page only chooses how to say it, and
+                # a whole page reads better than a toast on an empty frame
+                with frame("Elections", actor):
+                    ui.label(
+                        "This proposal is visible to its voting members and to "
+                        "the team's managers."
+                    ).classes("text-gray-500")
+                return
+        view = shown.value
         can_manage = actor.can_manage_team(view.proposal.team_id)
         is_voter = (
             actor.volunteer_id is not None and proposal_id in actor.voter_proposal_ids
         )
         my = (
-            await elections_service.my_scores(
-                session, actor, proposal_id, actor.volunteer_id
-            )
+            (
+                await elections_service.my_scores(
+                    session, actor, proposal_id, actor.volunteer_id
+                )
+            ).unwrap()
             if is_voter
             else {}
         )
@@ -424,6 +447,7 @@ async def proposal_detail(proposal_id: int):
                         nomination_deadline=deadlines[0],
                         voting_deadline=deadlines[1],
                         notes=notes.value or None,
+                        today=current_env().today(),
                     ),
                 )
 
@@ -447,7 +471,11 @@ async def proposal_detail(proposal_id: int):
         await _managed_action(
             "manage proposals for this team",
             lambda session, actor: elections_service.cancel(
-                session, actor, proposal_id, decided_by=actor.user.id
+                session,
+                actor,
+                proposal_id,
+                decided_by=actor.user.id,
+                now=current_env().clock.now(),
             ),
         )
 
@@ -466,7 +494,13 @@ async def proposal_detail(proposal_id: int):
         await _managed_action(
             "appoint for this team",
             lambda session, actor: elections_service.appoint(
-                session, actor, proposal_id, candidate_id, decided_by=actor.user.id
+                session,
+                actor,
+                proposal_id,
+                candidate_id,
+                decided_by=actor.user.id,
+                today=current_env().today(),
+                now=current_env().clock.now(),
             ),
         )
 
@@ -476,7 +510,7 @@ async def proposal_detail(proposal_id: int):
             ui.label(
                 "Candidates and the voting roll carry over; ballots do not."
             ).classes("text-sm text-gray-500")
-            today = elections_service.local_today()
+            today = current_env().today()
             d1, d2 = _deadline_inputs(
                 today + timedelta(days=14), today + timedelta(days=28)
             )
@@ -486,14 +520,18 @@ async def proposal_detail(proposal_id: int):
                 if (deadlines := _parse_deadlines(d1, d2)) is None:
                     return
                 async with action_session() as (session, actor):
-                    fresh = await elections_service.new_round(
-                        session,
-                        actor,
-                        proposal_id,
-                        created_by=actor.user.id,
-                        nomination_deadline=deadlines[0],
-                        voting_deadline=deadlines[1],
-                    )
+                    fresh = (
+                        await elections_service.new_round(
+                            session,
+                            actor,
+                            proposal_id,
+                            created_by=actor.user.id,
+                            nomination_deadline=deadlines[0],
+                            voting_deadline=deadlines[1],
+                            today=current_env().today(),
+                            now=current_env().clock.now(),
+                        )
+                    ).unwrap()
                 dialog.close()
                 ui.navigate.to(f"/elections/{fresh.id}")
 
@@ -645,13 +683,19 @@ def _result_section(tally: StarResult, names: dict[int, str]) -> None:
 
 async def _remove_candidate(proposal_id: int, candidate_id: int) -> None:
     async with action_session() as (session, actor):
-        await elections_service.remove_candidate(
-            session, actor, proposal_id, candidate_id
-        )
+        (
+            await elections_service.remove_candidate(
+                session, actor, proposal_id, candidate_id, today=current_env().today()
+            )
+        ).unwrap()
     ui.navigate.reload()
 
 
 async def _remove_voter(proposal_id: int, voter_id: int) -> None:
     async with action_session() as (session, actor):
-        await elections_service.remove_voter(session, actor, proposal_id, voter_id)
+        (
+            await elections_service.remove_voter(
+                session, actor, proposal_id, voter_id, today=current_env().today()
+            )
+        ).unwrap()
     ui.navigate.reload()

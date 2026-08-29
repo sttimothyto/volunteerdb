@@ -123,7 +123,7 @@ RNG_SEED = 20260816
 COHORT_SIZE = 84  # generated volunteers, on top of the hand-written ones
 
 TZ = ZoneInfo(settings().timezone)
-TODAY = elections.local_today()
+TODAY = datetime.now(TZ).date()
 
 L, S, C, M = TeamRole.leader, TeamRole.second, TeamRole.core, TeamRole.member
 
@@ -1305,14 +1305,16 @@ async def _cast_ballots(
         scores = {
             cid: max(0, min(5, bias[cid] + rng.randint(-1, 1))) for cid in candidate_ids
         }
-        await elections.cast_ballot(
-            session,
-            None,
-            proposal.id,
-            voter_volunteer_id=volunteer_id,
-            scores=scores,
-            today=today,
-        )
+        (
+            await elections.cast_ballot(
+                session,
+                None,
+                proposal.id,
+                voter_volunteer_id=volunteer_id,
+                scores=scores,
+                today=today,
+            )
+        ).unwrap()
 
 
 # --- the steps ----------------------------------------------------------------
@@ -1972,40 +1974,44 @@ async def seed_elections(
         return parish.volunteer_ids[name]
 
     # 1. nominating — the Hospitality vacancy the coverage report leads with
-    await elections.create_proposal(
-        session,
-        None,
-        team_id=parish.team_ids["Hospitality"],
-        role=L,
-        nomination_deadline=TODAY + timedelta(days=5),
-        voting_deadline=TODAY + timedelta(days=12),
-        created_by=admin,
-        notes="Hospitality has run without a leader since Advent.",
-        candidates=[
-            candidate(
-                person("Monica Silva"), "Has quietly run coffee Sunday all year."
-            ),
-            candidate(person("Teresa Romano"), "Knows every family in the parish."),
-            candidate(person("Estela Cruz"), "Already leads Coffee Sunday."),
-        ],
-    )
+    (
+        await elections.create_proposal(
+            session,
+            None,
+            team_id=parish.team_ids["Hospitality"],
+            role=L,
+            nomination_deadline=TODAY + timedelta(days=5),
+            voting_deadline=TODAY + timedelta(days=12),
+            created_by=admin,
+            notes="Hospitality has run without a leader since Advent.",
+            candidates=[
+                candidate(
+                    person("Monica Silva"), "Has quietly run coffee Sunday all year."
+                ),
+                candidate(person("Teresa Romano"), "Knows every family in the parish."),
+                candidate(person("Estela Cruz"), "Already leads Coffee Sunday."),
+            ],
+        )
+    ).unwrap()
 
     # 2. voting, ballots half in — the tally stays hidden until the deadline
-    voting = await elections.create_proposal(
-        session,
-        None,
-        team_id=parish.team_ids["Prayer Chain"],
-        role=L,
-        nomination_deadline=TODAY - timedelta(days=3),
-        voting_deadline=TODAY + timedelta(days=4),
-        created_by=admin,
-        today=TODAY - timedelta(days=10),
-        candidates=[
-            candidate(person("Ignatius Mensah"), "Keeps the chain going by phone."),
-            candidate(person("Dolores Vasquez"), "Runs the email half of it."),
-            candidate(person("Philomena Achebe"), "Nominated by the League."),
-        ],
-    )
+    voting = (
+        await elections.create_proposal(
+            session,
+            None,
+            team_id=parish.team_ids["Prayer Chain"],
+            role=L,
+            nomination_deadline=TODAY - timedelta(days=3),
+            voting_deadline=TODAY + timedelta(days=4),
+            created_by=admin,
+            today=TODAY - timedelta(days=10),
+            candidates=[
+                candidate(person("Ignatius Mensah"), "Keeps the chain going by phone."),
+                candidate(person("Dolores Vasquez"), "Runs the email half of it."),
+                candidate(person("Philomena Achebe"), "Nominated by the League."),
+            ],
+        )
+    ).unwrap()
     await _cast_ballots(
         session,
         voting,
@@ -2016,21 +2022,23 @@ async def seed_elections(
     )
 
     # 3. concluded, awaiting a decision — tally visible, appoint button live
-    concluded = await elections.create_proposal(
-        session,
-        None,
-        team_id=parish.team_ids["Ushers"],
-        role=S,
-        nomination_deadline=TODAY - timedelta(days=20),
-        voting_deadline=TODAY - timedelta(days=6),
-        created_by=admin,
-        today=TODAY - timedelta(days=30),
-        notes="Vincent has asked for a second since the collection count moved.",
-        candidates=[
-            candidate(person("Marta Kaminski"), "Ushers every second Sunday."),
-            candidate(person("Patrick Byrne"), "Would double up with the Knights."),
-        ],
-    )
+    concluded = (
+        await elections.create_proposal(
+            session,
+            None,
+            team_id=parish.team_ids["Ushers"],
+            role=S,
+            nomination_deadline=TODAY - timedelta(days=20),
+            voting_deadline=TODAY - timedelta(days=6),
+            created_by=admin,
+            today=TODAY - timedelta(days=30),
+            notes="Vincent has asked for a second since the collection count moved.",
+            candidates=[
+                candidate(person("Marta Kaminski"), "Ushers every second Sunday."),
+                candidate(person("Patrick Byrne"), "Would double up with the Knights."),
+            ],
+        )
+    ).unwrap()
     await _cast_ballots(
         session,
         concluded,
@@ -2040,21 +2048,25 @@ async def seed_elections(
     )
 
     # 4. appointed — and the membership the appointment created
-    decided = await elections.create_proposal(
-        session,
-        None,
-        team_id=parish.team_ids["Bereavement Ministry"],
-        role=L,
-        nomination_deadline=TODAY - timedelta(days=50),
-        voting_deadline=TODAY - timedelta(days=40),
-        created_by=admin,
-        today=TODAY - timedelta(days=60),
-        candidates=[
-            candidate(person("Bernadette Osei"), "Has cooked for every reception."),
-            candidate(person("Camille Rousseau"), "Trained in bereavement support."),
-            candidate(person("Dolores Vasquez"), "Would rather stay on the chain."),
-        ],
-    )
+    decided = (
+        await elections.create_proposal(
+            session,
+            None,
+            team_id=parish.team_ids["Bereavement Ministry"],
+            role=L,
+            nomination_deadline=TODAY - timedelta(days=50),
+            voting_deadline=TODAY - timedelta(days=40),
+            created_by=admin,
+            today=TODAY - timedelta(days=60),
+            candidates=[
+                candidate(person("Bernadette Osei"), "Has cooked for every reception."),
+                candidate(
+                    person("Camille Rousseau"), "Trained in bereavement support."
+                ),
+                candidate(person("Dolores Vasquez"), "Would rather stay on the chain."),
+            ],
+        )
+    ).unwrap()
     decided_candidates = await _candidate_ids(session, decided.id)
     await _cast_ballots(
         session,
@@ -2064,49 +2076,55 @@ async def seed_elections(
         today=TODAY - timedelta(days=45),
     )
     result = await elections._tally(session, decided.id)
-    await elections.appoint(
-        session,
-        None,
-        decided.id,
-        result.winner_id or decided_candidates[0],
-        decided_by=admin,
-    )
+    (
+        await elections.appoint(
+            session,
+            None,
+            decided.id,
+            result.winner_id or decided_candidates[0],
+            decided_by=admin,
+        )
+    ).unwrap()
 
     # 5. cancelled — the seat was filled another way
-    cancelled = await elections.create_proposal(
-        session,
-        None,
-        team_id=parish.team_ids["Website & Socials"],
-        role=L,
-        nomination_deadline=TODAY - timedelta(days=30),
-        voting_deadline=TODAY - timedelta(days=20),
-        created_by=admin,
-        today=TODAY - timedelta(days=40),
-        notes="Withdrawn: the diocese is consolidating parish websites.",
-        candidates=[
-            candidate(person("Kevin Tran"), "Built the current site."),
-            candidate(person("Gregory Nakamura"), "Runs the socials already."),
-        ],
-    )
-    await elections.cancel(session, None, cancelled.id, decided_by=admin)
+    cancelled = (
+        await elections.create_proposal(
+            session,
+            None,
+            team_id=parish.team_ids["Website & Socials"],
+            role=L,
+            nomination_deadline=TODAY - timedelta(days=30),
+            voting_deadline=TODAY - timedelta(days=20),
+            created_by=admin,
+            today=TODAY - timedelta(days=40),
+            notes="Withdrawn: the diocese is consolidating parish websites.",
+            candidates=[
+                candidate(person("Kevin Tran"), "Built the current site."),
+                candidate(person("Gregory Nakamura"), "Runs the socials already."),
+            ],
+        )
+    ).unwrap()
+    (await elections.cancel(session, None, cancelled.id, decided_by=admin)).unwrap()
 
     # 6. concluded then re-opened: the Ignatian "debate together, then repeat"
-    first_round = await elections.create_proposal(
-        session,
-        None,
-        team_id=parish.team_ids["Children's Liturgy"],
-        role=L,
-        nomination_deadline=TODAY - timedelta(days=35),
-        voting_deadline=TODAY - timedelta(days=25),
-        created_by=admin,
-        today=TODAY - timedelta(days=45),
-        notes="Round one: nobody clearly ahead, so the council asked for another.",
-        candidates=[
-            candidate(person("Bridget Hayes"), "Leads the Word most Sundays."),
-            candidate(person("Rafael Ortega"), "Would bring the youth group in."),
-            candidate(person("Anita Bakker"), "Catechist for the same age group."),
-        ],
-    )
+    first_round = (
+        await elections.create_proposal(
+            session,
+            None,
+            team_id=parish.team_ids["Children's Liturgy"],
+            role=L,
+            nomination_deadline=TODAY - timedelta(days=35),
+            voting_deadline=TODAY - timedelta(days=25),
+            created_by=admin,
+            today=TODAY - timedelta(days=45),
+            notes="Round one: nobody clearly ahead, so the council asked for another.",
+            candidates=[
+                candidate(person("Bridget Hayes"), "Leads the Word most Sundays."),
+                candidate(person("Rafael Ortega"), "Would bring the youth group in."),
+                candidate(person("Anita Bakker"), "Catechist for the same age group."),
+            ],
+        )
+    ).unwrap()
     await _cast_ballots(
         session,
         first_round,
@@ -2114,14 +2132,16 @@ async def seed_elections(
         rng,
         today=TODAY - timedelta(days=30),
     )
-    await elections.new_round(
-        session,
-        None,
-        first_round.id,
-        created_by=admin,
-        nomination_deadline=TODAY + timedelta(days=7),
-        voting_deadline=TODAY + timedelta(days=21),
-    )
+    (
+        await elections.new_round(
+            session,
+            None,
+            first_round.id,
+            created_by=admin,
+            nomination_deadline=TODAY + timedelta(days=7),
+            voting_deadline=TODAY + timedelta(days=21),
+        )
+    ).unwrap()
 
 
 # --- summary ------------------------------------------------------------------

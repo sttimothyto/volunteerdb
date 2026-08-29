@@ -309,10 +309,12 @@ async def volunteer_proposals(ctx: CtxDep, volunteer_id: int) -> list[Involvemen
     GET /elections/proposals: admins see all, managers their subtree, voters
     the rolls they sit on."""
     require(ctx.actor.can_access_elections, "use the elections page")
-    rows = await elections_service.involving(ctx.session, ctx.actor, volunteer_id)
+    rows = await elections_service.involving(
+        ctx.session, ctx.actor, volunteer_id, today=ctx.env.today()
+    )
     return [
         InvolvementOut(
-            proposal=proposal_out(r.proposal),
+            proposal=proposal_out(r.proposal, today=ctx.env.today()),
             path=r.path,
             as_candidate=r.as_candidate,
             as_voter=r.as_voter,

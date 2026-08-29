@@ -512,7 +512,9 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
             actor = await load_actor(session, user)
             await graph_service.elements(session, actor)
             await team_service.tree(session)
-            await stats_service.dashboard(session, actor, now=datetime.now(UTC))
+            await stats_service.dashboard(
+                session, actor, now=datetime.now(UTC), today=datetime.now(UTC).date()
+            )
             await workload_service.get_config(session)
 
     async def page_events():
@@ -533,7 +535,9 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
         async with db_session() as session:
             user = await user_service.get(session, marks["admin_user"])
             actor = await load_actor(session, user)
-            await stats_service.dashboard(session, actor, now=datetime.now(UTC))
+            await stats_service.dashboard(
+                session, actor, now=datetime.now(UTC), today=datetime.now(UTC).date()
+            )
 
     return {
         "page_volunteers_list": page_volunteers_list,

@@ -51,7 +51,11 @@ async def dashboard(request: Request, as_of: str = ""):
             else []
         )
         figures = await stats_service.dashboard(
-            session, actor, at=at, now=current_env().clock.now()
+            session,
+            actor,
+            at=at,
+            now=current_env().clock.now(),
+            today=current_env().today(),
         )
         # band chips in the legend, for the viewers who see coloured dots at all
         bands = (

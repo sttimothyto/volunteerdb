@@ -52,7 +52,7 @@ def _unsent(stage: NotificationStage):
 async def main(env: Env, today: date | None = None) -> int:
     init_logging()
     if today is None:
-        today = elections.local_today()
+        today = env.today()
 
     async with db_session() as session:
         rows = (

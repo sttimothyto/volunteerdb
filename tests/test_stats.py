@@ -88,7 +88,9 @@ async def test_parish_tier_counts(database):
         )
         actor = await _actor(session, "admin@example.org", is_admin=True)
 
-        figures = await stats.dashboard(session, actor, now=mint.now())
+        figures = await stats.dashboard(
+            session, actor, now=mint.now(), today=mint.today()
+        )
 
         parish = figures.parish
         assert parish is not None
@@ -110,7 +112,9 @@ async def test_parish_counts_active_volunteers_on_no_team(database):
         await _parish(session)  # Solo stays active and stays teamless
         actor = await _actor(session, "admin@example.org", is_admin=True)
 
-        figures = await stats.dashboard(session, actor, now=mint.now())
+        figures = await stats.dashboard(
+            session, actor, now=mint.now(), today=mint.today()
+        )
 
         assert figures.parish is not None
         assert figures.parish.active_volunteers == 5
@@ -122,7 +126,9 @@ async def test_admin_sees_gaps_workload_and_the_whole_parish(database):
         p = await _parish(session)
         actor = await _actor(session, "admin@example.org", is_admin=True)
 
-        lead = (await stats.dashboard(session, actor, now=mint.now())).leadership
+        lead = (
+            await stats.dashboard(session, actor, now=mint.now(), today=mint.today())
+        ).leadership
 
         assert lead is not None
         assert lead.teams == 3, "an admin's scope is every team"
@@ -141,7 +147,9 @@ async def test_leader_sees_only_their_subtree(database):
         p = await _parish(session)
         actor = await _actor(session, "lea@example.org", volunteer_id=p["lea"].id)
 
-        lead = (await stats.dashboard(session, actor, now=mint.now())).leadership
+        lead = (
+            await stats.dashboard(session, actor, now=mint.now(), today=mint.today())
+        ).leadership
 
         assert lead is not None
         # leading Liturgy cascades to Music; Hospitality membership is plain,
@@ -157,7 +165,9 @@ async def test_core_member_sees_reach_but_no_gaps_and_no_workload(database):
         p = await _parish(session)
         actor = await _actor(session, "cora@example.org", volunteer_id=p["cora"].id)
 
-        figures = await stats.dashboard(session, actor, now=mint.now())
+        figures = await stats.dashboard(
+            session, actor, now=mint.now(), today=mint.today()
+        )
 
         assert figures.parish is None, "the parish tier is admins only"
         lead = figures.leadership
@@ -177,7 +187,9 @@ async def test_plain_member_gets_no_leadership_tier_at_all(database):
         p = await _parish(session)
         actor = await _actor(session, "mel@example.org", volunteer_id=p["mel"].id)
 
-        figures = await stats.dashboard(session, actor, now=mint.now())
+        figures = await stats.dashboard(
+            session, actor, now=mint.now(), today=mint.today()
+        )
 
         assert figures.parish is None
         assert figures.leadership is None
@@ -189,7 +201,9 @@ async def test_workload_covers_only_people_the_actor_may_see(database):
         p = await _parish(session)
         actor = await _actor(session, "lea@example.org", volunteer_id=p["lea"].id)
 
-        lead = (await stats.dashboard(session, actor, now=mint.now())).leadership
+        lead = (
+            await stats.dashboard(session, actor, now=mint.now(), today=mint.today())
+        ).leadership
 
         assert lead is not None and lead.bands is not None
         # Lea leads Liturgy+Music, so she may see those four people's scores.
@@ -203,7 +217,9 @@ async def test_admin_without_a_volunteer_has_no_personal_tier(database):
         await _parish(session)
         actor = await _actor(session, "admin@example.org", is_admin=True)
 
-        figures = await stats.dashboard(session, actor, now=mint.now())
+        figures = await stats.dashboard(
+            session, actor, now=mint.now(), today=mint.today()
+        )
 
         assert figures.parish is not None
         assert figures.personal is None, "no volunteer record, no own service"
@@ -214,7 +230,9 @@ async def test_personal_tier_is_empty_until_there_is_anything_to_report(database
         p = await _parish(session)
         actor = await _actor(session, "mel@example.org", volunteer_id=p["mel"].id)
 
-        mine = (await stats.dashboard(session, actor, now=mint.now())).personal
+        mine = (
+            await stats.dashboard(session, actor, now=mint.now(), today=mint.today())
+        ).personal
 
         assert mine is not None
         assert mine.upcoming_duties == 0
@@ -230,7 +248,9 @@ async def test_as_of_drops_the_live_only_figures(database):
         actor = await _actor(session, "admin@example.org", is_admin=True)
 
         at = datetime.now(UTC) - timedelta(seconds=1)
-        figures = await stats.dashboard(session, actor, at=at, now=mint.now())
+        figures = await stats.dashboard(
+            session, actor, at=at, now=mint.now(), today=mint.today()
+        )
 
         assert figures.live is False
         assert figures.parish is not None
@@ -250,7 +270,9 @@ async def test_as_of_before_the_parish_existed_counts_nothing(database):
         actor = await _actor(session, "admin@example.org", is_admin=True)
 
         at = datetime.now(UTC) - timedelta(days=365)
-        figures = await stats.dashboard(session, actor, at=at, now=mint.now())
+        figures = await stats.dashboard(
+            session, actor, at=at, now=mint.now(), today=mint.today()
+        )
 
         assert figures.parish is not None
         assert figures.parish.active_volunteers == 0

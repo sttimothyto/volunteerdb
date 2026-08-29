@@ -97,7 +97,6 @@ EDGE_ALLOWLIST = {
 # never refuses. The count may only fall; an entry at zero must be deleted.
 DISCARDED_GATE_BASELINE: dict[str, int] = {
     "services/custom_fields.py": 4,
-    "services/elections.py": 7,
     "services/roster_sheets.py": 1,
     "services/workload.py": 2,
     "sheets/exporter.py": 2,

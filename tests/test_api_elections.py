@@ -8,13 +8,14 @@ its phases by PATCHing deadlines relative to today (the API cannot inject
 from datetime import timedelta
 
 from volunteerdb.db import db_session
-from volunteerdb.services import elections, volunteers
+from volunteerdb.services import volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 
 def _days(n: int) -> str:
-    return (elections.local_today() + timedelta(days=n)).isoformat()
+    return (mint.today() + timedelta(days=n)).isoformat()
 
 
 async def _walter_id() -> int:

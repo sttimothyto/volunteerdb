@@ -49,7 +49,7 @@ async def dashboard(ctx: CtxDep, as_of: AsOf) -> DashboardStatsOut:
     anything they could not already reach by navigating.
     """
     figures = await stats_service.dashboard(
-        ctx.session, ctx.actor, at=as_of, now=ctx.now
+        ctx.session, ctx.actor, at=as_of, now=ctx.now, today=ctx.env.today()
     )
     return DashboardStatsOut.model_validate(figures)
 

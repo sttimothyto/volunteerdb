@@ -242,16 +242,18 @@ async def test_elections_access_without_any_roll(parish):
 async def test_voting_roll_grants_elections_access(parish):
     accounts, ids = parish
     async with db_session() as session:
-        proposal = await elections.create_proposal(
-            session,
-            None,
-            team_id=ids["liturgy"],
-            role=TeamRole.leader,
-            nomination_deadline=date(2026, 8, 15),
-            voting_deadline=date(2026, 8, 25),
-            created_by=accounts["admin"].id,
-            candidates=[elections.CandidateInput(ids["outsider_vid"])],
-            today=date(2026, 8, 10),
+        proposal = ok(
+            await elections.create_proposal(
+                session,
+                None,
+                team_id=ids["liturgy"],
+                role=TeamRole.leader,
+                nomination_deadline=date(2026, 8, 15),
+                voting_deadline=date(2026, 8, 25),
+                created_by=accounts["admin"].id,
+                candidates=[elections.CandidateInput(ids["outsider_vid"])],
+                today=date(2026, 8, 10),
+            )
         )
         pid, team_id = proposal.id, proposal.team_id
 
