@@ -6,19 +6,29 @@ calendar (services/gcal.py, scopes calendar.app.created + calendar.acls).
 The settings are still named VDB_SHEETS_* -- they were provisioned under
 that name first, and a rename would buy nothing but an edit to the
 production env file -- but what they hold is *the parish Google token*, and
-this module is where that is spelled out.
+this module is where that is spelled out: GoogleConfig is those settings as
+a value, read once at the edge (env.Env.google()) and passed in, so nothing
+under services/ reads configuration itself.
 
 Raw httpx, no client library: between them the two callers use a dozen
 verbs, which does not justify a dependency tree. Every call goes through
 send(), which retries the statuses Google uses to mean "later" -- the quotas
-are per-minute per-user, and a busy night's write-back can reach them.
+are per-minute per-user, and a busy night's write-back can reach them. The
+client is the caller's (env.HttpClients gives the edges one), which is what
+lets a test route every request through a MockTransport without patching.
+
+A failed call is a value, never an exception: External, carrying the very
+sentence a leader reads on the team page ("export failed: HTTP 429"). Each
+integration names itself as the service so the two are told apart in a log.
 """
 
 import asyncio
+from dataclasses import dataclass
 
 import httpx
 
-from ..config import settings
+from ..errors import External
+from ..fp import Err, Ok, Result
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 TIMEOUT = 20.0
@@ -44,21 +54,30 @@ RETRY_STATUSES = REFUSED | frozenset({500, 502, 503, 504})
 RATE_LIMIT_REASONS = frozenset(
     {"rateLimitExceeded", "userRateLimitExceeded", "sharingRateLimitExceeded"}
 )
+SERVICE = "google"
 
 
-class GoogleApiError(RuntimeError):
-    """A request to Google failed. Each caller narrows it to its own class
-    (GSheetsError, GcalError) so its job records it the way it always has."""
+@dataclass(frozen=True, slots=True)
+class GoogleConfig:
+    """The parish Google grant as values -- what VDB_SHEETS_* holds."""
+
+    client_id: str = ""
+    client_secret: str = ""
+    refresh_token: str = ""
+    folder_id: str = ""  # the roster folder: the sheets need it, the calendar does not
+
+    @property
+    def configured(self) -> bool:
+        """The token is provisioned: client id, secret and refresh token. Each
+        integration adds its own further requirement (a folder id for the
+        sheets); this is the part they share."""
+        return bool(self.client_id and self.client_secret and self.refresh_token)
 
 
-def configured() -> bool:
-    """The parish token is provisioned: client id, secret and refresh token.
-    Each integration adds its own further requirement (a folder id for the
-    sheets); this is the part they share."""
-    s = settings()
-    return bool(
-        s.sheets_client_id and s.sheets_client_secret and s.sheets_refresh_token
-    )
+def failed(what: str, detail: str, *, service: str = SERVICE) -> Err[External]:
+    """The one error shape for a call that did not go through: the leg that
+    failed and how, in the sentence the team page and the job log show."""
+    return Err(External(service, f"{what} failed: {detail}"))
 
 
 def is_rate_limited(resp: httpx.Response) -> bool:
@@ -100,15 +119,19 @@ async def send(
     *,
     what: str,
     repeatable: bool = True,
+    service: str = SERVICE,
     **kwargs,
-) -> httpx.Response:
+) -> Result[httpx.Response, External]:
     """One request, retried while Google says "later".
 
-    Returns the response rather than raising on a bad status: every leg
-    reports failure differently -- read_csv turns a 403 into sharing advice --
-    and centralising that would flatten the messages leaders actually read.
-    The last attempt's response comes back as-is, so an exhausted retry ends
-    in the caller's usual "... failed: HTTP 429" instead of a new error shape.
+    Returns the response rather than judging its status: every leg reports
+    failure differently -- read_csv turns a 403 into sharing advice -- and
+    centralising that would flatten the messages leaders actually read. The
+    last attempt's response comes back as-is, so an exhausted retry ends in
+    the caller's usual "... failed: HTTP 429" instead of a new error shape.
+    Only a request that never got an answer is an Err here: a reset or a read
+    timeout, named after the exception, so an interactive "Sync now" records
+    it against the team like any other sheet problem.
 
     A throttling 403 (see is_rate_limited) is retried like a 429 whatever
     the call, since it too was refused rather than half-performed.
@@ -129,44 +152,45 @@ async def send(
         try:
             resp = await client.request(method, url, **kwargs)
         except httpx.TransportError as exc:
-            # A reset or a read timeout is precisely what backoff is for. It
-            # surfaces as an error so an interactive "Sync now" records it
-            # against the team like any other sheet problem, rather than
-            # escaping the service as a bare httpx error.
+            # A reset or a read timeout is precisely what backoff is for --
+            # unless the call must not be replayed.
             if not repeatable:
-                raise GoogleApiError(f"{what} failed: {type(exc).__name__}") from exc
+                return failed(what, type(exc).__name__, service=service)
             wait = backoff
         else:
             if resp.status_code not in statuses and not is_rate_limited(resp):
-                return resp
+                return Ok(resp)
             wait = retry_after(resp, backoff)
         await asyncio.sleep(wait)
         backoff = min(backoff * RETRY_FACTOR, RETRY_MAX_DELAY)
     try:
-        return await client.request(method, url, **kwargs)
+        return Ok(await client.request(method, url, **kwargs))
     except httpx.TransportError as exc:
-        raise GoogleApiError(f"{what} failed: {type(exc).__name__}") from exc
+        return failed(what, type(exc).__name__, service=service)
 
 
-async def mint_token() -> str:
+async def mint_token(
+    client: httpx.AsyncClient, cfg: GoogleConfig, *, service: str = SERVICE
+) -> Result[str, External]:
     """A fresh access token from the stored refresh token."""
-    s = settings()
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await send(
-            client,
-            "POST",
-            TOKEN_URL,
-            what="token mint",
-            data={
-                "client_id": s.sheets_client_id,
-                "client_secret": s.sheets_client_secret,
-                "refresh_token": s.sheets_refresh_token,
-                "grant_type": "refresh_token",
-            },
-        )
-    if resp.status_code != 200:
-        raise GoogleApiError(f"token mint failed: HTTP {resp.status_code}")
-    return resp.json()["access_token"]
+    sent = await send(
+        client,
+        "POST",
+        TOKEN_URL,
+        what="token mint",
+        service=service,
+        data={
+            "client_id": cfg.client_id,
+            "client_secret": cfg.client_secret,
+            "refresh_token": cfg.refresh_token,
+            "grant_type": "refresh_token",
+        },
+    )
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code != 200:
+        return failed("token mint", f"HTTP {sent.value.status_code}", service=service)
+    return Ok(sent.value.json()["access_token"])
 
 
 def headers(token: str) -> dict[str, str]:

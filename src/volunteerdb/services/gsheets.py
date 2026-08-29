@@ -21,6 +21,11 @@ retry policy); no client library, because six verbs do not justify a
 dependency tree. Every call goes through _send, which retries the statuses
 Google uses to mean "later"; the Sheets quota is per-minute per-user and a
 busy night's write-back can reach it.
+
+The client and the configuration are the caller's (env.Env.http, env.Env
+.google()), and a failed call comes back as an Err[External] carrying the
+sentence the team page shows -- the sync records it against the team and
+moves on to the next one. Nothing here raises.
 """
 
 import asyncio  # noqa: F401 -- the retry tests patch asyncio.sleep through this name
@@ -29,7 +34,8 @@ from io import StringIO
 
 import httpx
 
-from ..config import settings
+from ..errors import External
+from ..fp import Err, Ok, Result
 from ..models import ROLE_LABELS, TeamRole
 from ..sheets.common import ROSTER_HEADERS
 from . import google_api
@@ -43,8 +49,10 @@ from .google_api import (  # noqa: F401 -- re-exported: the retry policy is this
     RETRY_STATUSES,
     TIMEOUT,
     TOKEN_URL,
+    GoogleConfig,
 )
 
+SERVICE = "google sheets"
 API = "https://sheets.googleapis.com/v4/spreadsheets"
 DRIVE_API = "https://www.googleapis.com/drive/v3/files"
 EXPORT_URL = "https://docs.google.com/spreadsheets/d/{file_id}/export?format=csv"
@@ -78,9 +86,12 @@ GET_FIELDS = (
 ROLE_VALUES = [ROLE_LABELS[role] for role in TeamRole]
 
 
-class GSheetsError(RuntimeError):
-    """A Google API call failed; the sync records it against the team and
-    moves on to the next one."""
+def _err(message: str) -> Err[External]:
+    return Err(External(SERVICE, message))
+
+
+def _failed(what: str, resp: httpx.Response) -> Err[External]:
+    return google_api.failed(what, f"HTTP {resp.status_code}", service=SERVICE)
 
 
 async def _send(
@@ -91,68 +102,68 @@ async def _send(
     what: str,
     repeatable: bool = True,
     **kwargs,
-) -> httpx.Response:
-    """google_api.send, with a transport failure narrowed to GSheetsError so an
-    interactive "Sync now" records it against the team like any other sheet
-    problem rather than escaping the service as a bare httpx error."""
-    try:
-        return await google_api.send(
-            client, method, url, what=what, repeatable=repeatable, **kwargs
-        )
-    except google_api.GoogleApiError as exc:
-        raise GSheetsError(str(exc)) from exc
+) -> Result[httpx.Response, External]:
+    """google_api.send under this module's name, so a transport failure is
+    recorded against the team like any other sheet problem."""
+    return await google_api.send(
+        client, method, url, what=what, repeatable=repeatable, service=SERVICE, **kwargs
+    )
 
 
-def enabled() -> bool:
-    return google_api.configured() and bool(settings().sheets_folder_id)
+def enabled(cfg: GoogleConfig) -> bool:
+    """The parish token, plus the roster folder new sheets are made in."""
+    return cfg.configured and bool(cfg.folder_id)
 
 
-async def mint_token() -> str:
+async def mint_token(
+    client: httpx.AsyncClient, cfg: GoogleConfig
+) -> Result[str, External]:
     """A fresh access token from the parish token (google_api.mint_token)."""
-    try:
-        return await google_api.mint_token()
-    except google_api.GoogleApiError as exc:
-        raise GSheetsError(str(exc)) from exc
+    return await google_api.mint_token(client, cfg, service=SERVICE)
 
 
 _headers = google_api.headers
 
 
-async def read_csv(file_id: str) -> bytes:
+async def read_csv(client: httpx.AsyncClient, file_id: str) -> Result[bytes, External]:
     """The sheet's first tab as CSV — anonymously, with no token.
 
     Google serves this to anybody holding the link, which is the whole point:
     a leader's own sheet needs no grant to this system, only link sharing. A
     sheet that is not shared answers with a sign-in page, not the CSV, so the
     404/HTML cases below are the ordinary "they forgot to share it" report.
+    The client must follow redirects (env.HttpClients.client(
+    follow_redirects=True)): the export endpoint answers with one.
     """
     url = EXPORT_URL.format(file_id=file_id)
-    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-        resp = await _send(client, "GET", url, what="export")
+    sent = await _send(client, "GET", url, what="export")
+    if isinstance(sent, Err):
+        return sent
+    resp = sent.value
     if resp.status_code == 404:
-        raise GSheetsError(
+        return _err(
             "the spreadsheet was not found — check the link, and that the "
             "sheet has not been deleted"
         )
     if resp.status_code in (401, 403):
-        raise GSheetsError(
+        return _err(
             "the spreadsheet is not shared — set it to “anyone with the "
             "link can edit” in Google Sheets’ Share dialog"
         )
     if resp.status_code != 200:
-        raise GSheetsError(f"export failed: HTTP {resp.status_code}")
+        return _failed("export", resp)
     content = resp.content
     if len(content) > MAX_SHEET_BYTES:
-        raise GSheetsError("the spreadsheet is implausibly large for a roster")
+        return _err("the spreadsheet is implausibly large for a roster")
     # An unshared sheet redirects to a sign-in page, which is a 200 of HTML.
     # Catching it here turns "Google served us a login form" into the sharing
     # message above rather than a baffling header-row parse error.
     if b"<html" in content[:1024].lower():
-        raise GSheetsError(
+        return _err(
             "the spreadsheet is not shared — Google returned a sign-in page "
             "instead of the roster. Set it to “anyone with the link can edit”."
         )
-    return content
+    return Ok(content)
 
 
 def _csv_to_values(content: bytes) -> list[list[str]]:
@@ -161,7 +172,9 @@ def _csv_to_values(content: bytes) -> list[list[str]]:
     return [row for row in csv.reader(StringIO(content.decode("utf-8-sig")))]
 
 
-async def write_rows(token: str, file_id: str, content: bytes) -> None:
+async def write_rows(
+    client: httpx.AsyncClient, token: str, file_id: str, content: bytes
+) -> Result[None, External]:
     """Replace the first tab's contents with `content`.
 
     Clear-then-update, not update alone: a roster that shrank would otherwise
@@ -170,73 +183,84 @@ async def write_rows(token: str, file_id: str, content: bytes) -> None:
     (the exporter's own injection guard assumes the value survives intact).
     """
     values = _csv_to_values(content)
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        clear = await _send(
-            client,
-            "POST",
-            f"{API}/{file_id}/values/A1:ZZ:clear",
-            what="clear",
-            headers=_headers(token),
-            json={},
-        )
-        if clear.status_code != 200:
-            raise GSheetsError(f"clear failed: HTTP {clear.status_code}")
-        resp = await _send(
-            client,
-            "PUT",
-            f"{API}/{file_id}/values/A1",
-            what="write",
-            headers=_headers(token),
-            params={"valueInputOption": "RAW"},
-            json={"values": values},
-        )
-    if resp.status_code != 200:
-        raise GSheetsError(f"write failed: HTTP {resp.status_code}")
+    clear = await _send(
+        client,
+        "POST",
+        f"{API}/{file_id}/values/A1:ZZ:clear",
+        what="clear",
+        headers=_headers(token),
+        json={},
+    )
+    if isinstance(clear, Err):
+        return clear
+    if clear.value.status_code != 200:
+        return _failed("clear", clear.value)
+    sent = await _send(
+        client,
+        "PUT",
+        f"{API}/{file_id}/values/A1",
+        what="write",
+        headers=_headers(token),
+        params={"valueInputOption": "RAW"},
+        json={"values": values},
+    )
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code != 200:
+        return _failed("write", sent.value)
+    return Ok(None)
 
 
-async def create_sheet(token: str, title: str) -> str:
+async def create_sheet(
+    client: httpx.AsyncClient, token: str, title: str, *, folder_id: str
+) -> Result[str, External]:
     """A new spreadsheet in the parish roster folder; returns its file id.
 
     Drive rather than Sheets: only files.create takes a parent folder, and a
     sheet created by this client is covered by the drive.file half of the
     grant, which is what lets share_anyone_writer touch it afterwards.
     """
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await _send(
-            client,
-            "POST",
-            DRIVE_API,
-            what="create",
-            repeatable=False,
-            headers=_headers(token),
-            json={
-                "name": title,
-                "mimeType": "application/vnd.google-apps.spreadsheet",
-                "parents": [settings().sheets_folder_id],
-            },
-            params={"fields": "id"},
-        )
-    if resp.status_code not in (200, 201):
-        raise GSheetsError(f"create failed: HTTP {resp.status_code}")
-    return resp.json()["id"]
+    sent = await _send(
+        client,
+        "POST",
+        DRIVE_API,
+        what="create",
+        repeatable=False,
+        headers=_headers(token),
+        json={
+            "name": title,
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+            "parents": [folder_id],
+        },
+        params={"fields": "id"},
+    )
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code not in (200, 201):
+        return _failed("create", sent.value)
+    return Ok(sent.value.json()["id"])
 
 
-async def share_anyone_writer(token: str, file_id: str) -> None:
+async def share_anyone_writer(
+    client: httpx.AsyncClient, token: str, file_id: str
+) -> Result[None, External]:
     """Link sharing, editor role — what replaces the retired per-leader Drive
     share leg. A leader needs no Google grant of their own now; holding the
     link is the access, which is exactly why the team page warns that the
     link must be kept private."""
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await _send(
-            client,
-            "POST",
-            f"{DRIVE_API}/{file_id}/permissions",
-            what="sharing",
-            headers=_headers(token),
-            json={"type": "anyone", "role": "writer"},
-        )
-    if resp.status_code not in (200, 201):
-        raise GSheetsError(f"sharing failed: HTTP {resp.status_code}")
+    sent = await _send(
+        client,
+        "POST",
+        f"{DRIVE_API}/{file_id}/permissions",
+        what="sharing",
+        headers=_headers(token),
+        json={"type": "anyone", "role": "writer"},
+    )
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code not in (200, 201):
+        return _failed("sharing", sent.value)
+    return Ok(None)
 
 
 def _dropdown_values(cell: dict) -> list[str] | None:
@@ -387,35 +411,43 @@ def build_requests(state: dict, team_values: list[str] | None = None) -> list[di
     return requests
 
 
-async def decorate(token: str, file_id: str, team_values: list[str] | None) -> bool:
+async def decorate(
+    client: httpx.AsyncClient,
+    token: str,
+    file_id: str,
+    team_values: list[str] | None,
+) -> Result[bool, External]:
     """Re-apply the leader-facing decoration; True if anything was written.
 
     Skipped when the sheet already complies, so Drive version history stays
     quiet and a leader opening the file does not see a nightly robot edit.
     """
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await _send(
-            client,
-            "GET",
-            f"{API}/{file_id}",
-            what="read for decoration",
-            headers=_headers(token),
-            params={"ranges": "A1:H2", "fields": GET_FIELDS},
-        )
-        if resp.status_code != 200:
-            raise GSheetsError(f"read for decoration failed: HTTP {resp.status_code}")
-        state = first_sheet_state(resp.json())
-        if is_decorated(state, team_values):
-            return False
-        batch = await _send(
-            client,
-            "POST",
-            f"{API}/{file_id}:batchUpdate",
-            what="decoration",
-            repeatable=False,
-            headers=_headers(token),
-            json={"requests": build_requests(state, team_values)},
-        )
-    if batch.status_code != 200:
-        raise GSheetsError(f"decoration failed: HTTP {batch.status_code}")
-    return True
+    read = await _send(
+        client,
+        "GET",
+        f"{API}/{file_id}",
+        what="read for decoration",
+        headers=_headers(token),
+        params={"ranges": "A1:H2", "fields": GET_FIELDS},
+    )
+    if isinstance(read, Err):
+        return read
+    if read.value.status_code != 200:
+        return _failed("read for decoration", read.value)
+    state = first_sheet_state(read.value.json())
+    if is_decorated(state, team_values):
+        return Ok(False)
+    batch = await _send(
+        client,
+        "POST",
+        f"{API}/{file_id}:batchUpdate",
+        what="decoration",
+        repeatable=False,
+        headers=_headers(token),
+        json={"requests": build_requests(state, team_values)},
+    )
+    if isinstance(batch, Err):
+        return batch
+    if batch.value.status_code != 200:
+        return _failed("decoration", batch.value)
+    return Ok(True)

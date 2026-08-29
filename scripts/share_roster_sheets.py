@@ -32,8 +32,10 @@ import sys
 import httpx
 import sqlalchemy as sa
 
-from volunteerdb.config import settings
+from volunteerdb import env as env_mod
 from volunteerdb.db import db_session, init
+from volunteerdb.errors import External
+from volunteerdb.fp import Err, Ok, Result
 from volunteerdb.log import init_logging
 from volunteerdb.models import TeamSheet
 from volunteerdb.services import gsheets
@@ -52,7 +54,9 @@ async def _sheets() -> list[tuple[str, str]]:
         ]
 
 
-async def _is_public(client: httpx.AsyncClient, token: str, file_id: str) -> bool:
+async def _is_public(
+    client: httpx.AsyncClient, token: str, file_id: str
+) -> Result[bool, External]:
     """Does an anyone-with-link grant already exist?"""
     resp = await client.get(
         f"{gsheets.DRIVE_API}/{file_id}/permissions",
@@ -60,10 +64,14 @@ async def _is_public(client: httpx.AsyncClient, token: str, file_id: str) -> boo
         params={"fields": "permissions(id,type,role)"},
     )
     if resp.status_code != 200:
-        raise gsheets.GSheetsError(f"HTTP {resp.status_code} listing permissions")
-    return any(
-        p.get("type") == "anyone" and p.get("role") in ("writer", "owner")
-        for p in resp.json().get("permissions", [])
+        return Err(
+            External(gsheets.SERVICE, f"HTTP {resp.status_code} listing permissions")
+        )
+    return Ok(
+        any(
+            p.get("type") == "anyone" and p.get("role") in ("writer", "owner")
+            for p in resp.json().get("permissions", [])
+        )
     )
 
 
@@ -77,33 +85,49 @@ async def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     init_logging()
-    if not gsheets.enabled():
+    env = env_mod.build()
+    cfg = env.google()
+    if not gsheets.enabled(cfg):
         print("FATAL: VDB_SHEETS_* is not configured", file=sys.stderr)
         return 1
-    init(settings().database_url)
+    init(env.settings.database_url)
 
     sheets = await _sheets()
     print(f"{len(sheets)} sheet(s) on file")
-    token = await gsheets.mint_token()
 
     shared = already = failed = 0
-    async with httpx.AsyncClient(timeout=gsheets.TIMEOUT) as client:
+    async with env.http.client(timeout=gsheets.TIMEOUT) as client:
+        minted = await gsheets.mint_token(client, cfg)
+        if isinstance(minted, Err):
+            print(f"FATAL: {minted.error.message}", file=sys.stderr)
+            return 1
+        token = minted.value
         for file_id, path in sheets:
             try:
-                if await _is_public(client, token, file_id):
-                    already += 1
-                    print(f"  ok       {path}")
-                    continue
-                if args.dry_run:
-                    print(f"  would    {path}")
-                    shared += 1
-                    continue
-                await gsheets.share_anyone_writer(token, file_id)
-                shared += 1
-                print(f"  SHARED   {path}")
-            except (gsheets.GSheetsError, httpx.HTTPError) as exc:
+                public = await _is_public(client, token, file_id)
+            except httpx.HTTPError as exc:
                 failed += 1
                 print(f"  FAILED   {path}: {exc}", file=sys.stderr)
+                continue
+            if isinstance(public, Err):
+                failed += 1
+                print(f"  FAILED   {path}: {public.error.message}", file=sys.stderr)
+                continue
+            if public.value:
+                already += 1
+                print(f"  ok       {path}")
+                continue
+            if args.dry_run:
+                print(f"  would    {path}")
+                shared += 1
+                continue
+            done = await gsheets.share_anyone_writer(client, token, file_id)
+            if isinstance(done, Err):
+                failed += 1
+                print(f"  FAILED   {path}: {done.error.message}", file=sys.stderr)
+                continue
+            shared += 1
+            print(f"  SHARED   {path}")
 
     verb = "would share" if args.dry_run else "shared"
     print(f"{verb} {shared}, already shared {already}, failed {failed}")

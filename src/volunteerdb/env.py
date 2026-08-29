@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from . import db, passwords, throttle
 from .config import Settings, settings
 from .domain import NotifyMode
-from .services import mail, mail_quota
+from .services import google_api, mail, mail_quota
 
 if TYPE_CHECKING:
     from .services import users
@@ -287,6 +287,17 @@ class Env:
         s = self.settings
         return mail.MailContext(
             org=s.org_name, invite_ttl_hours=s.invite_ttl_hours, tz=self.tz
+        )
+
+    def google(self) -> google_api.GoogleConfig:
+        """The parish Google grant (VDB_SHEETS_*) as a value, for the roster
+        sheets and the calendar; the services never read the settings."""
+        s = self.settings
+        return google_api.GoogleConfig(
+            client_id=s.sheets_client_id,
+            client_secret=s.sheets_client_secret,
+            refresh_token=s.sheets_refresh_token,
+            folder_id=s.sheets_folder_id,
         )
 
     @property

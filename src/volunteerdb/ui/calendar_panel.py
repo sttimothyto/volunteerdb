@@ -14,6 +14,7 @@ from datetime import datetime
 
 from nicegui import ui
 
+from ..env import current as current_env
 from ..services import gcal
 
 
@@ -42,7 +43,8 @@ def _when(iso: str | None) -> str:
 def _google_status(calendar: dict | None) -> str:
     """What an admin sees of the Google side: the calendar's own state and a
     way to open it. The sync job is the only writer, so there is no button."""
-    if not gcal.enabled():
+    env = current_env()
+    if not gcal.enabled(env.google()):
         return (
             '<p class="vdb-cal-admin"><strong>Google Calendar:</strong> the parish '
             "Google token is not configured, so no Google calendar is kept — see "
@@ -58,7 +60,7 @@ def _google_status(calendar: dict | None) -> str:
         '<p class="vdb-cal-admin"><strong>Google Calendar:</strong> created '
         f"{_when(calendar.get('created_at'))}; sharing last verified "
         f"{_when(calendar.get('verified_at'))}. "
-        f'<a href="{html.escape(gcal.embed_url(cid), quote=True)}">Open in Google Calendar</a>'
+        f'<a href="{html.escape(gcal.embed_url(cid, env.settings.timezone), quote=True)}">Open in Google Calendar</a>'
         f' · <span class="vdb-feed-id">{html.escape(cid)}</span></p>'
     )
 

@@ -67,7 +67,8 @@ def test_from_exception_covers_the_legacy_vocabulary():
 
 
 def test_from_exception_keeps_subclass_identity():
-    from volunteerdb.services.gcal import GcalError
+    class GcalError(RuntimeError):  # the retired Google error, by name
+        pass
 
     assert from_exception(GcalError("HTTP 500")) == External(
         "google calendar", "HTTP 500"

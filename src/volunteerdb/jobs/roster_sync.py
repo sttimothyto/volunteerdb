@@ -26,9 +26,11 @@ import sqlalchemy as sa
 from .. import env as env_mod
 from ..db import db_session
 from ..env import Env
+from ..errors import External
+from ..fp import Err, Result
 from ..log import init_logging
 from ..models import SyncStatus, TeamSheet
-from ..services import gsheets
+from ..services import google_api, gsheets
 from ..services import roster_sheets as sheet_service
 from ..services import teams as team_service
 from . import job_lock
@@ -57,9 +59,22 @@ async def _syncable_teams() -> list[tuple[int, str, str | None]]:
         ]
 
 
+async def _create(
+    env: Env, cfg: google_api.GoogleConfig, team_id: int
+) -> Result[str, External]:
+    """A sheet for a team that has none: a token, then the service makes,
+    shares and records it."""
+    async with env.http.client(timeout=gsheets.TIMEOUT) as client:
+        token = await gsheets.mint_token(client, cfg)
+    if isinstance(token, Err):
+        return token
+    return await sheet_service.create_for_team(env, token.value, team_id)
+
+
 async def main(env: Env) -> int:
     init_logging()
-    if not gsheets.enabled():
+    cfg = env.google()
+    if not gsheets.enabled(cfg):
         print("roster_sync: not configured (VDB_SHEETS_*) — nothing to do")
         return 0
 
@@ -69,21 +84,27 @@ async def main(env: Env) -> int:
     for team_id, path, file_id in teams:
         try:
             if not file_id:
-                token = await gsheets.mint_token()
-                await sheet_service.create_for_team(token, team_id)
+                made = await _create(env, cfg, team_id)
+                if isinstance(made, Err):
+                    counts["failed"] += 1
+                    await sheet_service.record_status(
+                        env, team_id, SyncStatus.error, made.error.message
+                    )
+                    print(f"FAILED {path}: {made.error.message}", file=sys.stderr)
+                    continue
                 counts["created"] += 1
                 # a brand-new sheet has nothing in it worth importing, so the
                 # first pass is always database -> sheet
                 outcome = await sheet_service.sync_team(
-                    team_id, direction=sheet_service.EXPORT, user_id=None
+                    env, team_id, direction=sheet_service.EXPORT, user_id=None
                 )
             else:
                 outcome = await sheet_service.sync_team(
-                    team_id, direction=sheet_service.IMPORT, user_id=None
+                    env, team_id, direction=sheet_service.IMPORT, user_id=None
                 )
         except Exception as exc:  # one team's problem is not the job's
             counts["failed"] += 1
-            await sheet_service.record_status(team_id, SyncStatus.error, str(exc))
+            await sheet_service.record_status(env, team_id, SyncStatus.error, str(exc))
             print(f"FAILED {path}: {exc}", file=sys.stderr)
             continue
         if outcome.failed:

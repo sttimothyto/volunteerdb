@@ -48,7 +48,7 @@ def _window() -> tuple[datetime, datetime]:
 
 
 def parish_feed_name() -> str:
-    return gcal.calendar_name()
+    return gcal.calendar_name(current_env().settings.org_name)
 
 
 def personal_feed_name() -> str:

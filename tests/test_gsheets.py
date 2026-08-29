@@ -18,9 +18,14 @@ dropped, but the sheet it has to produce did not change.
 import httpx
 import pytest
 
+from volunteerdb.errors import External
 from volunteerdb.models import ROLE_LABELS, TeamRole
 from volunteerdb.services import gsheets
 from volunteerdb.sheets.common import ROSTER_HEADERS
+
+from tests.fp_helpers import ok, refused
+
+pytestmark = pytest.mark.pure
 
 # --- constants must track the roster format ----------------------------------
 
@@ -258,83 +263,72 @@ def test_an_oversized_team_list_skips_the_rule_rather_than_failing():
 # --- the read leg ------------------------------------------------------------
 
 
-def _transport(monkeypatch, handler) -> list[httpx.Request]:
-    """Route every AsyncClient in gsheets through a MockTransport, recording
-    the requests (the idiom test_fetch_pages.py uses)."""
+def _client(handler) -> tuple[httpx.AsyncClient, list[httpx.Request]]:
+    """A client routed through a MockTransport, recording the requests (the
+    idiom test_fetch_pages.py uses) — what env.HttpClients hands the service,
+    so nothing is patched."""
     seen: list[httpx.Request] = []
 
     def record(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return handler(request)
 
-    real = httpx.AsyncClient
-
-    def factory(*args, **kwargs):
-        kwargs["transport"] = httpx.MockTransport(record)
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(gsheets.httpx, "AsyncClient", factory)
-    return seen
+    return httpx.AsyncClient(transport=httpx.MockTransport(record)), seen
 
 
-async def test_read_csv_is_anonymous(monkeypatch):
+async def test_read_csv_is_anonymous():
     """No Authorization header: link sharing is the access, and requiring a
     token would put us back where the drive.file grant left us."""
-    seen = _transport(
-        monkeypatch, lambda r: httpx.Response(200, content=b"ID,First name\n")
-    )
-    assert await gsheets.read_csv("abc123") == b"ID,First name\n"
+    client, seen = _client(lambda r: httpx.Response(200, content=b"ID,First name\n"))
+    assert ok(await gsheets.read_csv(client, "abc123")) == b"ID,First name\n"
     assert "authorization" not in seen[0].headers
     assert "abc123" in str(seen[0].url)
 
 
-async def test_an_unshared_sheet_reports_the_sharing_fix(monkeypatch):
+async def test_an_unshared_sheet_reports_the_sharing_fix():
     """Google answers an unshared sheet with a sign-in PAGE and HTTP 200, not
     a 403 — so the naive path would hand the importer a lump of HTML and
     report a baffling header-row error."""
-    _transport(
-        monkeypatch,
+    client, _ = _client(
         lambda r: httpx.Response(200, content=b"<!DOCTYPE html><html>Sign in"),
     )
-    with pytest.raises(gsheets.GSheetsError, match="not shared"):
-        await gsheets.read_csv("abc123")
+    refused(await gsheets.read_csv(client, "abc123"), External, match="not shared")
 
 
-async def test_a_deleted_sheet_says_so(monkeypatch):
-    _transport(monkeypatch, lambda r: httpx.Response(404))
-    with pytest.raises(gsheets.GSheetsError, match="not found"):
-        await gsheets.read_csv("gone")
+async def test_a_deleted_sheet_says_so():
+    client, _ = _client(lambda r: httpx.Response(404))
+    refused(await gsheets.read_csv(client, "gone"), External, match="not found")
 
 
-async def test_an_implausibly_large_export_is_refused(monkeypatch):
-    _transport(
-        monkeypatch,
+async def test_an_implausibly_large_export_is_refused():
+    client, _ = _client(
         lambda r: httpx.Response(200, content=b"x" * (gsheets.MAX_SHEET_BYTES + 1)),
     )
-    with pytest.raises(gsheets.GSheetsError, match="implausibly large"):
-        await gsheets.read_csv("huge")
+    refused(await gsheets.read_csv(client, "huge"), External, match="implausibly large")
 
 
 # --- the write leg -----------------------------------------------------------
 
 
-async def test_write_rows_clears_before_updating(monkeypatch):
+async def test_write_rows_clears_before_updating():
     """A roster that shrank must not leave the departed sitting below the new
     last row, so the clear is not optional."""
-    seen = _transport(monkeypatch, lambda r: httpx.Response(200, json={}))
-    await gsheets.write_rows("tok", "sheet1", b"ID,First name\r\n7,Ada\r\n")
+    client, seen = _client(lambda r: httpx.Response(200, json={}))
+    ok(await gsheets.write_rows(client, "tok", "sheet1", b"ID,First name\r\n7,Ada\r\n"))
     assert [r.method for r in seen] == ["POST", "PUT"]
     assert seen[0].url.path.endswith(":clear")
     assert seen[1].url.params["valueInputOption"] == "RAW"
     assert all(r.headers["authorization"] == "Bearer tok" for r in seen)
 
 
-async def test_write_rows_sends_a_matrix_not_raw_csv(monkeypatch):
+async def test_write_rows_sends_a_matrix_not_raw_csv():
     import json
 
-    seen = _transport(monkeypatch, lambda r: httpx.Response(200, json={}))
-    await gsheets.write_rows(
-        "tok", "s", "ID,First name\r\n7,Ada\r\n".encode("utf-8-sig")
+    client, seen = _client(lambda r: httpx.Response(200, json={}))
+    ok(
+        await gsheets.write_rows(
+            client, "tok", "s", "ID,First name\r\n7,Ada\r\n".encode("utf-8-sig")
+        )
     )
     body = json.loads(seen[1].content)
     assert body["values"] == [["ID", "First name"], ["7", "Ada"]], (
@@ -342,16 +336,16 @@ async def test_write_rows_sends_a_matrix_not_raw_csv(monkeypatch):
     )
 
 
-async def test_decoration_is_skipped_when_the_sheet_already_complies(monkeypatch):
-    seen = _transport(monkeypatch, lambda r: httpx.Response(200, json=_spreadsheet()))
-    assert await gsheets.decorate("tok", "s", None) is False
+async def test_decoration_is_skipped_when_the_sheet_already_complies():
+    client, seen = _client(lambda r: httpx.Response(200, json=_spreadsheet()))
+    assert ok(await gsheets.decorate(client, "tok", "s", None)) is False
     assert len(seen) == 1, "a compliant sheet is read and left alone"
 
 
-async def test_decoration_writes_when_something_is_missing(monkeypatch):
+async def test_decoration_writes_when_something_is_missing():
     bare = _spreadsheet(protections=[])
-    seen = _transport(monkeypatch, lambda r: httpx.Response(200, json=bare))
-    assert await gsheets.decorate("tok", "s", None) is True
+    client, seen = _client(lambda r: httpx.Response(200, json=bare))
+    assert ok(await gsheets.decorate(client, "tok", "s", None)) is True
     assert seen[1].url.path.endswith(":batchUpdate")
 
 
@@ -386,8 +380,8 @@ async def test_a_rate_limited_write_is_retried_and_succeeds(monkeypatch):
     """The quota case this exists for: 429 is a refusal, so replaying the
     write is safe and the team's sync should not be recorded as failed."""
     slept = _no_sleep(monkeypatch)
-    seen = _transport(monkeypatch, _statuses(429, 429))
-    await gsheets.write_rows("tok", "s", b"ID\r\n")
+    client, seen = _client(_statuses(429, 429))
+    ok(await gsheets.write_rows(client, "tok", "s", b"ID\r\n"))
     assert [r.method for r in seen] == ["POST", "POST", "POST", "PUT"], (
         "two refusals, then the clear lands, then the update"
     )
@@ -397,24 +391,24 @@ async def test_a_rate_limited_write_is_retried_and_succeeds(monkeypatch):
 async def test_backoff_grows_and_is_capped(monkeypatch):
     """The delays must outlast a per-minute quota window, not just a blip."""
     slept = _no_sleep(monkeypatch)
-    _transport(monkeypatch, _statuses(*([429] * (gsheets.RETRY_ATTEMPTS - 1))))
-    await gsheets.read_csv("s")
+    client, _ = _client(_statuses(*([429] * (gsheets.RETRY_ATTEMPTS - 1))))
+    ok(await gsheets.read_csv(client, "s"))
     assert slept == [2.0, 8.0, 32.0]
     assert all(s <= gsheets.RETRY_MAX_DELAY for s in slept)
 
 
 async def test_google_s_own_retry_after_wins_over_our_backoff(monkeypatch):
     slept = _no_sleep(monkeypatch)
-    _transport(monkeypatch, _statuses(429, headers={"Retry-After": "7"}))
-    await gsheets.read_csv("s")
+    client, _ = _client(_statuses(429, headers={"Retry-After": "7"}))
+    ok(await gsheets.read_csv(client, "s"))
     assert slept == [7.0]
 
 
 async def test_an_absurd_retry_after_is_capped(monkeypatch):
     """A header we misread must not park the nightly job for an hour."""
     slept = _no_sleep(monkeypatch)
-    _transport(monkeypatch, _statuses(429, headers={"Retry-After": "3600"}))
-    await gsheets.read_csv("s")
+    client, _ = _client(_statuses(429, headers={"Retry-After": "3600"}))
+    ok(await gsheets.read_csv(client, "s"))
     assert slept == [gsheets.RETRY_MAX_DELAY]
 
 
@@ -422,23 +416,29 @@ async def test_giving_up_reports_the_ordinary_message(monkeypatch):
     """An exhausted retry must not invent a new error shape: the last
     response comes back as-is, so the leader reads the same sentence."""
     _no_sleep(monkeypatch)
-    seen = _transport(monkeypatch, _statuses(*([429] * 99)))
-    with pytest.raises(gsheets.GSheetsError, match="clear failed: HTTP 429"):
-        await gsheets.write_rows("tok", "s", b"ID\r\n")
+    client, seen = _client(_statuses(*([429] * 99)))
+    refused(
+        await gsheets.write_rows(client, "tok", "s", b"ID\r\n"),
+        External,
+        match="clear failed: HTTP 429",
+    )
     assert len(seen) == gsheets.RETRY_ATTEMPTS
 
 
 async def test_a_transport_error_becomes_a_sheet_error(monkeypatch):
-    """Otherwise a reset escapes services.roster_sheets, which catches only
-    GSheetsError, and an interactive "Sync now" dies instead of reporting."""
+    """Otherwise a reset would escape services.roster_sheets as a bare httpx
+    error, and an interactive "Sync now" would die instead of reporting."""
     _no_sleep(monkeypatch)
 
     def boom(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("reset")
 
-    seen = _transport(monkeypatch, boom)
-    with pytest.raises(gsheets.GSheetsError, match="export failed: ConnectError"):
-        await gsheets.read_csv("s")
+    client, seen = _client(boom)
+    refused(
+        await gsheets.read_csv(client, "s"),
+        External,
+        match="export failed: ConnectError",
+    )
     assert len(seen) == gsheets.RETRY_ATTEMPTS, "a flaky connection is retried"
 
 
@@ -446,9 +446,8 @@ async def test_a_failed_status_is_not_retried(monkeypatch):
     """404 and 403 are answers, not "later" — retrying them just delays the
     sharing advice the leader needs."""
     _no_sleep(monkeypatch)
-    seen = _transport(monkeypatch, _statuses(404))
-    with pytest.raises(gsheets.GSheetsError, match="not found"):
-        await gsheets.read_csv("gone")
+    client, seen = _client(_statuses(404))
+    refused(await gsheets.read_csv(client, "gone"), External, match="not found")
     assert len(seen) == 1
 
 
@@ -457,12 +456,10 @@ async def test_a_sign_in_page_is_not_retried(monkeypatch):
     pinning, because retrying an unshared sheet would waste the whole quota
     window on a sheet that will never answer."""
     _no_sleep(monkeypatch)
-    seen = _transport(
-        monkeypatch,
+    client, seen = _client(
         lambda r: httpx.Response(200, content=b"<!DOCTYPE html><html>Sign in"),
     )
-    with pytest.raises(gsheets.GSheetsError, match="not shared"):
-        await gsheets.read_csv("s")
+    refused(await gsheets.read_csv(client, "s"), External, match="not shared")
     assert len(seen) == 1
 
 
@@ -474,9 +471,12 @@ async def test_creating_a_sheet_does_not_replay_a_5xx(monkeypatch):
     leave the parish with two roster sheets for one team and only one of them
     recorded in team_sheet."""
     _no_sleep(monkeypatch)
-    seen = _transport(monkeypatch, _statuses(500))
-    with pytest.raises(gsheets.GSheetsError, match="create failed: HTTP 500"):
-        await gsheets.create_sheet("tok", "altar-servers")
+    client, seen = _client(_statuses(500))
+    refused(
+        await gsheets.create_sheet(client, "tok", "altar-servers", folder_id="folder1"),
+        External,
+        match="create failed: HTTP 500",
+    )
     assert len(seen) == 1
 
 
@@ -484,15 +484,21 @@ async def test_creating_a_sheet_does_retry_a_429(monkeypatch):
     """A refusal is not a half-done write, so the quota case is still
     absorbed."""
     _no_sleep(monkeypatch)
-    seen = _transport(
-        monkeypatch,
+    client, seen = _client(
         lambda r: (
             httpx.Response(429, json={})
             if len(seen) == 1
             else httpx.Response(200, json={"id": "new1"})
         ),
     )
-    assert await gsheets.create_sheet("tok", "altar-servers") == "new1"
+    assert (
+        ok(
+            await gsheets.create_sheet(
+                client, "tok", "altar-servers", folder_id="folder1"
+            )
+        )
+        == "new1"
+    )
     assert len(seen) == 2
 
 
@@ -507,9 +513,12 @@ async def test_decoration_does_not_replay_its_batch_update(monkeypatch):
             return httpx.Response(503, json={})
         return httpx.Response(200, json=bare)
 
-    seen = _transport(monkeypatch, handler)
-    with pytest.raises(gsheets.GSheetsError, match="decoration failed: HTTP 503"):
-        await gsheets.decorate("tok", "s", None)
+    client, seen = _client(handler)
+    refused(
+        await gsheets.decorate(client, "tok", "s", None),
+        External,
+        match="decoration failed: HTTP 503",
+    )
     assert len(seen) == 2, "the read, then one batchUpdate that is not repeated"
 
 
@@ -528,8 +537,15 @@ async def test_a_throttling_403_is_retried(monkeypatch):
             )
         return httpx.Response(200, json={"id": "new1"})
 
-    _transport(monkeypatch, handler)
-    assert await gsheets.create_sheet("tok", "altar-servers") == "new1"
+    client, _ = _client(handler)
+    assert (
+        ok(
+            await gsheets.create_sheet(
+                client, "tok", "altar-servers", folder_id="folder1"
+            )
+        )
+        == "new1"
+    )
     assert slept == [gsheets.RETRY_BASE_DELAY], (
         "a refusal, so even a non-repeatable call may be replayed"
     )
@@ -546,8 +562,8 @@ async def test_resource_exhausted_is_retried(monkeypatch):
             return httpx.Response(403, json={"error": {"status": "RESOURCE_EXHAUSTED"}})
         return httpx.Response(200, json={})
 
-    seen = _transport(monkeypatch, handler)
-    await gsheets.share_anyone_writer("tok", "s")
+    client, seen = _client(handler)
+    ok(await gsheets.share_anyone_writer(client, "tok", "s"))
     assert len(seen) == 2 and slept == [gsheets.RETRY_BASE_DELAY]
 
 
@@ -555,14 +571,16 @@ async def test_a_permission_403_is_reported_at_once(monkeypatch):
     """The other 403. Retrying it four times only delays the answer, and on
     the anonymous export leg it delays the sharing advice a leader needs."""
     _no_sleep(monkeypatch)
-    seen = _transport(
-        monkeypatch,
+    client, seen = _client(
         lambda r: httpx.Response(
             403, json={"error": {"errors": [{"reason": "insufficientPermissions"}]}}
         ),
     )
-    with pytest.raises(gsheets.GSheetsError, match="sharing failed: HTTP 403"):
-        await gsheets.share_anyone_writer("tok", "s")
+    refused(
+        await gsheets.share_anyone_writer(client, "tok", "s"),
+        External,
+        match="sharing failed: HTTP 403",
+    )
     assert len(seen) == 1
 
 
@@ -570,9 +588,8 @@ async def test_a_403_sign_in_page_is_not_mistaken_for_throttling(monkeypatch):
     """The export endpoint answers HTML, not JSON. A body we cannot parse is
     not a quota bounce."""
     _no_sleep(monkeypatch)
-    seen = _transport(
-        monkeypatch, lambda r: httpx.Response(403, content=b"<html>Sign in</html>")
+    client, seen = _client(
+        lambda r: httpx.Response(403, content=b"<html>Sign in</html>")
     )
-    with pytest.raises(gsheets.GSheetsError, match="not shared"):
-        await gsheets.read_csv("s")
+    refused(await gsheets.read_csv(client, "s"), External, match="not shared")
     assert len(seen) == 1

@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from volunteerdb.db import db_session
+from volunteerdb.errors import External
+from volunteerdb.fp import Err, Ok
 from volunteerdb.jobs import calendar_sync
 from volunteerdb.models import Event
 from volunteerdb.services import events as event_service
@@ -66,46 +68,46 @@ class FakeGcal:
         self.existing: set[str] = set()  # calendars Google still has
         self.problems: list[str] = []
 
-        monkeypatch.setattr(gcal, "enabled", lambda: True)
+        monkeypatch.setattr(gcal, "enabled", lambda cfg: True)
 
-        async def mint_token() -> str:
-            return "token"
+        async def mint_token(client, cfg) -> Ok[str]:
+            return Ok("token")
 
-        async def create_calendar(token: str) -> str:
+        async def create_calendar(client, token: str, *, name: str, tz: str) -> Ok[str]:
             cid = CALENDAR_ID if not self.created else f"cal{len(self.created)}@g"
             self.created.append(cid)
             self.existing.add(cid)
-            return cid
+            return Ok(cid)
 
-        async def calendar_exists(token: str, cid: str) -> bool:
-            return cid in self.existing
+        async def calendar_exists(client, token: str, cid: str) -> Ok[bool]:
+            return Ok(cid in self.existing)
 
-        async def verify_readonly(token: str, cid: str) -> list[str]:
+        async def verify_readonly(client, token: str, cid: str) -> Ok[list[str]]:
             self.verified.append(cid)
-            return list(self.problems)
+            return Ok(list(self.problems))
 
-        async def insert(token: str, cid: str, payload: dict) -> str:
+        async def insert(client, token: str, cid: str, payload: dict):
             self.calendar_ids.append(cid)
             if self.insert_error:
-                raise gcal.GcalError("insert failed: HTTP 500")
+                return Err(External(gcal.SERVICE, "insert failed: HTTP 500"))
             self.inserted.append(payload)
-            return f"g{len(self.inserted)}"
+            return Ok(f"g{len(self.inserted)}")
 
-        async def patch(token: str, cid: str, gid: str, payload: dict) -> None:
+        async def patch(client, token: str, cid: str, gid: str, payload: dict):
             self.calendar_ids.append(cid)
             self.patched.append((gid, payload))
+            return Ok(None)
 
-        async def delete(token: str, cid: str, gid: str) -> None:
+        async def delete(client, token: str, cid: str, gid: str) -> Ok[None]:
             self.calendar_ids.append(cid)
             self.deleted.append(gid)
+            return Ok(None)
 
-        async def list_managed(token: str, cid: str, time_min: datetime) -> list[dict]:
-            return self.listed
+        async def list_managed(client, token: str, cid: str, time_min: datetime):
+            return Ok(self.listed)
 
-        async def list_unmanaged(
-            token: str, cid: str, time_min: datetime
-        ) -> list[dict]:
-            return self.unmanaged
+        async def list_unmanaged(client, token: str, cid: str, time_min: datetime):
+            return Ok(self.unmanaged)
 
         for name, fn in (
             ("mint_token", mint_token),
@@ -308,7 +310,7 @@ def test_fingerprint_ignores_key_order():
 
 def test_the_calendars_public_faces_carry_the_id():
     cid = "parish@group.calendar.google.com"
-    assert gcal.embed_url(cid).startswith(
+    assert gcal.embed_url(cid, "America/Toronto").startswith(
         "https://calendar.google.com/calendar/embed?src=parish%40group"
     )
     assert gcal.public_url(cid) == (

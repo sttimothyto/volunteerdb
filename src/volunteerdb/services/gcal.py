@@ -23,11 +23,15 @@ which is how the sync tells its own entries from anything a human put on
 the calendar: list_managed() filters on the marker, list_unmanaged() on its
 absence. A hand-created entry is never touched -- it is reported, because
 the calendar exists to mirror this system and nothing else.
+
+The client, the configuration, the clock and the zone are the caller's
+(jobs/calendar_sync.py reads them off its Env); a failed call comes back as
+an Err[External] carrying the sentence the job logs. Nothing here raises.
 """
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from urllib.parse import quote
 
 import httpx
@@ -36,12 +40,15 @@ import structlog
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
+from ..errors import External
+from ..fp import Err, Ok, Result
 from ..models import AppSetting, Event
 from . import google_api
+from .google_api import GoogleConfig
 
 log = structlog.get_logger(__name__)
 
+SERVICE = "google calendar"
 API = "https://www.googleapis.com/calendar/v3"
 TIMEOUT = google_api.TIMEOUT
 # app_setting row: {"calendar_id", "created_at", "verified_at"}
@@ -50,36 +57,36 @@ SETTING_KEY = "gcal"
 PUBLIC_RULE_ID = "default"
 
 
-class GcalError(RuntimeError):
-    """A Google API call failed; the sync counts it and moves on."""
+def _failed(what: str, resp: httpx.Response) -> Err[External]:
+    return google_api.failed(what, f"HTTP {resp.status_code}", service=SERVICE)
 
 
-def enabled() -> bool:
+def enabled(cfg: GoogleConfig) -> bool:
     """The parish Google token is provisioned. Unlike the sheets there is no
     further setting to wait for: the calendar makes itself."""
-    return google_api.configured()
+    return cfg.configured
 
 
-async def mint_token() -> str:
-    try:
-        return await google_api.mint_token()
-    except google_api.GoogleApiError as exc:
-        raise GcalError(str(exc)) from exc
+async def mint_token(
+    client: httpx.AsyncClient, cfg: GoogleConfig
+) -> Result[str, External]:
+    return await google_api.mint_token(client, cfg, service=SERVICE)
 
 
-def calendar_name() -> str:
-    org = settings().org_name.strip()
+def calendar_name(org: str) -> str:
+    org = org.strip()
     return f"{org} events" if org else "Parish events"
 
 
 # --- the calendar's public faces -------------------------------------------
 
 
-def embed_url(calendar_id: str) -> str:
-    """Google's own iframe view; the calendar is public, so Google serves it."""
+def embed_url(calendar_id: str, tz: str) -> str:
+    """Google's own iframe view; the calendar is public, so Google serves it.
+    `tz` is the zone name the view opens in (the parish's)."""
     return (
         "https://calendar.google.com/calendar/embed"
-        f"?src={quote(calendar_id)}&ctz={quote(settings().timezone)}"
+        f"?src={quote(calendar_id)}&ctz={quote(tz)}"
     )
 
 
@@ -111,23 +118,24 @@ async def remember(
     session: AsyncSession,
     calendar_id: str,
     *,
+    now: datetime,
     created: bool = False,
     verified: bool = False,
 ) -> None:
     """Upsert the row. `created` stamps created_at (a fresh calendar);
     `verified` stamps verified_at (the sharing was just checked clean)."""
     current = await stored_calendar(session) or {}
-    now = datetime.now(UTC).isoformat(timespec="seconds")
+    stamp = now.isoformat(timespec="seconds")
     value = {**current, "calendar_id": calendar_id}
     if created or current.get("calendar_id") != calendar_id:
-        value["created_at"] = now
+        value["created_at"] = stamp
         value.pop("verified_at", None)
     if verified:
-        value["verified_at"] = now
+        value["verified_at"] = stamp
     stmt = pg_insert(AppSetting).values(key=SETTING_KEY, value=value)
     stmt = stmt.on_conflict_do_update(
         index_elements=[AppSetting.key],
-        set_={"value": stmt.excluded.value, "updated_at": sa.func.now()},
+        set_={"value": stmt.excluded.value, "updated_at": now},
     )
     await session.execute(stmt)
 
@@ -148,15 +156,17 @@ async def forget_pushes(session: AsyncSession) -> int:
 
 
 async def _call(
-    method: str, url: str, *, what: str, repeatable: bool = True, **kwargs
-) -> httpx.Response:
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        try:
-            return await google_api.send(
-                client, method, url, what=what, repeatable=repeatable, **kwargs
-            )
-        except google_api.GoogleApiError as exc:
-            raise GcalError(str(exc)) from exc
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    what: str,
+    repeatable: bool = True,
+    **kwargs,
+) -> Result[httpx.Response, External]:
+    return await google_api.send(
+        client, method, url, what=what, repeatable=repeatable, service=SERVICE, **kwargs
+    )
 
 
 def _calendar_url(calendar_id: str) -> str:
@@ -171,64 +181,81 @@ def _acl_url(calendar_id: str) -> str:
     return f"{_calendar_url(calendar_id)}/acl"
 
 
-async def create_calendar(token: str) -> str:
+async def create_calendar(
+    client: httpx.AsyncClient, token: str, *, name: str, tz: str
+) -> Result[str, External]:
     """A new secondary calendar owned by the parish account; returns its id.
 
     Not published here: verify_readonly() adds the public rule on the same
     run, and does so again on every later run. Splitting the two means a
     failure between them leaves a remembered-but-private calendar, which the
     next run repairs, rather than a published calendar nobody remembers."""
-    resp = await _call(
+    sent = await _call(
+        client,
         "POST",
         f"{API}/calendars",
         what="calendar create",
         repeatable=False,
         headers=google_api.headers(token),
-        json={"summary": calendar_name(), "timeZone": settings().timezone},
+        json={"summary": name, "timeZone": tz},
     )
-    if resp.status_code not in (200, 201):
-        raise GcalError(f"calendar create failed: HTTP {resp.status_code}")
-    return resp.json()["id"]
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code not in (200, 201):
+        return _failed("calendar create", sent.value)
+    return Ok(sent.value.json()["id"])
 
 
-async def calendar_exists(token: str, calendar_id: str) -> bool:
+async def calendar_exists(
+    client: httpx.AsyncClient, token: str, calendar_id: str
+) -> Result[bool, External]:
     """False when Google no longer has it (somebody deleted it by hand) --
     the one condition the sync treats as "make another"."""
-    resp = await _call(
+    sent = await _call(
+        client,
         "GET",
         _calendar_url(calendar_id),
         what="calendar get",
         headers=google_api.headers(token),
     )
-    if resp.status_code in (404, 410):
-        return False
-    if resp.status_code != 200:
-        raise GcalError(f"calendar get failed: HTTP {resp.status_code}")
-    return True
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code in (404, 410):
+        return Ok(False)
+    if sent.value.status_code != 200:
+        return _failed("calendar get", sent.value)
+    return Ok(True)
 
 
-async def _list_acl(token: str, calendar_id: str) -> list[dict]:
+async def _list_acl(
+    client: httpx.AsyncClient, token: str, calendar_id: str
+) -> Result[list[dict], External]:
     items: list[dict] = []
     params: dict[str, str] = {"maxResults": "250"}
     while True:
-        resp = await _call(
+        sent = await _call(
+            client,
             "GET",
             _acl_url(calendar_id),
             what="acl list",
             headers=google_api.headers(token),
             params=params,
         )
-        if resp.status_code != 200:
-            raise GcalError(f"acl list failed: HTTP {resp.status_code}")
-        data = resp.json()
+        if isinstance(sent, Err):
+            return sent
+        if sent.value.status_code != 200:
+            return _failed("acl list", sent.value)
+        data = sent.value.json()
         items.extend(data.get("items", []))
         next_page = data.get("nextPageToken")
         if not next_page:
-            return items
+            return Ok(items)
         params["pageToken"] = next_page
 
 
-async def verify_readonly(token: str, calendar_id: str) -> list[str]:
+async def verify_readonly(
+    client: httpx.AsyncClient, token: str, calendar_id: str
+) -> Result[list[str], External]:
     """Make sure the calendar is public and that nobody but the parish account
     can write to it. Returns the problems it could not fix.
 
@@ -240,14 +267,23 @@ async def verify_readonly(token: str, calendar_id: str) -> list[str]:
     the parish password, and deleting it would be this system deciding the
     parish's sharing for it. The scheduler's alert mail is the right voice.
     """
-    rules = await _list_acl(token, calendar_id)
+    listed = await _list_acl(client, token, calendar_id)
+    if isinstance(listed, Err):
+        return listed
+    rules = listed.value
     public = next(
         (r for r in rules if r.get("scope", {}).get("type") == "default"), None
     )
     if public is None:
-        await _publish(token, calendar_id)
+        published = await _publish(client, token, calendar_id)
     elif public.get("role") != "reader":
-        await _publish(token, calendar_id, rule_id=public.get("id") or PUBLIC_RULE_ID)
+        published = await _publish(
+            client, token, calendar_id, rule_id=public.get("id") or PUBLIC_RULE_ID
+        )
+    else:
+        published = Ok(None)
+    if isinstance(published, Err):
+        return published
 
     problems: list[str] = []
     owner_seen = False
@@ -260,13 +296,20 @@ async def verify_readonly(token: str, calendar_id: str) -> list[str]:
             owner_seen = True  # the parish account itself
             continue
         problems.append(f"{kind} {who} may {'write' if role == 'writer' else 'own'}")
-    return problems
+    return Ok(problems)
 
 
-async def _publish(token: str, calendar_id: str, *, rule_id: str | None = None) -> None:
+async def _publish(
+    client: httpx.AsyncClient,
+    token: str,
+    calendar_id: str,
+    *,
+    rule_id: str | None = None,
+) -> Result[None, External]:
     """Insert (or, given a rule id, repair) the "anyone: reader" rule."""
     if rule_id is None:
-        resp = await _call(
+        sent = await _call(
+            client,
             "POST",
             _acl_url(calendar_id),
             what="publish",
@@ -274,26 +317,30 @@ async def _publish(token: str, calendar_id: str, *, rule_id: str | None = None) 
             json={"role": "reader", "scope": {"type": "default"}},
         )
     else:
-        resp = await _call(
+        sent = await _call(
+            client,
             "PATCH",
             f"{_acl_url(calendar_id)}/{quote(rule_id, safe='')}",
             what="publish",
             headers=google_api.headers(token),
             json={"role": "reader"},
         )
-    if resp.status_code not in (200, 201):
-        raise GcalError(f"publish failed: HTTP {resp.status_code}")
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code not in (200, 201):
+        return _failed("publish", sent.value)
     log.info("gcal.published", calendar_id=calendar_id, repaired=rule_id is not None)
+    return Ok(None)
 
 
 # --- events ----------------------------------------------------------------
 
 
-def event_payload(event: Event) -> dict:
+def event_payload(event: Event, tz: str) -> dict:
     """What the public calendar shows: title, time, location, description —
     never slots, rosters, or names. No team path either, so repointing an
-    event to a task-force team causes zero calendar churn."""
-    tz = settings().timezone
+    event to a task-force team causes zero calendar churn. `tz` is the zone
+    name the entry is shown in (the parish's)."""
     payload: dict = {
         "summary": event.title,
         "start": {"dateTime": event.starts_at.isoformat(), "timeZone": tz},
@@ -317,9 +364,12 @@ def fingerprint(payload: dict) -> str:
     ).hexdigest()
 
 
-async def insert(token: str, calendar_id: str, payload: dict) -> str:
+async def insert(
+    client: httpx.AsyncClient, token: str, calendar_id: str, payload: dict
+) -> Result[str, External]:
     """Create the calendar entry; returns Google's event id."""
-    resp = await _call(
+    sent = await _call(
+        client,
         "POST",
         _events_url(calendar_id),
         what="insert",
@@ -327,40 +377,60 @@ async def insert(token: str, calendar_id: str, payload: dict) -> str:
         headers=google_api.headers(token),
         json=payload,
     )
-    if resp.status_code not in (200, 201):
-        raise GcalError(f"insert failed: HTTP {resp.status_code}")
-    return resp.json()["id"]
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code not in (200, 201):
+        return _failed("insert", sent.value)
+    return Ok(sent.value.json()["id"])
 
 
 async def patch(
-    token: str, calendar_id: str, google_event_id: str, payload: dict
-) -> None:
-    resp = await _call(
+    client: httpx.AsyncClient,
+    token: str,
+    calendar_id: str,
+    google_event_id: str,
+    payload: dict,
+) -> Result[None, External]:
+    sent = await _call(
+        client,
         "PATCH",
         f"{_events_url(calendar_id)}/{quote(google_event_id, safe='')}",
         what="patch",
         headers=google_api.headers(token),
         json=payload,
     )
-    if resp.status_code != 200:
-        raise GcalError(f"patch failed: HTTP {resp.status_code}")
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code != 200:
+        return _failed("patch", sent.value)
+    return Ok(None)
 
 
-async def delete(token: str, calendar_id: str, google_event_id: str) -> None:
+async def delete(
+    client: httpx.AsyncClient, token: str, calendar_id: str, google_event_id: str
+) -> Result[None, External]:
     """404/410 count as success — the entry is already gone."""
-    resp = await _call(
+    sent = await _call(
+        client,
         "DELETE",
         f"{_events_url(calendar_id)}/{quote(google_event_id, safe='')}",
         what="delete",
         headers=google_api.headers(token),
     )
-    if resp.status_code not in (200, 204, 404, 410):
-        raise GcalError(f"delete failed: HTTP {resp.status_code}")
+    if isinstance(sent, Err):
+        return sent
+    if sent.value.status_code not in (200, 204, 404, 410):
+        return _failed("delete", sent.value)
+    return Ok(None)
 
 
 async def _list_events(
-    token: str, calendar_id: str, time_min: datetime, **extra: str
-) -> list[dict]:
+    client: httpx.AsyncClient,
+    token: str,
+    calendar_id: str,
+    time_min: datetime,
+    **extra: str,
+) -> Result[list[dict], External]:
     items: list[dict] = []
     params: dict[str, str] = {
         "timeMin": time_min.isoformat(),
@@ -370,28 +440,33 @@ async def _list_events(
         **extra,
     }
     while True:
-        resp = await _call(
+        sent = await _call(
+            client,
             "GET",
             _events_url(calendar_id),
             what="list",
             headers=google_api.headers(token),
             params=params,
         )
-        if resp.status_code != 200:
-            raise GcalError(f"list failed: HTTP {resp.status_code}")
-        data = resp.json()
+        if isinstance(sent, Err):
+            return sent
+        if sent.value.status_code != 200:
+            return _failed("list", sent.value)
+        data = sent.value.json()
         items.extend(data.get("items", []))
         next_page = data.get("nextPageToken")
         if not next_page:
-            return items
+            return Ok(items)
         params["pageToken"] = next_page
 
 
-async def list_managed(token: str, calendar_id: str, time_min: datetime) -> list[dict]:
+async def list_managed(
+    client: httpx.AsyncClient, token: str, calendar_id: str, time_min: datetime
+) -> Result[list[dict], External]:
     """Every entry the sync ever created (vdb_managed marker) still ending
     after time_min — the orphan-GC sweep. Hand-created entries never appear."""
     return await _list_events(
-        token, calendar_id, time_min, privateExtendedProperty="vdb_managed=1"
+        client, token, calendar_id, time_min, privateExtendedProperty="vdb_managed=1"
     )
 
 
@@ -402,13 +477,12 @@ def is_managed(item: dict) -> bool:
 
 
 async def list_unmanaged(
-    token: str, calendar_id: str, time_min: datetime
-) -> list[dict]:
+    client: httpx.AsyncClient, token: str, calendar_id: str, time_min: datetime
+) -> Result[list[dict], External]:
     """Entries somebody put on the calendar by hand — anything after time_min
     without the marker. The API cannot filter on a property's absence, so
     this lists everything and drops the marked ones."""
-    return [
-        item
-        for item in await _list_events(token, calendar_id, time_min)
-        if not is_managed(item)
-    ]
+    listed = await _list_events(client, token, calendar_id, time_min)
+    if isinstance(listed, Err):
+        return listed
+    return Ok([item for item in listed.value if not is_managed(item)])

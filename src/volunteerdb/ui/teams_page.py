@@ -556,7 +556,7 @@ async def _sync_sheet(team_id: int, direction: str) -> None:
         user_id = actor.user.id
     ui.notify("Syncing with Google Sheets…")
     outcome = await roster_sheets.sync_team(
-        team_id, direction=direction, user_id=user_id
+        current_env(), team_id, direction=direction, user_id=user_id
     )
     if outcome.failed:
         ui.notify(f"Sync failed: {outcome.message}", color="negative", multi_line=True)
@@ -718,6 +718,7 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
             dialog.close()
             ui.notify("Syncing with Google Sheets…")
             outcome = await roster_sheets.sync_team(
+                current_env(),
                 team_id,
                 direction=(
                     roster_sheets.IMPORT

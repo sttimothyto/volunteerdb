@@ -13,6 +13,8 @@ from io import StringIO
 import pytest
 
 from volunteerdb.db import db_session
+from volunteerdb.errors import External
+from volunteerdb.fp import Err, Ok
 from volunteerdb.jobs import roster_sync
 from volunteerdb.models import SyncStatus, TeamRole, TeamSheet
 from volunteerdb.services import gsheets, memberships, teams, users, volunteers
@@ -32,7 +34,11 @@ def _csv_bytes(rows: list[list]) -> bytes:
 
 
 class FakeSheets:
-    """Records what the sync asked Google to do, and answers with canned CSV."""
+    """Records what the sync asked Google to do, and answers with canned CSV.
+    The same shape as services.gsheets: a client first, a Result back."""
+
+    TIMEOUT = 1.0
+    SERVICE = gsheets.SERVICE
 
     def __init__(self, content: bytes = b""):
         self.content = content
@@ -40,41 +46,43 @@ class FakeSheets:
         self.created: list[str] = []
         self.shared: list[str] = []
         self.decorated: list[str] = []
-        self.read_error: Exception | None = None
+        self.read_error: External | None = None
 
-    async def read_csv(self, file_id):
+    def enabled(self, cfg) -> bool:
+        return True  # without inventing credentials
+
+    async def read_csv(self, client, file_id):
         if self.read_error is not None:
-            raise self.read_error
-        return self.content
+            return Err(self.read_error)
+        return Ok(self.content)
 
-    async def write_rows(self, token, file_id, content):
+    async def write_rows(self, client, token, file_id, content):
         self.written.append((file_id, content))
         self.content = content  # a real sheet would now read back this way
+        return Ok(None)
 
-    async def mint_token(self):
-        return "tok"
+    async def mint_token(self, client, cfg):
+        return Ok("tok")
 
-    async def create_sheet(self, token, title):
+    async def create_sheet(self, client, token, title, *, folder_id):
         self.created.append(title)
-        return "new-file-id"
+        return Ok("new-file-id")
 
-    async def share_anyone_writer(self, token, file_id):
+    async def share_anyone_writer(self, client, token, file_id):
         self.shared.append(file_id)
+        return Ok(None)
 
-    async def decorate(self, token, file_id, team_values):
+    async def decorate(self, client, token, file_id, team_values):
         self.decorated.append(file_id)
-        return True
+        return Ok(True)
 
 
 @pytest.fixture
 def fake(monkeypatch):
-    """Patch the client onto both modules that reach for it, and force
-    enabled() true without inventing credentials."""
+    """Patch the client onto both modules that reach for it."""
     stub = FakeSheets()
     for target in (service, roster_sync):
         monkeypatch.setattr(target, "gsheets", stub, raising=False)
-    monkeypatch.setattr(stub, "enabled", lambda: True, raising=False)
-    monkeypatch.setattr(stub, "GSheetsError", gsheets.GSheetsError, raising=False)
     return stub
 
 
@@ -117,9 +125,9 @@ async def _roster_names(team_id: int) -> set[str]:
 # --- direction ---------------------------------------------------------------
 
 
-async def test_export_overwrites_the_sheet_from_the_database(choir, fake):
+async def test_export_overwrites_the_sheet_from_the_database(choir, fake, env):
     outcome = await service.sync_team(
-        choir["team"], direction=service.EXPORT, user_id=None
+        env, choir["team"], direction=service.EXPORT, user_id=None
     )
     assert not outcome.failed
     assert len(fake.written) == 1
@@ -127,7 +135,7 @@ async def test_export_overwrites_the_sheet_from_the_database(choir, fake):
     assert "Lena" in written and "Mia" in written
 
 
-async def test_import_applies_the_sheet_then_writes_it_back(choir, fake):
+async def test_import_applies_the_sheet_then_writes_it_back(choir, fake, env):
     fake.content = _csv_bytes(
         [
             ["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"],
@@ -136,7 +144,7 @@ async def test_import_applies_the_sheet_then_writes_it_back(choir, fake):
         ]
     )
     outcome = await service.sync_team(
-        choir["team"], direction=service.IMPORT, user_id=None
+        env, choir["team"], direction=service.IMPORT, user_id=None
     )
     assert not outcome.failed
     assert outcome.report.volunteers_created == 1
@@ -144,14 +152,14 @@ async def test_import_applies_the_sheet_then_writes_it_back(choir, fake):
     assert fake.written, "the sheet is rewritten so it shows what the DB now holds"
 
 
-async def test_a_sync_never_removes_and_puts_the_missing_row_back(choir, fake):
+async def test_a_sync_never_removes_and_puts_the_missing_row_back(choir, fake, env):
     """The rule the feature rests on, end to end: Mia is deleted from the
     sheet, keeps her membership, and reappears in the written-back sheet."""
     fake.content = _csv_bytes(
         [["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "leader"]]
     )
     outcome = await service.sync_team(
-        choir["team"], direction=service.IMPORT, user_id=None
+        env, choir["team"], direction=service.IMPORT, user_id=None
     )
     assert not outcome.failed
     assert await _roster_names(choir["team"]) == {"Lena", "Mia"}
@@ -161,10 +169,10 @@ async def test_a_sync_never_removes_and_puts_the_missing_row_back(choir, fake):
 # --- failure handling --------------------------------------------------------
 
 
-async def test_an_unshared_sheet_records_the_error_and_writes_nothing(choir, fake):
-    fake.read_error = gsheets.GSheetsError("the spreadsheet is not shared")
+async def test_an_unshared_sheet_records_the_error_and_writes_nothing(choir, fake, env):
+    fake.read_error = External(gsheets.SERVICE, "the spreadsheet is not shared")
     outcome = await service.sync_team(
-        choir["team"], direction=service.IMPORT, user_id=None
+        env, choir["team"], direction=service.IMPORT, user_id=None
     )
     assert outcome.failed
     assert "not shared" in outcome.message
@@ -175,34 +183,36 @@ async def test_an_unshared_sheet_records_the_error_and_writes_nothing(choir, fak
     assert sheet.last_synced_at is None
 
 
-async def test_a_bad_row_fails_the_team_whole_and_leaves_the_sheet_alone(choir, fake):
+async def test_a_bad_row_fails_the_team_whole_and_leaves_the_sheet_alone(
+    choir, fake, env
+):
     fake.content = _csv_bytes(
         [["", "Lena", "Leader", "lena@example.org", "", "", "Choir", "archbishop"]]
     )
     outcome = await service.sync_team(
-        choir["team"], direction=service.IMPORT, user_id=None
+        env, choir["team"], direction=service.IMPORT, user_id=None
     )
     assert outcome.failed
     assert fake.written == []
     assert await _roster_names(choir["team"]) == {"Lena", "Mia"}
 
 
-async def test_a_team_with_no_sheet_cannot_be_synced(database, fake):
+async def test_a_team_with_no_sheet_cannot_be_synced(database, fake, env):
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Choir"))
     with pytest.raises(LookupError):
-        await service.sync_team(team.id, direction=service.EXPORT, user_id=None)
+        await service.sync_team(env, team.id, direction=service.EXPORT, user_id=None)
 
 
-async def test_an_unknown_direction_is_refused(choir, fake):
+async def test_an_unknown_direction_is_refused(choir, fake, env):
     with pytest.raises(ValueError, match="unknown sync direction"):
-        await service.sync_team(choir["team"], direction="sideways", user_id=None)
+        await service.sync_team(env, choir["team"], direction="sideways", user_id=None)
 
 
 # --- permissions -------------------------------------------------------------
 
 
-async def test_a_plain_member_may_not_sync(choir, fake, database):
+async def test_a_plain_member_may_not_sync(choir, fake, database, env):
     async with db_session() as session:
         mia_u, _ = ok(
             await users.create(
@@ -218,13 +228,13 @@ async def test_a_plain_member_may_not_sync(choir, fake, database):
 
     with pytest.raises(Forbidden):
         await service.sync_team(
-            choir["team"], direction=service.EXPORT, user_id=mia_user_id
+            env, choir["team"], direction=service.EXPORT, user_id=mia_user_id
         )
 
 
-async def test_the_leader_may_sync(choir, fake):
+async def test_the_leader_may_sync(choir, fake, env):
     outcome = await service.sync_team(
-        choir["team"], direction=service.EXPORT, user_id=choir["lena_user"]
+        env, choir["team"], direction=service.EXPORT, user_id=choir["lena_user"]
     )
     assert not outcome.failed
 
@@ -271,7 +281,7 @@ async def test_the_job_never_gives_a_task_force_a_sheet(
 
 
 async def test_the_job_is_a_noop_when_unconfigured(database, monkeypatch, env):
-    monkeypatch.setattr(gsheets, "enabled", lambda: False)
+    monkeypatch.setattr(gsheets, "enabled", lambda cfg: False)
     assert await roster_sync.main(env) == 0
 
 
@@ -285,10 +295,10 @@ async def test_one_broken_sheet_does_not_stop_the_others(database, fake, env):
 
     real_read = fake.read_csv
 
-    async def selective(file_id):
+    async def selective(client, file_id):
         if file_id == "bad1":
-            raise gsheets.GSheetsError("the spreadsheet is not shared")
-        return await real_read(file_id)
+            return Err(External(gsheets.SERVICE, "the spreadsheet is not shared"))
+        return await real_read(client, file_id)
 
     fake.read_csv = selective
     fake.content = _csv_bytes([])
