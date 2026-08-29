@@ -40,10 +40,16 @@ async def _parish(session):
     """Liturgy (Lena leads, Mia + Noor members) and Choir (Oda member)."""
     liturgy = ok(await teams.create(session, None, "Liturgy"))
     choir = ok(await teams.create(session, None, "Choir"))
-    lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
-    mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
-    noor = await volunteers.create(session, None, "Noor", "Member", "noor@example.org")
-    oda = await volunteers.create(session, None, "Oda", "Chorister", "oda@example.org")
+    lena = ok(
+        await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+    )
+    mia = ok(await volunteers.create(session, None, "Mia", "Member", "mia@example.org"))
+    noor = ok(
+        await volunteers.create(session, None, "Noor", "Member", "noor@example.org")
+    )
+    oda = ok(
+        await volunteers.create(session, None, "Oda", "Chorister", "oda@example.org")
+    )
     ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
     ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
     ok(await memberships.assign(session, None, noor.id, liturgy.id, TeamRole.member))

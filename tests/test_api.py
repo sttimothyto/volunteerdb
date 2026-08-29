@@ -251,7 +251,7 @@ async def test_custom_fields_flow(client, seeded):
 
     # a plain member sees another volunteer's name but not their custom values
     async with db_session() as session:
-        other = await volunteers.create(session, None, "Other", "Person")
+        other = ok(await volunteers.create(session, None, "Other", "Person"))
         ok(
             await memberships.assign(
                 session, None, other.id, seeded["team_id"], TeamRole.member

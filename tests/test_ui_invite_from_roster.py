@@ -49,18 +49,26 @@ async def _parish(session) -> dict[str, int]:
     liturgy = ok(await teams.create(session, None, "Liturgy"))
     music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
 
-    lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
-    cora = await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+    lena = ok(
+        await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+    )
+    cora = ok(
+        await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+    )
     ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
     ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
 
-    nils = await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
-    stale = await volunteers.create(
-        session, None, "Stale", "Sender", "stale@example.org"
+    nils = ok(
+        await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
     )
-    livev = await volunteers.create(session, None, "Live", "Link", "live@example.org")
-    void = await volunteers.create(session, None, "Void", "Nomail")  # no address
-    mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+    stale = ok(
+        await volunteers.create(session, None, "Stale", "Sender", "stale@example.org")
+    )
+    livev = ok(
+        await volunteers.create(session, None, "Live", "Link", "live@example.org")
+    )
+    void = ok(await volunteers.create(session, None, "Void", "Nomail"))  # no address
+    mia = ok(await volunteers.create(session, None, "Mia", "Member", "mia@example.org"))
     for v in (nils, stale, livev, void, mia):
         ok(await memberships.assign(session, None, v.id, music.id, TeamRole.member))
 

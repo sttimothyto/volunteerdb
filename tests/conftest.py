@@ -318,8 +318,10 @@ def debug_logging(monkeypatch):
 async def seeded(database):
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Liturgy"))
-        v = await volunteers.create(
-            session, None, "Maria", "Alvarez", "maria@example.org"
+        v = ok(
+            await volunteers.create(
+                session, None, "Maria", "Alvarez", "maria@example.org"
+            )
         )
         ok(await memberships.assign(session, None, v.id, team.id, TeamRole.member))
         await users.create(
@@ -357,8 +359,8 @@ async def token_member(client, seeded) -> dict:
 async def token_leader(client, seeded) -> dict:
     """A leader of the seeded Liturgy team (not an admin)."""
     async with db_session() as session:
-        lena = await volunteers.create(
-            session, None, "Lena", "Leader", "lena@example.org"
+        lena = ok(
+            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
         ok(
             await memberships.assign(
@@ -379,8 +381,8 @@ async def token_core(client, seeded) -> dict:
     """A core member of the seeded Liturgy team: full-roster rights, no
     management rights — the boundary most permission tests care about."""
     async with db_session() as session:
-        cora = await volunteers.create(
-            session, None, "Cora", "Core", "cora@example.org"
+        cora = ok(
+            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
         )
         ok(
             await memberships.assign(

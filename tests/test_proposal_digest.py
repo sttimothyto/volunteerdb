@@ -35,14 +35,14 @@ async def _parish():
     create_proposal prefills its roll with exactly those three."""
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
-        lena = await volunteers.create(
-            session, None, "Lena", "Leader", "lena@example.org"
+        lena = ok(
+            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
-        cora = await volunteers.create(
-            session, None, "Cora", "Core", "cora@example.org"
+        cora = ok(
+            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
         )
-        noel = await volunteers.create(session, None, "Noel", "NoEmail")
-        vera = await volunteers.create(session, None, "Vera", "Volunteer")
+        noel = ok(await volunteers.create(session, None, "Noel", "NoEmail"))
+        vera = ok(await volunteers.create(session, None, "Vera", "Volunteer"))
         ok(
             await memberships.assign(
                 session, None, lena.id, liturgy.id, TeamRole.leader

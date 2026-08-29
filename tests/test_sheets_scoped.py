@@ -25,14 +25,18 @@ async def parish(database):
             await teams.create(session, None, "Music", parent_team_id=liturgy.id)
         )
         hospitality = ok(await teams.create(session, None, "Hospitality"))
-        lena = await volunteers.create(
-            session, None, "Lena", "Leader", "lena@example.org"
+        lena = ok(
+            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
-        mia = await volunteers.create(
-            session, None, "Mia", "Member", "mia@example.org", phone="555-1"
+        mia = ok(
+            await volunteers.create(
+                session, None, "Mia", "Member", "mia@example.org", phone="555-1"
+            )
         )
-        otto = await volunteers.create(
-            session, None, "Otto", "Out", "otto@example.org", phone="555-2"
+        otto = ok(
+            await volunteers.create(
+                session, None, "Otto", "Out", "otto@example.org", phone="555-2"
+            )
         )
         ok(
             await memberships.assign(

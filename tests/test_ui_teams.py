@@ -34,9 +34,11 @@ async def _parish(session) -> dict[str, int]:
     retired = ok(await teams.create(session, None, "Retired Guild"))
     ok(await teams.update(session, None, retired.id, is_active=False))
 
-    lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
-    mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
-    hank = await volunteers.create(session, None, "Hank", "Host")
+    lena = ok(
+        await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+    )
+    mia = ok(await volunteers.create(session, None, "Mia", "Member", "mia@example.org"))
+    hank = ok(await volunteers.create(session, None, "Hank", "Host"))
     ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
     ok(await memberships.assign(session, None, mia.id, music.id, TeamRole.member))
     ok(
@@ -465,8 +467,8 @@ async def test_a_core_member_may_export_their_teams(database):
     and the exporter blanks the notes column for them."""
     async with db_session() as session:
         ids = await _parish(session)
-        cora = await volunteers.create(
-            session, None, "Cora", "Core", "cora@example.org"
+        cora = ok(
+            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
         )
         ok(
             await memberships.assign(

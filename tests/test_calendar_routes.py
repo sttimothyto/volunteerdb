@@ -24,7 +24,9 @@ async def _seed() -> dict:
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
         choir = ok(await teams.create(session, None, "Choir"))
-        mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+        mia = ok(
+            await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+        )
         ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
         mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
 

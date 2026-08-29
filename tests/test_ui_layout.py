@@ -52,7 +52,7 @@ async def test_settings_menu_carries_reading_preferences(database):
 
 async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
     async with db_session() as session:
-        maria = await volunteers.create(session, None, "Maria", "Alvarez")
+        maria = ok(await volunteers.create(session, None, "Maria", "Alvarez"))
         await photos.set_photo(session, maria.id, _png(60, 60), uploaded_by=None)
         account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
@@ -74,7 +74,7 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
 
 async def test_the_header_offers_an_upload_when_there_is_no_photo_yet(database):
     async with db_session() as session:
-        felix = await volunteers.create(session, None, "Felix", "Garcia")
+        felix = ok(await volunteers.create(session, None, "Felix", "Garcia"))
         account, _ = await users.create(
             session, "felix@example.org", volunteer_id=felix.id
         )
@@ -112,7 +112,7 @@ async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(databas
 async def test_the_header_address_opens_your_own_record(database):
     """The most natural handle on "me" in the whole app was dead text."""
     async with db_session() as session:
-        maria = await volunteers.create(session, None, "Maria", "Alvarez")
+        maria = ok(await volunteers.create(session, None, "Maria", "Alvarez"))
         account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
         )
@@ -133,7 +133,7 @@ async def test_the_header_avatar_and_the_profile_avatar_are_addressed_apart(data
     be able to say so, and test_volunteer_panel's marker must keep finding
     exactly the one on the page."""
     async with db_session() as session:
-        maria = await volunteers.create(session, None, "Maria", "Alvarez")
+        maria = ok(await volunteers.create(session, None, "Maria", "Alvarez"))
         account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
         )

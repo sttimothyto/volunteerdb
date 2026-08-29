@@ -6,7 +6,7 @@ SQL boolean expression such as ``phone LIKE '555%' AND team = 'Liturgy'``.
 sqlglot reads it as a standalone condition whose every boolean operand is a
 comparison — ``Rob and Ann`` parses, but its operands are bare columns, so
 it stays a name search. A shape that *is* a query but cannot run (unknown
-field, disallowed construct, bad value) raises `QueryError` from compile;
+field, disallowed construct, bad value) compiles to an Err(QueryError);
 callers show the message instead of silently falling back.
 
 User text is never executed as SQL. The AST is compiled either into
@@ -49,13 +49,10 @@ from sqlglot import errors as sqlglot_errors
 from sqlglot import exp
 
 from . import fieldcodec
+from .errors import QueryError
+from .fp import Err, Ok, Result
 from .models import CustomFieldDef, FieldType, TeamRole
 from .permissions import Actor
-
-
-class QueryError(ValueError):
-    """A boolean-shaped query that cannot run; the message is shown as-is."""
-
 
 _PUBLIC, _PRIVATE, _ROSTER = "public", "private", "roster"
 
@@ -108,7 +105,7 @@ def _is_condition(node: exp.Expression) -> bool:
     return isinstance(node, _COMPARISONS)
 
 
-def _compile(node: exp.Expression, negate: bool, backend) -> Any:
+def _compile(node: exp.Expression, negate: bool, backend) -> Result[Any, QueryError]:
     """NNF walk: push NOT to the leaves so tier scoping is sound under negation."""
     if isinstance(node, exp.Paren):
         return _compile(node.this, negate, backend)
@@ -117,10 +114,13 @@ def _compile(node: exp.Expression, negate: bool, backend) -> Any:
     if isinstance(node, (exp.And, exp.Or)):
         flip = isinstance(node, exp.And) == negate  # De Morgan under negation
         combine = backend.disj if flip else backend.conj
-        return combine(
-            _compile(node.this, negate, backend),
-            _compile(node.expression, negate, backend),
-        )
+        left = _compile(node.this, negate, backend)
+        if isinstance(left, Err):
+            return left
+        right = _compile(node.expression, negate, backend)
+        if isinstance(right, Err):
+            return right
+        return Ok(combine(left.value, right.value))
     return backend.leaf(node, negate)
 
 
@@ -141,7 +141,7 @@ _FLIP = {"eq": "eq", "neq": "neq", "gt": "lt", "gte": "lte", "lt": "gt", "lte": 
 
 def _leaf_parts(
     node: exp.Expression,
-) -> tuple[exp.Column, str, list[exp.Expression], bool]:
+) -> Result[tuple[exp.Column, str, list[exp.Expression], bool], QueryError]:
     """(field, operator, literal nodes, self-negation) for one comparison.
 
     sqlglot spells ``NOT LIKE`` / ``IS NOT NULL`` as a negate flag on the
@@ -151,111 +151,122 @@ def _leaf_parts(
     self_neg = bool(node.args.get("negate"))
     if isinstance(node, exp.In):
         if node.args.get("query") is not None:
-            raise QueryError("subqueries are not supported")
+            return Err(QueryError("subqueries are not supported"))
         if not isinstance(node.this, exp.Column):
-            raise QueryError("IN needs a field on its left side")
+            return Err(QueryError("IN needs a field on its left side"))
         if not node.expressions:
-            raise QueryError("IN needs at least one value")
-        return node.this, "in", list(node.expressions), self_neg
+            return Err(QueryError("IN needs at least one value"))
+        return Ok((node.this, "in", list(node.expressions), self_neg))
     if isinstance(node, exp.Between):
         if not isinstance(node.this, exp.Column):
-            raise QueryError("BETWEEN needs a field on its left side")
-        return node.this, "between", [node.args["low"], node.args["high"]], self_neg
+            return Err(QueryError("BETWEEN needs a field on its left side"))
+        return Ok(
+            (node.this, "between", [node.args["low"], node.args["high"]], self_neg)
+        )
     if isinstance(node, exp.Is):
         if not isinstance(node.this, exp.Column) or not isinstance(
             node.expression, exp.Null
         ):
-            raise QueryError("IS only supports `field IS [NOT] NULL`")
-        return node.this, "isnull", [], self_neg
+            return Err(QueryError("IS only supports `field IS [NOT] NULL`"))
+        return Ok((node.this, "isnull", [], self_neg))
     op = _BINARY_OPS.get(type(node))
     if op is None:
-        raise QueryError(f"unsupported syntax: {node.sql(dialect='postgres')}")
+        return Err(QueryError(f"unsupported syntax: {node.sql(dialect='postgres')}"))
     left, right = node.this, node.expression
     if isinstance(left, exp.Column) and isinstance(right, exp.Column):
-        raise QueryError("comparing two fields is not supported")
+        return Err(QueryError("comparing two fields is not supported"))
     if isinstance(left, exp.Column):
-        return left, op, [right], self_neg
+        return Ok((left, op, [right], self_neg))
     if isinstance(right, exp.Column) and op in _FLIP:
-        return right, _FLIP[op], [left], self_neg
-    raise QueryError(f"one side of {op.upper()} must be a field")
+        return Ok((right, _FLIP[op], [left], self_neg))
+    return Err(QueryError(f"one side of {op.upper()} must be a field"))
 
 
-def _check_op(op: str, kind: FieldType, name: str) -> None:
+def _check_op(op: str, kind: FieldType, name: str) -> Err[QueryError] | None:
     if op in ("like", "ilike") and kind not in (FieldType.text, FieldType.select):
-        raise QueryError(f"{name}: LIKE works on text fields only")
+        return Err(QueryError(f"{name}: LIKE works on text fields only"))
     if kind is FieldType.checkbox and op not in ("eq", "neq", "isnull"):
-        raise QueryError(f"{name}: true/false fields support = and != only")
+        return Err(QueryError(f"{name}: true/false fields support = and != only"))
+    return None
 
 
-def _literal(kind: FieldType, node: exp.Expression, name: str) -> Any:
+def _literal(
+    kind: FieldType, node: exp.Expression, name: str
+) -> Result[Any, QueryError]:
     """One literal as the Python object to bind for a field of `kind`."""
     negative = False
     if isinstance(node, exp.Neg) and isinstance(node.this, exp.Literal):
         node, negative = node.this, True
     if isinstance(node, exp.Boolean):
         if kind is not FieldType.checkbox:
-            raise QueryError(f"{name} cannot be compared to true/false")
-        return bool(node.this)
+            return Err(QueryError(f"{name} cannot be compared to true/false"))
+        return Ok(bool(node.this))
     if not isinstance(node, exp.Literal):
-        raise QueryError(
-            "only literal values are supported (no functions or expressions)"
+        return Err(
+            QueryError(
+                "only literal values are supported (no functions or expressions)"
+            )
         )
     text = str(node.this)
     if node.is_string:
         if negative:
-            raise QueryError(f"{name}: cannot negate a quoted value")
+            return Err(QueryError(f"{name}: cannot negate a quoted value"))
         try:
             match kind:
                 case FieldType.text | FieldType.select:
-                    return text
+                    return Ok(text)
                 case FieldType.date:
-                    return date.fromisoformat(text)
+                    return Ok(date.fromisoformat(text))
                 case FieldType.timestamp:
                     dt = datetime.fromisoformat(text)
                     if dt.tzinfo is not None:
-                        raise QueryError(
-                            f"{name}: timestamps here carry no offset — "
-                            "write '2026-08-17 10:30'"
+                        return Err(
+                            QueryError(
+                                f"{name}: timestamps here carry no offset — "
+                                "write '2026-08-17 10:30'"
+                            )
                         )
-                    return dt
+                    return Ok(dt)
                 case FieldType.timestamptz:
                     dt = datetime.fromisoformat(text)
                     # a bare date or naive timestamp is read as UTC
-                    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+                    return Ok(dt if dt.tzinfo else dt.replace(tzinfo=UTC))
                 case FieldType.time:
                     t = time_lib.fromisoformat(text)
                     if t.tzinfo is not None:
-                        raise QueryError(f"{name}: times carry no offset")
-                    return t
+                        return Err(QueryError(f"{name}: times carry no offset"))
+                    return Ok(t)
                 case FieldType.interval:
-                    return fieldcodec.parse_duration(text)
+                    return Ok(fieldcodec.parse_duration(text))
                 case FieldType.uuid:
-                    return uuid_lib.UUID(text)
+                    return Ok(uuid_lib.UUID(text))
                 case FieldType.checkbox:
-                    raise QueryError(f"{name} is compared to true or false, unquoted")
+                    return Err(
+                        QueryError(f"{name} is compared to true or false, unquoted")
+                    )
                 case FieldType.decimal:
-                    return Decimal(text)
+                    return Ok(Decimal(text))
                 case _:  # number, integer
-                    raise QueryError(f"{name}: numbers are written without quotes")
+                    return Err(
+                        QueryError(f"{name}: numbers are written without quotes")
+                    )
         except (ValueError, InvalidOperation) as err:
-            if isinstance(err, QueryError):
-                raise
-            raise QueryError(f"{name}: {err}") from None
+            return Err(QueryError(f"{name}: {err}"))
     if negative:
         text = f"-{text}"
     match kind:
         case FieldType.number:
-            return int(text) if re.fullmatch(r"-?\d+", text) else float(text)
+            return Ok(int(text) if re.fullmatch(r"-?\d+", text) else float(text))
         case FieldType.integer:
             if not re.fullmatch(r"-?\d+", text):
-                raise QueryError(f"{name}: must be a whole number")
-            return int(text)
+                return Err(QueryError(f"{name}: must be a whole number"))
+            return Ok(int(text))
         case FieldType.decimal:
-            return Decimal(text)
+            return Ok(Decimal(text))
         case FieldType.checkbox:
-            raise QueryError(f"{name} is compared to true or false")
+            return Err(QueryError(f"{name} is compared to true or false"))
         case _:
-            raise QueryError(f"{name}: value must be quoted, like 'example'")
+            return Err(QueryError(f"{name}: value must be quoted, like 'example'"))
 
 
 # --- volunteers: compile to SQLAlchemy over the as-of entities ---------------
@@ -328,7 +339,7 @@ def _sql_cmp(e, op: str, vals: list, negate: bool):
             return sa.not_(expr) if negate else expr
         case "isnull":
             return e.is_not(None) if negate else e.is_(None)
-    raise QueryError(f"unsupported operator: {op}")
+    raise AssertionError(f"unsupported operator: {op}")  # _leaf_parts emits no other
 
 
 class _SqlBackend:
@@ -347,30 +358,37 @@ class _SqlBackend:
         )
         self._visible = None
 
-    def _resolve(self, col: exp.Column) -> tuple[str, _Field]:
+    def _resolve(self, col: exp.Column) -> Result[tuple[str, _Field], QueryError]:
         if col.args.get("db") or col.args.get("catalog"):
-            raise QueryError(f"unknown field: {col.sql(dialect='postgres')}")
+            return Err(QueryError(f"unknown field: {col.sql(dialect='postgres')}"))
         table, name = (col.table or "").lower(), col.name.lower()
         if table and table != "custom":
-            raise QueryError(
-                f"unknown qualifier: {table} (custom fields are custom.<key>)"
+            return Err(
+                QueryError(
+                    f"unknown qualifier: {table} (custom fields are custom.<key>)"
+                )
             )
         defn = self.defs.get(name)
         if not table and name in _VOLUNTEER_FIELDS:
-            return name, _VOLUNTEER_FIELDS[name]
+            return Ok((name, _VOLUNTEER_FIELDS[name]))
         if defn is not None:
             kind = FieldType(defn.field_type)
-            return name, _Field(
-                kind,
-                _PRIVATE,
-                lambda b, key=name, k=kind: (
-                    sa.cast(b.V.custom[key].astext, _CASTS[k])
-                    if _CASTS[k] is not None
-                    else b.V.custom[key].astext
-                ),
+            return Ok(
+                (
+                    name,
+                    _Field(
+                        kind,
+                        _PRIVATE,
+                        lambda b, key=name, k=kind: (
+                            sa.cast(b.V.custom[key].astext, _CASTS[k])
+                            if _CASTS[k] is not None
+                            else b.V.custom[key].astext
+                        ),
+                    ),
+                )
             )
         known = sorted(_VOLUNTEER_FIELDS) + sorted(f"custom.{k}" for k in self.defs)
-        raise QueryError(f"unknown field: {name} (fields: {', '.join(known)})")
+        return Err(QueryError(f"unknown field: {name} (fields: {', '.join(known)})"))
 
     def _visible_pred(self):
         """Self plus full-view teams — services.volunteers.search's scope."""
@@ -408,23 +426,35 @@ class _SqlBackend:
         exists = sa.exists(sa.select(sa.literal(1)).where(*where))
         return sa.not_(exists) if (negate ^ flip) else exists
 
-    def leaf(self, node: exp.Expression, negate: bool):
-        col, op, lit_nodes, self_neg = _leaf_parts(node)
+    def leaf(self, node: exp.Expression, negate: bool) -> Result[Any, QueryError]:
+        parts = _leaf_parts(node)
+        if isinstance(parts, Err):
+            return parts
+        col, op, lit_nodes, self_neg = parts.value
         negate ^= self_neg
-        name, spec = self._resolve(col)
-        _check_op(op, spec.kind, name)
-        vals = [_literal(spec.kind, n, name) for n in lit_nodes]
+        resolved = self._resolve(col)
+        if isinstance(resolved, Err):
+            return resolved
+        name, spec = resolved.value
+        if bad := _check_op(op, spec.kind, name):
+            return bad
+        vals = []
+        for n in lit_nodes:
+            lit = _literal(spec.kind, n, name)
+            if isinstance(lit, Err):
+                return lit
+            vals.append(lit.value)
         if name == "role":
             allowed = [r.value for r in TeamRole]
             for v in vals:
                 if v not in allowed:
-                    raise QueryError(f"role must be one of: {', '.join(allowed)}")
+                    return Err(QueryError(f"role must be one of: {', '.join(allowed)}"))
         if spec.tier is _ROSTER:
-            return self._roster_leaf(name, spec, op, vals, negate)
+            return Ok(self._roster_leaf(name, spec, op, vals, negate))
         expr = _sql_cmp(spec.build(self), op, vals, negate)
         if spec.tier is _PRIVATE and self.scoped:
-            return sa.and_(self._visible_pred(), expr)
-        return expr
+            return Ok(sa.and_(self._visible_pred(), expr))
+        return Ok(expr)
 
 
 def compile_volunteers(
@@ -435,8 +465,8 @@ def compile_volunteers(
     T,
     defs: dict[str, CustomFieldDef],
     actor: Actor | None,
-):
-    """A SQLAlchemy predicate over the as-of entities. Raises QueryError."""
+) -> Result[Any, QueryError]:
+    """A SQLAlchemy predicate over the as-of entities, or the QueryError."""
     return _compile(ast, False, _SqlBackend(V, M, T, defs, actor))
 
 
@@ -504,7 +534,7 @@ def _py_cmp(getter: Callable, op: str, vals: list, negate: bool) -> Callable:
             case "between":
                 res = vals[0] <= v <= vals[1]
             case _:
-                raise QueryError(f"unsupported operator: {op}")
+                raise AssertionError(f"unsupported operator: {op}")
         return (not res) if negate else res
 
     return test
@@ -517,24 +547,37 @@ class _PyBackend:
     def __init__(self, fields: dict[str, tuple[FieldType, Callable[[dict], Any]]]):
         self._fields = fields
 
-    def leaf(self, node: exp.Expression, negate: bool) -> Callable[[dict], bool]:
-        col, op, lit_nodes, self_neg = _leaf_parts(node)
+    def leaf(
+        self, node: exp.Expression, negate: bool
+    ) -> Result[Callable[[dict], bool], QueryError]:
+        parts = _leaf_parts(node)
+        if isinstance(parts, Err):
+            return parts
+        col, op, lit_nodes, self_neg = parts.value
         negate ^= self_neg
         if col.args.get("db") or col.args.get("catalog") or col.table:
-            raise QueryError(f"unknown field: {col.sql(dialect='postgres')}")
+            return Err(QueryError(f"unknown field: {col.sql(dialect='postgres')}"))
         name = col.name.lower()
         if name not in self._fields:
-            raise QueryError(
-                f"unknown field: {name} (fields: {', '.join(sorted(self._fields))})"
+            return Err(
+                QueryError(
+                    f"unknown field: {name} (fields: {', '.join(sorted(self._fields))})"
+                )
             )
         kind, getter = self._fields[name]
-        _check_op(op, kind, name)
-        vals = [_literal(kind, n, name) for n in lit_nodes]
-        return _py_cmp(getter, op, vals, negate)
+        if bad := _check_op(op, kind, name):
+            return bad
+        vals = []
+        for n in lit_nodes:
+            lit = _literal(kind, n, name)
+            if isinstance(lit, Err):
+                return lit
+            vals.append(lit.value)
+        return Ok(_py_cmp(getter, op, vals, negate))
 
 
-def compile_teams(ast: exp.Expression) -> Callable[[dict], bool]:
-    """A Python predicate over teams-page row dicts. Raises QueryError.
+def compile_teams(ast: exp.Expression) -> Result[Callable[[dict], bool], QueryError]:
+    """A Python predicate over teams-page row dicts, or the QueryError.
 
     Teams are globally readable, so there is no actor scoping here; the
     coverage counts are already blanked server-side for unmanaged teams,
@@ -558,8 +601,8 @@ _EVENT_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
 }
 
 
-def compile_events(ast: exp.Expression) -> Callable[[dict], bool]:
-    """A Python predicate over events-page row dicts. Raises QueryError.
+def compile_events(ast: exp.Expression) -> Result[Callable[[dict], bool], QueryError]:
+    """A Python predicate over events-page row dicts, or the QueryError.
 
     The listing is already scoped server-side (visible_team_ids), so like
     teams there is no actor scoping to re-apply here.

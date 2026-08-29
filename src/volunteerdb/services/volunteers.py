@@ -6,7 +6,8 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import query_lang
-from ..config import settings
+from ..errors import DomainError, QueryError, not_found, require
+from ..fp import Err, Ok, Result
 from ..history import entity, fetch
 from ..models import (
     CustomFieldDef,
@@ -17,7 +18,7 @@ from ..models import (
     membership_history,
     team_history,
 )
-from ..permissions import Actor, require, volunteer_team_ids
+from ..permissions import Actor, volunteer_team_ids
 
 _UNSET: object = object()
 
@@ -108,21 +109,21 @@ async def search_or_query(
     *,
     actor: Actor | None = None,
     limit: int | None = None,
-) -> list[Volunteer]:
+) -> Result[list[Volunteer], QueryError]:
     """`search`, unless `text` parses as a SQL WHERE filter — then run that.
 
     The filter grammar, its per-field access tiers, and the reasoning about
     what may and may not leak live in query_lang; this function only ANDs
     the compiled predicate into the same statement shape `search` builds,
     so include_inactive stays a caller-side (admin-gated) widening and
-    as-of keeps working. Raises query_lang.QueryError for a query-shaped
-    text that cannot run — callers surface the message rather than falling
-    back, so a typo'd field name is not silently read as a name search.
+    as-of keeps working. A query-shaped text that cannot run is an
+    Err(QueryError) — callers surface the message rather than falling back,
+    so a typo'd field name is not silently read as a name search.
     """
     ast = query_lang.parse(text or "")
     if ast is None:
-        return await search(
-            session, text, at, include_inactive, actor=actor, limit=limit
+        return Ok(
+            await search(session, text, at, include_inactive, actor=actor, limit=limit)
         )
     V, M, T = entity(Volunteer, at), entity(Membership, at), entity(Team, at)
     # definitions straight from the table: importing services.custom_fields
@@ -135,13 +136,15 @@ async def search_or_query(
             )
         ).scalars()
     }
-    pred = query_lang.compile_volunteers(ast, V=V, M=M, T=T, defs=defs, actor=actor)
-    stmt = sa.select(V).where(pred).order_by(V.last_name, V.first_name)
+    compiled = query_lang.compile_volunteers(ast, V=V, M=M, T=T, defs=defs, actor=actor)
+    if isinstance(compiled, Err):
+        return compiled
+    stmt = sa.select(V).where(compiled.value).order_by(V.last_name, V.first_name)
     if not include_inactive:
         stmt = stmt.where(V.is_active)
     if limit is not None:
         stmt = stmt.limit(limit)
-    return [row[0] for row in await fetch(session, stmt, at)]
+    return Ok([row[0] for row in await fetch(session, stmt, at)])
 
 
 async def name_map(
@@ -190,13 +193,16 @@ async def create(
     email: str | None = None,
     phone: str | None = None,
     notes: str | None = None,
-) -> Volunteer:
+) -> Result[Volunteer, DomainError]:
     """Add a person to the parish. Admin-only: a volunteer record is the thing
     memberships and permissions hang off, and the roster paths that let a leader
     bring somebody in go through the importer, which grants its own licence
     row-by-row (sheets/importer.py). `actor=None` is a trusted internal caller
     — the importer and the seed script."""
-    require(actor is None or actor.is_admin, "only admins create volunteers")
+    if denied := require(
+        actor is None or actor.is_admin, "only admins create volunteers"
+    ):
+        return denied
     volunteer = Volunteer(
         first_name=first_name.strip(),
         last_name=last_name.strip(),
@@ -206,7 +212,7 @@ async def create(
     )
     session.add(volunteer)
     await session.flush()
-    return volunteer
+    return Ok(volunteer)
 
 
 async def update(
@@ -220,19 +226,21 @@ async def update(
     phone: str | None | object = _UNSET,
     notes: str | None | object = _UNSET,
     is_active: bool | None = None,
-) -> Volunteer:
+) -> Result[Volunteer, DomainError]:
     volunteer = await get(session, volunteer_id)
     if volunteer is None:
-        raise LookupError(f"volunteer {volunteer_id} not found")
+        return not_found("volunteer", volunteer_id)
     if actor is not None:
-        require(
+        if denied := require(
             actor.can_edit_volunteer(
                 volunteer_id, await volunteer_team_ids(session, volunteer_id)
             ),
             "edit this volunteer",
-        )
+        ):
+            return denied
         if is_active is not None:
-            require(actor.is_admin, "only admins archive volunteers")
+            if denied := require(actor.is_admin, "only admins archive volunteers"):
+                return denied
     if first_name is not None:
         volunteer.first_name = first_name.strip()
     if last_name is not None:
@@ -246,16 +254,22 @@ async def update(
     if is_active is not None:
         volunteer.is_active = is_active
     await session.flush()
-    return volunteer
+    return Ok(volunteer)
 
 
-async def delete(session: AsyncSession, actor: Actor | None, volunteer_id: int) -> None:
-    require(actor is None or actor.is_admin, "only admins delete volunteers")
+async def delete(
+    session: AsyncSession, actor: Actor | None, volunteer_id: int
+) -> Result[None, DomainError]:
+    if denied := require(
+        actor is None or actor.is_admin, "only admins delete volunteers"
+    ):
+        return denied
     volunteer = await get(session, volunteer_id)
     if volunteer is None:
-        raise LookupError(f"volunteer {volunteer_id} not found")
+        return not_found("volunteer", volunteer_id)
     await session.delete(volunteer)
     await session.flush()
+    return Ok(None)
 
 
 async def assignments(
@@ -285,7 +299,7 @@ async def impact(
     actor: Actor | None,
     volunteer_id: int,
     at: datetime | None = None,
-) -> list[ImpactRow]:
+) -> Result[list[ImpactRow], DomainError]:
     """The priest's question: if this volunteer leaves, what holes appear?
 
     For every team the volunteer serves on, how many leaders / leaders+seconds
@@ -295,15 +309,16 @@ async def impact(
     serve on, including ones the viewer has no rights over.
     """
     if actor is not None:
-        require(
+        if denied := require(
             actor.can_view_volunteer(
                 volunteer_id, await volunteer_team_ids(session, volunteer_id)
             ),
             "view this volunteer's impact",
-        )
+        ):
+            return denied
     rows = await assignments(session, volunteer_id, at)
     if not rows:
-        return []
+        return Ok([])
     # one grouped count over all their teams; scalar rows, so no fetch() needed
     M = entity(Membership, at)
     counts_stmt = (
@@ -330,7 +345,7 @@ async def impact(
         )
     # most critical first: the fewer leaders remain, the higher it sorts
     result.sort(key=lambda r: (r.leadership_left, r.leaders_left, r.team.name.lower()))
-    return result
+    return Ok(result)
 
 
 @dataclass
@@ -445,6 +460,7 @@ async def team_anniversaries(
     team_id: int,
     today: date,
     *,
+    tz: ZoneInfo,
     ahead_days: int = 30,
     behind_days: int = 7,
 ) -> list[Anniversary]:
@@ -479,7 +495,6 @@ async def team_anniversaries(
         runs[-1].append(row)
         prev_key = (row.volunteer_id, row.sys_period.upper)
 
-    tz = ZoneInfo(settings().timezone)
     window_lo = today - timedelta(days=behind_days)
     window_hi = today + timedelta(days=ahead_days)
     hits: dict[int, tuple[int, date, date]] = {}

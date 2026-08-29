@@ -39,8 +39,10 @@ async def _parish() -> dict:
             ("carl", "Carl", choir.id, TeamRole.leader),
             ("oda", "Oda", choir.id, TeamRole.member),
         ):
-            v = await volunteers.create(
-                session, None, first, "Volunteer", f"{key}@example.org"
+            v = ok(
+                await volunteers.create(
+                    session, None, first, "Volunteer", f"{key}@example.org"
+                )
             )
             ok(await memberships.assign(session, None, v.id, team_id, role))
             ids[key] = v.id
@@ -167,8 +169,8 @@ async def test_refresh_picks_up_source_drift_without_downgrades(database):
         meta_id = meta.id
         # a newcomer joins Choir after the copy; Oda gets promoted INSIDE
         # the task force (a per-event decision the refresh must not undo)
-        newbie = await volunteers.create(
-            session, None, "Nina", "New", "nina@example.org"
+        newbie = ok(
+            await volunteers.create(session, None, "Nina", "New", "nina@example.org")
         )
         ok(
             await memberships.assign(

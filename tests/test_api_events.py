@@ -36,7 +36,9 @@ def _payload(team_id: int, **overrides) -> dict:
 async def _second_member(client, seeded) -> tuple[int, dict]:
     """Another Liturgy member with an account; returns (volunteer_id, header)."""
     async with db_session() as session:
-        v = await volunteers.create(session, None, "Noor", "Reader", "noor@example.org")
+        v = ok(
+            await volunteers.create(session, None, "Noor", "Reader", "noor@example.org")
+        )
         ok(
             await memberships.assign(
                 session, None, v.id, seeded["team_id"], TeamRole.member
@@ -119,8 +121,8 @@ async def test_rsvp_signup_capacity_and_withdraw(
 
     # capacity 1: the leader cannot add a second lector
     async with db_session() as session:
-        extra = await volunteers.create(
-            session, None, "Iris", "Extra", "iris@example.org"
+        extra = ok(
+            await volunteers.create(session, None, "Iris", "Extra", "iris@example.org")
         )
         ok(
             await memberships.assign(

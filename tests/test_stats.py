@@ -28,11 +28,17 @@ async def _parish(session):
     music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
     hospitality = ok(await teams.create(session, None, "Hospitality"))
 
-    lea = await volunteers.create(session, None, "Lea", "Der", "lea@example.org")
-    sam = await volunteers.create(session, None, "Sam", "Second", "sam@example.org")
-    cora = await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
-    mel = await volunteers.create(session, None, "Mel", "Ember")  # no email on purpose
-    solo = await volunteers.create(session, None, "Solo", "Nobody", "solo@example.org")
+    lea = ok(await volunteers.create(session, None, "Lea", "Der", "lea@example.org"))
+    sam = ok(await volunteers.create(session, None, "Sam", "Second", "sam@example.org"))
+    cora = ok(
+        await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+    )
+    mel = ok(
+        await volunteers.create(session, None, "Mel", "Ember")
+    )  # no email on purpose
+    solo = ok(
+        await volunteers.create(session, None, "Solo", "Nobody", "solo@example.org")
+    )
 
     ok(await memberships.assign(session, None, lea.id, liturgy.id, TeamRole.leader))
     ok(await memberships.assign(session, None, sam.id, liturgy.id, TeamRole.second))
@@ -61,7 +67,7 @@ async def _actor(session, email, **kwargs):
 async def test_parish_tier_counts(database):
     async with db_session() as session:
         p = await _parish(session)
-        await volunteers.update(session, None, p["solo"].id, is_active=False)
+        ok(await volunteers.update(session, None, p["solo"].id, is_active=False))
         await users.create(
             session,
             "lea@example.org",

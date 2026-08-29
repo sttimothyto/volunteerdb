@@ -460,7 +460,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
     async def impact_busy():
         async with db_session() as session:
-            await volunteer_service.impact(session, None, marks["busy"])
+            (await volunteer_service.impact(session, None, marks["busy"])).unwrap()
 
     async def timeline_churned():
         async with db_session() as session:

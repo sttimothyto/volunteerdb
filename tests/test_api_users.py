@@ -84,11 +84,13 @@ async def test_create_links_by_email_and_patch_relinks(client, seeded):
     admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     async with db_session() as session:
-        bruno = await volunteers.create(
-            session, None, "Bruno", "Cordeiro", "bc@example.org"
+        bruno = ok(
+            await volunteers.create(
+                session, None, "Bruno", "Cordeiro", "bc@example.org"
+            )
         )
-        pedro = await volunteers.create(
-            session, None, "Pedro", "Sousa", "ps@example.org"
+        pedro = ok(
+            await volunteers.create(session, None, "Pedro", "Sousa", "ps@example.org")
         )
 
     r = await client.post("/api/users", json={"email": "bc@example.org"}, headers=admin)
@@ -125,8 +127,10 @@ async def test_provision_endpoint_adopts_an_unlinked_account(client, seeded):
     )
     assert r.json()["volunteer_id"] is None, "nobody holds that address yet"
     async with db_session() as session:
-        late = await volunteers.create(
-            session, None, "Late", "Arrival", "late@example.org"
+        late = ok(
+            await volunteers.create(
+                session, None, "Late", "Arrival", "late@example.org"
+            )
         )
 
     r = await client.post("/api/users/provision", headers=admin)
@@ -200,9 +204,15 @@ async def test_provision_endpoint_reports_created_and_skipped(client, seeded):
     admin = await _token(client, "admin@example.org", "secret-pass-phrase")
 
     async with db_session() as session:
-        await volunteers.create(session, None, "Ana", "Family", "family@example.org")
-        shared = await volunteers.create(
-            session, None, "Bob", "Family", "family@example.org"
+        ok(
+            await volunteers.create(
+                session, None, "Ana", "Family", "family@example.org"
+            )
+        )
+        shared = ok(
+            await volunteers.create(
+                session, None, "Bob", "Family", "family@example.org"
+            )
         )
 
     r = await client.post("/api/users/provision", headers=admin)
@@ -227,8 +237,8 @@ async def rostered(seeded):
     """Someone on the seeded Liturgy team with an email and no account —
     exactly what a leader finds on their roster and wants to fix."""
     async with db_session() as session:
-        nils = await volunteers.create(
-            session, None, "Nils", "Nobody", "nils@example.org"
+        nils = ok(
+            await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
         )
         ok(
             await memberships.assign(
@@ -282,7 +292,7 @@ async def test_volunteer_invite_maps_service_refusals(client, seeded, token_admi
     assert r.status_code == 404
 
     async with db_session() as session:
-        quiet = await volunteers.create(session, None, "Hank", "Host")  # no email
+        quiet = ok(await volunteers.create(session, None, "Hank", "Host"))  # no email
     r = await client.post(f"/api/volunteers/{quiet.id}/invite", headers=token_admin)
     assert r.status_code == 422
     assert "no email address" in r.json()["detail"]

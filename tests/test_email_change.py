@@ -30,7 +30,7 @@ SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def _volunteer_with_account(session, first="Maria", addr="maria@example.org"):
-    volunteer = await volunteers.create(session, None, first, "Alvarez", email=addr)
+    volunteer = ok(await volunteers.create(session, None, first, "Alvarez", email=addr))
     account, _ = await users.create(session, addr, volunteer_id=volunteer.id)
     return volunteer, account
 
@@ -348,11 +348,13 @@ async def test_a_leader_correcting_someone_elses_address_applies_at_once(
 
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Liturgy"))
-        member = await volunteers.create(
-            session, None, "Felix", "Garcia", email="typo@example.org"
+        member = ok(
+            await volunteers.create(
+                session, None, "Felix", "Garcia", email="typo@example.org"
+            )
         )
         ok(await memberships.assign(session, None, member.id, team.id, TeamRole.member))
-        lena = await volunteers.create(session, None, "Lena", "Leader")
+        lena = ok(await volunteers.create(session, None, "Lena", "Leader"))
         ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
         leader_account, _ = await users.create(
             session, "lena@example.org", volunteer_id=lena.id

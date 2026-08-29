@@ -36,8 +36,10 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
 
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
-        maria = await volunteers.create(
-            session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+        maria = ok(
+            await volunteers.create(
+                session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+            )
         )
         ok(
             await memberships.assign(
@@ -123,8 +125,10 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
 async def test_photo_dialog_disclaimer_gates_upload(database):
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
-        maria = await volunteers.create(
-            session, None, "Maria", "Alvarez", "maria@example.org"
+        maria = ok(
+            await volunteers.create(
+                session, None, "Maria", "Alvarez", "maria@example.org"
+            )
         )
         ok(
             await memberships.assign(

@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from functools import partial
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Request
@@ -9,6 +10,7 @@ from nicegui import events, ui
 
 from .. import query_lang
 from ..config import settings
+from ..fp import Err
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
 from ..services import elections as elections_service
 from ..services import events as event_service
@@ -139,12 +141,12 @@ def _wire_search(
         if ast is None:
             shown = rows if not text else _matching_rows(rows, text.lower())
         else:
-            try:
-                pred = query_lang.compile_teams(ast)
-            except query_lang.QueryError as exc:
+            compiled = query_lang.compile_teams(ast)
+            if isinstance(compiled, Err):
                 # inline, not a toast: this filter runs on every keystroke
-                count.set_text(f"query error: {exc}")
+                count.set_text(f"query error: {compiled.error.message}")
                 return
+            pred = compiled.value
             shown = _with_ancestors(rows, {i for i, r in enumerate(rows) if pred(r)})
         table.rows = shown
         table.update()
@@ -840,7 +842,10 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         team_sheet = await session.get(TeamSheet, team_id) if can_manage else None
         anniversaries = (
             await volunteer_service.team_anniversaries(
-                session, team_id, elections_service.local_today()
+                session,
+                team_id,
+                elections_service.local_today(),
+                tz=ZoneInfo(settings().timezone),
             )
             if can_manage
             else []

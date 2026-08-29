@@ -1328,18 +1328,22 @@ async def seed_people(
     session: AsyncSession, parish: Parish, people: list[Person], rng: random.Random
 ) -> None:
     for index, person in enumerate(people):
-        volunteer = await volunteers.create(
-            session,
-            None,
-            person.first,
-            person.last,
-            person.email,
-            phone=f"555-0{100 + index:03d}" if index % 9 else None,
-            notes=person.notes,
-        )
+        volunteer = (
+            await volunteers.create(
+                session,
+                None,
+                person.first,
+                person.last,
+                person.email,
+                phone=f"555-0{100 + index:03d}" if index % 9 else None,
+                notes=person.notes,
+            )
+        ).unwrap()
         parish.volunteer_ids[person.name] = volunteer.id
         if not person.active:
-            await volunteers.update(session, None, volunteer.id, is_active=False)
+            (
+                await volunteers.update(session, None, volunteer.id, is_active=False)
+            ).unwrap()
 
     # historical churn BEFORE current memberships: assign is an upsert on
     # (volunteer, team), so an ended spell must be gone before the current one

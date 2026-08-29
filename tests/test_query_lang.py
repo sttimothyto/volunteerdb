@@ -7,7 +7,7 @@ the compilers.
 
 import pytest
 
-from volunteerdb import query_lang
+from volunteerdb import errors, query_lang
 from volunteerdb.models import (
     AppUser,
     CustomFieldDef,
@@ -16,6 +16,8 @@ from volunteerdb.models import (
     Volunteer,
 )
 from volunteerdb.permissions import Actor
+
+from tests.fp_helpers import ok, refused
 
 pytestmark = pytest.mark.pure
 
@@ -86,14 +88,12 @@ def test_compile_rejections_name_the_problem():
         ("name > name", "two fields"),
     ]
     for text, needle in cases:
-        with pytest.raises(query_lang.QueryError, match=needle):
-            compile_v(text)
+        refused(compile_v(text), errors.QueryError, match=needle)
 
 
 def test_unknown_field_error_lists_the_fields():
-    with pytest.raises(query_lang.QueryError) as err:
-        compile_v("bogus = 1")
-    message = str(err.value)
+    err = refused(compile_v("bogus = 1"), errors.QueryError)
+    message = err.message
     assert "name" in message and "custom.years_served" in message
     assert "password" not in message
 
@@ -107,20 +107,20 @@ def test_private_and_roster_leaves_are_scoped_for_members():
         full_view_team_ids=set(),
         names_view_team_ids={3},
     )
-    sql = str(compile_v("phone LIKE '555%'", actor))
+    sql = str(ok(compile_v("phone LIKE '555%'", actor)))
     assert "volunteer.id =" in sql, "private leaf is AND-ed with the visibility scope"
-    sql = str(compile_v("email LIKE 'j%'", actor))
+    sql = str(ok(compile_v("email LIKE 'j%'", actor)))
     assert "volunteer.id =" in sql, (
         "email is private too: unwrapped, this leaf walked an address out of a "
         "column the list renders as `•••`"
     )
-    sql = str(compile_v("NOT (phone LIKE '555%')", actor))
+    sql = str(ok(compile_v("NOT (phone LIKE '555%')", actor)))
     assert "volunteer.id =" in sql and "NOT LIKE" in sql, (
         "negation lands on the comparison, never on the visibility scope"
     )
-    sql = str(compile_v("team = 'X'", actor))
+    sql = str(ok(compile_v("team = 'X'", actor)))
     assert "team_id IN" in sql, "roster EXISTS is limited to visible rosters"
-    sql = str(compile_v("team != 'X'", actor))
+    sql = str(ok(compile_v("team != 'X'", actor)))
     assert "NOT (EXISTS" in sql, "!= negates the EXISTS, not the name match"
 
     admin = Actor(
@@ -131,7 +131,7 @@ def test_private_and_roster_leaves_are_scoped_for_members():
         full_view_team_ids=set(),
         names_view_team_ids=set(),
     )
-    sql = str(compile_v("phone LIKE '555%'", admin))
+    sql = str(ok(compile_v("phone LIKE '555%'", admin)))
     assert "volunteer.id" not in sql, "admins skip the wrap"
 
 
@@ -194,15 +194,15 @@ def test_teams_backend_semantics():
         ("name NOT IN ('Music', 'Choir')", [True, False]),
     ]
     for text, expected in cases:
-        pred = compile_t(text)
+        pred = ok(compile_t(text))
         assert [pred(r) for r in ROWS] == expected, text
 
 
 def test_teams_backend_rejects_unknown_fields():
-    with pytest.raises(query_lang.QueryError, match="unknown field: phone"):
-        compile_t("phone = 'x'")
-    with pytest.raises(query_lang.QueryError, match="unknown field"):
-        compile_t("custom.years_served = 1")
+    refused(compile_t("phone = 'x'"), errors.QueryError, match="unknown field: phone")
+    refused(
+        compile_t("custom.years_served = 1"), errors.QueryError, match="unknown field"
+    )
 
 
 EVENT_ROWS = [
@@ -251,10 +251,9 @@ def test_events_backend_semantics():
         ("filled < 3 AND date < '2026-10-01'", [True, False]),
     ]
     for text, expected in cases:
-        pred = compile_e(text)
+        pred = ok(compile_e(text))
         assert [pred(r) for r in EVENT_ROWS] == expected, text
 
 
 def test_events_backend_rejects_unknown_fields():
-    with pytest.raises(query_lang.QueryError, match="unknown field: slot"):
-        compile_e("slot = 'x'")
+    refused(compile_e("slot = 'x'"), errors.QueryError, match="unknown field: slot")

@@ -98,9 +98,9 @@ async def test_scores_role_multiplied_and_null_weights(database):
             await teams.create(session, None, "Social")
         )  # unweighted -> contributes 0
 
-        busy = await volunteers.create(session, None, "Busy", "Bee")
-        light = await volunteers.create(session, None, "Light", "Load")
-        idle = await volunteers.create(session, None, "Idle", "Hands")
+        busy = ok(await volunteers.create(session, None, "Busy", "Bee"))
+        light = ok(await volunteers.create(session, None, "Light", "Load"))
+        idle = ok(await volunteers.create(session, None, "Idle", "Hands"))
 
         ok(
             await memberships.assign(
@@ -141,9 +141,9 @@ async def test_visible_scores_respects_permissions(database):
             await teams.create(session, None, "Garden", workload_weight=Decimal("1"))
         )
 
-        lead = await volunteers.create(session, None, "Lead", "Er")
-        follower = await volunteers.create(session, None, "Fol", "Lower")
-        outsider = await volunteers.create(session, None, "Out", "Sider")
+        lead = ok(await volunteers.create(session, None, "Lead", "Er"))
+        follower = ok(await volunteers.create(session, None, "Fol", "Lower"))
+        outsider = ok(await volunteers.create(session, None, "Out", "Sider"))
         ok(
             await memberships.assign(
                 session, None, lead.id, liturgy.id, TeamRole.leader
@@ -203,9 +203,9 @@ async def test_graph_colors_only_permitted_nodes(database):
             await teams.create(session, None, "Garden", workload_weight=Decimal("1"))
         )
 
-        lead = await volunteers.create(session, None, "Lead", "Er")
-        follower = await volunteers.create(session, None, "Fol", "Lower")
-        watcher = await volunteers.create(session, None, "Core", "Watcher")
+        lead = ok(await volunteers.create(session, None, "Lead", "Er"))
+        follower = ok(await volunteers.create(session, None, "Fol", "Lower"))
+        watcher = ok(await volunteers.create(session, None, "Core", "Watcher"))
         ok(
             await memberships.assign(
                 session, None, lead.id, liturgy.id, TeamRole.leader

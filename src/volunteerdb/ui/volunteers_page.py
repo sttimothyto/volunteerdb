@@ -5,6 +5,7 @@ from nicegui import app, ui
 
 from .. import query_lang
 from ..env import current
+from ..fp import Err
 from ..log import audit_log
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import team_ids_map, volunteer_team_ids
@@ -38,12 +39,13 @@ async def volunteers_page(request: Request, q: str = "", band: str = ""):
     is_query = query_lang.parse(q) is not None
     query_error: str | None = None
     async with page_session() as (session, actor):
-        try:
-            found = await volunteer_service.search_or_query(
-                session, q, include_inactive=actor.is_admin, actor=actor
-            )
-        except query_lang.QueryError as exc:
-            found, query_error = [], str(exc)
+        result = await volunteer_service.search_or_query(
+            session, q, include_inactive=actor.is_admin, actor=actor
+        )
+        if isinstance(result, Err):
+            found, query_error = [], result.error.message
+        else:
+            found = result.value
         team_hits = await team_service.search(session, q) if q and not is_query else []
         # one query for all listed volunteers' team memberships (drives redaction + workload)
         team_sets = await team_ids_map(session, [v.id for v in found])
@@ -227,14 +229,16 @@ def _new_volunteer_dialog() -> None:
                 ui.notify("First and last name are required", color="warning")
                 return
             async with action_session() as (session, actor):
-                v = await volunteer_service.create(
-                    session,
-                    actor,
-                    first.value,
-                    last.value,
-                    email.value or None,
-                    phone.value or None,
-                )
+                v = (
+                    await volunteer_service.create(
+                        session,
+                        actor,
+                        first.value,
+                        last.value,
+                        email.value or None,
+                        phone.value or None,
+                    )
+                ).unwrap()
                 new_id = v.id
             dialog.close()
             ui.navigate.to(f"/volunteers/{new_id}")
@@ -263,7 +267,7 @@ async def volunteer_detail(request: Request, volunteer_id: int):
         )
         assignments = await volunteer_service.assignments(session, volunteer_id)
         impact = (
-            await volunteer_service.impact(session, actor, volunteer_id)
+            (await volunteer_service.impact(session, actor, volunteer_id)).unwrap()
             if can_view
             else []
         )
@@ -652,17 +656,19 @@ def _edit_dialog(
             # moved away from; see _notify_replaced_address
             replaced = on_file if not is_self and on_file and typed != on_file else None
             async with action_session() as (session, actor):
-                await volunteer_service.update(
-                    session,
-                    actor,
-                    volunteer.id,
-                    first_name=first.value,
-                    last_name=last.value,
-                    phone=phone.value or None,
-                    notes=notes.value or None,
-                    is_active=active.value if active is not None else None,
-                    **fields,
-                )
+                (
+                    await volunteer_service.update(
+                        session,
+                        actor,
+                        volunteer.id,
+                        first_name=first.value,
+                        last_name=last.value,
+                        phone=phone.value or None,
+                        notes=notes.value or None,
+                        is_active=active.value if active is not None else None,
+                        **fields,
+                    )
+                ).unwrap()
                 if values:
                     await custom_field_service.set_values(
                         session, actor, volunteer.id, values
@@ -748,7 +754,7 @@ async def _delete_volunteer(volunteer_id: int) -> None:
 
         async def confirm() -> None:
             async with action_session() as (session, actor):
-                await volunteer_service.delete(session, actor, volunteer_id)
+                (await volunteer_service.delete(session, actor, volunteer_id)).unwrap()
             dialog.close()
             ui.navigate.to("/volunteers")
 

@@ -7,6 +7,8 @@ from volunteerdb.db import db_session
 from volunteerdb.models import FieldType
 from volunteerdb.services import custom_fields, volunteers
 
+from tests.fp_helpers import ok
+
 
 async def test_create_def_slugifies_and_orders(database):
     async with db_session() as session:
@@ -157,7 +159,7 @@ async def test_set_values_merges_and_clears(database):
     async with db_session() as session:
         await custom_fields.create_def(session, None, "Shirt size", FieldType.text)
         await custom_fields.create_def(session, None, "Trained", FieldType.checkbox)
-        v = await volunteers.create(session, None, "Ada", "Lovelace")
+        v = ok(await volunteers.create(session, None, "Ada", "Lovelace"))
         vid = v.id
 
     async with db_session() as session:

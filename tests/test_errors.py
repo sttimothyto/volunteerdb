@@ -68,11 +68,9 @@ def test_from_exception_covers_the_legacy_vocabulary():
 
 def test_from_exception_keeps_subclass_identity():
     from volunteerdb.passwords import WeakPassword as LegacyWeak
-    from volunteerdb.query_lang import QueryError as LegacyQuery
     from volunteerdb.services.gcal import GcalError
 
     assert from_exception(LegacyWeak("too short")) == WeakPassword("too short")
-    assert from_exception(LegacyQuery("unknown field")) == QueryError("unknown field")
     assert from_exception(GcalError("HTTP 500")) == External(
         "google calendar", "HTTP 500"
     )

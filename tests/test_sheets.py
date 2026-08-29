@@ -27,10 +27,12 @@ def _rows(content: bytes) -> list[list[str]]:
 async def _setup(session):
     liturgy = ok(await teams.create(session, None, "Liturgy"))
     music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
-    anna = await volunteers.create(
-        session, None, "Anna", "Smith", "anna@example.org", phone="555-1"
+    anna = ok(
+        await volunteers.create(
+            session, None, "Anna", "Smith", "anna@example.org", phone="555-1"
+        )
     )
-    ben = await volunteers.create(session, None, "Ben", "Jones", "ben@example.org")
+    ben = ok(await volunteers.create(session, None, "Ben", "Jones", "ben@example.org"))
     ok(await memberships.assign(session, None, anna.id, liturgy.id, TeamRole.leader))
     ok(await memberships.assign(session, None, ben.id, music.id, TeamRole.member))
     return liturgy, music, anna, ben
@@ -46,7 +48,11 @@ async def test_roundtrip_reimport_is_a_noop(database):
     async with db_session() as session:
         await _setup(session)
         # an unassigned volunteer exercises the blank-Team parish rows too
-        await volunteers.create(session, None, "Ursula", "Unassigned", "u@example.org")
+        ok(
+            await volunteers.create(
+                session, None, "Ursula", "Unassigned", "u@example.org"
+            )
+        )
         content = await exporter.export_csv(session, None)
 
     assert _rows(content)[0] == ROSTER_HEADERS
@@ -103,7 +109,11 @@ async def test_import_applies_edits_and_additions(database):
 async def test_parish_export_lists_unassigned_after_memberships(database):
     async with db_session() as session:
         await _setup(session)
-        await volunteers.create(session, None, "Ursula", "Unassigned", "u@example.org")
+        ok(
+            await volunteers.create(
+                session, None, "Ursula", "Unassigned", "u@example.org"
+            )
+        )
         content = await exporter.export_csv(session, None)
 
     rows = _rows(content)[1:]
@@ -121,12 +131,14 @@ async def test_parish_export_omits_archived_unassigned_but_keeps_members(databas
     team-sheet round-trip from reading them as 'removed'."""
     async with db_session() as session:
         _, _, anna, _ = await _setup(session)
-        gone = await volunteers.create(
-            session, None, "Gone", "Quietly", "gone@example.org"
+        gone = ok(
+            await volunteers.create(
+                session, None, "Gone", "Quietly", "gone@example.org"
+            )
         )
-        await volunteers.update(session, None, gone.id, is_active=False)
-        await volunteers.update(
-            session, None, anna.id, is_active=False
+        ok(await volunteers.update(session, None, gone.id, is_active=False))
+        ok(
+            await volunteers.update(session, None, anna.id, is_active=False)
         )  # keeps membership
         content = await exporter.export_csv(session, None)
 

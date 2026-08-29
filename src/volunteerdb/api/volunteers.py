@@ -59,9 +59,11 @@ async def list_volunteers(
     # search_or_query, not search: `q` accepts the same SQL-shaped filter the
     # GUI's search boxes take (query_lang), and the grammar is already
     # actor-scoped per field. Plain text still means a substring search.
-    found = await service.search_or_query(
-        ctx.session, q, at=as_of, include_inactive=include_inactive, actor=ctx.actor
-    )
+    found = (
+        await service.search_or_query(
+            ctx.session, q, at=as_of, include_inactive=include_inactive, actor=ctx.actor
+        )
+    ).unwrap()
     teams_map = await team_ids_map(ctx.session, [v.id for v in found], as_of)
     photo_ids = await photo_service.versions(ctx.session, [v.id for v in found])
     out = [redacted(ctx.actor, v, teams_map.get(v.id, set())) for v in found]
@@ -72,7 +74,9 @@ async def list_volunteers(
 
 @router.post("", status_code=201)
 async def create_volunteer(ctx: CtxDep, data: VolunteerIn) -> VolunteerOut:
-    volunteer = await service.create(ctx.session, ctx.actor, **data.model_dump())
+    volunteer = (
+        await service.create(ctx.session, ctx.actor, **data.model_dump())
+    ).unwrap()
     return VolunteerOut.model_validate(volunteer)
 
 
@@ -129,7 +133,9 @@ async def update_volunteer(
         replaced = (was, now) if was and was != now else None
 
     custom = fields.pop("custom", None)
-    volunteer = await service.update(ctx.session, ctx.actor, volunteer_id, **fields)
+    volunteer = (
+        await service.update(ctx.session, ctx.actor, volunteer_id, **fields)
+    ).unwrap()
     if custom is not None:
         volunteer = await custom_field_service.set_values(
             ctx.session, ctx.actor, volunteer_id, custom
@@ -154,7 +160,7 @@ async def update_volunteer(
 
 @router.delete("/{volunteer_id}", status_code=204)
 async def delete_volunteer(ctx: CtxDep, volunteer_id: int) -> None:
-    await service.delete(ctx.session, ctx.actor, volunteer_id)
+    (await service.delete(ctx.session, ctx.actor, volunteer_id)).unwrap()
 
 
 @router.put("/{volunteer_id}/photo")
@@ -328,7 +334,9 @@ async def volunteer_impact(
     ctx: CtxDep, volunteer_id: int, as_of: AsOf
 ) -> list[ImpactOut]:
     """If this volunteer leaves, what holes appear?"""
-    rows = await service.impact(ctx.session, ctx.actor, volunteer_id, at=as_of)
+    rows = (
+        await service.impact(ctx.session, ctx.actor, volunteer_id, at=as_of)
+    ).unwrap()
     return [
         ImpactOut(
             team=r.team,

@@ -67,8 +67,15 @@ def test_parse_role_value_and_label():
 
 async def test_formula_injection_escape_roundtrips(database):
     async with db_session() as session:
-        await volunteers.create(
-            session, None, "=Evil", "Person", "evil@example.org", notes="=SUM(A1:A9)"
+        ok(
+            await volunteers.create(
+                session,
+                None,
+                "=Evil",
+                "Person",
+                "evil@example.org",
+                notes="=SUM(A1:A9)",
+            )
         )
         content = await exporter.export_csv(session, None)
 
@@ -91,7 +98,11 @@ async def test_formula_injection_escape_roundtrips(database):
 async def test_import_row_validation_errors(database):
     async with db_session() as session:
         ok(await teams.create(session, None, "Liturgy"))
-        await volunteers.create(session, None, "Rhea", "Roleless", "rhea@example.org")
+        ok(
+            await volunteers.create(
+                session, None, "Rhea", "Roleless", "rhea@example.org"
+            )
+        )
 
     content = _csv_bytes(
         [
@@ -126,9 +137,9 @@ async def test_import_ambiguous_matches_error(database):
         youth = ok(await teams.create(session, None, "Youth"))
         ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
         ok(await teams.create(session, None, "Music", parent_team_id=youth.id))
-        await volunteers.create(session, None, "Sam", "Same")
-        await volunteers.create(session, None, "Sam", "Same")
-        await volunteers.create(session, None, "Uma", "Unique", "uma@example.org")
+        ok(await volunteers.create(session, None, "Sam", "Same"))
+        ok(await volunteers.create(session, None, "Sam", "Same"))
+        ok(await volunteers.create(session, None, "Uma", "Unique", "uma@example.org"))
 
     content = _csv_bytes(
         [
@@ -150,14 +161,16 @@ async def test_a_blank_cell_never_clears_an_existing_value(database):
     otherwise wipe contact details parish-wide, and all-or-nothing would not
     help because it is not an error."""
     async with db_session() as session:
-        await volunteers.create(
-            session,
-            None,
-            "Clara",
-            "Contact",
-            "clara@example.org",
-            "555-0199",
-            notes="sings alto",
+        ok(
+            await volunteers.create(
+                session,
+                None,
+                "Clara",
+                "Contact",
+                "clara@example.org",
+                "555-0199",
+                notes="sings alto",
+            )
         )
 
     content = _csv_bytes(
@@ -187,7 +200,11 @@ async def test_import_cannot_archive_anyone(database):
     """There is no Active column: archiving happens in the app (or when a sync
     removes someone's last membership), never from a spreadsheet cell."""
     async with db_session() as session:
-        await volunteers.create(session, None, "Vera", "Verbatim", "vera@example.org")
+        ok(
+            await volunteers.create(
+                session, None, "Vera", "Verbatim", "vera@example.org"
+            )
+        )
 
     content = _csv_bytes(
         [["", "Vera", "Verbatim", "vera@example.org", "555-7", "", "", ""]]
@@ -204,8 +221,10 @@ async def test_volunteer_only_row_does_not_reactivate(database):
     """Only a row that puts an archived volunteer on a team reactivates them;
     a bare contact update leaves the archive flag alone."""
     async with db_session() as session:
-        v = await volunteers.create(session, None, "Ana", "Archived", "ana@example.org")
-        await volunteers.update(session, None, v.id, is_active=False)
+        v = ok(
+            await volunteers.create(session, None, "Ana", "Archived", "ana@example.org")
+        )
+        ok(await volunteers.update(session, None, v.id, is_active=False))
 
     content = _csv_bytes(
         [["", "Ana", "Archived", "ana@example.org", "555-3", "", "", ""]]

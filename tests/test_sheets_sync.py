@@ -41,15 +41,17 @@ async def choir(database):
     async with db_session() as session:
         choir = ok(await teams.create(session, None, "Choir"))
         hospitality = ok(await teams.create(session, None, "Hospitality"))
-        lena = await volunteers.create(
-            session, None, "Lena", "Leader", "lena@example.org"
+        lena = ok(
+            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
-        mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
-        carl = await volunteers.create(
-            session, None, "Carl", "Cross", "carl@example.org"
+        mia = ok(
+            await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
         )
-        dora = await volunteers.create(
-            session, None, "Dora", "Done", "dora@example.org"
+        carl = ok(
+            await volunteers.create(session, None, "Carl", "Cross", "carl@example.org")
+        )
+        dora = ok(
+            await volunteers.create(session, None, "Dora", "Done", "dora@example.org")
         )
         ok(await memberships.assign(session, None, lena.id, choir.id, TeamRole.leader))
         ok(await memberships.assign(session, None, mia.id, choir.id, TeamRole.member))
@@ -206,8 +208,8 @@ async def test_sync_adding_an_archived_volunteer_reactivates_them(choir):
     but putting an archived person on a team still reactivates them, which is
     how a leader brings somebody back."""
     async with db_session() as session:
-        gone = await volunteers.create(
-            session, None, "Greta", "Gone", "greta@example.org"
+        gone = ok(
+            await volunteers.create(session, None, "Greta", "Gone", "greta@example.org")
         )
         gone.is_active = False
         await session.flush()
@@ -231,8 +233,10 @@ async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir):
     mailbox, then ask for their invite, and the account is yours. The sheet may
     still add people; it may only edit the ones already on the roster."""
     async with db_session() as session:
-        outsider = await volunteers.create(
-            session, None, "Orla", "Outsider", "orla@example.org"
+        outsider = ok(
+            await volunteers.create(
+                session, None, "Orla", "Outsider", "orla@example.org"
+            )
         )
         other = ok(await teams.create(session, None, "Altar Servers"))
         ok(
@@ -272,7 +276,9 @@ async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(c
     already, so the sheet may move her — that is the licence working, not a
     hole; what it may not do is move somebody it merely lists."""
     async with db_session() as session:
-        blank = await volunteers.create(session, None, "Basil", "Blank")  # no address
+        blank = ok(
+            await volunteers.create(session, None, "Basil", "Blank")
+        )  # no address
         ok(
             await memberships.assign(
                 session, None, blank.id, choir["choir"], TeamRole.member

@@ -38,8 +38,10 @@ async def _team_with_members(n: int = 2) -> tuple[int, list[int]]:
         team = ok(await teams.create(session, None, "Altar Servers"))
         vids = []
         for i in range(n):
-            v = await volunteers.create(
-                session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
+            v = ok(
+                await volunteers.create(
+                    session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
+                )
             )
             role = TeamRole.leader if i == 0 else TeamRole.member
             ok(await memberships.assign(session, None, v.id, team.id, role))
@@ -314,8 +316,8 @@ async def test_one_slot_per_person_per_event(database):
 async def test_participation_requires_membership(database):
     team_id, _ = await _team_with_members(1)
     async with db_session() as session:
-        outsider = await volunteers.create(
-            session, None, "Out", "Sider", "out@example.org"
+        outsider = ok(
+            await volunteers.create(session, None, "Out", "Sider", "out@example.org")
         )
     event_id = await _one_event(team_id)
     slot_id = await _first_slot(event_id)
@@ -618,8 +620,8 @@ async def test_list_events_scopes_to_the_actors_teams(database):
     team_a, vids_a = await _team_with_members(2)
     async with db_session() as session:
         team_b = ok(await teams.create(session, None, "Choir"))
-        other = await volunteers.create(
-            session, None, "Oda", "Choir", "oda@example.org"
+        other = ok(
+            await volunteers.create(session, None, "Oda", "Choir", "oda@example.org")
         )
         ok(
             await memberships.assign(
@@ -869,8 +871,8 @@ async def test_substitute_rejects_bad_targets(database):
         await event_service.sign_up(
             session, None, slot_id=slot_id, volunteer_id=vids[2]
         )
-        outsider = await volunteers.create(
-            session, None, "Out", "Sider", "out@example.org"
+        outsider = ok(
+            await volunteers.create(session, None, "Out", "Sider", "out@example.org")
         )
         assignment_id, outsider_id = a.id, outsider.id
     async with db_session() as session:

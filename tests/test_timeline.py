@@ -15,9 +15,11 @@ from volunteerdb.services import memberships, teams, volunteers
 
 from tests.fp_helpers import ok
 
+TZ = ZoneInfo(settings().timezone)
+
 
 async def _fixtures(session, team_name="Choir"):
-    v = await volunteers.create(session, None, "Tim", "Traveller")
+    v = ok(await volunteers.create(session, None, "Tim", "Traveller"))
     t = ok(await teams.create(session, None, team_name))
     return v.id, t.id
 
@@ -145,36 +147,38 @@ async def test_team_anniversaries_window_and_years(database):
     first = _anniv_of(since, 1)
     async with db_session() as session:
         (hit,) = await volunteers.team_anniversaries(
-            session, tid, first - timedelta(days=10)
+            session, tid, first - timedelta(days=10), tz=TZ
         )
         assert hit.volunteer.id == vid
         assert hit.years == 1 and hit.anniversary == first and hit.since == since
 
         behind = await volunteers.team_anniversaries(
-            session, tid, first + timedelta(days=5)
+            session, tid, first + timedelta(days=5), tz=TZ
         )
         assert len(behind) == 1, "still shown for a week after the day itself"
 
         assert (
             await volunteers.team_anniversaries(
-                session, tid, first - timedelta(days=40)
+                session, tid, first - timedelta(days=40), tz=TZ
             )
             == []
         ), "outside the 30-day-ahead window"
         assert (
             await volunteers.team_anniversaries(
-                session, tid, first + timedelta(days=10)
+                session, tid, first + timedelta(days=10), tz=TZ
             )
             == []
         ), "outside the 7-day-behind window"
         assert (
             await volunteers.team_anniversaries(
-                session, tid, since + timedelta(days=100)
+                session, tid, since + timedelta(days=100), tz=TZ
             )
             == []
         ), "no whole year served yet"
 
-        (hit,) = await volunteers.team_anniversaries(session, tid, _anniv_of(since, 3))
+        (hit,) = await volunteers.team_anniversaries(
+            session, tid, _anniv_of(since, 3), tz=TZ
+        )
         assert hit.years == 3, "later anniversaries keep counting"
 
 
@@ -187,7 +191,7 @@ async def test_team_anniversaries_role_change_keeps_one_entry(database):
 
     probe = _anniv_of(_today(), 1) - timedelta(days=1)
     async with db_session() as session:
-        (hit,) = await volunteers.team_anniversaries(session, tid, probe)
+        (hit,) = await volunteers.team_anniversaries(session, tid, probe, tz=TZ)
         assert hit.years == 1, "a role change is the same continuous spell"
 
 
@@ -203,8 +207,8 @@ async def test_team_anniversaries_skip_departed_members_and_other_teams(database
 
     probe = _anniv_of(_today(), 1)
     async with db_session() as session:
-        assert await volunteers.team_anniversaries(session, tid, probe) == [], (
+        assert await volunteers.team_anniversaries(session, tid, probe, tz=TZ) == [], (
             "departed members never appear"
         )
-        (hit,) = await volunteers.team_anniversaries(session, other_id, probe)
+        (hit,) = await volunteers.team_anniversaries(session, other_id, probe, tz=TZ)
         assert hit.volunteer.id == vid, "the other team's ongoing spell still counts"

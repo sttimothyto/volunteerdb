@@ -82,10 +82,12 @@ async def choir(database):
     """Choir with Lena (leader) and Mia (member), already linked to a sheet."""
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Choir"))
-        lena = await volunteers.create(
-            session, None, "Lena", "Leader", "lena@example.org"
+        lena = ok(
+            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
-        mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+        mia = ok(
+            await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+        )
         ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
         ok(await memberships.assign(session, None, mia.id, team.id, TeamRole.member))
         lena_u, _ = await users.create(
@@ -222,8 +224,8 @@ async def test_the_leader_may_sync(choir, fake):
 async def test_the_job_creates_a_sheet_for_a_team_that_has_none(database, fake, env):
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Choir"))
-        lena = await volunteers.create(
-            session, None, "Lena", "Leader", "lena@example.org"
+        lena = ok(
+            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
         ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
         team_id = team.id

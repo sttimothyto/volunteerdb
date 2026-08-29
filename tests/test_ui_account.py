@@ -128,8 +128,10 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
     monkeypatch.setattr(mail, "send_email", fake_send)
 
     async with db_session() as session:
-        maria = await volunteers.create(
-            session, None, "Maria", "Alvarez", email="maria@example.org"
+        maria = ok(
+            await volunteers.create(
+                session, None, "Maria", "Alvarez", email="maria@example.org"
+            )
         )
         liturgy = ok(await teams.create(session, None, "Liturgy"))
         ok(

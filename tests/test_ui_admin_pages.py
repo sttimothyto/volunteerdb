@@ -61,8 +61,8 @@ async def test_leader_sees_scoped_export_on_teams_page(database):
     button whose scope follows the actor."""
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
-        lena = await volunteers.create(
-            session, None, "Lena", "Leader", "lena@example.org"
+        lena = ok(
+            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
         ok(
             await memberships.assign(
@@ -98,7 +98,11 @@ async def test_admin_users_provision_button(database, monkeypatch):
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
-        await volunteers.create(session, None, "Vera", "Volunteer", "vera@example.org")
+        ok(
+            await volunteers.create(
+                session, None, "Vera", "Volunteer", "vera@example.org"
+            )
+        )
         admin_id = admin.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -123,8 +127,10 @@ async def test_admin_users_relink_dialog(database):
         orphan, _ = await users.create(
             session, "orphan@example.org", password="test-pass-phrase"
         )
-        vera = await volunteers.create(
-            session, None, "Vera", "Volunteer", "vera@example.org"
+        vera = ok(
+            await volunteers.create(
+                session, None, "Vera", "Volunteer", "vera@example.org"
+            )
         )
         admin_id, orphan_id, vera_id = admin.id, orphan.id, vera.id
 

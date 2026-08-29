@@ -4,6 +4,7 @@ from fastapi import Request
 from nicegui import ui
 
 from .. import query_lang
+from ..fp import Err
 from ..models import ROLE_LABELS
 from ..services import graph as graph_service
 from ..services import stats as stats_service
@@ -12,7 +13,7 @@ from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from .a11y import icon_button
 from .assets import static_url
-from .context import action_session, page_session, parse_as_of
+from .context import action_session, page_session, parse_as_of, toast
 from .cytoscape_element import CytoscapeGraph
 from .layout import frame
 from .search_box import search_box
@@ -76,15 +77,14 @@ async def dashboard(request: Request, as_of: str = ""):
         if query_lang.parse(text) is None:
             ui.navigate.to(f"/volunteers?q={quote_plus(text)}")
             return
-        try:
-            async with action_session() as (session, actor):
-                found = await volunteer_service.search_or_query(
-                    session, text, at=at, include_inactive=actor.is_admin, actor=actor
-                )
-        except query_lang.QueryError as exc:
-            ui.notify(str(exc), color="warning")
+        async with action_session() as (session, actor):
+            result = await volunteer_service.search_or_query(
+                session, text, at=at, include_inactive=actor.is_admin, actor=actor
+            )
+        if isinstance(result, Err):
+            toast(result.error)
             return
-        active["ids"] = {v.id for v in found}
+        active["ids"] = {v.id for v in result.value}
         active["text"] = text
         render_chip()
         await refresh_graph()

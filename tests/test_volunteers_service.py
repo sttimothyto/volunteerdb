@@ -1,43 +1,48 @@
 """Volunteer service: update sentinel semantics, search, normalization, impact."""
 
-import pytest
-
+from volunteerdb import errors
 from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 
-from tests.fp_helpers import ok
+from tests.fp_helpers import ok, refused
 
 
 async def test_create_normalizes_fields(database):
     async with db_session() as session:
-        v = await volunteers.create(
-            session, None, "  Maria ", " Alvarez  ", "  Maria@Example.ORG "
+        v = ok(
+            await volunteers.create(
+                session, None, "  Maria ", " Alvarez  ", "  Maria@Example.ORG "
+            )
         )
         assert (v.first_name, v.last_name) == ("Maria", "Alvarez")
         assert v.email == "maria@example.org"
 
-        no_email = await volunteers.create(session, None, "Nadia", "Noemail")
+        no_email = ok(await volunteers.create(session, None, "Nadia", "Noemail"))
         assert no_email.email is None
 
 
 async def test_update_unset_vs_none_semantics(database):
     async with db_session() as session:
-        v = await volunteers.create(
-            session, None, "Ann", "Baker", "ann@example.org", "555-1", "some notes"
+        v = ok(
+            await volunteers.create(
+                session, None, "Ann", "Baker", "ann@example.org", "555-1", "some notes"
+            )
         )
 
-        renamed = await volunteers.update(session, None, v.id, first_name="Anne")
+        renamed = ok(await volunteers.update(session, None, v.id, first_name="Anne"))
         assert renamed.email == "ann@example.org", "omitted fields stay untouched"
         assert renamed.phone == "555-1" and renamed.notes == "some notes"
 
-        cleared = await volunteers.update(
-            session, None, v.id, email=None, phone=None, notes=None
+        cleared = ok(
+            await volunteers.update(
+                session, None, v.id, email=None, phone=None, notes=None
+            )
         )
         assert cleared.email is None and cleared.phone is None and cleared.notes is None
 
-        recased = await volunteers.update(
-            session, None, v.id, email="  NEW@Example.ORG "
+        recased = ok(
+            await volunteers.update(session, None, v.id, email="  NEW@Example.ORG ")
         )
         assert recased.email == "new@example.org"
 
@@ -46,10 +51,10 @@ async def test_name_map_orders_and_filters(database):
     """The dropdown helper: matches search()'s ordering and active-only
     default without hydrating full entities."""
     async with db_session() as session:
-        z = await volunteers.create(session, None, "Ann", "Zed")
-        a = await volunteers.create(session, None, "Bea", "Able")
-        gone = await volunteers.create(session, None, "Faded", "Ghost")
-        await volunteers.update(session, None, gone.id, is_active=False)
+        z = ok(await volunteers.create(session, None, "Ann", "Zed"))
+        a = ok(await volunteers.create(session, None, "Bea", "Able"))
+        gone = ok(await volunteers.create(session, None, "Faded", "Ghost"))
+        ok(await volunteers.update(session, None, gone.id, is_active=False))
 
         active = await volunteers.name_map(session)
         assert list(active.items()) == [(a.id, "Bea Able"), (z.id, "Ann Zed")], (
@@ -60,10 +65,12 @@ async def test_name_map_orders_and_filters(database):
 
 async def test_search_by_name_email_and_inactive_flag(database):
     async with db_session() as session:
-        a = await volunteers.create(session, None, "Maria", "Alvarez", "maria@one.org")
-        await volunteers.create(session, None, "Bruno", "Costa", "bruno@two.org")
-        gone = await volunteers.create(session, None, "Faded", "Ghost")
-        await volunteers.update(session, None, gone.id, is_active=False)
+        a = ok(
+            await volunteers.create(session, None, "Maria", "Alvarez", "maria@one.org")
+        )
+        ok(await volunteers.create(session, None, "Bruno", "Costa", "bruno@two.org"))
+        gone = ok(await volunteers.create(session, None, "Faded", "Ghost"))
+        ok(await volunteers.update(session, None, gone.id, is_active=False))
 
         hits = await volunteers.search(session, "ria Alv")
         assert [v.id for v in hits] == [a.id], "matches across first+last name"
@@ -79,8 +86,10 @@ async def test_search_by_name_email_and_inactive_flag(database):
 async def test_search_limit_caps_rows_in_name_order(database):
     async with db_session() as session:
         for last in ("Delta", "Alpha", "Charlie", "Bravo"):
-            await volunteers.create(
-                session, None, "Sam", last, f"sam.{last}@example.org"
+            ok(
+                await volunteers.create(
+                    session, None, "Sam", last, f"sam.{last}@example.org"
+                )
             )
 
         assert len(await volunteers.search(session, "Sam")) == 4, "unlimited by default"
@@ -96,14 +105,22 @@ async def test_search_private_fields_are_scope_aware(database):
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
         garden = ok(await teams.create(session, None, "Garden"))
-        insider = await volunteers.create(
-            session, None, "Inne", "Sider", None, "555-0100"
+        insider = ok(
+            await volunteers.create(session, None, "Inne", "Sider", None, "555-0100")
         )
-        outsider = await volunteers.create(
-            session, None, "Outt", "Sider", None, "555-0200", "keeps the secret recipe"
+        outsider = ok(
+            await volunteers.create(
+                session,
+                None,
+                "Outt",
+                "Sider",
+                None,
+                "555-0200",
+                "keeps the secret recipe",
+            )
         )
-        plain = await volunteers.create(
-            session, None, "Plain", "Member", None, "555-0300"
+        plain = ok(
+            await volunteers.create(session, None, "Plain", "Member", None, "555-0300")
         )
         ok(
             await memberships.assign(
@@ -125,7 +142,7 @@ async def test_search_private_fields_are_scope_aware(database):
             session, None, insider.id, {"training": "lector-certified"}
         )
 
-        leader_v = await volunteers.create(session, None, "Lena", "Leader")
+        leader_v = ok(await volunteers.create(session, None, "Lena", "Leader"))
         ok(
             await memberships.assign(
                 session, None, leader_v.id, liturgy.id, TeamRole.leader
@@ -185,7 +202,11 @@ async def test_search_private_fields_are_scope_aware(database):
         # email is scoped with the rest of the contact details, not public.
         # The list renders it as `•••` to these viewers, and a bare match let
         # the query language walk it out a character at a time.
-        await volunteers.update(session, None, outsider.id, email="outt@example.org")
+        ok(
+            await volunteers.update(
+                session, None, outsider.id, email="outt@example.org"
+            )
+        )
         assert await volunteers.search(session, "outt@example", actor=member) == [], (
             "an address a member may not read must not confirm by row presence"
         )
@@ -195,7 +216,11 @@ async def test_search_private_fields_are_scope_aware(database):
         assert [
             v.id for v in await volunteers.search(session, "outt@example", actor=admin)
         ] == [outsider.id], "admins still match every column"
-        await volunteers.update(session, None, plain.id, email="plain.v@example.org")
+        ok(
+            await volunteers.update(
+                session, None, plain.id, email="plain.v@example.org"
+            )
+        )
         assert [
             v.id
             for v in await volunteers.search(session, "plain.v@example", actor=member)
@@ -205,19 +230,20 @@ async def test_search_private_fields_are_scope_aware(database):
 async def test_missing_volunteer_raises_lookup(database):
     async with db_session() as session:
         assert await volunteers.get(session, 424242) is None
-        with pytest.raises(LookupError):
-            await volunteers.update(session, None, 424242, first_name="X")
-        with pytest.raises(LookupError):
-            await volunteers.delete(session, None, 424242)
+        refused(
+            await volunteers.update(session, None, 424242, first_name="X"),
+            errors.NotFound,
+        )
+        refused(await volunteers.delete(session, None, 424242), errors.NotFound)
 
 
 async def test_impact_counts_and_critical_first_ordering(database):
     async with db_session() as session:
         solo = ok(await teams.create(session, None, "Solo-led"))
         backed = ok(await teams.create(session, None, "Well-backed"))
-        v = await volunteers.create(session, None, "Key", "Person")
-        other_lead = await volunteers.create(session, None, "Other", "Leader")
-        other_second = await volunteers.create(session, None, "Other", "Second")
+        v = ok(await volunteers.create(session, None, "Key", "Person"))
+        other_lead = ok(await volunteers.create(session, None, "Other", "Leader"))
+        other_second = ok(await volunteers.create(session, None, "Other", "Second"))
 
         ok(await memberships.assign(session, None, v.id, solo.id, TeamRole.leader))
         ok(await memberships.assign(session, None, v.id, backed.id, TeamRole.member))
@@ -232,7 +258,7 @@ async def test_impact_counts_and_critical_first_ordering(database):
             )
         )
 
-        rows = await volunteers.impact(session, None, v.id)
+        rows = ok(await volunteers.impact(session, None, v.id))
         assert [r.team.name for r in rows] == ["Solo-led", "Well-backed"], (
             "most critical first"
         )
@@ -246,20 +272,27 @@ async def test_search_or_query_scopes_rows_per_role(database):
     a private-field predicate is false outside the actor's visibility, in
     both polarities, and membership predicates see only visible rosters."""
     from volunteerdb.actors import load_actor
-    from volunteerdb.query_lang import QueryError
     from volunteerdb.services import custom_fields, users
 
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
         garden = ok(await teams.create(session, None, "Garden"))
-        insider = await volunteers.create(
-            session, None, "Inne", "Sider", None, "555-0100"
+        insider = ok(
+            await volunteers.create(session, None, "Inne", "Sider", None, "555-0100")
         )
-        gardener = await volunteers.create(
-            session, None, "Gard", "Ener", None, "555-0200", "keeps the secret recipe"
+        gardener = ok(
+            await volunteers.create(
+                session,
+                None,
+                "Gard",
+                "Ener",
+                None,
+                "555-0200",
+                "keeps the secret recipe",
+            )
         )
-        plain = await volunteers.create(
-            session, None, "Plain", "Member", None, "555-0300"
+        plain = ok(
+            await volunteers.create(session, None, "Plain", "Member", None, "555-0300")
         )
         ok(
             await memberships.assign(
@@ -280,7 +313,7 @@ async def test_search_or_query_scopes_rows_per_role(database):
         await custom_fields.set_values(session, None, insider.id, {"years_served": 10})
         await custom_fields.set_values(session, None, plain.id, {"years_served": 9})
 
-        leader_v = await volunteers.create(session, None, "Lena", "Leader")
+        leader_v = ok(await volunteers.create(session, None, "Lena", "Leader"))
         ok(
             await memberships.assign(
                 session, None, leader_v.id, liturgy.id, TeamRole.leader
@@ -312,7 +345,9 @@ async def test_search_or_query_scopes_rows_per_role(database):
         async def ids(text, actor):
             return {
                 v.id
-                for v in await volunteers.search_or_query(session, text, actor=actor)
+                for v in ok(
+                    await volunteers.search_or_query(session, text, actor=actor)
+                )
             }
 
         # public fields answer identically for every role
@@ -377,38 +412,48 @@ async def test_search_or_query_scopes_rows_per_role(database):
 
         # non-queries fall back to plain substring search
         assert await ids("Inne", admin) == {insider.id}
-        with pytest.raises(QueryError):
-            await ids("bogus = 1", admin)
+        refused(
+            await volunteers.search_or_query(session, "bogus = 1", actor=admin),
+            errors.QueryError,
+        )
 
 
 async def test_search_or_query_inactive_and_as_of(database):
     from datetime import UTC, datetime
 
     async with db_session() as session:
-        v = await volunteers.create(session, None, "Before", "Rename", "b@example.org")
-        gone = await volunteers.create(session, None, "Faded", "Ghost")
-        await volunteers.update(session, None, gone.id, is_active=False)
+        v = ok(
+            await volunteers.create(session, None, "Before", "Rename", "b@example.org")
+        )
+        gone = ok(await volunteers.create(session, None, "Faded", "Ghost"))
+        ok(await volunteers.update(session, None, gone.id, is_active=False))
         vid, gone_id = v.id, gone.id
 
     when = datetime.now(UTC)
     async with db_session() as session:
-        await volunteers.update(session, None, vid, first_name="After")
+        ok(await volunteers.update(session, None, vid, first_name="After"))
 
     async with db_session() as session:
-        found = await volunteers.search_or_query(session, "first_name = 'After'")
+        found = ok(await volunteers.search_or_query(session, "first_name = 'After'"))
         assert [x.id for x in found] == [vid]
-        assert await volunteers.search_or_query(session, "first_name = 'Before'") == []
+        assert (
+            ok(await volunteers.search_or_query(session, "first_name = 'Before'")) == []
+        )
 
-        past = await volunteers.search_or_query(
-            session, "first_name = 'Before'", at=when
+        past = ok(
+            await volunteers.search_or_query(session, "first_name = 'Before'", at=when)
         )
         assert [x.id for x in past] == [vid], "queries respect as-of"
 
-        assert await volunteers.search_or_query(session, "last_name = 'Ghost'") == []
-        withall = await volunteers.search_or_query(
-            session, "last_name = 'Ghost'", include_inactive=True
+        assert (
+            ok(await volunteers.search_or_query(session, "last_name = 'Ghost'")) == []
+        )
+        withall = ok(
+            await volunteers.search_or_query(
+                session, "last_name = 'Ghost'", include_inactive=True
+            )
         )
         assert [x.id for x in withall] == [gone_id]
-        assert await volunteers.search_or_query(session, "is_active = false") == [], (
-            "is_active cannot widen what include_inactive gates"
-        )
+        assert (
+            ok(await volunteers.search_or_query(session, "is_active = false")) == []
+        ), "is_active cannot widen what include_inactive gates"

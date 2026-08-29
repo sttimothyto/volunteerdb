@@ -64,8 +64,10 @@ async def test_team_export_permission_matrix(client, seeded, token_admin, token_
             )
         )
         music = ok(await teams.create(session, None, "Music", parent_team_id=team_id))
-        singer = await volunteers.create(
-            session, None, "Sally", "Singer", "sally@example.org"
+        singer = ok(
+            await volunteers.create(
+                session, None, "Sally", "Singer", "sally@example.org"
+            )
         )
         ok(
             await memberships.assign(

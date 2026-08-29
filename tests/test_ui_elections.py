@@ -24,11 +24,11 @@ async def _parish(session):
     """Liturgy (Lena leads, Cora core, Mia member) + Clergy (Dan, no account)."""
     liturgy = ok(await teams.create(session, None, "Liturgy"))
     clergy = ok(await teams.create(session, None, "Clergy"))
-    lena = await volunteers.create(session, None, "Lena", "Leader")
-    cora = await volunteers.create(session, None, "Cora", "Core")
-    mia = await volunteers.create(session, None, "Mia", "Member")
-    dan = await volunteers.create(session, None, "Dan", "Deacon")
-    vera = await volunteers.create(session, None, "Vera", "Volunteer")
+    lena = ok(await volunteers.create(session, None, "Lena", "Leader"))
+    cora = ok(await volunteers.create(session, None, "Cora", "Core"))
+    mia = ok(await volunteers.create(session, None, "Mia", "Member"))
+    dan = ok(await volunteers.create(session, None, "Dan", "Deacon"))
+    vera = ok(await volunteers.create(session, None, "Vera", "Volunteer"))
     ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
     ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
     ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
@@ -110,7 +110,7 @@ async def test_leader_creates_proposal_from_vacancy(database):
 async def test_voter_access_and_nomination(database):
     async with db_session() as session:
         ids = await _parish(session)
-        victor = await volunteers.create(session, None, "Victor", "Volunteer")
+        victor = ok(await volunteers.create(session, None, "Victor", "Volunteer"))
         victor_id = victor.id
     pid = await _seed_proposal(ids, d1_offset=5, d2_offset=15)
 

@@ -123,8 +123,10 @@ async def parish(seeded):
     """The seeded parish plus a second pair of hands, so the graph has more
     than one dot to tell apart and an edge that is not the only edge."""
     async with db_session() as session:
-        felix = await volunteers.create(
-            session, None, "Felix", "Garcia", "felix@example.org"
+        felix = ok(
+            await volunteers.create(
+                session, None, "Felix", "Garcia", "felix@example.org"
+            )
         )
         ok(
             await memberships.assign(

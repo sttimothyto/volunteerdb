@@ -34,11 +34,19 @@ async def _parish(session) -> dict[str, int]:
     liturgy = ok(await teams.create(session, None, "Liturgy"))
     music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
 
-    lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
-    mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
-    nils = await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
-    opal = await volunteers.create(session, None, "Opal", "Online", "opal@example.org")
-    quin = await volunteers.create(session, None, "Quin", "Quiet", "quin@example.org")
+    lena = ok(
+        await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+    )
+    mia = ok(await volunteers.create(session, None, "Mia", "Member", "mia@example.org"))
+    nils = ok(
+        await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
+    )
+    opal = ok(
+        await volunteers.create(session, None, "Opal", "Online", "opal@example.org")
+    )
+    quin = ok(
+        await volunteers.create(session, None, "Quin", "Quiet", "quin@example.org")
+    )
     ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
     for v in (mia, nils, opal, quin):
         ok(await memberships.assign(session, None, v.id, music.id, TeamRole.member))

@@ -10,6 +10,8 @@ from datetime import timedelta
 from volunteerdb.db import db_session
 from volunteerdb.services import elections, volunteers
 
+from tests.fp_helpers import ok
+
 
 def _days(n: int) -> str:
     return (elections.local_today() + timedelta(days=n)).isoformat()
@@ -17,7 +19,7 @@ def _days(n: int) -> str:
 
 async def _walter_id() -> int:
     async with db_session() as session:
-        walter = await volunteers.create(session, None, "Walter", "Willing")
+        walter = ok(await volunteers.create(session, None, "Walter", "Willing"))
         return walter.id
 
 

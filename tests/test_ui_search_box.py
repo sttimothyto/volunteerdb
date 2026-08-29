@@ -28,13 +28,15 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
         choir = ok(
             await teams.create(session, None, "Alvarado Choir", parent_team_id=music.id)
         )
-        maria = await volunteers.create(
-            session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+        maria = ok(
+            await volunteers.create(
+                session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+            )
         )
         ok(await memberships.assign(session, None, maria.id, choir.id, TeamRole.member))
-        retired = await volunteers.create(session, None, "Pedro", "Alvarez")
-        await volunteers.update(session, None, retired.id, is_active=False)
-        await volunteers.create(session, None, "Bruno", "Costa")
+        retired = ok(await volunteers.create(session, None, "Pedro", "Alvarez"))
+        ok(await volunteers.update(session, None, retired.id, is_active=False))
+        ok(await volunteers.create(session, None, "Bruno", "Costa"))
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
@@ -115,8 +117,10 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
 
 async def test_volunteers_page_search_box_also_suggests(database):
     async with db_session() as session:
-        maria = await volunteers.create(
-            session, None, "Maria", "Alvarez", "maria@example.org"
+        maria = ok(
+            await volunteers.create(
+                session, None, "Maria", "Alvarez", "maria@example.org"
+            )
         )
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
@@ -143,11 +147,15 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
 
     async with db_session() as session:
         music = ok(await teams.create(session, None, "Music"))
-        maria = await volunteers.create(
-            session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+        maria = ok(
+            await volunteers.create(
+                session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+            )
         )
-        bruno = await volunteers.create(
-            session, None, "Bruno", "Costa", "bruno@example.org", "777-0000"
+        bruno = ok(
+            await volunteers.create(
+                session, None, "Bruno", "Costa", "bruno@example.org", "777-0000"
+            )
         )
         ok(await memberships.assign(session, None, maria.id, music.id, TeamRole.member))
         ok(await memberships.assign(session, None, bruno.id, music.id, TeamRole.member))

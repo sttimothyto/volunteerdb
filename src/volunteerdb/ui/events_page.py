@@ -28,6 +28,7 @@ from starlette.requests import Request
 from .. import query_lang, throttle
 from ..config import settings
 from ..env import current as current_env
+from ..fp import Err
 from ..log import audit_log
 from ..models import (
     Event,
@@ -129,12 +130,12 @@ def _wire_search(
         if ast is None:
             shown = rows if not text else [r for r in rows if matches(r, text.lower())]
         else:
-            try:
-                pred = query_lang.compile_events(ast)
-            except query_lang.QueryError as exc:
+            compiled = query_lang.compile_events(ast)
+            if isinstance(compiled, Err):
                 # inline, not a toast: this filter runs on every keystroke
-                count.set_text(f"query error: {exc}")
+                count.set_text(f"query error: {compiled.error.message}")
                 return
+            pred = compiled.value
             shown = [r for r in rows if pred(r)]
         table.rows = shown
         table.update()

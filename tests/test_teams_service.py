@@ -196,17 +196,19 @@ async def test_leader_emails_covers_leader_and_second_only(database):
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Choir"))
         team_id = team.id
-        lena = await volunteers.create(
-            session, None, "Lena", "Leader", "lena@example.org"
+        lena = ok(
+            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
-        sam = await volunteers.create(session, None, "Sam", "Second", "sam@example.org")
-        cora = await volunteers.create(
-            session, None, "Cora", "Core", "cora@example.org"
+        sam = ok(
+            await volunteers.create(session, None, "Sam", "Second", "sam@example.org")
         )
-        noel = await volunteers.create(session, None, "Noel", "NoEmail")
+        cora = ok(
+            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+        )
+        noel = ok(await volunteers.create(session, None, "Noel", "NoEmail"))
         # what an import of a roster with an empty Email cell can leave behind:
         # not NULL, but nothing a mailer or a Drive share can use either
-        blank = await volunteers.create(session, None, "Bea", "Blank")
+        blank = ok(await volunteers.create(session, None, "Bea", "Blank"))
         blank.email = "  "
         ok(await memberships.assign(session, None, lena.id, team_id, TeamRole.leader))
         ok(await memberships.assign(session, None, sam.id, team_id, TeamRole.second))
@@ -256,8 +258,8 @@ async def test_a_leader_may_set_the_roster_sheet(database):
     pasted link could not be checked until the next nightly run."""
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Choir"))
-        lena = await volunteers.create(
-            session, None, "Lena", "Leader", "lena@example.org"
+        lena = ok(
+            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
         )
         ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
         user, _ = await users.create(session, "lena@example.org")
@@ -281,8 +283,8 @@ async def test_a_core_member_may_not_set_the_roster_sheet(database):
     address and phone and grants a bulk write over the roster."""
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Choir"))
-        cora = await volunteers.create(
-            session, None, "Cora", "Core", "cora@example.org"
+        cora = ok(
+            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
         )
         ok(await memberships.assign(session, None, cora.id, team.id, TeamRole.core))
         user, _ = await users.create(session, "cora@example.org")
@@ -360,7 +362,9 @@ async def test_roster_sheet_needs_management_rights(database):
     roster, contact details and all."""
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Choir"))
-        mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+        mia = ok(
+            await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+        )
         ok(await memberships.assign(session, None, mia.id, team.id, TeamRole.member))
         user, _ = await users.create(session, "mia@example.org")
         member = await load_actor(session, user)

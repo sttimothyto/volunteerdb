@@ -28,9 +28,9 @@ async def test_coverage_counts_and_hole_first_sorting(database):
         ok(await teams.create(session, None, "Drama"))
         ok(await teams.update(session, None, choir.id, is_active=False))
 
-        lead = await volunteers.create(session, None, "Lea", "Der")
-        second = await volunteers.create(session, None, "Sec", "Ond")
-        member = await volunteers.create(session, None, "Mem", "Ber")
+        lead = ok(await volunteers.create(session, None, "Lea", "Der"))
+        second = ok(await volunteers.create(session, None, "Sec", "Ond"))
+        member = ok(await volunteers.create(session, None, "Mem", "Ber"))
         ok(await memberships.assign(session, None, lead.id, altar.id, TeamRole.leader))
         ok(
             await memberships.assign(
@@ -73,9 +73,9 @@ async def _parish(session):
     child = ok(await teams.create(session, None, "Music", parent_team_id=parent.id))
     other = ok(await teams.create(session, None, "Hospitality"))
 
-    on_parent = await volunteers.create(session, None, "Pat", "Parent")
-    on_child = await volunteers.create(session, None, "Chris", "Child")
-    on_other = await volunteers.create(session, None, "Ollie", "Other")
+    on_parent = ok(await volunteers.create(session, None, "Pat", "Parent"))
+    on_child = ok(await volunteers.create(session, None, "Chris", "Child"))
+    on_other = ok(await volunteers.create(session, None, "Ollie", "Other"))
     ok(
         await memberships.assign(
             session, None, on_parent.id, parent.id, TeamRole.leader

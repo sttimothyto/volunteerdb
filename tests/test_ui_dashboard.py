@@ -33,9 +33,11 @@ async def _parish(session):
     liturgy = ok(await teams.create(session, None, "Liturgy"))
     music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
 
-    lea = await volunteers.create(session, None, "Lea", "Der", "lea@example.org")
-    cora = await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
-    mel = await volunteers.create(session, None, "Mel", "Ember", "mel@example.org")
+    lea = ok(await volunteers.create(session, None, "Lea", "Der", "lea@example.org"))
+    cora = ok(
+        await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+    )
+    mel = ok(await volunteers.create(session, None, "Mel", "Ember", "mel@example.org"))
     ok(await memberships.assign(session, None, lea.id, liturgy.id, TeamRole.leader))
     ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
     ok(await memberships.assign(session, None, mel.id, music.id, TeamRole.member))

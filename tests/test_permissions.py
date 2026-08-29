@@ -30,14 +30,16 @@ async def parish(database):
             ("core", TeamRole.core),
             ("member", TeamRole.member),
         ]:
-            v = await volunteers.create(
-                session, None, name.title(), "Person", f"{name}@example.org"
+            v = ok(
+                await volunteers.create(
+                    session, None, name.title(), "Person", f"{name}@example.org"
+                )
             )
             ok(await memberships.assign(session, None, v.id, liturgy.id, role))
             people[name] = v
 
-        outsider = await volunteers.create(
-            session, None, "Out", "Sider", "out@example.org"
+        outsider = ok(
+            await volunteers.create(session, None, "Out", "Sider", "out@example.org")
         )
         ok(
             await memberships.assign(
@@ -164,8 +166,10 @@ async def test_invite_rights_reach_core_but_stop_at_plain_members(parish):
 
     # the case the parish actually has: Liturgy's people run its sub-teams
     async with db_session() as session:
-        singer = await volunteers.create(
-            session, None, "Singer", "Person", "sing@example.org"
+        singer = ok(
+            await volunteers.create(
+                session, None, "Singer", "Person", "sing@example.org"
+            )
         )
         ok(
             await memberships.assign(

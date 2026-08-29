@@ -40,8 +40,10 @@ async def _team(n: int = 2) -> tuple[int, list[int]]:
         team = ok(await teams.create(session, None, "Liturgy"))
         vids = []
         for i in range(n):
-            v = await volunteers.create(
-                session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
+            v = ok(
+                await volunteers.create(
+                    session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
+                )
             )
             ok(
                 await memberships.assign(
