@@ -12,24 +12,20 @@ from volunteerdb.db import db_session
 from volunteerdb.jobs import event_reminders
 from volunteerdb.models import TeamRole
 from volunteerdb.services import events as event_service
-from volunteerdb.services import mail, memberships, teams, volunteers
+from volunteerdb.services import memberships, teams, volunteers
 
 from tests import mint
+from tests.fakes import FailingMailer
 from tests.fp_helpers import ok
 
 TZ = ZoneInfo("America/Toronto")
 
 
 @pytest.fixture
-def sent_mail(monkeypatch):
-    sent: list[tuple[str, str, str]] = []
-
-    async def fake(to: str, subject: str, text_body: str) -> bool:
-        sent.append((to, subject, text_body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake)
-    return sent
+def sent_mail(env) -> list[tuple[str, str, str]]:
+    """What the job mailed: the Env's recording mailer."""
+    env.mailer.sent.clear()
+    return env.mailer.sent
 
 
 def _at(days_ahead: int, hour: int) -> datetime:
@@ -212,29 +208,15 @@ async def test_one_email_per_person_covers_all_events(database, sent_mail, env):
     assert "Mass+5" in sent_mail[0][2] and "Mass+10" in sent_mail[0][2]
 
 
-async def test_failed_send_retries_next_night(database, sent_mail, monkeypatch, env):
+async def test_failed_send_retries_next_night(database, sent_mail, env):
     team_id, vids = await _team()
     event_id = await _event(team_id, days_ahead=10)
     await _assign(event_id, vids[1])
 
-    async def failing(to: str, subject: str, text_body: str) -> bool:
-        return False
+    await event_reminders.main(env.with_(mailer=FailingMailer()), today=date.today())
 
-    monkeypatch.setattr(mail, "send_email", failing)
-    await event_reminders.main(env, today=date.today())
-
-    monkeypatch.setattr(
-        mail,
-        "send_email",
-        lambda to, subject, text_body: _record(sent_mail, to, subject, text_body),
-    )
     await event_reminders.main(env, today=date.today())
     assert len(sent_mail) == 1, "stamps stayed NULL, so the notice retried"
-
-
-async def _record(sent, to, subject, body) -> bool:
-    sent.append((to, subject, body))
-    return True
 
 
 async def test_exclusions(database, sent_mail, env):
@@ -285,8 +267,7 @@ async def test_link_only_with_public_base_url(database, sent_mail, monkeypatch, 
     patched = config.settings().model_copy(
         update={"public_base_url": "https://vdb.example.org"}
     )
-    monkeypatch.setattr(event_reminders, "settings", lambda: patched)
-    await event_reminders.main(env, today=date.today())
+    await event_reminders.main(env.with_(settings=patched), today=date.today())
     assert "https://vdb.example.org/events" in sent_mail[0][2]
 
 

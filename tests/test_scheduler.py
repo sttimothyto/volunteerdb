@@ -7,14 +7,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import sqlalchemy as sa
+from nicegui import app
 
 from volunteerdb import scheduler
 from volunteerdb.config import settings
 from volunteerdb.db import db_session
 from volunteerdb.jobs import job_lock
 from volunteerdb.models import JobRun
-from volunteerdb.scheduler import JobState, is_due, is_due_every
-from volunteerdb.services import mail
+from volunteerdb.scheduler import JobState, Scheduler, is_due, is_due_every
 
 TZ = ZoneInfo("America/Toronto")
 AT = time(4, 0)
@@ -26,40 +26,29 @@ def _now(day: date, hh: int = 4, mm: int = 0) -> datetime:
     return datetime.combine(day, time(hh, mm), TZ)
 
 
-@pytest.fixture(autouse=True)
-def reset_scheduler(env):
-    """Scheduler state is module-global and would bleed across tests."""
-    scheduler._state.clear()
-    scheduler._task = None
-    scheduler._env = env
-    yield
-    scheduler._state.clear()
-    scheduler._task = None
-    scheduler._env = None
+@pytest.fixture
+def sched(env) -> Scheduler:
+    """A scheduler of its own around the test Env -- nothing is module-global
+    -- with the alert address pinned empty regardless of the dev .env."""
+    quiet = settings().model_copy(update={"alert_email": ""})
+    return Scheduler(env.with_(settings=quiet), jobs=())
+
+
+def _alerting(sched: Scheduler) -> None:
+    """Give the scheduler an alert address."""
+    loud = sched.env.settings.model_copy(update={"alert_email": "ops@example.org"})
+    sched.env = sched.env.with_(settings=loud)
 
 
 @pytest.fixture
-def quiet_settings(monkeypatch):
-    """Pin the scheduler-relevant settings regardless of the dev .env."""
-    patched = settings().model_copy(update={"alert_email": ""})
-    monkeypatch.setattr(scheduler, "settings", lambda: patched)
-    return patched
+def sent_mail(env) -> list[tuple[str, str, str]]:
+    """What the scheduler mailed: the Env's recording mailer."""
+    env.mailer.sent.clear()
+    return env.mailer.sent
 
 
-@pytest.fixture
-def sent_mail(monkeypatch):
-    sent: list[tuple[str, str, str]] = []
-
-    async def fake(to: str, subject: str, text_body: str) -> bool:
-        sent.append((to, subject, text_body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake)
-    return sent
-
-
-def _patch_jobs(monkeypatch, behaviors: dict[str, int | Exception]) -> list[str]:
-    """Replace the registry with stub jobs; returns the call-order log.
+def _patch_jobs(sched: Scheduler, behaviors: dict[str, int | Exception]) -> list[str]:
+    """Give the scheduler stub jobs; returns the call-order log.
 
     All stubs reuse the real event_reminders_at setting (04:00) — tests pick
     `now` relative to that.
@@ -75,13 +64,9 @@ def _patch_jobs(monkeypatch, behaviors: dict[str, int | Exception]) -> list[str]
 
         return run
 
-    monkeypatch.setattr(
-        scheduler,
-        "JOBS",
-        tuple(
-            scheduler.Job(name, "event_reminders_at", make(name, outcome))
-            for name, outcome in behaviors.items()
-        ),
+    sched.jobs = tuple(
+        scheduler.Job(name, "event_reminders_at", make(name, outcome))
+        for name, outcome in behaviors.items()
     )
     return calls
 
@@ -142,12 +127,10 @@ def test_attempt_budget_is_per_day():
 # --- ticking ------------------------------------------------------------------
 
 
-async def test_tick_runs_due_jobs_in_registry_order(
-    database, monkeypatch, quiet_settings
-):
-    calls = _patch_jobs(monkeypatch, {"a": 0, "b": 0, "c": 0})
-    await scheduler._load_state()
-    await scheduler._tick(_now(TODAY, 5))
+async def test_tick_runs_due_jobs_in_registry_order(database, sched):
+    calls = _patch_jobs(sched, {"a": 0, "b": 0, "c": 0})
+    await sched.load_state()
+    await sched.tick(_now(TODAY, 5))
     assert calls == ["a", "b", "c"]
     async with db_session() as session:
         rows = (await session.scalars(sa.select(JobRun))).all()
@@ -155,29 +138,25 @@ async def test_tick_runs_due_jobs_in_registry_order(
         name: (TODAY, 0) for name in "abc"
     }
     # a later tick the same day is a no-op
-    await scheduler._tick(_now(TODAY, 6))
+    await sched.tick(_now(TODAY, 6))
     assert calls == ["a", "b", "c"]
 
 
-async def test_restart_catches_up_a_missed_night(database, monkeypatch, quiet_settings):
-    calls = _patch_jobs(monkeypatch, {"a": 0})
-    await scheduler._record(
+async def test_restart_catches_up_a_missed_night(database, sched):
+    calls = _patch_jobs(sched, {"a": 0})
+    await sched.record(
         "a", exit_code=0, success_on=YESTERDAY, attempted_at=_now(YESTERDAY)
     )
-    await scheduler._load_state()  # what start() does after a restart
-    await scheduler._tick(_now(TODAY, 10))
+    await sched.load_state()  # what start() does after a restart
+    await sched.tick(_now(TODAY, 10))
     assert calls == ["a"]
 
 
-async def test_restart_after_success_does_not_rerun(
-    database, monkeypatch, quiet_settings
-):
-    calls = _patch_jobs(monkeypatch, {"a": 0})
-    await scheduler._record(
-        "a", exit_code=0, success_on=TODAY, attempted_at=_now(TODAY)
-    )
-    await scheduler._load_state()
-    await scheduler._tick(_now(TODAY, 5))
+async def test_restart_after_success_does_not_rerun(database, sched):
+    calls = _patch_jobs(sched, {"a": 0})
+    await sched.record("a", exit_code=0, success_on=TODAY, attempted_at=_now(TODAY))
+    await sched.load_state()
+    await sched.tick(_now(TODAY, 5))
     assert calls == []
 
 
@@ -185,14 +164,13 @@ async def test_restart_after_success_does_not_rerun(
 
 
 async def test_failure_records_alerts_and_retries(
-    database, monkeypatch, sent_mail, log_records
+    database, sent_mail, log_records, sched
 ):
-    patched = settings().model_copy(update={"alert_email": "ops@example.org"})
-    monkeypatch.setattr(scheduler, "settings", lambda: patched)
-    calls = _patch_jobs(monkeypatch, {"a": 1})
-    await scheduler._load_state()
+    _alerting(sched)
+    calls = _patch_jobs(sched, {"a": 1})
+    await sched.load_state()
 
-    await scheduler._tick(_now(TODAY, 4, 0))
+    await sched.tick(_now(TODAY, 4, 0))
     assert calls == ["a"]
     row = await _row("a")
     assert (row.last_exit_code, row.last_success_on) == (1, None)
@@ -201,53 +179,49 @@ async def test_failure_records_alerts_and_retries(
     ]
     assert any(e["event"] == "scheduler.job_failed" for e in log_records)
 
-    await scheduler._tick(_now(TODAY, 4, 15))  # inside RETRY_DELAY
+    await sched.tick(_now(TODAY, 4, 15))  # inside RETRY_DELAY
     assert len(calls) == 1
-    await scheduler._tick(_now(TODAY, 4, 31))
+    await sched.tick(_now(TODAY, 4, 31))
     assert len(calls) == 2
-    await scheduler._tick(_now(TODAY, 5, 2))
+    await sched.tick(_now(TODAY, 5, 2))
     assert len(calls) == 3
-    await scheduler._tick(_now(TODAY, 6, 0))  # budget spent for the day
+    await sched.tick(_now(TODAY, 6, 0))  # budget spent for the day
     assert len(calls) == 3
     assert len(sent_mail) == 1, (
         "three retries, one alert: the second and third say nothing the first "
         "did not, and this instance sends on a 1,000-a-month allowance"
     )
 
-    await scheduler._tick(_now(TODAY + timedelta(days=1), 4, 0))
+    await sched.tick(_now(TODAY + timedelta(days=1), 4, 0))
     assert len(calls) == 4
     assert len(sent_mail) == 2, "a new parish day alerts afresh"
 
 
-async def test_failure_without_alert_email_sends_nothing(
-    database, monkeypatch, quiet_settings, sent_mail
-):
-    _patch_jobs(monkeypatch, {"a": 1})
-    await scheduler._load_state()
-    await scheduler._tick(_now(TODAY, 5))
+async def test_failure_without_alert_email_sends_nothing(database, sent_mail, sched):
+    _patch_jobs(sched, {"a": 1})
+    await sched.load_state()
+    await sched.tick(_now(TODAY, 5))
     assert sent_mail == []
 
 
-async def test_exception_is_a_failure(database, monkeypatch, quiet_settings):
-    calls = _patch_jobs(monkeypatch, {"a": RuntimeError("boom")})
-    await scheduler._load_state()
-    await scheduler._tick(_now(TODAY, 4, 0))
+async def test_exception_is_a_failure(database, sched):
+    calls = _patch_jobs(sched, {"a": RuntimeError("boom")})
+    await sched.load_state()
+    await sched.tick(_now(TODAY, 4, 0))
     row = await _row("a")
     assert row.last_exit_code == scheduler.EXIT_EXCEPTION
     assert row.last_success_on is None
-    await scheduler._tick(_now(TODAY, 4, 10))  # loop state intact: delay holds
+    await sched.tick(_now(TODAY, 4, 10))  # loop state intact: delay holds
     assert len(calls) == 1
 
 
-async def test_failure_does_not_erase_last_success(
-    database, monkeypatch, quiet_settings
-):
-    _patch_jobs(monkeypatch, {"a": 1})
-    await scheduler._record(
+async def test_failure_does_not_erase_last_success(database, sched):
+    _patch_jobs(sched, {"a": 1})
+    await sched.record(
         "a", exit_code=0, success_on=YESTERDAY, attempted_at=_now(YESTERDAY)
     )
-    await scheduler._load_state()
-    await scheduler._tick(_now(TODAY, 5))
+    await sched.load_state()
+    await sched.tick(_now(TODAY, 5))
     row = await _row("a")
     assert (row.last_exit_code, row.last_success_on) == (1, YESTERDAY)
 
@@ -256,7 +230,7 @@ async def test_failure_does_not_erase_last_success(
 
 
 def _patch_interval_job(
-    monkeypatch, outcome: int | Exception, every: timedelta = timedelta(minutes=30)
+    sched: Scheduler, outcome: int | Exception, every: timedelta = timedelta(minutes=30)
 ) -> list[str]:
     calls: list[str] = []
 
@@ -266,9 +240,7 @@ def _patch_interval_job(
             raise outcome
         return outcome
 
-    monkeypatch.setattr(
-        scheduler, "JOBS", (scheduler.Job("i", None, run, every=every),)
-    )
+    sched.jobs = (scheduler.Job("i", None, run, every=every),)
     return calls
 
 
@@ -282,64 +254,59 @@ def test_interval_due_predicate():
     assert is_due_every(every, ran, _now(TODAY, 4, 30))
 
 
-async def test_interval_job_runs_on_its_cadence(database, monkeypatch, quiet_settings):
-    calls = _patch_interval_job(monkeypatch, 0)
-    await scheduler._load_state()
-    await scheduler._tick(_now(TODAY, 3, 0))  # the nightly time gate is not its
+async def test_interval_job_runs_on_its_cadence(database, sched):
+    calls = _patch_interval_job(sched, 0)
+    await sched.load_state()
+    await sched.tick(_now(TODAY, 3, 0))  # the nightly time gate is not its
     assert calls == ["i"]
-    await scheduler._tick(_now(TODAY, 3, 29))
+    await sched.tick(_now(TODAY, 3, 29))
     assert calls == ["i"]
-    await scheduler._tick(_now(TODAY, 3, 30))
+    await sched.tick(_now(TODAY, 3, 30))
     assert calls == ["i", "i"]
 
 
-async def test_interval_pacing_survives_a_restart(
-    database, monkeypatch, quiet_settings
-):
-    calls = _patch_interval_job(monkeypatch, 0)
-    await scheduler._record(
+async def test_interval_pacing_survives_a_restart(database, sched):
+    calls = _patch_interval_job(sched, 0)
+    await sched.record(
         "i", exit_code=0, success_on=TODAY, attempted_at=_now(TODAY, 4, 0)
     )
-    await scheduler._load_state()  # hydrates last_attempt_at
-    await scheduler._tick(_now(TODAY, 4, 10))
+    await sched.load_state()  # hydrates last_attempt_at
+    await sched.tick(_now(TODAY, 4, 10))
     assert calls == [], "a crash-looping container cannot hammer the API"
-    await scheduler._tick(_now(TODAY, 4, 30))
+    await sched.tick(_now(TODAY, 4, 30))
     assert calls == ["i"]
 
 
 async def test_interval_failure_alerts_once_a_day_but_keeps_retrying(
-    database, monkeypatch, sent_mail
+    database, sent_mail, sched
 ):
-    patched = settings().model_copy(update={"alert_email": "ops@example.org"})
-    monkeypatch.setattr(scheduler, "settings", lambda: patched)
-    calls = _patch_interval_job(monkeypatch, 1)
-    await scheduler._load_state()
-    await scheduler._tick(_now(TODAY, 4, 0))
-    await scheduler._tick(_now(TODAY, 4, 30))
-    await scheduler._tick(_now(TODAY, 5, 0))
+    _alerting(sched)
+    calls = _patch_interval_job(sched, 1)
+    await sched.load_state()
+    await sched.tick(_now(TODAY, 4, 0))
+    await sched.tick(_now(TODAY, 4, 30))
+    await sched.tick(_now(TODAY, 5, 0))
     assert len(calls) == 3, "MAX_ATTEMPTS_PER_DAY never throttles the cadence"
     assert [(to, subject) for to, subject, _ in sent_mail] == [
         ("ops@example.org", "[volunteerdb] i FAILED")
     ], "one alert for the day, not one per failure"
-    await scheduler._tick(_now(TODAY + timedelta(days=1), 4, 0))
+    await sched.tick(_now(TODAY + timedelta(days=1), 4, 0))
     assert len(sent_mail) == 2, "a new parish day alerts afresh"
 
 
 # --- the advisory job lock ----------------------------------------------------
 
 
-async def test_lock_holder_excludes_the_scheduler(
-    database, monkeypatch, quiet_settings
-):
-    calls = _patch_jobs(monkeypatch, {"a": 0})
-    await scheduler._load_state()
-    async with job_lock("a") as held:  # a manual `python -m` run in flight
+async def test_lock_holder_excludes_the_scheduler(database, sched):
+    calls = _patch_jobs(sched, {"a": 0})
+    await sched.load_state()
+    async with job_lock(sched.env, "a") as held:  # a manual `python -m` run in flight
         assert held
-        await scheduler._tick(_now(TODAY, 4, 30))
+        await sched.tick(_now(TODAY, 4, 30))
     assert calls == []
-    assert scheduler._state["a"].attempts == 0  # a lock skip burns no attempt
+    assert sched.state["a"].attempts == 0  # a lock skip burns no attempt
     assert await _row("a") is None
-    await scheduler._tick(_now(TODAY, 4, 31))  # released: next tick runs it
+    await sched.tick(_now(TODAY, 4, 31))  # released: next tick runs it
     assert calls == ["a"]
 
 
@@ -363,4 +330,6 @@ def test_registry_mixes_nightly_and_interval_jobs():
 
 
 async def test_create_app_does_not_start_scheduler(real_app_client):
-    assert scheduler._task is None
+    assert getattr(app.state, "scheduler", None) is None, (
+        "main.run builds and starts the loop; create_app() never does"
+    )

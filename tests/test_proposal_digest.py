@@ -19,9 +19,10 @@ from volunteerdb.models import (
     ProposalVoter,
     TeamRole,
 )
-from volunteerdb.services import elections, mail, memberships, teams, users, volunteers
+from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
+from tests.fakes import FailingMailer, RecordingMailer
 from tests.fp_helpers import ok
 
 TODAY = date(2026, 8, 10)  # nominating
@@ -112,21 +113,17 @@ async def _stamps(proposal_id: int) -> dict[int, tuple[bool, bool]]:
         }
 
 
-def _capture(monkeypatch, ok=True):
-    sent: list[tuple[str, str, str]] = []
-
-    async def fake(to: str, subject: str, text_body: str) -> bool:
-        sent.append((to, subject, text_body))
-        return ok
-
-    monkeypatch.setattr(mail, "send_email", fake)
-    return sent
+def _capture(env, ok=True):
+    """An Env whose mailer records (and, with ok=False, fails every send),
+    and the list it records into."""
+    mailer = RecordingMailer() if ok else FailingMailer()
+    return env.with_(mailer=mailer), mailer.sent
 
 
 async def test_added_notice_once_and_voting_notice_once(database, monkeypatch, env):
     ids = await _parish()
     pid = await _proposal(ids)
-    sent = _capture(monkeypatch)
+    env, sent = _capture(env)
 
     await proposal_digest.main(env, today=TODAY)
     assert {to for to, _, _ in sent} == {"lena@example.org", "cora@example.org"}, (
@@ -160,7 +157,7 @@ async def test_added_and_voting_same_night_is_one_combined_email(
 ):
     ids = await _parish()
     pid = await _proposal(ids)
-    sent = _capture(monkeypatch)
+    env, sent = _capture(env)
 
     await proposal_digest.main(env, today=VOTING_DAY)  # first run ever, already voting
     assert len([to for to, _, _ in sent if to == "lena@example.org"]) == 1
@@ -173,7 +170,7 @@ async def test_two_proposals_one_email(database, monkeypatch, env):
     ids = await _parish()
     await _proposal(ids, role=TeamRole.second)
     await _proposal(ids, role=TeamRole.leader)
-    sent = _capture(monkeypatch)
+    env, sent = _capture(env)
 
     await proposal_digest.main(env, today=TODAY)
     lena_mails = [b for to, _, b in sent if to == "lena@example.org"]
@@ -194,7 +191,7 @@ async def test_decided_and_concluded_proposals_stay_silent(database, monkeypatch
             .where(Proposal.id == cancelled)
             .values(status="cancelled", decided_at=sa.func.now())
         )
-    sent = _capture(monkeypatch)
+    env, sent = _capture(env)
 
     await proposal_digest.main(
         env, today=AFTER
@@ -208,12 +205,12 @@ async def test_decided_and_concluded_proposals_stay_silent(database, monkeypatch
 async def test_failed_send_leaves_stamps_for_retry(database, monkeypatch, env):
     ids = await _parish()
     pid = await _proposal(ids)
-    _capture(monkeypatch, ok=False)
+    env, _ = _capture(env, ok=False)
 
     await proposal_digest.main(env, today=TODAY)
     assert all(s == (False, False) for s in (await _stamps(pid)).values())
 
-    sent = _capture(monkeypatch, ok=True)
+    env, sent = _capture(env)
     await proposal_digest.main(env, today=TODAY)
     assert {to for to, _, _ in sent} == {"lena@example.org", "cora@example.org"}, (
         "the next night retries exactly the failed people"
@@ -223,7 +220,7 @@ async def test_failed_send_leaves_stamps_for_retry(database, monkeypatch, env):
 async def test_new_round_renotifies_its_fresh_roll(database, monkeypatch, env):
     ids = await _parish()
     pid = await _proposal(ids)
-    sent = _capture(monkeypatch)
+    env, sent = _capture(env)
     await proposal_digest.main(env, today=TODAY)
     sent.clear()
 

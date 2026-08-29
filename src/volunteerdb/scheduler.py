@@ -13,7 +13,7 @@ only removes 02:00-02:59, and even a removed wall time would just fire on
 the first tick after the gap.
 
 Failures (nonzero exit or an exception) log at ERROR, email
-settings().alert_email if set, and retry after RETRY_DELAY up to
+settings.alert_email if set, and retry after RETRY_DELAY up to
 MAX_ATTEMPTS_PER_DAY attempts per parish day. The mail is once per job per
 parish day even though the retries are not: three identical alerts for one
 broken job is not three times the information, and the mail allowance this
@@ -32,22 +32,28 @@ hydrated from job_run at startup so a crash-looping container cannot hammer
 an external API. (The once-a-day alert rule started here — a 30-minute job
 failing all day must not send 48 emails — and now covers the nightly jobs
 too.)
+
+The decisions are pure functions over values -- is_due, is_due_every,
+due_jobs, and the JobState transitions -- and one Scheduler object, built
+by main.run around the Env, owns the loop, the state and the task. Nothing
+here is module-global.
 """
 
+from __future__ import annotations
+
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from time import perf_counter
-from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 import structlog
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from .config import settings
-from .db import db_session
+from .config import Settings
+from .db import transaction
 from .env import Env
 from .jobs import (
     calendar_sync,
@@ -59,7 +65,6 @@ from .jobs import (
     task_force_cleanup,
 )
 from .models import JobRun
-from .services import mail
 
 logger = structlog.get_logger(__name__)
 
@@ -95,9 +100,10 @@ JOBS: tuple[Job, ...] = (
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class JobState:
-    """In-memory mirror of job_run plus the day's retry bookkeeping."""
+    """What the scheduler knows about one job: the job_run row's facts plus
+    the day's retry bookkeeping. A value -- each transition returns a new one."""
 
     last_success_on: date | None = None
     attempts_on: date | None = None
@@ -106,19 +112,14 @@ class JobState:
     alerted_on: date | None = None  # one failure alert per job per parish day
 
 
-_task: asyncio.Task | None = None
-_state: dict[str, JobState] = {}
-# The Env the loop was started with; the jobs run with it. Goes with the two
-# above when the loop becomes an object (FUNCTIONAL_REFACTORING.md, Phase 6).
-_env: Env | None = None
+type SchedulerState = Mapping[str, JobState]
 
 
-def local_now() -> datetime:
-    return datetime.now(ZoneInfo(settings().timezone))
+# --- the decisions, pure ------------------------------------------------------
 
 
 def is_due(scheduled: time, state: JobState, now: datetime) -> bool:
-    """Whether a job should run at `now` (parish-local). Pure — unit-tested."""
+    """Whether a nightly job should run at `now` (parish-local)."""
     today = now.date()
     # >= not ==: a backwards clock jump must not re-run a finished night
     if state.last_success_on is not None and state.last_success_on >= today:
@@ -137,7 +138,7 @@ def is_due(scheduled: time, state: JobState, now: datetime) -> bool:
 
 
 def is_due_every(every: timedelta, state: JobState, now: datetime) -> bool:
-    """Whether an interval job should run at `now`. Pure — unit-tested.
+    """Whether an interval job should run at `now`.
 
     Keyed off the last *attempt*, not success: a failing job retries on its
     own cadence instead of hot-looping every tick, and MAX_ATTEMPTS_PER_DAY
@@ -145,103 +146,146 @@ def is_due_every(every: timedelta, state: JobState, now: datetime) -> bool:
     return state.last_attempt_at is None or now - state.last_attempt_at >= every
 
 
-async def _load_state() -> None:
-    _state.clear()
-    for job in JOBS:
-        _state[job.name] = JobState()
-    async with db_session() as session:
-        for row in await session.scalars(sa.select(JobRun)):
-            if row.job_name in _state:
-                _state[row.job_name].last_success_on = row.last_success_on
-                # interval jobs pace off this even across restarts, so a
-                # crash-looping container cannot hammer an external API
-                _state[row.job_name].last_attempt_at = row.last_attempt_at
+def job_due(job: Job, state: JobState, now: datetime, settings: Settings) -> bool:
+    if job.every is not None:
+        return is_due_every(job.every, state, now)
+    return is_due(getattr(settings, job.at_setting), state, now)
 
 
-async def _record(
-    name: str, *, exit_code: int, success_on: date | None, attempted_at: datetime
-) -> None:
-    # Core ON CONFLICT upsert: atomic insert-or-update in one statement
-    stmt = pg_insert(JobRun).values(
-        job_name=name,
-        last_success_on=success_on,
-        last_attempt_at=attempted_at,
-        last_exit_code=exit_code,
+def due_jobs(
+    jobs: Sequence[Job], state: SchedulerState, now: datetime, settings: Settings
+) -> tuple[Job, ...]:
+    """The jobs a tick at `now` runs, in registry order."""
+    return tuple(
+        job
+        for job in jobs
+        if job_due(job, state.get(job.name, JobState()), now, settings)
     )
-    updates = {
-        "last_attempt_at": stmt.excluded.last_attempt_at,
-        "last_exit_code": stmt.excluded.last_exit_code,
-    }
-    if success_on is not None:  # a failure must not erase the last success
-        updates["last_success_on"] = stmt.excluded.last_success_on
-    async with db_session() as session:
-        await session.execute(
-            stmt.on_conflict_do_update(index_elements=["job_name"], set_=updates)
+
+
+def attempted(state: JobState, now: datetime) -> JobState:
+    """The state after a run began at `now`: the day's attempt counter."""
+    if state.attempts_on != now.date():
+        state = replace(state, attempts_on=now.date(), attempts=0)
+    return replace(state, attempts=state.attempts + 1, last_attempt_at=now)
+
+
+def succeeded(state: JobState, now: datetime) -> JobState:
+    return replace(state, last_success_on=now.date())
+
+
+def alerted(state: JobState, now: datetime) -> JobState:
+    return replace(state, alerted_on=now.date())
+
+
+def alert_message(
+    job: Job, exit_code: int, attempt: int, now: datetime
+) -> tuple[str, str]:
+    """The failure alert's subject and body."""
+    when = f"{now:%Y-%m-%d %H:%M %Z}"
+    if job.every is None:
+        return (
+            f"[volunteerdb] nightly {job.name} FAILED",
+            f"Job {job.name} failed (exit {exit_code}, attempt "
+            f"{attempt}/{MAX_ATTEMPTS_PER_DAY}) at {when}.\n"
+            f"It retries after {RETRY_DELAY // timedelta(minutes=1)} minutes, up to "
+            f"{MAX_ATTEMPTS_PER_DAY} times a day.\n"
+            "This is the only alert for this job today — a further failure will "
+            "log, not mail.\n"
+            "Details: journalctl -u volunteerdb-app\n",
         )
-
-
-async def _alert(name: str, exit_code: int, attempt: int) -> None:
-    to = settings().alert_email
-    if not to:
-        return
-    await mail.send_email(  # never raises
-        to,
-        f"[volunteerdb] nightly {name} FAILED",
-        f"Job {name} failed (exit {exit_code}, attempt "
-        f"{attempt}/{MAX_ATTEMPTS_PER_DAY}) at {local_now():%Y-%m-%d %H:%M %Z}.\n"
-        f"It retries after {RETRY_DELAY // timedelta(minutes=1)} minutes, up to "
-        f"{MAX_ATTEMPTS_PER_DAY} times a day.\n"
-        "This is the only alert for this job today — a further failure will "
-        "log, not mail.\n"
-        "Details: journalctl -u volunteerdb-app\n",
-    )
-
-
-async def _alert_interval(name: str, exit_code: int, every: timedelta) -> None:
-    to = settings().alert_email
-    if not to:
-        return
-    await mail.send_email(  # never raises
-        to,
-        f"[volunteerdb] {name} FAILED",
-        f"Job {name} failed (exit {exit_code}) at "
-        f"{local_now():%Y-%m-%d %H:%M %Z}.\n"
-        f"It runs every {every // timedelta(minutes=1)} minutes and keeps "
+    return (
+        f"[volunteerdb] {job.name} FAILED",
+        f"Job {job.name} failed (exit {exit_code}) at {when}.\n"
+        f"It runs every {job.every // timedelta(minutes=1)} minutes and keeps "
         "retrying; this alert repeats at most once per day.\n"
         "Details: journalctl -u volunteerdb-app\n",
     )
 
 
-async def _run_job(job: Job, now: datetime) -> None:
-    st = _state[job.name]
-    async with job_lock(job.name) as acquired:
-        if not acquired:
-            # a manual `python -m` run is in flight; not an attempt
-            logger.warning("scheduler.job_skipped_locked", job=job.name)
-            return
-        if st.attempts_on != now.date():
-            st.attempts_on, st.attempts = now.date(), 0
-        st.attempts += 1
-        st.last_attempt_at = now
-        # audit=True: ranks at AUDIT, so job runs are visible at the
-        # production default verbosity (INFO would be filtered out)
-        logger.info(
-            "scheduler.job_started", job=job.name, attempt=st.attempts, audit=True
+# --- the loop ---------------------------------------------------------------
+
+
+class Scheduler:
+    """The one loop: owns its task, its state and the Env its jobs run with.
+    main.run builds it; tests build their own around a test Env."""
+
+    def __init__(self, env: Env, jobs: Sequence[Job] = JOBS) -> None:
+        self.env = env
+        self.jobs = tuple(jobs)
+        self.state: dict[str, JobState] = {}
+        self._task: asyncio.Task | None = None
+
+    def local_now(self) -> datetime:
+        return self.env.clock.now().astimezone(self.env.tz)
+
+    async def load_state(self) -> None:
+        """job_run, hydrated: the last success, and -- for the interval jobs'
+        pacing across restarts -- the last attempt."""
+        self.state = {job.name: JobState() for job in self.jobs}
+        async with transaction(self.env, None) as session:
+            for row in await session.scalars(sa.select(JobRun)):
+                if row.job_name in self.state:
+                    self.state[row.job_name] = replace(
+                        self.state[row.job_name],
+                        last_success_on=row.last_success_on,
+                        last_attempt_at=row.last_attempt_at,
+                    )
+
+    async def record(
+        self,
+        name: str,
+        *,
+        exit_code: int,
+        success_on: date | None,
+        attempted_at: datetime,
+    ) -> None:
+        # Core ON CONFLICT upsert: atomic insert-or-update in one statement
+        stmt = pg_insert(JobRun).values(
+            job_name=name,
+            last_success_on=success_on,
+            last_attempt_at=attempted_at,
+            last_exit_code=exit_code,
         )
-        started = perf_counter()
-        try:
-            assert _env is not None, "start(env) was never called"
-            code = await job.run(_env)
-        except Exception:
-            logger.exception("scheduler.job_crashed", job=job.name)
-            code = EXIT_EXCEPTION
-    ms = round((perf_counter() - started) * 1000)
-    if code == 0:
-        st.last_success_on = now.date()
-        await _record(job.name, exit_code=0, success_on=now.date(), attempted_at=now)
-        logger.info("scheduler.job_succeeded", job=job.name, ms=ms, audit=True)
-    else:
-        await _record(job.name, exit_code=code, success_on=None, attempted_at=now)
+        updates = {
+            "last_attempt_at": stmt.excluded.last_attempt_at,
+            "last_exit_code": stmt.excluded.last_exit_code,
+        }
+        if success_on is not None:  # a failure must not erase the last success
+            updates["last_success_on"] = stmt.excluded.last_success_on
+        async with transaction(self.env, None) as session:
+            await session.execute(
+                stmt.on_conflict_do_update(index_elements=["job_name"], set_=updates)
+            )
+
+    async def run_job(self, job: Job, now: datetime) -> None:
+        async with job_lock(self.env, job.name) as acquired:
+            if not acquired:
+                # a manual `python -m` run is in flight; not an attempt
+                logger.warning("scheduler.job_skipped_locked", job=job.name)
+                return
+            st = attempted(self.state.get(job.name, JobState()), now)
+            self.state[job.name] = st
+            # audit=True: ranks at AUDIT, so job runs are visible at the
+            # production default verbosity (INFO would be filtered out)
+            logger.info(
+                "scheduler.job_started", job=job.name, attempt=st.attempts, audit=True
+            )
+            started = perf_counter()
+            try:
+                code = await job.run(self.env)
+            except Exception:
+                logger.exception("scheduler.job_crashed", job=job.name)
+                code = EXIT_EXCEPTION
+        ms = round((perf_counter() - started) * 1000)
+        if code == 0:
+            self.state[job.name] = succeeded(st, now)
+            await self.record(
+                job.name, exit_code=0, success_on=now.date(), attempted_at=now
+            )
+            logger.info("scheduler.job_succeeded", job=job.name, ms=ms, audit=True)
+            return
+        await self.record(job.name, exit_code=code, success_on=None, attempted_at=now)
         logger.error(
             "scheduler.job_failed",
             job=job.name,
@@ -255,56 +299,48 @@ async def _run_job(job: Job, now: datetime) -> None:
         # 21, out of a 1,000-a-month allowance, spent saying the same thing.
         # The retries still happen and still log; only the mail is deduplicated.
         if st.alerted_on != now.date():
-            st.alerted_on = now.date()
-            if job.every is None:
-                await _alert(job.name, code, st.attempts)
-            else:
-                await _alert_interval(job.name, code, job.every)
+            self.state[job.name] = alerted(st, now)
+            to = self.env.settings.alert_email
+            if to:
+                subject, body = alert_message(job, code, st.attempts, now)
+                await self.env.mailer.send(to, subject, body)  # never raises
 
+    async def tick(self, now: datetime) -> None:
+        for job in due_jobs(self.jobs, self.state, now, self.env.settings):
+            await self.run_job(job, now)  # sequential: app jobs never overlap
 
-def _job_due(job: Job, now: datetime) -> bool:
-    if job.every is not None:
-        return is_due_every(job.every, _state[job.name], now)
-    return is_due(getattr(settings(), job.at_setting), _state[job.name], now)
+    async def _loop(self) -> None:
+        loaded = False
+        while True:
+            try:
+                if not loaded:  # retried each tick until the DB answers
+                    await self.load_state()
+                    loaded = True
+                    logger.info(
+                        "scheduler.started",
+                        jobs=[j.name for j in self.jobs],
+                        timezone=self.env.settings.timezone,
+                        audit=True,
+                    )
+                await self.tick(self.local_now())
+            except Exception:  # a broken tick must never kill the loop
+                logger.exception("scheduler.tick_failed")
+            await asyncio.sleep(TICK_SECONDS)
 
+    def start(self) -> None:
+        """Idempotent; registered as a NiceGUI startup hook (main.run)."""
+        if self._task is None:
+            self._task = asyncio.get_running_loop().create_task(
+                self._loop(), name="vdb-scheduler"
+            )
 
-async def _tick(now: datetime) -> None:
-    for job in JOBS:  # sequential: app jobs never overlap each other
-        if _job_due(job, now):
-            await _run_job(job, now)
+    @property
+    def running(self) -> bool:
+        return self._task is not None
 
-
-async def _loop() -> None:
-    loaded = False
-    while True:
-        try:
-            if not loaded:  # retried each tick until the DB answers
-                await _load_state()
-                loaded = True
-                logger.info(
-                    "scheduler.started",
-                    jobs=[j.name for j in JOBS],
-                    timezone=settings().timezone,
-                    audit=True,
-                )
-            await _tick(local_now())
-        except Exception:  # a broken tick must never kill the loop
-            logger.exception("scheduler.tick_failed")
-        await asyncio.sleep(TICK_SECONDS)
-
-
-def start(env: Env) -> None:
-    """Idempotent; registered as a NiceGUI startup hook (main.run)."""
-    global _task, _env
-    _env = env
-    if _task is None:
-        _task = asyncio.get_running_loop().create_task(_loop(), name="vdb-scheduler")
-
-
-async def stop() -> None:
-    global _task
-    if _task is not None:
-        _task.cancel()
-        with suppress(asyncio.CancelledError):
-            await _task
-        _task = None
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._task
+            self._task = None

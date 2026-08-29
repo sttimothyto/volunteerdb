@@ -6,8 +6,11 @@ simulated app), so a page's mail lands in SIM_MAILER.sent whichever way it
 was sent -- through the effect interpreter or, during the transition, the
 mail.send_email shim -- and a test reads it back from the one place."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
+
+import httpx
 
 
 class FakeClock:
@@ -55,6 +58,36 @@ class RecordingMailer:
     async def send(self, to: str, subject: str, body: str) -> bool:
         self.sent.append((to, subject, body))
         return True
+
+
+class FailingMailer(RecordingMailer):
+    """Records, and reports every send as failed."""
+
+    async def send(self, to: str, subject: str, body: str) -> bool:
+        await super().send(to, subject, body)
+        return False
+
+
+class FakeHttp:
+    """env.HttpClients whose every client is routed through a MockTransport
+    (the test_gsheets.py idiom), recording the requests."""
+
+    def __init__(self, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+        self.handler = handler
+        self.seen: list[httpx.Request] = []
+
+    def client(
+        self, *, timeout: float = 10.0, follow_redirects: bool = False
+    ) -> httpx.AsyncClient:
+        def record(request: httpx.Request) -> httpx.Response:
+            self.seen.append(request)
+            return self.handler(request)
+
+        return httpx.AsyncClient(
+            transport=httpx.MockTransport(record),
+            timeout=timeout,
+            follow_redirects=follow_redirects,
+        )
 
 
 # The simulated app's mailer (tests/ui_sim_main.py builds its Env around it).

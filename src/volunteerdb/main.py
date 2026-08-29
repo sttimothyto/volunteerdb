@@ -283,8 +283,11 @@ def run() -> None:
     # Registered here, not in create_app(): tests boot create_app() and must
     # never start real job loops against the test database.
     if s.scheduler_enabled and not s.reload:
-        app.on_startup(lambda: scheduler.start(env))
-        app.on_shutdown(scheduler.stop)
+        # the one loop, built here around the one Env; the app object carries
+        # it the way it carries the Env, so a shutdown hook can find it
+        app.state.scheduler = scheduler.Scheduler(env)
+        app.on_startup(app.state.scheduler.start)
+        app.on_shutdown(app.state.scheduler.stop)
     elif s.scheduler_enabled:
         logger.info(
             "scheduler disabled under VDB_RELOAD — reload restarts would re-fire it",

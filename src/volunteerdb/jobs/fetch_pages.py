@@ -5,6 +5,7 @@ Each team is fetched in its own transaction with its own error handling, so
 one bad doc (deleted, made private, oversized) cannot poison the batch — it
 records status='error' on its team_page row, keeps the last good HTML, and
 the job carries on. Exit code 1 only for systemic failure (DB unreachable).
+The HTTP client is the Env's, so a test hands the job a mocked one.
 
 Usage: python -m volunteerdb.jobs.fetch_pages
 """
@@ -12,11 +13,10 @@ Usage: python -m volunteerdb.jobs.fetch_pages
 import asyncio
 import sys
 
-import httpx
 import sqlalchemy as sa
 
 from .. import env as env_mod
-from ..db import db_session
+from ..db import transaction
 from ..env import Env
 from ..log import init_logging
 from ..models import Team
@@ -26,7 +26,7 @@ from . import job_lock
 
 async def main(env: Env) -> int:
     init_logging()
-    async with db_session() as session:
+    async with transaction(env, None) as session:
         team_ids = list(
             await session.scalars(
                 sa.select(Team.id)
@@ -36,9 +36,9 @@ async def main(env: Env) -> int:
         )
 
     ok = failed = 0
-    async with httpx.AsyncClient() as client:
+    async with env.http.client() as client:
         for team_id in team_ids:
-            async with db_session() as session:
+            async with transaction(env, None) as session:
                 team = await session.get(Team, team_id)
                 if team is None or not team.home_doc_url:
                     continue  # changed while the job ran
@@ -59,11 +59,12 @@ async def main(env: Env) -> int:
 
 def cli() -> int:
     async def locked() -> int:
-        async with job_lock("fetch_pages") as acquired:
+        env = env_mod.build()
+        async with job_lock(env, "fetch_pages") as acquired:
             if not acquired:
                 print("skipped: another fetch_pages run holds the job lock")
                 return 0
-            return await main(env_mod.build())
+            return await main(env)
 
     return asyncio.run(locked())
 

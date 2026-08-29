@@ -7,21 +7,16 @@ from volunteerdb.jobs import fetch_pages
 from volunteerdb.models import TeamPage
 from volunteerdb.services import pages, teams
 
+from tests.fakes import FakeHttp
 from tests.fp_helpers import ok
 
 GOOD = "<html><head></head><body><p>Doc for {doc_id}</p></body></html>"
 
 
-def _mock_transport(monkeypatch, handler) -> None:
-    """Every AsyncClient the job constructs gets the mock transport
-    (the test_mail.py pattern)."""
-    real_client = httpx.AsyncClient
-
-    def factory(*args, **kwargs):
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return real_client(*args, **kwargs)
-
-    monkeypatch.setattr(fetch_pages.httpx, "AsyncClient", factory)
+def _mock_transport(env, handler):
+    """An Env whose HTTP clients are routed through the mock transport --
+    what the job fetches with."""
+    return env.with_(http=FakeHttp(handler))
 
 
 async def _team(name: str, doc_id: str | None, active: bool = True) -> int:
@@ -51,7 +46,7 @@ async def test_one_bad_doc_does_not_poison_the_batch(database, monkeypatch, env)
             return httpx.Response(500, text="boom")
         return httpx.Response(200, text=GOOD.format(doc_id=doc_id))
 
-    _mock_transport(monkeypatch, handler)
+    env = _mock_transport(env, handler)
     assert await fetch_pages.main(env) == 0, "per-team failures are not job failures"
 
     async with db_session() as session:
@@ -69,7 +64,7 @@ async def test_second_run_with_unchanged_docs_succeeds_and_keeps_pages(
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=GOOD.format(doc_id="gooddoc"))
 
-    _mock_transport(monkeypatch, handler)
+    env = _mock_transport(env, handler)
     assert await fetch_pages.main(env) == 0
     assert await fetch_pages.main(env) == 0, "an all-unchanged night is a success"
 
@@ -88,7 +83,7 @@ async def test_job_skips_inactive_and_doc_less_teams(database, monkeypatch, env)
         calls.append(str(request.url))
         return httpx.Response(200, text=GOOD.format(doc_id="x"))
 
-    _mock_transport(monkeypatch, handler)
+    env = _mock_transport(env, handler)
     assert await fetch_pages.main(env) == 0
 
     assert calls == [], "nothing to fetch"

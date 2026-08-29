@@ -77,16 +77,23 @@ PHASE_LABELS: dict[ProposalPhase, str] = {
 }
 
 
-def phase_of(proposal: Proposal, today: date) -> ProposalPhase | None:
-    """The open proposal's phase; None once decided. Deadlines are inclusive:
-    the seat nominates through the end of d1 and votes through the end of d2."""
-    if proposal.status != ProposalStatus.open.value:
-        return None
-    if today <= proposal.nomination_deadline:
+def phase_of_dates(
+    nomination_deadline: date, voting_deadline: date, today: date
+) -> ProposalPhase:
+    """An open proposal's phase from its deadlines. Inclusive: the seat
+    nominates through the end of d1 and votes through the end of d2."""
+    if today <= nomination_deadline:
         return ProposalPhase.nominating
-    if today <= proposal.voting_deadline:
+    if today <= voting_deadline:
         return ProposalPhase.voting
     return ProposalPhase.concluded
+
+
+def phase_of(proposal: Proposal, today: date) -> ProposalPhase | None:
+    """The open proposal's phase; None once decided."""
+    if proposal.status != ProposalStatus.open.value:
+        return None
+    return phase_of_dates(proposal.nomination_deadline, proposal.voting_deadline, today)
 
 
 def _require_phase(

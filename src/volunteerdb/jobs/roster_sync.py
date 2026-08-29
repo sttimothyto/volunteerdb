@@ -24,7 +24,7 @@ import sys
 import sqlalchemy as sa
 
 from .. import env as env_mod
-from ..db import db_session
+from ..db import transaction
 from ..env import Env
 from ..errors import External, message
 from ..fp import Err, Result
@@ -36,7 +36,7 @@ from ..services import teams as team_service
 from . import job_lock
 
 
-async def _syncable_teams() -> list[tuple[int, str, str | None]]:
+async def _syncable_teams(env: Env) -> list[tuple[int, str, str | None]]:
     """(team_id, display path, file_id) for every team that should have a sheet.
 
     A task-force meta team is a borrowed roster, not a ministry with its own
@@ -45,7 +45,7 @@ async def _syncable_teams() -> list[tuple[int, str, str | None]]:
     addresses — exactly the escalation actors.load_actor cuts out. Never
     give one a sheet.
     """
-    async with db_session() as session:
+    async with transaction(env, None) as session:
         tree = await team_service.tree(session)
         meta = await team_service.meta_team_ids(session)
         stored = {
@@ -78,7 +78,7 @@ async def main(env: Env) -> int:
         print("roster_sync: not configured (VDB_SHEETS_*) — nothing to do")
         return 0
 
-    teams = await _syncable_teams()
+    teams = await _syncable_teams(env)
     counts = {"synced": 0, "created": 0, "failed": 0}
 
     for team_id, path, file_id in teams:
@@ -129,11 +129,12 @@ async def main(env: Env) -> int:
 
 def cli() -> int:
     async def locked() -> int:
-        async with job_lock("roster_sync") as acquired:
+        env = env_mod.build()
+        async with job_lock(env, "roster_sync") as acquired:
             if not acquired:
                 print("skipped: another roster_sync run holds the job lock")
                 return 0
-            return await main(env_mod.build())
+            return await main(env)
 
     return asyncio.run(locked())
 
