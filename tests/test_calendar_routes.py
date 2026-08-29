@@ -39,15 +39,19 @@ async def _seed() -> dict:
         )
 
         async def event(team_id: int, title: str, day: int) -> int:
-            created = await event_service.create_event(
-                session,
-                None,
-                team_id=team_id,
-                title=title,
-                starts_at=_at(day, 10),
-                ends_at=_at(day, 12),
-                location="Main church",
-                created_by=None,
+            created = ok(
+                await event_service.create_event(
+                    session,
+                    None,
+                    team_id=team_id,
+                    title=title,
+                    starts_at=_at(day, 10),
+                    ends_at=_at(day, 12),
+                    location="Main church",
+                    created_by=None,
+                    tz=mint.tz(),
+                    series_id=mint.uuid(),
+                )
             )
             return created[0].id
 
@@ -55,10 +59,20 @@ async def _seed() -> dict:
         vespers = await event(liturgy.id, "Vespers", 8)
         practice = await event(choir.id, "Choir practice", 9)
         cancelled = await event(liturgy.id, "Cancelled thing", 10)
-        await event_service.cancel_event(session, None, cancelled, cancelled_by=None)
-        detail = await event_service.detail(session, None, mass)
-        await event_service.sign_up(
-            session, None, slot_id=detail.slots[0].slot.id, volunteer_id=mia.id
+        ok(
+            await event_service.cancel_event(
+                session, None, cancelled, cancelled_by=None, now=mint.now()
+            )
+        )
+        detail = ok(await event_service.detail(session, None, mass))
+        ok(
+            await event_service.sign_up(
+                session,
+                None,
+                slot_id=detail.slots[0].slot.id,
+                volunteer_id=mia.id,
+                now=mint.now(),
+            )
         )
         token = ok(
             await users.ensure_calendar_token(session, mia_u.id, token=mint.token())

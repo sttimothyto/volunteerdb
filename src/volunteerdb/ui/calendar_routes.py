@@ -60,9 +60,11 @@ async def parish_feed(request: Request) -> Response:
     base_url, host = _origin(request)
     from_, to = _window()
     async with db_session() as session:
-        entries = await event_service.calendar_entries(
-            session, None, scope="parish", from_=from_, to=to
-        )
+        entries = (
+            await event_service.calendar_entries(
+                session, None, scope="parish", from_=from_, to=to
+            )
+        ).unwrap()
     body = ics.render(entries, name=parish_feed_name(), host=host, base_url=base_url)
     return Response(content=body, media_type=MEDIA_TYPE, headers=PARISH_CACHE)
 
@@ -75,9 +77,11 @@ async def personal_feed(token: str, request: Request) -> Response:
         if user is None:
             raise HTTPException(404, "no such calendar")
         actor = await load_actor(session, user)
-        entries = await event_service.calendar_entries(
-            session, actor, scope="mine", from_=from_, to=to
-        )
+        entries = (
+            await event_service.calendar_entries(
+                session, actor, scope="mine", from_=from_, to=to
+            )
+        ).unwrap()
     body = ics.render(entries, name=personal_feed_name(), host=host, base_url=base_url)
     return Response(content=body, media_type=MEDIA_TYPE, headers=PERSONAL_CACHE)
 
@@ -89,9 +93,11 @@ async def personal_download(request: Request) -> Response:
         actor = await get_actor(session)
         if actor is None:
             raise HTTPException(401, "sign in to download your calendar")
-        entries = await event_service.calendar_entries(
-            session, actor, scope="mine", from_=from_, to=to
-        )
+        entries = (
+            await event_service.calendar_entries(
+                session, actor, scope="mine", from_=from_, to=to
+            )
+        ).unwrap()
     body = ics.render(entries, name=personal_feed_name(), host=host, base_url=base_url)
     return Response(
         content=body,

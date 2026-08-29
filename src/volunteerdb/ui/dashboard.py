@@ -4,6 +4,7 @@ from fastapi import Request
 from nicegui import ui
 
 from .. import query_lang
+from ..env import current as current_env
 from ..fp import Err
 from ..models import ROLE_LABELS
 from ..services import graph as graph_service
@@ -49,7 +50,9 @@ async def dashboard(request: Request, as_of: str = ""):
             if actor.volunteer_id
             else []
         )
-        figures = await stats_service.dashboard(session, actor, at=at)
+        figures = await stats_service.dashboard(
+            session, actor, at=at, now=current_env().clock.now()
+        )
         # band chips in the legend, for the viewers who see coloured dots at all
         bands = (
             (await workload_service.get_config(session)).bands

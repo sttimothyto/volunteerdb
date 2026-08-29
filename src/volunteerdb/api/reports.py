@@ -48,7 +48,9 @@ async def dashboard(ctx: CtxDep, as_of: AsOf) -> DashboardStatsOut:
     a caller without it, so this endpoint answers everyone and tells nobody
     anything they could not already reach by navigating.
     """
-    figures = await stats_service.dashboard(ctx.session, ctx.actor, at=as_of)
+    figures = await stats_service.dashboard(
+        ctx.session, ctx.actor, at=as_of, now=ctx.now
+    )
     return DashboardStatsOut.model_validate(figures)
 
 

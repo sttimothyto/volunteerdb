@@ -329,9 +329,11 @@ async def volunteer_hours(ctx: CtxDep, volunteer_id: int) -> VolunteerHoursOut:
     recorded an exception). Visible to whoever may view the full profile."""
     if await service.get(ctx.session, volunteer_id) is None:
         raise LookupError(f"volunteer {volunteer_id} not found")
-    summary = await event_service.hours_for_volunteer(
-        ctx.session, ctx.actor, volunteer_id
-    )
+    summary = (
+        await event_service.hours_for_volunteer(
+            ctx.session, ctx.actor, volunteer_id, now=ctx.now
+        )
+    ).unwrap()
     return VolunteerHoursOut(
         volunteer_id=volunteer_id,
         total_hours=float(summary.total_hours),

@@ -5,6 +5,7 @@ from nicegui import app, ui
 
 from .. import query_lang
 from ..env import current
+from ..env import current as current_env
 from ..fp import Err
 from ..log import audit_log
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
@@ -274,7 +275,11 @@ async def volunteer_detail(request: Request, volunteer_id: int):
         # scoped inside the service: only proposals this actor may see
         involvements = await elections_service.involving(session, actor, volunteer_id)
         hours = (
-            await event_service.hours_for_volunteer(session, actor, volunteer_id)
+            (
+                await event_service.hours_for_volunteer(
+                    session, actor, volunteer_id, now=current_env().clock.now()
+                )
+            ).unwrap()
             if can_view
             else None
         )

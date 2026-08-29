@@ -130,7 +130,9 @@ async def my_duties(ctx: CtxDep) -> list[MyDutyOut]:
     list, which had no endpoint. `GET /reports/dashboard` counts them; this
     names them."""
     require(ctx.actor.volunteer_id is not None, "see your own duties")
-    duties = await event_service.my_upcoming(ctx.session, ctx.actor.volunteer_id)
+    duties = await event_service.my_upcoming(
+        ctx.session, ctx.actor.volunteer_id, now=ctx.now
+    )
     return [
         MyDutyOut(
             assignment_id=d.assignment.id,
@@ -148,7 +150,7 @@ async def claimable(ctx: CtxDep) -> list[ClaimableSubOut]:
     """Open substitution calls the caller could take over: their own teams'
     events, minus the ones they already serve at."""
     require(ctx.actor.volunteer_id is not None, "claim a substitution")
-    subs = await event_service.claimable_subs(ctx.session, ctx.actor)
+    subs = await event_service.claimable_subs(ctx.session, ctx.actor, now=ctx.now)
     return [
         ClaimableSubOut(
             sub_request_id=c.sub.id,
@@ -181,14 +183,17 @@ async def similar(
     the same warning the create dialog gives.
     """
     require(ctx.actor.can_create_events, "create events")
-    hits = await event_service.similar_events(
-        ctx.session,
-        ctx.actor,
-        starts_at=starts_at,
-        ends_at=ends_at,
-        repeat_until=repeat_weekly_until,
-        location=location,
-    )
+    hits = (
+        await event_service.similar_events(
+            ctx.session,
+            ctx.actor,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            repeat_until=repeat_weekly_until,
+            location=location,
+            tz=ctx.env.tz,
+        )
+    ).unwrap()
     return [
         SimilarEventOut(
             starts_at=h.starts_at,
@@ -205,33 +210,41 @@ async def similar(
 async def create_event(ctx: CtxDep, data: EventCreateIn) -> list[EventOut]:
     """One event — or one per week through repeat_weekly_until (inclusive),
     each with its own copy of the slots."""
-    events = await event_service.create_event(
-        ctx.session,
-        ctx.actor,
-        team_id=data.team_id,
-        title=data.title,
-        starts_at=data.starts_at,
-        ends_at=data.ends_at,
-        description=data.description,
-        location=data.location,
-        slots=[
-            event_service.SlotInput(s.name, s.capacity, s.position, s.description)
-            for s in data.slots
-        ],
-        repeat_weekly_until=data.repeat_weekly_until,
-        created_by=ctx.actor.user.id,
-    )
+    events = (
+        await event_service.create_event(
+            ctx.session,
+            ctx.actor,
+            team_id=data.team_id,
+            title=data.title,
+            starts_at=data.starts_at,
+            ends_at=data.ends_at,
+            description=data.description,
+            location=data.location,
+            slots=[
+                event_service.SlotInput(s.name, s.capacity, s.position, s.description)
+                for s in data.slots
+            ],
+            repeat_weekly_until=data.repeat_weekly_until,
+            created_by=ctx.actor.user.id,
+            tz=ctx.env.tz,
+            series_id=ctx.env.rng.uuid(),
+        )
+    ).unwrap()
     return [EventOut.model_validate(e) for e in events]
 
 
 @router.get("/{event_id}")
 async def event_detail(ctx: CtxDep, event_id: int) -> EventDetailOut:
     event = await _get_or_404(ctx, event_id)
-    view = await event_service.detail(ctx.session, ctx.actor, event_id)
+    view = (await event_service.detail(ctx.session, ctx.actor, event_id)).unwrap()
     out = _detail_out(view, {a.id for _, a in view.open_subs})
-    if ctx.actor.can_manage_team(event.team_id) and event_service.is_past(event):
+    if ctx.actor.can_manage_team(event.team_id) and event_service.is_past(
+        event, now=ctx.now
+    ):
         if event.status == EventStatus.scheduled.value:
-            rows = await event_service.attendance_rows(ctx.session, ctx.actor, event_id)
+            rows = (
+                await event_service.attendance_rows(ctx.session, ctx.actor, event_id)
+            ).unwrap()
             out.attendance = [
                 AttendanceRowOut(
                     assignment_id=a.id,
@@ -253,17 +266,25 @@ async def event_detail(ctx: CtxDep, event_id: int) -> EventDetailOut:
 async def update_event(ctx: CtxDep, event_id: int, data: EventPatch) -> EventOut:
     """Edit details/times; allowed on past events (a corrected end time
     recomputes the auto hours) but not on cancelled ones."""
-    event = await event_service.update_event(
-        ctx.session, ctx.actor, event_id, **data.model_dump(exclude_unset=True)
-    )
+    event = (
+        await event_service.update_event(
+            ctx.session, ctx.actor, event_id, **data.model_dump(exclude_unset=True)
+        )
+    ).unwrap()
     return EventOut.model_validate(event)
 
 
 @router.post("/{event_id}/cancel")
 async def cancel_event(ctx: CtxDep, event_id: int) -> EventOut:
-    event, _emails = await event_service.cancel_event(
-        ctx.session, ctx.actor, event_id, cancelled_by=ctx.actor.user.id
-    )
+    event, _emails = (
+        await event_service.cancel_event(
+            ctx.session,
+            ctx.actor,
+            event_id,
+            cancelled_by=ctx.actor.user.id,
+            now=ctx.now,
+        )
+    ).unwrap()
     return EventOut.model_validate(event)
 
 
@@ -272,15 +293,18 @@ async def cancel_event(ctx: CtxDep, event_id: int) -> EventOut:
 
 @router.post("/{event_id}/slots", status_code=201)
 async def add_slot(ctx: CtxDep, event_id: int, data: EventSlotIn) -> EventSlotOut:
-    slot = await event_service.add_slot(
-        ctx.session,
-        ctx.actor,
-        event_id,
-        name=data.name,
-        capacity=data.capacity,
-        position=data.position,
-        description=data.description,
-    )
+    slot = (
+        await event_service.add_slot(
+            ctx.session,
+            ctx.actor,
+            event_id,
+            name=data.name,
+            capacity=data.capacity,
+            position=data.position,
+            description=data.description,
+            now=ctx.now,
+        )
+    ).unwrap()
     return EventSlotOut.model_validate(slot)
 
 
@@ -289,16 +313,24 @@ async def update_slot(
     ctx: CtxDep, event_id: int, slot_id: int, data: EventSlotPatch
 ) -> EventSlotOut:
     await _slot_of(ctx, event_id, slot_id)
-    slot = await event_service.update_slot(
-        ctx.session, ctx.actor, slot_id, **data.model_dump(exclude_unset=True)
-    )
+    slot = (
+        await event_service.update_slot(
+            ctx.session,
+            ctx.actor,
+            slot_id,
+            **data.model_dump(exclude_unset=True),
+            now=ctx.now,
+        )
+    ).unwrap()
     return EventSlotOut.model_validate(slot)
 
 
 @router.delete("/{event_id}/slots/{slot_id}", status_code=204)
 async def delete_slot(ctx: CtxDep, event_id: int, slot_id: int) -> None:
     await _slot_of(ctx, event_id, slot_id)
-    await event_service.delete_slot(ctx.session, ctx.actor, slot_id)
+    (
+        await event_service.delete_slot(ctx.session, ctx.actor, slot_id, now=ctx.now)
+    ).unwrap()
 
 
 async def _slot_of(ctx: CtxDep, event_id: int, slot_id: int) -> None:
@@ -315,14 +347,17 @@ async def set_rsvp(ctx: CtxDep, event_id: int, data: EventRsvpIn) -> None:
     """Idempotent overwrite of the caller's availability answer (membership
     of the event's team is enforced in the service)."""
     await _get_or_404(ctx, event_id)
-    await event_service.set_rsvp(
-        ctx.session,
-        ctx.actor,
-        event_id=event_id,
-        volunteer_id=ctx.actor.volunteer_id,
-        available=data.available,
-        note=data.note,
-    )
+    (
+        await event_service.set_rsvp(
+            ctx.session,
+            ctx.actor,
+            event_id=event_id,
+            volunteer_id=ctx.actor.volunteer_id,
+            available=data.available,
+            note=data.note,
+            now=ctx.now,
+        )
+    ).unwrap()
 
 
 @router.post("/{event_id}/slots/{slot_id}/assignments", status_code=201)
@@ -334,33 +369,42 @@ async def create_assignment(
     await _slot_of(ctx, event_id, slot_id)
     if data.volunteer_id is None:
         if data.repeat_series:
-            assignment, _ = await event_service.sign_up_series(
-                ctx.session,
-                ctx.actor,
-                slot_id=slot_id,
-                volunteer_id=ctx.actor.volunteer_id,
-                notify_7d=data.notify_7d,
-                notify_24h=data.notify_24h,
-            )
+            assignment, _ = (
+                await event_service.sign_up_series(
+                    ctx.session,
+                    ctx.actor,
+                    slot_id=slot_id,
+                    volunteer_id=ctx.actor.volunteer_id,
+                    notify_7d=data.notify_7d,
+                    notify_24h=data.notify_24h,
+                    now=ctx.now,
+                )
+            ).unwrap()
         else:
-            assignment = await event_service.sign_up(
-                ctx.session,
-                ctx.actor,
-                slot_id=slot_id,
-                volunteer_id=ctx.actor.volunteer_id,
-                notify_7d=data.notify_7d,
-                notify_24h=data.notify_24h,
-            )
+            assignment = (
+                await event_service.sign_up(
+                    ctx.session,
+                    ctx.actor,
+                    slot_id=slot_id,
+                    volunteer_id=ctx.actor.volunteer_id,
+                    notify_7d=data.notify_7d,
+                    notify_24h=data.notify_24h,
+                    now=ctx.now,
+                )
+            ).unwrap()
     else:
         if data.repeat_series:
             raise ValueError("repeat_series applies to self sign-ups only")
-        assignment = await event_service.assign(
-            ctx.session,
-            ctx.actor,
-            slot_id=slot_id,
-            volunteer_id=data.volunteer_id,
-            assigned_by=ctx.actor.user.id,
-        )
+        assignment = (
+            await event_service.assign(
+                ctx.session,
+                ctx.actor,
+                slot_id=slot_id,
+                volunteer_id=data.volunteer_id,
+                assigned_by=ctx.actor.user.id,
+                now=ctx.now,
+            )
+        ).unwrap()
     return EventAssignmentOut.model_validate(assignment)
 
 
@@ -368,7 +412,11 @@ async def create_assignment(
 async def remove_assignment(ctx: CtxDep, assignment_id: int) -> None:
     """Withdraw yourself, or (as a manager) remove anyone — future events
     only; past rosters are the attendance record."""
-    await event_service.remove_assignment(ctx.session, ctx.actor, assignment_id)
+    (
+        await event_service.remove_assignment(
+            ctx.session, ctx.actor, assignment_id, now=ctx.now
+        )
+    ).unwrap()
 
 
 # --- substitutions ------------------------------------------------------------
@@ -389,25 +437,31 @@ async def request_sub(
         or ctx.actor.can_manage_team(event.team_id),
         "ask for a substitute for someone else",
     )
-    sub = await event_service.request_sub(
-        ctx.session,
-        ctx.actor,
-        assignment_id=assignment_id,
-        requested_by=ctx.actor.user.id,
-        note=data.note,
-    )
+    sub = (
+        await event_service.request_sub(
+            ctx.session,
+            ctx.actor,
+            assignment_id=assignment_id,
+            requested_by=ctx.actor.user.id,
+            note=data.note,
+            now=ctx.now,
+        )
+    ).unwrap()
     return SubRequestOut.model_validate(sub)
 
 
 @router.post("/sub-requests/{sub_request_id}/claim")
 async def claim_sub(ctx: CtxDep, sub_request_id: int) -> SubRequestOut:
     """First-come claim; the assignment moves to the caller."""
-    sub, _assignment, _asker = await event_service.claim_sub(
-        ctx.session,
-        ctx.actor,
-        sub_request_id=sub_request_id,
-        volunteer_id=ctx.actor.volunteer_id,
-    )
+    sub, _assignment, _asker = (
+        await event_service.claim_sub(
+            ctx.session,
+            ctx.actor,
+            sub_request_id=sub_request_id,
+            volunteer_id=ctx.actor.volunteer_id,
+            now=ctx.now,
+        )
+    ).unwrap()
     return SubRequestOut.model_validate(sub)
 
 
@@ -416,7 +470,11 @@ async def cancel_sub(ctx: CtxDep, sub_request_id: int) -> SubRequestOut:
     sub = await ctx.session.get(EventSubRequest, sub_request_id)
     if sub is None:
         raise LookupError(f"substitute request {sub_request_id} not found")
-    sub = await event_service.cancel_sub(ctx.session, ctx.actor, sub_request_id)
+    sub = (
+        await event_service.cancel_sub(
+            ctx.session, ctx.actor, sub_request_id, now=ctx.now
+        )
+    ).unwrap()
     return SubRequestOut.model_validate(sub)
 
 
@@ -429,13 +487,16 @@ async def set_attendance(
 ) -> AttendanceRowOut:
     """Record an exception to auto attendance (nulls clear back to auto).
     Past, non-cancelled events only."""
-    assignment = await event_service.set_attendance(
-        ctx.session,
-        ctx.actor,
-        assignment_id=assignment_id,
-        attended=data.attended,
-        hours=Decimal(str(data.hours)) if data.hours is not None else None,
-    )
+    assignment = (
+        await event_service.set_attendance(
+            ctx.session,
+            ctx.actor,
+            assignment_id=assignment_id,
+            attended=data.attended,
+            hours=Decimal(str(data.hours)) if data.hours is not None else None,
+            now=ctx.now,
+        )
+    ).unwrap()
     event = await _get_or_404(ctx, assignment.event_id)
     attended, hours = event_service.effective(assignment, event)
     slot = await ctx.session.get(EventSlot, assignment.slot_id)
@@ -483,7 +544,9 @@ async def _task_force_out(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
 @router.get("/{event_id}/task-force")
 async def get_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
     """The task force behind this event, or null if one team staffs it alone."""
-    await event_service.visible(ctx.session, ctx.actor, event_id)  # authorizes
+    (
+        await event_service.visible(ctx.session, ctx.actor, event_id)
+    ).unwrap()  # authorizes
     return await _task_force_out(ctx, event_id)
 
 
@@ -539,13 +602,17 @@ async def substitute(
     volunteer must really be a member of the event's team, admin or not. Any
     open substitution request on the assignment is cancelled with it.
     """
-    assignment, _outgoing, _incoming = await event_service.substitute(
-        ctx.session,
-        ctx.actor,
-        assignment_id=assignment_id,
-        new_volunteer_id=data.volunteer_id,
-        acted_by=ctx.actor.user.id,
-    )
+    assignment, _outgoing, _incoming = (
+        await event_service.substitute(
+            ctx.session,
+            ctx.actor,
+            assignment_id=assignment_id,
+            new_volunteer_id=data.volunteer_id,
+            acted_by=ctx.actor.user.id,
+            now=ctx.now,
+            notify=ctx.env.notify,
+        )
+    ).unwrap()
     audit_log(
         "event.slot_handed_over",
         assignment_id=assignment_id,

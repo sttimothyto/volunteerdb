@@ -66,14 +66,18 @@ async def parish(database):
             )
         )
         start = datetime.now(UTC) + timedelta(days=7)
-        await events.create_event(
-            session,
-            None,
-            team_id=liturgy.id,
-            title="Sunday setup",
-            starts_at=start,
-            ends_at=start + timedelta(hours=2),
-            created_by=None,
+        ok(
+            await events.create_event(
+                session,
+                None,
+                team_id=liturgy.id,
+                title="Sunday setup",
+                starts_at=start,
+                ends_at=start + timedelta(hours=2),
+                created_by=None,
+                tz=mint.tz(),
+                series_id=mint.uuid(),
+            )
         )
         return {
             "liturgy": liturgy.id,
@@ -94,7 +98,7 @@ async def test_the_events_prologue_reads_the_team_table_once(parish):
         user = await users.get(session, parish["lena_u"])
         with count_sql(TEAM_TREE_SQL) as seen:
             actor = await load_actor(session, user)
-            await events.claimable_subs(session, actor)
+            await events.claimable_subs(session, actor, now=mint.now())
             await events.list_events(session, actor)
             await teams.tree(session)
         assert len(seen) == 1, f"the team tree was read {len(seen)} times, not once"

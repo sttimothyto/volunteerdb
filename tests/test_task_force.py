@@ -55,15 +55,19 @@ async def _parish() -> dict:
 
 async def _event(team_id: int, *, days_ahead: int = 7) -> int:
     async with db_session() as session:
-        created = await event_service.create_event(
-            session,
-            None,
-            team_id=team_id,
-            title="Parish Picnic",
-            starts_at=_at(days_ahead, 10),
-            ends_at=_at(days_ahead, 14),
-            location="Church grounds",
-            created_by=None,
+        created = ok(
+            await event_service.create_event(
+                session,
+                None,
+                team_id=team_id,
+                title="Parish Picnic",
+                starts_at=_at(days_ahead, 10),
+                ends_at=_at(days_ahead, 14),
+                location="Church grounds",
+                created_by=None,
+                tz=mint.tz(),
+                series_id=mint.uuid(),
+            )
         )
         return created[0].id
 
@@ -104,14 +108,18 @@ async def test_collaborator_members_can_sign_up(database):
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
-        detail = await event_service.detail(session, None, event_id)
-        with pytest.raises(ValueError, match="only members"):
+        detail = ok(await event_service.detail(session, None, event_id))
+        refused(
             await event_service.sign_up(
                 session,
                 None,
                 slot_id=detail.slots[0].slot.id,
                 volunteer_id=ids["oda"],
-            )
+                now=mint.now(),
+            ),
+            errors.Invalid,
+            match="only members",
+        )
     async with db_session() as session:
         await task_force.add_collaborating_team(
             session,
@@ -120,9 +128,15 @@ async def test_collaborator_members_can_sign_up(database):
             source_team_id=ids["choir"],
             created_by=None,
         )
-        detail = await event_service.detail(session, None, event_id)
-        a = await event_service.sign_up(
-            session, None, slot_id=detail.slots[0].slot.id, volunteer_id=ids["oda"]
+        detail = ok(await event_service.detail(session, None, event_id))
+        a = ok(
+            await event_service.sign_up(
+                session,
+                None,
+                slot_id=detail.slots[0].slot.id,
+                volunteer_id=ids["oda"],
+                now=mint.now(),
+            )
         )
         assert a.volunteer_id == ids["oda"]
 
@@ -201,16 +215,28 @@ async def test_teardown_restores_the_event_and_keeps_history(database, env):
             created_by=None,
         )
         meta_id = meta.id
-        detail = await event_service.detail(session, None, event_id)
-        await event_service.sign_up(
-            session, None, slot_id=detail.slots[0].slot.id, volunteer_id=ids["oda"]
+        detail = ok(await event_service.detail(session, None, event_id))
+        ok(
+            await event_service.sign_up(
+                session,
+                None,
+                slot_id=detail.slots[0].slot.id,
+                volunteer_id=ids["oda"],
+                now=mint.now(),
+            )
         )
         before_teardown = datetime.now(TZ)
     # push the event into the past so the cleanup job considers it due
     async with db_session() as session:
         past = _at(-3, 9)
-        await event_service.update_event(
-            session, None, event_id, starts_at=past, ends_at=past + timedelta(hours=2)
+        ok(
+            await event_service.update_event(
+                session,
+                None,
+                event_id,
+                starts_at=past,
+                ends_at=past + timedelta(hours=2),
+            )
         )
     assert await task_force_cleanup.main(env) == 0
 
@@ -221,7 +247,7 @@ async def test_teardown_restores_the_event_and_keeps_history(database, env):
         assert await teams.get(session, meta_id) is None, "the meta team is gone"
         assert await task_force.get_for_event(session, event_id) is None
 
-        detail = await event_service.detail(session, None, event_id)
+        detail = ok(await event_service.detail(session, None, event_id))
         assert [v.id for sv in detail.slots for _, v in sv.entries] == [ids["oda"]], (
             "the attendance record survived the teardown"
         )
@@ -240,7 +266,11 @@ async def test_cancelled_events_tear_down_too(database, env):
             source_team_id=ids["choir"],
             created_by=None,
         )
-        await event_service.cancel_event(session, None, event_id, cancelled_by=None)
+        ok(
+            await event_service.cancel_event(
+                session, None, event_id, cancelled_by=None, now=mint.now()
+            )
+        )
     assert await task_force_cleanup.main(env) == 0
     async with db_session() as session:
         assert await task_force.get_for_event(session, event_id) is None
@@ -271,8 +301,14 @@ async def test_adding_to_a_finished_event_is_refused(database):
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
         past = _at(-3, 9)
-        await event_service.update_event(
-            session, None, event_id, starts_at=past, ends_at=past + timedelta(hours=2)
+        ok(
+            await event_service.update_event(
+                session,
+                None,
+                event_id,
+                starts_at=past,
+                ends_at=past + timedelta(hours=2),
+            )
         )
         with pytest.raises(ValueError, match="already ended"):
             await task_force.add_collaborating_team(

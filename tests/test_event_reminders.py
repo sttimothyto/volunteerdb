@@ -14,6 +14,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import mail, memberships, teams, volunteers
 
+from tests import mint
 from tests.fp_helpers import ok
 
 TZ = ZoneInfo("America/Toronto")
@@ -60,14 +61,18 @@ async def _team(n: int = 2) -> tuple[int, list[int]]:
 
 async def _event(team_id: int, days_ahead: int, title: str = "Mass") -> int:
     async with db_session() as session:
-        created = await event_service.create_event(
-            session,
-            None,
-            team_id=team_id,
-            title=title,
-            starts_at=_at(days_ahead, 10),
-            ends_at=_at(days_ahead, 12),
-            created_by=None,
+        created = ok(
+            await event_service.create_event(
+                session,
+                None,
+                team_id=team_id,
+                title=title,
+                starts_at=_at(days_ahead, 10),
+                ends_at=_at(days_ahead, 12),
+                created_by=None,
+                tz=mint.tz(),
+                series_id=mint.uuid(),
+            )
         )
         return created[0].id
 
@@ -80,13 +85,16 @@ async def _assign(event_id: int, volunteer_id: int, *, notify_7d: bool = False) 
     later amounts to.
     """
     async with db_session() as session:
-        view = await event_service.detail(session, None, event_id)
-        a = await event_service.assign(
-            session,
-            None,
-            slot_id=view.slots[0].slot.id,
-            volunteer_id=volunteer_id,
-            assigned_by=None,
+        view = ok(await event_service.detail(session, None, event_id))
+        a = ok(
+            await event_service.assign(
+                session,
+                None,
+                slot_id=view.slots[0].slot.id,
+                volunteer_id=volunteer_id,
+                assigned_by=None,
+                now=mint.now(),
+            )
         )
         if notify_7d:
             a.notify_7d = True
@@ -155,22 +163,28 @@ async def test_opted_out_stages_stay_silent(database, sent_mail, env):
     team_id, vids = await _team(3)
     event_id = await _event(team_id, days_ahead=5)
     async with db_session() as session:
-        view = await event_service.detail(session, None, event_id)
-        await event_service.sign_up(
-            session,
-            None,
-            slot_id=view.slots[0].slot.id,
-            volunteer_id=vids[1],
-            notify_7d=False,
-            notify_24h=True,
+        view = ok(await event_service.detail(session, None, event_id))
+        ok(
+            await event_service.sign_up(
+                session,
+                None,
+                slot_id=view.slots[0].slot.id,
+                volunteer_id=vids[1],
+                notify_7d=False,
+                notify_24h=True,
+                now=mint.now(),
+            )
         )
-        await event_service.sign_up(
-            session,
-            None,
-            slot_id=view.slots[0].slot.id,
-            volunteer_id=vids[2],
-            notify_7d=True,
-            notify_24h=False,
+        ok(
+            await event_service.sign_up(
+                session,
+                None,
+                slot_id=view.slots[0].slot.id,
+                volunteer_id=vids[2],
+                notify_7d=True,
+                notify_24h=False,
+                now=mint.now(),
+            )
         )
 
     await event_reminders.main(env, today=date.today())
@@ -229,17 +243,24 @@ async def test_exclusions(database, sent_mail, env):
     cancelled_id = await _event(team_id, days_ahead=5, title="Cancelled Mass")
     await _assign(cancelled_id, vids[1])
     async with db_session() as session:
-        await event_service.cancel_event(session, None, cancelled_id, cancelled_by=None)
+        ok(
+            await event_service.cancel_event(
+                session, None, cancelled_id, cancelled_by=None, now=mint.now()
+            )
+        )
 
     signup_id = await _event(team_id, days_ahead=10, title="Signup Mass")
     async with db_session() as session:
-        view = await event_service.detail(session, None, signup_id)
-        await event_service.sign_up(
-            session,
-            None,
-            slot_id=view.slots[0].slot.id,
-            volunteer_id=vids[2],
-            notify_7d=True,  # opted in; off by default since the mail budget
+        view = ok(await event_service.detail(session, None, signup_id))
+        ok(
+            await event_service.sign_up(
+                session,
+                None,
+                slot_id=view.slots[0].slot.id,
+                volunteer_id=vids[2],
+                notify_7d=True,  # opted in; off by default since the mail budget
+                now=mint.now(),
+            )
         )
 
     await event_reminders.main(env, today=date.today())

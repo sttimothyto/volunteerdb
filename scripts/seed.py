@@ -1106,17 +1106,21 @@ async def _staff(
             cursor += 1
             taken.add(volunteer_id)
             if signup:
-                await events.sign_up(
-                    session, None, slot_id=slots[name].id, volunteer_id=volunteer_id
-                )
+                (
+                    await events.sign_up(
+                        session, None, slot_id=slots[name].id, volunteer_id=volunteer_id
+                    )
+                ).unwrap()
             else:
-                await events.assign(
-                    session,
-                    None,
-                    slot_id=slots[name].id,
-                    volunteer_id=volunteer_id,
-                    assigned_by=by,
-                )
+                (
+                    await events.assign(
+                        session,
+                        None,
+                        slot_id=slots[name].id,
+                        volunteer_id=volunteer_id,
+                        assigned_by=by,
+                    )
+                ).unwrap()
     return cursor
 
 
@@ -1146,19 +1150,21 @@ async def _series(
     not something a real deployment ever does."""
     anchor = _weekday_on_or_after(TODAY + timedelta(days=2), weekday)
     first = _at(anchor, hour, minute)
-    created = await events.create_event(
-        session,
-        None,
-        team_id=team_id,
-        title=title,
-        starts_at=first,
-        ends_at=first + timedelta(minutes=minutes),
-        description=description,
-        location=location,
-        slots=slots,
-        repeat_weekly_until=anchor + timedelta(weeks=past + future - 1),
-        created_by=created_by,
-    )
+    created = (
+        await events.create_event(
+            session,
+            None,
+            team_id=team_id,
+            title=title,
+            starts_at=first,
+            ends_at=first + timedelta(minutes=minutes),
+            description=description,
+            location=location,
+            slots=slots,
+            repeat_weekly_until=anchor + timedelta(weeks=past + future - 1),
+            created_by=created_by,
+        )
+    ).unwrap()
     plan: list[Occurrence] = []
     for index, event in enumerate(created):
         starts_at = _at(anchor + timedelta(weeks=index - past), hour, minute)
@@ -1171,13 +1177,15 @@ async def _series(
 async def _settle(session: AsyncSession, plan: list[Occurrence]) -> None:
     """Move a staffed series onto its real dates."""
     for occurrence in plan:
-        await events.update_event(
-            session,
-            None,
-            occurrence.event.id,
-            starts_at=occurrence.starts_at,
-            ends_at=occurrence.ends_at,
-        )
+        (
+            await events.update_event(
+                session,
+                None,
+                occurrence.event.id,
+                starts_at=occurrence.starts_at,
+                ends_at=occurrence.ends_at,
+            )
+        ).unwrap()
 
 
 async def _one_off(
@@ -1236,14 +1244,16 @@ async def _rsvps(
     for offset in range(min(count, len(pool))):
         volunteer_id = pool[(cursor + offset) % len(pool)]
         available = rng.random() > 0.28
-        await events.set_rsvp(
-            session,
-            None,
-            event_id=event.id,
-            volunteer_id=volunteer_id,
-            available=available,
-            note=None if available else rng.choice(excuses),
-        )
+        (
+            await events.set_rsvp(
+                session,
+                None,
+                event_id=event.id,
+                volunteer_id=volunteer_id,
+                available=available,
+                note=None if available else rng.choice(excuses),
+            )
+        ).unwrap()
 
 
 async def _candidate_ids(session: AsyncSession, proposal_id: int) -> list[int]:
@@ -1757,24 +1767,26 @@ async def seed_schedule(
 
     picnic_day = _weekday_on_or_after(TODAY + timedelta(days=30), SATURDAY)
     picnic = (
-        await events.create_event(
-            session,
-            None,
-            team_id=parish.team_ids["Parish Picnic Task Force"],
-            title="Parish picnic",
-            starts_at=_at(picnic_day, 11),
-            ends_at=_at(picnic_day, 16),
-            description="The whole parish, the whole afternoon. Rain or shine.",
-            location="Memorial park",
-            slots=[
-                slot("Setup", 5, 1),
-                slot("BBQ", 4, 2),
-                slot("Games & crafts", 6, 3),
-                slot("First aid", 2, 4),
-                slot("Cleanup", 5, 5),
-            ],
-            created_by=admin,
-        )
+        (
+            await events.create_event(
+                session,
+                None,
+                team_id=parish.team_ids["Parish Picnic Task Force"],
+                title="Parish picnic",
+                starts_at=_at(picnic_day, 11),
+                ends_at=_at(picnic_day, 16),
+                description="The whole parish, the whole afternoon. Rain or shine.",
+                location="Memorial park",
+                slots=[
+                    slot("Setup", 5, 1),
+                    slot("BBQ", 4, 2),
+                    slot("Games & crafts", 6, 3),
+                    slot("First aid", 2, 4),
+                    slot("Cleanup", 5, 5),
+                ],
+                created_by=admin,
+            )
+        ).unwrap()
     )[0]
     picnic_pool = parish.rosters["Parish Picnic Task Force"]
     await _staff(
@@ -1795,18 +1807,20 @@ async def seed_schedule(
 
     funeral_day = _weekday_on_or_after(TODAY + timedelta(days=6), MONDAY)
     reception = (
-        await events.create_event(
-            session,
-            None,
-            team_id=parish.team_ids["Bereavement Ministry"],
-            title="Funeral reception — the Delgado family",
-            starts_at=_at(funeral_day, 11),
-            ends_at=_at(funeral_day, 14),
-            description="Sandwiches and tea in the hall after the 10:00 funeral.",
-            location="Parish hall",
-            slots=[slot("Kitchen", 3, 1), slot("Serving", 4, 2)],
-            created_by=admin,
-        )
+        (
+            await events.create_event(
+                session,
+                None,
+                team_id=parish.team_ids["Bereavement Ministry"],
+                title="Funeral reception — the Delgado family",
+                starts_at=_at(funeral_day, 11),
+                ends_at=_at(funeral_day, 14),
+                description="Sandwiches and tea in the hall after the 10:00 funeral.",
+                location="Parish hall",
+                slots=[slot("Kitchen", 3, 1), slot("Serving", 4, 2)],
+                created_by=admin,
+            )
+        ).unwrap()
     )[0]
     await _staff(
         session,
@@ -1821,16 +1835,18 @@ async def seed_schedule(
         days=1
     )
     bazaar = (
-        await events.create_event(
-            session,
-            None,
-            team_id=parish.team_ids["Catholic Women's League"],
-            title="Christmas bazaar — planning meeting",
-            starts_at=_at(bazaar_day, 19),
-            ends_at=_at(bazaar_day, 20),
-            location="Meeting room 2",
-            created_by=admin,
-        )
+        (
+            await events.create_event(
+                session,
+                None,
+                team_id=parish.team_ids["Catholic Women's League"],
+                title="Christmas bazaar — planning meeting",
+                starts_at=_at(bazaar_day, 19),
+                ends_at=_at(bazaar_day, 20),
+                location="Meeting room 2",
+                created_by=admin,
+            )
+        ).unwrap()
     )[0]
     await _staff(
         session,
@@ -1853,29 +1869,35 @@ async def seed_schedule(
     # --- substitutions: two open calls, one claimed, one withdrawn ---
     next_mass = lectors[-4].event
     open_call = await _first_assignment(session, next_mass.id)
-    await events.request_sub(
-        session,
-        None,
-        assignment_id=open_call.id,
-        requested_by=parish.user_ids["maria.alvarez@example.org"],
-        note="Away at a wedding — sorry for the short notice.",
-    )
+    (
+        await events.request_sub(
+            session,
+            None,
+            assignment_id=open_call.id,
+            requested_by=parish.user_ids["maria.alvarez@example.org"],
+            note="Away at a wedding — sorry for the short notice.",
+        )
+    ).unwrap()
     next_servers = servers[-3].event
-    await events.request_sub(
-        session,
-        None,
-        assignment_id=(await _first_assignment(session, next_servers.id)).id,
-        requested_by=parish.user_ids["peter.kowalski@example.org"],
-        note="Exam that morning.",
-    )
+    (
+        await events.request_sub(
+            session,
+            None,
+            assignment_id=(await _first_assignment(session, next_servers.id)).id,
+            requested_by=parish.user_ids["peter.kowalski@example.org"],
+            note="Exam that morning.",
+        )
+    ).unwrap()
     next_youth = youth[-2].event
-    claimed = await events.request_sub(
-        session,
-        None,
-        assignment_id=(await _first_assignment(session, next_youth.id)).id,
-        requested_by=parish.user_ids["emmanuel.d@example.org"],
-        note="Down with the flu.",
-    )
+    claimed = (
+        await events.request_sub(
+            session,
+            None,
+            assignment_id=(await _first_assignment(session, next_youth.id)).id,
+            requested_by=parish.user_ids["emmanuel.d@example.org"],
+            note="Down with the flu.",
+        )
+    ).unwrap()
     spare = [
         volunteer_id
         for volunteer_id in parish.rosters["Youth Group"]
@@ -1883,46 +1905,60 @@ async def seed_schedule(
         not in await events.assigned_volunteer_ids(session, next_youth.id)
     ]
     if spare:
-        await events.claim_sub(
-            session, None, sub_request_id=claimed.id, volunteer_id=spare[0]
+        (
+            await events.claim_sub(
+                session, None, sub_request_id=claimed.id, volunteer_id=spare[0]
+            )
+        ).unwrap()
+    withdrawn = (
+        await events.request_sub(
+            session,
+            None,
+            assignment_id=(
+                await _first_assignment(session, next_youth.id, offset=1)
+            ).id,
+            requested_by=parish.user_ids["emmanuel.d@example.org"],
+            note="Might have a clash — will confirm.",
         )
-    withdrawn = await events.request_sub(
-        session,
-        None,
-        assignment_id=(await _first_assignment(session, next_youth.id, offset=1)).id,
-        requested_by=parish.user_ids["emmanuel.d@example.org"],
-        note="Might have a clash — will confirm.",
-    )
-    await events.cancel_sub(session, None, withdrawn.id)
+    ).unwrap()
+    (await events.cancel_sub(session, None, withdrawn.id)).unwrap()
 
     # --- a cancelled event, its roster still attached ---
-    await events.cancel_event(session, None, choir[-1].event.id, cancelled_by=admin)
+    (
+        await events.cancel_event(session, None, choir[-1].event.id, cancelled_by=admin)
+    ).unwrap()
 
     # --- manager exceptions to the derived attendance on past events ---
     last_mass = lectors[7].event
-    await events.set_attendance(
-        session,
-        None,
-        assignment_id=(await _first_assignment(session, last_mass.id)).id,
-        attended=False,
-        hours=None,
-    )
-    await events.set_attendance(
-        session,
-        None,
-        assignment_id=(await _first_assignment(session, work_day.event.id)).id,
-        attended=True,
-        hours=Decimal("8.50"),
-    )
-    await events.set_attendance(
-        session,
-        None,
-        assignment_id=(
-            await _first_assignment(session, cleaning.event.id, offset=1)
-        ).id,
-        attended=False,
-        hours=None,
-    )
+    (
+        await events.set_attendance(
+            session,
+            None,
+            assignment_id=(await _first_assignment(session, last_mass.id)).id,
+            attended=False,
+            hours=None,
+        )
+    ).unwrap()
+    (
+        await events.set_attendance(
+            session,
+            None,
+            assignment_id=(await _first_assignment(session, work_day.event.id)).id,
+            attended=True,
+            hours=Decimal("8.50"),
+        )
+    ).unwrap()
+    (
+        await events.set_attendance(
+            session,
+            None,
+            assignment_id=(
+                await _first_assignment(session, cleaning.event.id, offset=1)
+            ).id,
+            attended=False,
+            hours=None,
+        )
+    ).unwrap()
 
 
 async def seed_elections(

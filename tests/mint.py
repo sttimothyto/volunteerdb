@@ -2,8 +2,11 @@
 random source: a moment, a token, a code, an invite."""
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from volunteerdb.auth import new_otp_code, new_token
+from volunteerdb.config import settings
 from volunteerdb.services.users import Invite
 
 
@@ -21,3 +24,11 @@ def code() -> str:
 
 def fresh_invite(hours: int = 168) -> Invite:
     return Invite(token=new_token(), now=now(), ttl=timedelta(hours=hours))
+
+
+def tz() -> ZoneInfo:
+    return ZoneInfo(settings().timezone)
+
+
+def uuid() -> UUID:
+    return uuid4()

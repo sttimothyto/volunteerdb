@@ -17,7 +17,7 @@ so under a snapshot they come back None and the page says why.
 """
 
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -141,18 +141,20 @@ async def dashboard(
     actor: Actor,
     *,
     at: datetime | None = None,
+    now: datetime,
 ) -> DashboardStats:
-    """Every statistic `actor` may see, and nothing else."""
+    """Every statistic `actor` may see, and nothing else. `now` is the
+    edge's clock read: the upcoming window and the service record hang off it."""
     live = at is None
 
     parish = await _parish(session, at=at) if actor.is_admin else None
     leadership = (
-        await _leadership(session, actor, at=at)
+        await _leadership(session, actor, at=at, now=now)
         if actor.is_admin or actor.full_view_team_ids
         else None
     )
     personal = (
-        await _personal(session, actor)
+        await _personal(session, actor, now=now)
         if live and actor.volunteer_id is not None
         else None
     )
@@ -215,7 +217,7 @@ async def _parish(session: AsyncSession, *, at: datetime | None) -> ParishStats:
 
 
 async def _leadership(
-    session: AsyncSession, actor: Actor, *, at: datetime | None
+    session: AsyncSession, actor: Actor, *, at: datetime | None, now: datetime
 ) -> LeadershipStats:
     # None means "no team filter": an admin's scope is the whole parish, and
     # their managed/full-view sets are empty precisely because they need none
@@ -301,7 +303,6 @@ async def _leadership(
 
     # --- shifts that still need people --------------------------------------
     if actor.can_create_events:
-        now = datetime.now(UTC)
         upcoming = await event_service.list_events(
             session, actor, from_=now, to=now + HORIZON
         )
@@ -336,14 +337,18 @@ async def _leadership(
     return stats
 
 
-async def _personal(session: AsyncSession, actor: Actor) -> PersonalStats:
+async def _personal(
+    session: AsyncSession, actor: Actor, *, now: datetime
+) -> PersonalStats:
     volunteer_id = actor.volunteer_id
     assert volunteer_id is not None  # guarded by the caller
 
-    duties = await event_service.my_upcoming(session, volunteer_id)
-    subs = await event_service.claimable_subs(session, actor)
+    duties = await event_service.my_upcoming(session, volunteer_id, now=now)
+    subs = await event_service.claimable_subs(session, actor, now=now)
     # None: _personal only ever reports the actor's OWN service record
-    hours = await event_service.hours_for_volunteer(session, None, volunteer_id)
+    hours = (
+        await event_service.hours_for_volunteer(session, None, volunteer_id, now=now)
+    ).unwrap()
 
     # ballots the actor still owes: proposals they sit on the roll for, in the
     # voting phase, with nothing cast yet. involving() already scopes to what

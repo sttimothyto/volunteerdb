@@ -16,6 +16,7 @@ from volunteerdb.models import Event
 from volunteerdb.services import events as event_service
 from volunteerdb.services import gcal, teams
 
+from tests import mint
 from tests.fp_helpers import ok
 
 TZ = ZoneInfo("America/Toronto")
@@ -30,15 +31,19 @@ async def _team_and_event(title: str = "Sunday Mass") -> tuple[int, int]:
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Altar Servers"))
         start = _at(date.today() + timedelta(days=7), 10)
-        created = await event_service.create_event(
-            session,
-            None,
-            team_id=team.id,
-            title=title,
-            starts_at=start,
-            ends_at=start + timedelta(hours=2),
-            location="Main church",
-            created_by=None,
+        created = ok(
+            await event_service.create_event(
+                session,
+                None,
+                team_id=team.id,
+                title=title,
+                starts_at=start,
+                ends_at=start + timedelta(hours=2),
+                location="Main church",
+                created_by=None,
+                tz=mint.tz(),
+                series_id=mint.uuid(),
+            )
         )
         return team.id, created[0].id
 
@@ -231,15 +236,21 @@ async def test_edit_patches_and_cancel_deletes(database, fake_gcal, env):
     await calendar_sync.main(env)
 
     async with db_session() as session:
-        await event_service.update_event(
-            session, None, event_id, location="Parish Hall"
+        ok(
+            await event_service.update_event(
+                session, None, event_id, location="Parish Hall"
+            )
         )
     await calendar_sync.main(env)
     assert [gid for gid, _ in fake_gcal.patched] == ["g1"]
     assert fake_gcal.patched[0][1]["location"] == "Parish Hall"
 
     async with db_session() as session:
-        await event_service.cancel_event(session, None, event_id, cancelled_by=None)
+        ok(
+            await event_service.cancel_event(
+                session, None, event_id, cancelled_by=None, now=mint.now()
+            )
+        )
     await calendar_sync.main(env)
     assert fake_gcal.deleted == ["g1"]
     assert await _stored(event_id) == (None, None)

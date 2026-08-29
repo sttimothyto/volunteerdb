@@ -27,7 +27,9 @@ from starlette.requests import Request
 
 from .. import query_lang, throttle
 from ..config import settings
+from ..domain import NotifyMode
 from ..env import current as current_env
+from ..errors import NotFound
 from ..fp import Err
 from ..log import audit_log
 from ..models import (
@@ -39,7 +41,7 @@ from ..models import (
     EventSubRequest,
     Volunteer,
 )
-from ..permissions import Forbidden, require
+from ..permissions import require
 from ..services import events as event_service
 from ..services import gcal, mail
 from ..services import task_force as task_force_service
@@ -65,7 +67,7 @@ def _tz() -> ZoneInfo:
 def _status_badge(event) -> None:
     if event.status == EventStatus.cancelled.value:
         ui.badge("Cancelled", color="muted")
-    elif event_service.is_past(event):
+    elif event_service.is_past(event, now=current_env().clock.now()):
         ui.badge("Past", color="purple")
     else:
         ui.badge(f"{event.starts_at.astimezone(_tz()):%a %b %-d}", color="primary")
@@ -207,13 +209,16 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
                 assignment = await event_service.get_assignment(session, assignment_id)
                 if assignment is None:
                     raise LookupError("assignment vanished")
-                sub = await event_service.request_sub(
-                    session,
-                    actor,
-                    assignment_id=assignment_id,
-                    requested_by=actor.user.id,
-                    note=note.value,
-                )
+                sub = (
+                    await event_service.request_sub(
+                        session,
+                        actor,
+                        assignment_id=assignment_id,
+                        requested_by=actor.user.id,
+                        note=note.value,
+                        now=current_env().clock.now(),
+                    )
+                ).unwrap()
                 # Gather what the mail needs directly, NOT via the roster-gated
                 # detail(): an assignee who was since removed from the team may
                 # still hand off their own slot (request_sub authorized them),
@@ -311,14 +316,17 @@ async def _substitute_dialog(
                 event = await event_service.get(session, assignment.event_id)
                 if event is None:
                     raise LookupError("event vanished")
-                assignment, outgoing, incoming = await event_service.substitute(
-                    session,
-                    actor,
-                    assignment_id=assignment_id,
-                    new_volunteer_id=pick.value,
-                    acted_by=actor.user.id,
-                    caller_notifies=True,  # the mail below tells the incoming volunteer
-                )
+                assignment, outgoing, incoming = (
+                    await event_service.substitute(
+                        session,
+                        actor,
+                        assignment_id=assignment_id,
+                        new_volunteer_id=pick.value,
+                        acted_by=actor.user.id,
+                        notify=NotifyMode.direct,  # the mail below tells the incoming volunteer
+                        now=current_env().clock.now(),
+                    )
+                ).unwrap()
                 slot = await session.get(EventSlot, assignment.slot_id)
                 message = mail.substituted_in_email(
                     event.title,
@@ -393,7 +401,11 @@ async def _self_removal_dialog(assignment_id: int) -> None:
                     me.full_name if me else "A volunteer",
                     text,
                 )
-                await event_service.remove_assignment(session, actor, assignment_id)
+                (
+                    await event_service.remove_assignment(
+                        session, actor, assignment_id, now=current_env().clock.now()
+                    )
+                ).unwrap()
                 audit_log(
                     "event.self_removal",
                     event_id=event.id,
@@ -418,12 +430,15 @@ async def _self_removal_dialog(assignment_id: int) -> None:
 @notify_errors
 async def _claim_sub(sub_request_id: int) -> None:
     async with action_session() as (session, actor):
-        sub, assignment, asker = await event_service.claim_sub(
-            session,
-            actor,
-            sub_request_id=sub_request_id,
-            volunteer_id=actor.volunteer_id,
-        )
+        sub, assignment, asker = (
+            await event_service.claim_sub(
+                session,
+                actor,
+                sub_request_id=sub_request_id,
+                volunteer_id=actor.volunteer_id,
+                now=current_env().clock.now(),
+            )
+        ).unwrap()
         event = await event_service.get(session, assignment.event_id)
         slot = await session.get(EventSlot, assignment.slot_id)
         claimant = await session.get(Volunteer, actor.volunteer_id)
@@ -449,7 +464,11 @@ async def _claim_sub(sub_request_id: int) -> None:
 @notify_errors
 async def _withdraw_sub(sub_request_id: int) -> None:
     async with action_session() as (session, actor):
-        await event_service.cancel_sub(session, actor, sub_request_id)
+        (
+            await event_service.cancel_sub(
+                session, actor, sub_request_id, now=current_env().clock.now()
+            )
+        ).unwrap()
     ui.notify("Request withdrawn", color="positive")
     ui.navigate.reload()
 
@@ -549,30 +568,37 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
                 if (n.value or "").strip()
             ]
             async with action_session() as (session, actor):
-                hits = await event_service.similar_events(
-                    session,
-                    actor,
-                    starts_at=starts_at,
-                    ends_at=ends_at,
-                    repeat_until=until,
-                    location=location.value,
-                )
+                hits = (
+                    await event_service.similar_events(
+                        session,
+                        actor,
+                        starts_at=starts_at,
+                        ends_at=ends_at,
+                        repeat_until=until,
+                        location=location.value,
+                        tz=_tz(),
+                    )
+                ).unwrap()
             if hits and not await _confirm_similar(hits):
                 return  # back to the still-open form
             async with action_session() as (session, actor):
-                created = await event_service.create_event(
-                    session,
-                    actor,
-                    team_id=team.value,
-                    title=title.value or "",
-                    starts_at=starts_at,
-                    ends_at=ends_at,
-                    description=description.value,
-                    location=location.value,
-                    slots=slots,
-                    repeat_weekly_until=until,
-                    created_by=actor.user.id,
-                )
+                created = (
+                    await event_service.create_event(
+                        session,
+                        actor,
+                        team_id=team.value,
+                        title=title.value or "",
+                        starts_at=starts_at,
+                        ends_at=ends_at,
+                        description=description.value,
+                        location=location.value,
+                        slots=slots,
+                        repeat_weekly_until=until,
+                        created_by=actor.user.id,
+                        tz=_tz(),
+                        series_id=current_env().rng.uuid(),
+                    )
+                ).unwrap()
                 first_id = created[0].id
                 n_created = len(created)
             dialog.close()
@@ -603,11 +629,15 @@ async def events_page(
     cal_view = view if view in dict(calendar_grid.VIEWS) else "mine"
     async with page_session() as (session, actor):
         duties = (
-            await event_service.my_upcoming(session, actor.volunteer_id)
+            await event_service.my_upcoming(
+                session, actor.volunteer_id, now=current_env().clock.now()
+            )
             if actor.volunteer_id is not None
             else []
         )
-        claimable = await event_service.claimable_subs(session, actor)
+        claimable = await event_service.claimable_subs(
+            session, actor, now=current_env().clock.now()
+        )
         now = datetime.now(_tz())
         summaries = await event_service.list_events(
             session,
@@ -621,9 +651,11 @@ async def events_page(
         calendar = await gcal.stored_calendar(session)
         cal_month = calendar_grid.parse_month(month, now.date())
         cal_from, cal_to = calendar_grid.window(cal_month, _tz())
-        entries = await event_service.calendar_entries(
-            session, actor, scope=cal_view, from_=cal_from, to=cal_to
-        )
+        entries = (
+            await event_service.calendar_entries(
+                session, actor, scope=cal_view, from_=cal_from, to=cal_to
+            )
+        ).unwrap()
         # the personal feed address, minted the first time it is shown
         feed_token = (
             (
@@ -952,16 +984,18 @@ def _edit_event_dialog(event) -> None:
             if starts_at is None or ends_at is None:
                 return
             async with action_session() as (session, actor):
-                await event_service.update_event(
-                    session,
-                    actor,
-                    event.id,
-                    title=title.value or "",
-                    description=description.value,
-                    location=location.value,
-                    starts_at=starts_at,
-                    ends_at=ends_at,
-                )
+                (
+                    await event_service.update_event(
+                        session,
+                        actor,
+                        event.id,
+                        title=title.value or "",
+                        description=description.value,
+                        location=location.value,
+                        starts_at=starts_at,
+                        ends_at=ends_at,
+                    )
+                ).unwrap()
             dialog.close()
             ui.navigate.reload()
 
@@ -992,14 +1026,17 @@ def _add_slot_dialog(event_id: int) -> None:
         @notify_errors
         async def save() -> None:
             async with action_session() as (session, actor):
-                await event_service.add_slot(
-                    session,
-                    actor,
-                    event_id,
-                    name=name.value or "",
-                    capacity=int(capacity.value) if capacity.value else None,
-                    description=description.value,
-                )
+                (
+                    await event_service.add_slot(
+                        session,
+                        actor,
+                        event_id,
+                        name=name.value or "",
+                        capacity=int(capacity.value) if capacity.value else None,
+                        description=description.value,
+                        now=current_env().clock.now(),
+                    )
+                ).unwrap()
             dialog.close()
             ui.navigate.reload()
 
@@ -1057,14 +1094,17 @@ def _edit_slot_dialog(
         @notify_errors
         async def save() -> None:
             async with action_session() as (session, actor):
-                await event_service.update_slot(
-                    session,
-                    actor,
-                    slot_id,
-                    name=name.value or "",
-                    capacity=int(capacity.value) if capacity.value else None,
-                    description=description.value,
-                )
+                (
+                    await event_service.update_slot(
+                        session,
+                        actor,
+                        slot_id,
+                        name=name.value or "",
+                        capacity=int(capacity.value) if capacity.value else None,
+                        description=description.value,
+                        now=current_env().clock.now(),
+                    )
+                ).unwrap()
             dialog.close()
             ui.navigate.reload()
 
@@ -1192,14 +1232,17 @@ def _availability_card(event_id: int, my_rsvp: EventRsvp | None) -> None:
     @notify_errors
     async def _rsvp(available: bool, note_value: str) -> None:
         async with action_session() as (session, actor):
-            await event_service.set_rsvp(
-                session,
-                actor,
-                event_id=event_id,
-                volunteer_id=actor.volunteer_id,
-                available=available,
-                note=note_value,
-            )
+            (
+                await event_service.set_rsvp(
+                    session,
+                    actor,
+                    event_id=event_id,
+                    volunteer_id=actor.volunteer_id,
+                    available=available,
+                    note=note_value,
+                    now=current_env().clock.now(),
+                )
+            ).unwrap()
         ui.navigate.reload()
 
     with ui.card().classes("w-full gap-2 p-3"):
@@ -1293,22 +1336,32 @@ def _attendance_section(
             ui.notify("Hours must be a number", color="warning")
             return
         async with action_session() as (session, actor):
-            await event_service.set_attendance(
-                session,
-                actor,
-                assignment_id=assignment_id,
-                attended=attended_value,
-                hours=hours,
-            )
+            (
+                await event_service.set_attendance(
+                    session,
+                    actor,
+                    assignment_id=assignment_id,
+                    attended=attended_value,
+                    hours=hours,
+                    now=current_env().clock.now(),
+                )
+            ).unwrap()
         ui.notify("Attendance saved", color="positive")
         ui.navigate.reload()
 
     @notify_errors
     async def _clear_attendance(assignment_id: int) -> None:
         async with action_session() as (session, actor):
-            await event_service.set_attendance(
-                session, actor, assignment_id=assignment_id, attended=None, hours=None
-            )
+            (
+                await event_service.set_attendance(
+                    session,
+                    actor,
+                    assignment_id=assignment_id,
+                    attended=None,
+                    hours=None,
+                    now=current_env().clock.now(),
+                )
+            ).unwrap()
         ui.navigate.reload()
 
     ui.label("Attendance").classes("text-lg font-medium mt-2")
@@ -1380,23 +1433,29 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
         async def save() -> None:
             async with action_session() as (session, actor):
                 if repeat is not None and repeat.value:
-                    _, result = await event_service.sign_up_series(
-                        session,
-                        actor,
-                        slot_id=slot_id,
-                        volunteer_id=actor.volunteer_id,
-                        notify_7d=bool(week.value),
-                        notify_24h=bool(day.value),
-                    )
+                    _, result = (
+                        await event_service.sign_up_series(
+                            session,
+                            actor,
+                            slot_id=slot_id,
+                            volunteer_id=actor.volunteer_id,
+                            notify_7d=bool(week.value),
+                            notify_24h=bool(day.value),
+                            now=current_env().clock.now(),
+                        )
+                    ).unwrap()
                 else:
-                    await event_service.sign_up(
-                        session,
-                        actor,
-                        slot_id=slot_id,
-                        volunteer_id=actor.volunteer_id,
-                        notify_7d=bool(week.value),
-                        notify_24h=bool(day.value),
-                    )
+                    (
+                        await event_service.sign_up(
+                            session,
+                            actor,
+                            slot_id=slot_id,
+                            volunteer_id=actor.volunteer_id,
+                            notify_7d=bool(week.value),
+                            notify_24h=bool(day.value),
+                            now=current_env().clock.now(),
+                        )
+                    ).unwrap()
                     result = None
             dialog.close()
             if result is None or result == event_service.SeriesSignupResult(0, 0, 0):
@@ -1421,7 +1480,11 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
 @notify_errors
 async def _withdraw(assignment_id: int) -> None:
     async with action_session() as (session, actor):
-        await event_service.remove_assignment(session, actor, assignment_id)
+        (
+            await event_service.remove_assignment(
+                session, actor, assignment_id, now=current_env().clock.now()
+            )
+        ).unwrap()
     ui.navigate.reload()
 
 
@@ -1431,20 +1494,27 @@ async def _assign(slot_id: int, volunteer_id: int | None) -> None:
         ui.notify("Pick a person first", color="warning")
         return
     async with action_session() as (session, actor):
-        await event_service.assign(
-            session,
-            actor,
-            slot_id=slot_id,
-            volunteer_id=volunteer_id,
-            assigned_by=actor.user.id,
-        )
+        (
+            await event_service.assign(
+                session,
+                actor,
+                slot_id=slot_id,
+                volunteer_id=volunteer_id,
+                assigned_by=actor.user.id,
+                now=current_env().clock.now(),
+            )
+        ).unwrap()
     ui.navigate.reload()
 
 
 @notify_errors
 async def _delete_slot(slot_id: int) -> None:
     async with action_session() as (session, actor):
-        await event_service.delete_slot(session, actor, slot_id)
+        (
+            await event_service.delete_slot(
+                session, actor, slot_id, now=current_env().clock.now()
+            )
+        ).unwrap()
     ui.navigate.reload()
 
 
@@ -1471,10 +1541,16 @@ async def _do_cancel(event_id: int) -> None:
         current = await event_service.get(session, event_id)
         if current is None:
             raise LookupError("event vanished")
-        was_upcoming = not event_service.is_past(current)
-        cancelled, emails = await event_service.cancel_event(
-            session, actor, event_id, cancelled_by=actor.user.id
-        )
+        was_upcoming = not event_service.is_past(current, now=current_env().clock.now())
+        cancelled, emails = (
+            await event_service.cancel_event(
+                session,
+                actor,
+                event_id,
+                cancelled_by=actor.user.id,
+                now=current_env().clock.now(),
+            )
+        ).unwrap()
         paths = (await team_service.tree(session)).paths
         message = mail.event_cancelled_email(
             cancelled.title,
@@ -1491,20 +1567,21 @@ async def _do_cancel(event_id: int) -> None:
 async def event_detail_page(request: Request, event_id: int):
     base_url = str(request.base_url).rstrip("/")
     async with page_session() as (session, actor):
-        try:
-            view = await event_service.detail(session, actor, event_id)
-        except LookupError:
-            with frame("Event not found", actor):
-                ui.label(f"No event with id {event_id}.")
-            return
-        except Forbidden:
-            # the service decides; the page only chooses how to say it, and a
-            # whole page reads better than a toast on an empty frame
-            with frame("Events", actor):
-                ui.label("This event is visible to the members of its team.").classes(
-                    "text-gray-500"
-                )
-            return
+        shown = await event_service.detail(session, actor, event_id)
+        match shown:
+            case Err(NotFound()):
+                with frame("Event not found", actor):
+                    ui.label(f"No event with id {event_id}.")
+                return
+            case Err():
+                # the service decides; the page only chooses how to say it, and
+                # a whole page reads better than a toast on an empty frame
+                with frame("Events", actor):
+                    ui.label(
+                        "This event is visible to the members of its team."
+                    ).classes("text-gray-500")
+                return
+        view = shown.value
         event = view.event
         can_manage = actor.can_manage_team(event.team_id)
         am_member = actor.volunteer_id is not None and await event_service.is_member(
@@ -1521,9 +1598,9 @@ async def event_detail_page(request: Request, event_id: int):
             else []
         )
         attendance = (
-            await event_service.attendance_rows(session, actor, event_id)
+            (await event_service.attendance_rows(session, actor, event_id)).unwrap()
             if can_manage
-            and event_service.is_past(event)
+            and event_service.is_past(event, now=current_env().clock.now())
             and event.status == EventStatus.scheduled.value
             else None
         )
@@ -1545,7 +1622,8 @@ async def event_detail_page(request: Request, event_id: int):
             )
 
     upcoming = (
-        event.status == EventStatus.scheduled.value and not event_service.is_past(event)
+        event.status == EventStatus.scheduled.value
+        and not event_service.is_past(event, now=current_env().clock.now())
     )
     sub_wanted = {a.id: sub for sub, a in view.open_subs}
     rsvp_by_vid = {v.id: r for r, v in view.rsvps}
