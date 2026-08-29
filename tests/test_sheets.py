@@ -31,8 +31,8 @@ async def _setup(session):
         session, None, "Anna", "Smith", "anna@example.org", phone="555-1"
     )
     ben = await volunteers.create(session, None, "Ben", "Jones", "ben@example.org")
-    await memberships.assign(session, None, anna.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, None, ben.id, music.id, TeamRole.member)
+    ok(await memberships.assign(session, None, anna.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, None, ben.id, music.id, TeamRole.member))
     return liturgy, music, anna, ben
 
 

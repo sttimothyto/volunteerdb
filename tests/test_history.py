@@ -95,10 +95,10 @@ async def test_membership_role_changes_are_versioned(database):
         v = await volunteers.create(session, None, "Ada", "Archivist")
         t = ok(await teams.create(session, None, "Choir"))
         vid, tid = v.id, t.id
-        await memberships.assign(session, None, vid, tid, TeamRole.member)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
 
     async with db_session(user_id=11) as session:
-        await memberships.assign(session, None, vid, tid, TeamRole.leader)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.leader))
 
     async with db_session() as session:
         row = (await session.execute(sa.select(membership_history))).mappings().one()

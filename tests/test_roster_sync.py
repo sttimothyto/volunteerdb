@@ -86,8 +86,8 @@ async def choir(database):
             session, None, "Lena", "Leader", "lena@example.org"
         )
         mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
-        await memberships.assign(session, None, lena.id, team.id, TeamRole.leader)
-        await memberships.assign(session, None, mia.id, team.id, TeamRole.member)
+        ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
+        ok(await memberships.assign(session, None, mia.id, team.id, TeamRole.member))
         lena_u, _ = await users.create(
             session, "lena@example.org", volunteer_id=lena.id
         )
@@ -225,7 +225,7 @@ async def test_the_job_creates_a_sheet_for_a_team_that_has_none(database, fake, 
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )
-        await memberships.assign(session, None, lena.id, team.id, TeamRole.leader)
+        ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
         team_id = team.id
 
     assert await roster_sync.main(env) == 0

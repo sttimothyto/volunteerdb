@@ -25,7 +25,7 @@ async def _fixtures(session, team_name="Choir"):
 async def test_ongoing_membership_is_one_open_spell(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        await memberships.assign(session, None, vid, tid, TeamRole.member)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
 
     async with db_session() as session:
         spells = await volunteers.timeline(session, vid)
@@ -44,9 +44,9 @@ async def test_ongoing_membership_is_one_open_spell(database):
 async def test_role_change_merges_into_one_spell(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        await memberships.assign(session, None, vid, tid, TeamRole.member)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
     async with db_session(user_id=1) as session:
-        await memberships.assign(session, None, vid, tid, TeamRole.leader)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.leader))
 
     async with db_session() as session:
         (spell,) = await volunteers.timeline(session, vid)
@@ -60,12 +60,12 @@ async def test_role_change_merges_into_one_spell(database):
 async def test_leave_then_rejoin_splits_spells(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        m = await memberships.assign(session, None, vid, tid, TeamRole.member)
+        m = ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
         mid = m.id
     async with db_session(user_id=1) as session:
-        await memberships.remove(session, None, mid)
+        ok(await memberships.remove(session, None, mid))
     async with db_session(user_id=1) as session:
-        await memberships.assign(session, None, vid, tid, TeamRole.core)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.core))
 
     async with db_session() as session:
         spells = await volunteers.timeline(session, vid)
@@ -83,10 +83,10 @@ async def test_spells_on_two_teams_stay_independent_and_sort_by_start(database):
         vid, choir = await _fixtures(session)
         ushers = ok(await teams.create(session, None, "Ushers"))
         ushers_id = ushers.id
-        await memberships.assign(session, None, vid, choir, TeamRole.member)
-        await memberships.assign(session, None, vid, ushers_id, TeamRole.core)
+        ok(await memberships.assign(session, None, vid, choir, TeamRole.member))
+        ok(await memberships.assign(session, None, vid, ushers_id, TeamRole.core))
     async with db_session(user_id=1) as session:
-        await memberships.assign(session, None, vid, choir, TeamRole.leader)
+        ok(await memberships.assign(session, None, vid, choir, TeamRole.leader))
 
     async with db_session() as session:
         spells = await volunteers.timeline(session, vid)
@@ -108,7 +108,7 @@ async def test_spells_on_two_teams_stay_independent_and_sort_by_start(database):
 async def test_deleted_team_uses_last_historical_name(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        await memberships.assign(session, None, vid, tid, TeamRole.member)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
     async with db_session(user_id=1) as session:
         ok(await teams.delete(session, None, tid))
 
@@ -139,7 +139,7 @@ def _anniv_of(since: date, years: int) -> date:
 async def test_team_anniversaries_window_and_years(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        await memberships.assign(session, None, vid, tid, TeamRole.member)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
 
     since = _today()
     first = _anniv_of(since, 1)
@@ -181,9 +181,9 @@ async def test_team_anniversaries_window_and_years(database):
 async def test_team_anniversaries_role_change_keeps_one_entry(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        await memberships.assign(session, None, vid, tid, TeamRole.member)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
     async with db_session(user_id=1) as session:
-        await memberships.assign(session, None, vid, tid, TeamRole.leader)
+        ok(await memberships.assign(session, None, vid, tid, TeamRole.leader))
 
     probe = _anniv_of(_today(), 1) - timedelta(days=1)
     async with db_session() as session:
@@ -195,11 +195,11 @@ async def test_team_anniversaries_skip_departed_members_and_other_teams(database
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
         other = ok(await teams.create(session, None, "Ushers"))
-        m = await memberships.assign(session, None, vid, tid, TeamRole.member)
-        await memberships.assign(session, None, vid, other.id, TeamRole.member)
+        m = ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
+        ok(await memberships.assign(session, None, vid, other.id, TeamRole.member))
         mid, other_id = m.id, other.id
     async with db_session(user_id=1) as session:
-        await memberships.remove(session, None, mid)
+        ok(await memberships.remove(session, None, mid))
 
     probe = _anniv_of(_today(), 1)
     async with db_session() as session:

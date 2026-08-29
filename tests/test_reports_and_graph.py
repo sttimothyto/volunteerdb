@@ -31,10 +31,22 @@ async def test_coverage_counts_and_hole_first_sorting(database):
         lead = await volunteers.create(session, None, "Lea", "Der")
         second = await volunteers.create(session, None, "Sec", "Ond")
         member = await volunteers.create(session, None, "Mem", "Ber")
-        await memberships.assign(session, None, lead.id, altar.id, TeamRole.leader)
-        await memberships.assign(session, None, second.id, altar.id, TeamRole.second)
-        await memberships.assign(session, None, member.id, altar.id, TeamRole.member)
-        await memberships.assign(session, None, member.id, bakers.id, TeamRole.member)
+        ok(await memberships.assign(session, None, lead.id, altar.id, TeamRole.leader))
+        ok(
+            await memberships.assign(
+                session, None, second.id, altar.id, TeamRole.second
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, None, member.id, altar.id, TeamRole.member
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, None, member.id, bakers.id, TeamRole.member
+            )
+        )
 
         rows = await reports.coverage(session)
 
@@ -64,9 +76,13 @@ async def _parish(session):
     on_parent = await volunteers.create(session, None, "Pat", "Parent")
     on_child = await volunteers.create(session, None, "Chris", "Child")
     on_other = await volunteers.create(session, None, "Ollie", "Other")
-    await memberships.assign(session, None, on_parent.id, parent.id, TeamRole.leader)
-    await memberships.assign(session, None, on_child.id, child.id, TeamRole.member)
-    await memberships.assign(session, None, on_other.id, other.id, TeamRole.leader)
+    ok(
+        await memberships.assign(
+            session, None, on_parent.id, parent.id, TeamRole.leader
+        )
+    )
+    ok(await memberships.assign(session, None, on_child.id, child.id, TeamRole.member))
+    ok(await memberships.assign(session, None, on_other.id, other.id, TeamRole.leader))
     return parent, child, other, on_parent, on_child, on_other
 
 

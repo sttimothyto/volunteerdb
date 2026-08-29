@@ -1345,11 +1345,17 @@ async def seed_people(
     # (volunteer, team), so an ended spell must be gone before the current one
     # exists (that is what makes Grace's rejoin a separate spell)
     for name, team_name, role, joined, left in PAST_SPELLS:
-        spell = await memberships.assign(
-            session, None, parish.volunteer_ids[name], parish.team_ids[team_name], role
-        )
+        spell = (
+            await memberships.assign(
+                session,
+                None,
+                parish.volunteer_ids[name],
+                parish.team_ids[team_name],
+                role,
+            )
+        ).unwrap()
         spell_id = spell.id
-        await memberships.remove(session, None, spell_id)
+        (await memberships.remove(session, None, spell_id)).unwrap()
         # demo-only backdating of the archived interval; real deployments
         # accumulate genuine history and never touch the twin tables
         await session.execute(
@@ -1372,12 +1378,16 @@ async def seed_people(
             if (person.name, team_name) in PROMOTIONS and role is not M:
                 # served as a plain member before taking the seat: two-colour
                 # timeline bar, and an op='U' row in membership_history
+                (
+                    await memberships.assign(
+                        session, None, volunteer_id, parish.team_ids[team_name], M
+                    )
+                ).unwrap()
+            (
                 await memberships.assign(
-                    session, None, volunteer_id, parish.team_ids[team_name], M
+                    session, None, volunteer_id, parish.team_ids[team_name], role
                 )
-            await memberships.assign(
-                session, None, volunteer_id, parish.team_ids[team_name], role
-            )
+            ).unwrap()
             if person.active:
                 parish.rosters[team_name].append(volunteer_id)
 

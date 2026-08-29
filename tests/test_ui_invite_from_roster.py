@@ -51,8 +51,8 @@ async def _parish(session) -> dict[str, int]:
 
     lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
     cora = await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
-    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core)
+    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
 
     nils = await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
     stale = await volunteers.create(
@@ -62,7 +62,7 @@ async def _parish(session) -> dict[str, int]:
     void = await volunteers.create(session, None, "Void", "Nomail")  # no address
     mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
     for v in (nils, stale, livev, void, mia):
-        await memberships.assign(session, None, v.id, music.id, TeamRole.member)
+        ok(await memberships.assign(session, None, v.id, music.id, TeamRole.member))
 
     stale_u, _ = await users.invite_volunteer(session, stale.id)
     stale_u.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)

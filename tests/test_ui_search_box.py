@@ -31,7 +31,7 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
         maria = await volunteers.create(
             session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
         )
-        await memberships.assign(session, None, maria.id, choir.id, TeamRole.member)
+        ok(await memberships.assign(session, None, maria.id, choir.id, TeamRole.member))
         retired = await volunteers.create(session, None, "Pedro", "Alvarez")
         await volunteers.update(session, None, retired.id, is_active=False)
         await volunteers.create(session, None, "Bruno", "Costa")
@@ -149,8 +149,8 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
         bruno = await volunteers.create(
             session, None, "Bruno", "Costa", "bruno@example.org", "777-0000"
         )
-        await memberships.assign(session, None, maria.id, music.id, TeamRole.member)
-        await memberships.assign(session, None, bruno.id, music.id, TeamRole.member)
+        ok(await memberships.assign(session, None, maria.id, music.id, TeamRole.member))
+        ok(await memberships.assign(session, None, bruno.id, music.id, TeamRole.member))
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )

@@ -417,13 +417,15 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                         ui.notify("Pick a team", color="warning")
                         return
                     async with action_session() as (session, actor):
-                        await membership_service.assign(
-                            session,
-                            actor,
-                            volunteer_id,
-                            team_select.value,
-                            TeamRole(role_select.value),
-                        )
+                        (
+                            await membership_service.assign(
+                                session,
+                                actor,
+                                volunteer_id,
+                                team_select.value,
+                                TeamRole(role_select.value),
+                            )
+                        ).unwrap()
                     ui.navigate.reload()
 
                 ui.button("Add", icon="group_add", on_click=add).props("dense")
@@ -730,7 +732,7 @@ async def _stage_own_email(address: str, base_url: str) -> None:
 
 async def _unassign(membership_id: int) -> None:
     async with action_session() as (session, actor):
-        await membership_service.remove(session, actor, membership_id)
+        (await membership_service.remove(session, actor, membership_id)).unwrap()
     ui.navigate.reload()
 
 

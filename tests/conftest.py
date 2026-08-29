@@ -321,7 +321,7 @@ async def seeded(database):
         v = await volunteers.create(
             session, None, "Maria", "Alvarez", "maria@example.org"
         )
-        await memberships.assign(session, None, v.id, team.id, TeamRole.member)
+        ok(await memberships.assign(session, None, v.id, team.id, TeamRole.member))
         await users.create(
             session, "admin@example.org", is_admin=True, password="secret-pass-phrase"
         )
@@ -360,8 +360,10 @@ async def token_leader(client, seeded) -> dict:
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )
-        await memberships.assign(
-            session, None, lena.id, seeded["team_id"], TeamRole.leader
+        ok(
+            await memberships.assign(
+                session, None, lena.id, seeded["team_id"], TeamRole.leader
+            )
         )
         await users.create(
             session,
@@ -380,8 +382,10 @@ async def token_core(client, seeded) -> dict:
         cora = await volunteers.create(
             session, None, "Cora", "Core", "cora@example.org"
         )
-        await memberships.assign(
-            session, None, cora.id, seeded["team_id"], TeamRole.core
+        ok(
+            await memberships.assign(
+                session, None, cora.id, seeded["team_id"], TeamRole.core
+            )
         )
         await users.create(
             session,

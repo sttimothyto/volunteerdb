@@ -208,11 +208,11 @@ async def test_leader_emails_covers_leader_and_second_only(database):
         # not NULL, but nothing a mailer or a Drive share can use either
         blank = await volunteers.create(session, None, "Bea", "Blank")
         blank.email = "  "
-        await memberships.assign(session, None, lena.id, team_id, TeamRole.leader)
-        await memberships.assign(session, None, sam.id, team_id, TeamRole.second)
-        await memberships.assign(session, None, cora.id, team_id, TeamRole.core)
-        await memberships.assign(session, None, noel.id, team_id, TeamRole.second)
-        await memberships.assign(session, None, blank.id, team_id, TeamRole.leader)
+        ok(await memberships.assign(session, None, lena.id, team_id, TeamRole.leader))
+        ok(await memberships.assign(session, None, sam.id, team_id, TeamRole.second))
+        ok(await memberships.assign(session, None, cora.id, team_id, TeamRole.core))
+        ok(await memberships.assign(session, None, noel.id, team_id, TeamRole.second))
+        ok(await memberships.assign(session, None, blank.id, team_id, TeamRole.leader))
         assert await teams.leader_emails(session, team_id) == [
             "lena@example.org",
             "sam@example.org",
@@ -259,7 +259,7 @@ async def test_a_leader_may_set_the_roster_sheet(database):
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )
-        await memberships.assign(session, None, lena.id, team.id, TeamRole.leader)
+        ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
         user, _ = await users.create(session, "lena@example.org")
         leader = await load_actor(session, user)
 
@@ -284,7 +284,7 @@ async def test_a_core_member_may_not_set_the_roster_sheet(database):
         cora = await volunteers.create(
             session, None, "Cora", "Core", "cora@example.org"
         )
-        await memberships.assign(session, None, cora.id, team.id, TeamRole.core)
+        ok(await memberships.assign(session, None, cora.id, team.id, TeamRole.core))
         user, _ = await users.create(session, "cora@example.org")
         core = await load_actor(session, user)
 
@@ -361,7 +361,7 @@ async def test_roster_sheet_needs_management_rights(database):
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Choir"))
         mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
-        await memberships.assign(session, None, mia.id, team.id, TeamRole.member)
+        ok(await memberships.assign(session, None, mia.id, team.id, TeamRole.member))
         user, _ = await users.create(session, "mia@example.org")
         member = await load_actor(session, user)
 

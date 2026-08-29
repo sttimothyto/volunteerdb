@@ -51,13 +51,15 @@ async def choir(database):
         dora = await volunteers.create(
             session, None, "Dora", "Done", "dora@example.org"
         )
-        await memberships.assign(session, None, lena.id, choir.id, TeamRole.leader)
-        await memberships.assign(session, None, mia.id, choir.id, TeamRole.member)
-        await memberships.assign(session, None, carl.id, choir.id, TeamRole.member)
-        await memberships.assign(
-            session, None, carl.id, hospitality.id, TeamRole.member
+        ok(await memberships.assign(session, None, lena.id, choir.id, TeamRole.leader))
+        ok(await memberships.assign(session, None, mia.id, choir.id, TeamRole.member))
+        ok(await memberships.assign(session, None, carl.id, choir.id, TeamRole.member))
+        ok(
+            await memberships.assign(
+                session, None, carl.id, hospitality.id, TeamRole.member
+            )
         )
-        await memberships.assign(session, None, dora.id, choir.id, TeamRole.member)
+        ok(await memberships.assign(session, None, dora.id, choir.id, TeamRole.member))
         return {
             "choir": choir.id,
             "hospitality": hospitality.id,
@@ -233,7 +235,11 @@ async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir):
             session, None, "Orla", "Outsider", "orla@example.org"
         )
         other = ok(await teams.create(session, None, "Altar Servers"))
-        await memberships.assign(session, None, outsider.id, other.id, TeamRole.member)
+        ok(
+            await memberships.assign(
+                session, None, outsider.id, other.id, TeamRole.member
+            )
+        )
         outsider_id = outsider.id
 
     poisoned = _csv_bytes(
@@ -267,8 +273,10 @@ async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(c
     hole; what it may not do is move somebody it merely lists."""
     async with db_session() as session:
         blank = await volunteers.create(session, None, "Basil", "Blank")  # no address
-        await memberships.assign(
-            session, None, blank.id, choir["choir"], TeamRole.member
+        ok(
+            await memberships.assign(
+                session, None, blank.id, choir["choir"], TeamRole.member
+            )
         )
         blank_id = blank.id
 

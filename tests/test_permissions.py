@@ -33,14 +33,16 @@ async def parish(database):
             v = await volunteers.create(
                 session, None, name.title(), "Person", f"{name}@example.org"
             )
-            await memberships.assign(session, None, v.id, liturgy.id, role)
+            ok(await memberships.assign(session, None, v.id, liturgy.id, role))
             people[name] = v
 
         outsider = await volunteers.create(
             session, None, "Out", "Sider", "out@example.org"
         )
-        await memberships.assign(
-            session, None, outsider.id, hospitality.id, TeamRole.member
+        ok(
+            await memberships.assign(
+                session, None, outsider.id, hospitality.id, TeamRole.member
+            )
         )
         people["outsider"] = outsider
 
@@ -165,8 +167,10 @@ async def test_invite_rights_reach_core_but_stop_at_plain_members(parish):
         singer = await volunteers.create(
             session, None, "Singer", "Person", "sing@example.org"
         )
-        await memberships.assign(
-            session, None, singer.id, ids["music"], TeamRole.member
+        ok(
+            await memberships.assign(
+                session, None, singer.id, ids["music"], TeamRole.member
+            )
         )
         music_teams = await volunteer_team_ids(session, singer.id)
     for name in ("leader", "second", "core"):

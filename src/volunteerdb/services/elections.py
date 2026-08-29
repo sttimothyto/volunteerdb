@@ -856,15 +856,17 @@ async def appoint(
     proposal.appointed_candidate_id = candidate.id
     proposal.decided_by = decided_by
     proposal.decided_at = datetime.now(UTC)
-    await membership_service.assign(
-        # None: the caller of appoint() holds manage rights on this seat's team,
-        # which is the same right the membership write would ask for
-        session,
-        None,
-        candidate.volunteer_id,
-        proposal.team_id,
-        TeamRole(proposal.role),
-    )
+    (
+        await membership_service.assign(
+            # None: the caller of appoint() holds manage rights on this seat's team,
+            # which is the same right the membership write would ask for
+            session,
+            None,
+            candidate.volunteer_id,
+            proposal.team_id,
+            TeamRole(proposal.role),
+        )
+    ).unwrap()
     await session.flush()
     return proposal
 

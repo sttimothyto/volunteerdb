@@ -55,11 +55,11 @@ async def _parish(session) -> Parish:
     dan = await volunteers.create(session, None, "Dan", "Deacon")
     vera = await volunteers.create(session, None, "Vera", "Volunteer")
     victor = await volunteers.create(session, None, "Victor", "Volunteer")
-    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core)
-    await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member)
-    await memberships.assign(session, None, pete.id, clergy.id, TeamRole.member)
-    await memberships.assign(session, None, dan.id, clergy.id, TeamRole.member)
+    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
+    ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
+    ok(await memberships.assign(session, None, pete.id, clergy.id, TeamRole.member))
+    ok(await memberships.assign(session, None, dan.id, clergy.id, TeamRole.member))
     lena_user, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
     await users.create(session, "cora@example.org", volunteer_id=cora.id)
     pete_user, _ = await users.create(session, "pete@example.org", volunteer_id=pete.id)
@@ -133,7 +133,11 @@ async def test_default_roll_without_a_clergy_team(database):
 async def test_roll_dedupes_clergy_who_also_lead(database):
     async with db_session() as session:
         p = await _parish(session)
-        await memberships.assign(session, None, p.pete_id, p.liturgy_id, TeamRole.core)
+        ok(
+            await memberships.assign(
+                session, None, p.pete_id, p.liturgy_id, TeamRole.core
+            )
+        )
         proposal = await _open_proposal(session, p)
         view = await elections.detail(session, None, proposal.id, today=TODAY)
         assert [v.volunteer.id for v in view.voters].count(p.pete_id) == 1
@@ -494,8 +498,10 @@ async def test_appoint_concluded_only_and_creates_membership(database):
     async with db_session() as session:
         p = await _parish(session)
         # Vera is already a plain member: appointment upgrades her role
-        await memberships.assign(
-            session, None, p.vera_id, p.liturgy_id, TeamRole.member
+        ok(
+            await memberships.assign(
+                session, None, p.vera_id, p.liturgy_id, TeamRole.member
+            )
         )
         proposal = await _open_proposal(session, p)
         cand = await _candidate_ids(session, proposal.id)

@@ -58,14 +58,20 @@ async def test_team_export_permission_matrix(client, seeded, token_admin, token_
 
     async with db_session() as session:
         # promote the member's volunteer to core: full-roster rights incl. sub-teams
-        await memberships.assign(
-            session, None, seeded["volunteer_id"], team_id, TeamRole.core
+        ok(
+            await memberships.assign(
+                session, None, seeded["volunteer_id"], team_id, TeamRole.core
+            )
         )
         music = ok(await teams.create(session, None, "Music", parent_team_id=team_id))
         singer = await volunteers.create(
             session, None, "Sally", "Singer", "sally@example.org"
         )
-        await memberships.assign(session, None, singer.id, music.id, TeamRole.member)
+        ok(
+            await memberships.assign(
+                session, None, singer.id, music.id, TeamRole.member
+            )
+        )
 
     r = await client.get(f"/api/export/team/{team_id}.csv", headers=token_member)
     assert r.status_code == 200

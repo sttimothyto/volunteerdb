@@ -43,12 +43,14 @@ async def _team(n: int = 2) -> tuple[int, list[int]]:
             v = await volunteers.create(
                 session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
             )
-            await memberships.assign(
-                session,
-                None,
-                v.id,
-                team.id,
-                TeamRole.leader if i == 0 else TeamRole.member,
+            ok(
+                await memberships.assign(
+                    session,
+                    None,
+                    v.id,
+                    team.id,
+                    TeamRole.leader if i == 0 else TeamRole.member,
+                )
             )
             vids.append(v.id)
         return team.id, vids

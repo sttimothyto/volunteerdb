@@ -132,7 +132,11 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
             session, None, "Maria", "Alvarez", email="maria@example.org"
         )
         liturgy = ok(await teams.create(session, None, "Liturgy"))
-        await memberships.assign(session, None, maria.id, liturgy.id, TeamRole.leader)
+        ok(
+            await memberships.assign(
+                session, None, maria.id, liturgy.id, TeamRole.leader
+            )
+        )
         account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id
         )

@@ -39,7 +39,11 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
         maria = await volunteers.create(
             session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
         )
-        await memberships.assign(session, None, maria.id, liturgy.id, TeamRole.leader)
+        ok(
+            await memberships.assign(
+                session, None, maria.id, liturgy.id, TeamRole.leader
+            )
+        )
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )
@@ -122,7 +126,11 @@ async def test_photo_dialog_disclaimer_gates_upload(database):
         maria = await volunteers.create(
             session, None, "Maria", "Alvarez", "maria@example.org"
         )
-        await memberships.assign(session, None, maria.id, liturgy.id, TeamRole.member)
+        ok(
+            await memberships.assign(
+                session, None, maria.id, liturgy.id, TeamRole.member
+            )
+        )
         admin, _ = await users.create(
             session, "admin@example.org", is_admin=True, password="test-pass-phrase"
         )

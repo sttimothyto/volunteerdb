@@ -222,14 +222,18 @@ async def refresh_rosters(
     for volunteer_id, role in wanted.items():
         current = existing.get(volunteer_id)
         if current is None:
-            await memberships.assign(
-                session, None, volunteer_id, meta_team_id, role, existing=None
-            )
+            (
+                await memberships.assign(
+                    session, None, volunteer_id, meta_team_id, role, existing=None
+                )
+            ).unwrap()
             added += 1
         elif ROLE_RANK[role] < ROLE_RANK[current.role]:
-            await memberships.assign(
-                session, None, volunteer_id, meta_team_id, role, existing=current
-            )
+            (
+                await memberships.assign(
+                    session, None, volunteer_id, meta_team_id, role, existing=current
+                )
+            ).unwrap()
     return added
 
 

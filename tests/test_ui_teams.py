@@ -37,9 +37,13 @@ async def _parish(session) -> dict[str, int]:
     lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
     mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
     hank = await volunteers.create(session, None, "Hank", "Host")
-    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, None, mia.id, music.id, TeamRole.member)
-    await memberships.assign(session, None, hank.id, hospitality.id, TeamRole.member)
+    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, None, mia.id, music.id, TeamRole.member))
+    ok(
+        await memberships.assign(
+            session, None, hank.id, hospitality.id, TeamRole.member
+        )
+    )
 
     admin, _ = await users.create(session, "admin@example.org", is_admin=True)
     lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
@@ -464,8 +468,10 @@ async def test_a_core_member_may_export_their_teams(database):
         cora = await volunteers.create(
             session, None, "Cora", "Core", "cora@example.org"
         )
-        await memberships.assign(
-            session, None, cora.id, ids["hospitality"], TeamRole.core
+        ok(
+            await memberships.assign(
+                session, None, cora.id, ids["hospitality"], TeamRole.core
+            )
         )
         cora_u, _ = await users.create(
             session, "cora@example.org", volunteer_id=cora.id

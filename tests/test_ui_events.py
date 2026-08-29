@@ -44,10 +44,10 @@ async def _parish(session):
     mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
     noor = await volunteers.create(session, None, "Noor", "Member", "noor@example.org")
     oda = await volunteers.create(session, None, "Oda", "Chorister", "oda@example.org")
-    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member)
-    await memberships.assign(session, None, noor.id, liturgy.id, TeamRole.member)
-    await memberships.assign(session, None, oda.id, choir.id, TeamRole.member)
+    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
+    ok(await memberships.assign(session, None, noor.id, liturgy.id, TeamRole.member))
+    ok(await memberships.assign(session, None, oda.id, choir.id, TeamRole.member))
     lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
     mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
     noor_u, _ = await users.create(session, "noor@example.org", volunteer_id=noor.id)
@@ -716,8 +716,10 @@ async def test_the_listing_can_be_narrowed_to_one_team(database):
     async with db_session() as session:
         ids = await _parish(session)
         # Lena leads Choir too, so both teams' events reach her listing
-        await memberships.assign(
-            session, None, ids["lena"], ids["choir"], TeamRole.leader
+        ok(
+            await memberships.assign(
+                session, None, ids["lena"], ids["choir"], TeamRole.leader
+            )
         )
     await _seed_event(ids["liturgy"], title="Sunday Mass")
     await _seed_event(ids["choir"], title="Choir practice")

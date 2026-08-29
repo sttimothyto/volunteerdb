@@ -11,6 +11,7 @@ from volunteerdb.services import memberships, users, volunteers
 from volunteerdb.ui.context import parse_as_of
 
 from tests.conftest import _token
+from tests.fp_helpers import ok
 
 
 async def test_login_and_me(client, seeded):
@@ -190,9 +191,13 @@ async def test_volunteer_timeline(client, seeded):
     # leave and rejoin so the timeline has one closed and one open spell
     async with db_session() as session:
         m = await memberships.find(session, vid, seeded["team_id"])
-        await memberships.remove(session, None, m.id)
+        ok(await memberships.remove(session, None, m.id))
     async with db_session() as session:
-        await memberships.assign(session, None, vid, seeded["team_id"], TeamRole.core)
+        ok(
+            await memberships.assign(
+                session, None, vid, seeded["team_id"], TeamRole.core
+            )
+        )
 
     r = await client.get(f"/api/volunteers/{vid}/timeline", headers=headers)
     assert r.status_code == 200
@@ -247,8 +252,10 @@ async def test_custom_fields_flow(client, seeded):
     # a plain member sees another volunteer's name but not their custom values
     async with db_session() as session:
         other = await volunteers.create(session, None, "Other", "Person")
-        await memberships.assign(
-            session, None, other.id, seeded["team_id"], TeamRole.member
+        ok(
+            await memberships.assign(
+                session, None, other.id, seeded["team_id"], TeamRole.member
+            )
         )
         await custom_fields_service.set_values(
             session, None, other.id, {"preferred_contact": "Phone"}

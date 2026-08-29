@@ -15,6 +15,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, volunteers
 
 from .conftest import ready, sign_in
+from tests.fp_helpers import ok
 
 # Cytoscape draws each layer on its own canvas and tags it; the node layer is
 # the one that exists only once the library has booted and laid the graph out.
@@ -125,8 +126,10 @@ async def parish(seeded):
         felix = await volunteers.create(
             session, None, "Felix", "Garcia", "felix@example.org"
         )
-        await memberships.assign(
-            session, None, felix.id, seeded["team_id"], TeamRole.leader
+        ok(
+            await memberships.assign(
+                session, None, felix.id, seeded["team_id"], TeamRole.leader
+            )
         )
     return seeded
 

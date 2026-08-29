@@ -561,14 +561,16 @@ async def apply_rows(
 
         existing = membership_by_pair.get((target.id, team_id))
         before = existing.role if existing else None
-        membership = await membership_service.assign(
-            session,
-            None,  # the row's licence was already checked above
-            target.id,
-            team_id,
-            role,
-            existing=existing,
-        )
+        membership = (
+            await membership_service.assign(
+                session,
+                None,  # the row's licence was already checked above
+                target.id,
+                team_id,
+                role,
+                existing=existing,
+            )
+        ).unwrap()
         if existing is None:
             # a later sheet row for the same pair must hit the update branch
             membership_by_pair[(target.id, team_id)] = membership

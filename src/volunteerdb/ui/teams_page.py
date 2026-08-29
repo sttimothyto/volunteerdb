@@ -952,9 +952,11 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                         ui.notify("Pick a volunteer", color="warning")
                         return
                     async with action_session() as (session, actor):
-                        await membership_service.assign(
-                            session, actor, who.value, team_id, TeamRole(role.value)
-                        )
+                        (
+                            await membership_service.assign(
+                                session, actor, who.value, team_id, TeamRole(role.value)
+                            )
+                        ).unwrap()
                     ui.navigate.reload()
 
                 ui.button("Add", icon="person_add", on_click=add).props("dense")
@@ -1054,15 +1056,17 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
 
 async def _change_role(membership_id: int, role_value: str) -> None:
     async with action_session() as (session, actor):
-        await membership_service.set_role(
-            session, actor, membership_id, TeamRole(role_value)
-        )
+        (
+            await membership_service.set_role(
+                session, actor, membership_id, TeamRole(role_value)
+            )
+        ).unwrap()
     ui.notify("Role updated", color="positive")
 
 
 async def _remove_member(membership_id: int) -> None:
     async with action_session() as (session, actor):
-        await membership_service.remove(session, actor, membership_id)
+        (await membership_service.remove(session, actor, membership_id)).unwrap()
     ui.navigate.reload()
 
 

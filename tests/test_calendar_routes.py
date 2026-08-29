@@ -25,7 +25,7 @@ async def _seed() -> dict:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
         choir = ok(await teams.create(session, None, "Choir"))
         mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
-        await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member)
+        ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
         mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)
 
         async def event(team_id: int, title: str, day: int) -> int:

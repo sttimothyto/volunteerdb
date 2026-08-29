@@ -42,11 +42,11 @@ async def _parish() -> dict:
             v = await volunteers.create(
                 session, None, first, "Volunteer", f"{key}@example.org"
             )
-            await memberships.assign(session, None, v.id, team_id, role)
+            ok(await memberships.assign(session, None, v.id, team_id, role))
             ids[key] = v.id
         # Mia is also a Choir core member: the union must keep her ONE row
         # in the task force, at her strongest role
-        await memberships.assign(session, None, ids["mia"], choir.id, TeamRole.core)
+        ok(await memberships.assign(session, None, ids["mia"], choir.id, TeamRole.core))
         return ids
 
 
@@ -170,10 +170,12 @@ async def test_refresh_picks_up_source_drift_without_downgrades(database):
         newbie = await volunteers.create(
             session, None, "Nina", "New", "nina@example.org"
         )
-        await memberships.assign(
-            session, None, newbie.id, ids["choir"], TeamRole.member
+        ok(
+            await memberships.assign(
+                session, None, newbie.id, ids["choir"], TeamRole.member
+            )
         )
-        await memberships.assign(session, None, ids["oda"], meta_id, TeamRole.core)
+        ok(await memberships.assign(session, None, ids["oda"], meta_id, TeamRole.core))
         newbie_id = newbie.id
     async with db_session() as session:
         added = await task_force.refresh_rosters(session, None, event_id)

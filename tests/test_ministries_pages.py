@@ -679,8 +679,10 @@ async def test_core_member_may_set_home_doc(client, seeded, token_member):
     from volunteerdb.services import memberships
 
     async with db_session() as session:
-        await memberships.assign(
-            session, None, seeded["volunteer_id"], seeded["team_id"], TeamRole.core
+        ok(
+            await memberships.assign(
+                session, None, seeded["volunteer_id"], seeded["team_id"], TeamRole.core
+            )
         )
     r = await client.patch(
         f"/api/teams/{seeded['team_id']}/home-doc",

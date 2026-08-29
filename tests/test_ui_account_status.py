@@ -39,9 +39,9 @@ async def _parish(session) -> dict[str, int]:
     nils = await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
     opal = await volunteers.create(session, None, "Opal", "Online", "opal@example.org")
     quin = await volunteers.create(session, None, "Quin", "Quiet", "quin@example.org")
-    await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
+    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
     for v in (mia, nils, opal, quin):
-        await memberships.assign(session, None, v.id, music.id, TeamRole.member)
+        ok(await memberships.assign(session, None, v.id, music.id, TeamRole.member))
 
     lena_u, _ = await users.create(session, "lena@example.org", volunteer_id=lena.id)
     mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)

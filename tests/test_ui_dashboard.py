@@ -36,9 +36,9 @@ async def _parish(session):
     lea = await volunteers.create(session, None, "Lea", "Der", "lea@example.org")
     cora = await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
     mel = await volunteers.create(session, None, "Mel", "Ember", "mel@example.org")
-    await memberships.assign(session, None, lea.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core)
-    await memberships.assign(session, None, mel.id, music.id, TeamRole.member)
+    ok(await memberships.assign(session, None, lea.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
+    ok(await memberships.assign(session, None, mel.id, music.id, TeamRole.member))
 
     admin, _ = await users.create(
         session, "admin@example.org", is_admin=True, password="test-pass-phrase"

@@ -17,8 +17,12 @@ async def _seed() -> dict:
             session, None, "Lena", "Leader", "lena@example.org"
         )
         mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
-        await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
-        await memberships.assign(session, None, mia.id, choir.id, TeamRole.member)
+        ok(
+            await memberships.assign(
+                session, None, lena.id, liturgy.id, TeamRole.leader
+            )
+        )
+        ok(await memberships.assign(session, None, mia.id, choir.id, TeamRole.member))
         admin, _ = await users.create(session, "admin@example.org", is_admin=True)
         lena_u, _ = await users.create(
             session, "lena@example.org", volunteer_id=lena.id

@@ -77,8 +77,10 @@ async def test_the_address_reaches_every_active_membership(database):
         volunteer, account = await _volunteer_with_account(session)
         for name in ("Liturgy", "Hospitality"):
             team = ok(await teams.create(session, None, name))
-            await memberships.assign(
-                session, None, volunteer.id, team.id, TeamRole.member
+            ok(
+                await memberships.assign(
+                    session, None, volunteer.id, team.id, TeamRole.member
+                )
             )
         user_id = account.id
 
@@ -349,9 +351,9 @@ async def test_a_leader_correcting_someone_elses_address_applies_at_once(
         member = await volunteers.create(
             session, None, "Felix", "Garcia", email="typo@example.org"
         )
-        await memberships.assign(session, None, member.id, team.id, TeamRole.member)
+        ok(await memberships.assign(session, None, member.id, team.id, TeamRole.member))
         lena = await volunteers.create(session, None, "Lena", "Leader")
-        await memberships.assign(session, None, lena.id, team.id, TeamRole.leader)
+        ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
         leader_account, _ = await users.create(
             session, "lena@example.org", volunteer_id=lena.id
         )

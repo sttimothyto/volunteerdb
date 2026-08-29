@@ -105,17 +105,31 @@ async def test_search_private_fields_are_scope_aware(database):
         plain = await volunteers.create(
             session, None, "Plain", "Member", None, "555-0300"
         )
-        await memberships.assign(session, None, insider.id, liturgy.id, TeamRole.member)
-        await memberships.assign(session, None, outsider.id, garden.id, TeamRole.member)
-        await memberships.assign(session, None, plain.id, liturgy.id, TeamRole.member)
+        ok(
+            await memberships.assign(
+                session, None, insider.id, liturgy.id, TeamRole.member
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, None, outsider.id, garden.id, TeamRole.member
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, None, plain.id, liturgy.id, TeamRole.member
+            )
+        )
         await custom_fields.create_def(session, None, "Training", "text")
         await custom_fields.set_values(
             session, None, insider.id, {"training": "lector-certified"}
         )
 
         leader_v = await volunteers.create(session, None, "Lena", "Leader")
-        await memberships.assign(
-            session, None, leader_v.id, liturgy.id, TeamRole.leader
+        ok(
+            await memberships.assign(
+                session, None, leader_v.id, liturgy.id, TeamRole.leader
+            )
         )
         leader = await load_actor(
             session,
@@ -205,13 +219,17 @@ async def test_impact_counts_and_critical_first_ordering(database):
         other_lead = await volunteers.create(session, None, "Other", "Leader")
         other_second = await volunteers.create(session, None, "Other", "Second")
 
-        await memberships.assign(session, None, v.id, solo.id, TeamRole.leader)
-        await memberships.assign(session, None, v.id, backed.id, TeamRole.member)
-        await memberships.assign(
-            session, None, other_lead.id, backed.id, TeamRole.leader
+        ok(await memberships.assign(session, None, v.id, solo.id, TeamRole.leader))
+        ok(await memberships.assign(session, None, v.id, backed.id, TeamRole.member))
+        ok(
+            await memberships.assign(
+                session, None, other_lead.id, backed.id, TeamRole.leader
+            )
         )
-        await memberships.assign(
-            session, None, other_second.id, backed.id, TeamRole.second
+        ok(
+            await memberships.assign(
+                session, None, other_second.id, backed.id, TeamRole.second
+            )
         )
 
         rows = await volunteers.impact(session, None, v.id)
@@ -243,16 +261,30 @@ async def test_search_or_query_scopes_rows_per_role(database):
         plain = await volunteers.create(
             session, None, "Plain", "Member", None, "555-0300"
         )
-        await memberships.assign(session, None, insider.id, liturgy.id, TeamRole.member)
-        await memberships.assign(session, None, gardener.id, garden.id, TeamRole.leader)
-        await memberships.assign(session, None, plain.id, liturgy.id, TeamRole.member)
+        ok(
+            await memberships.assign(
+                session, None, insider.id, liturgy.id, TeamRole.member
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, None, gardener.id, garden.id, TeamRole.leader
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, None, plain.id, liturgy.id, TeamRole.member
+            )
+        )
         await custom_fields.create_def(session, None, "Years served", "integer")
         await custom_fields.set_values(session, None, insider.id, {"years_served": 10})
         await custom_fields.set_values(session, None, plain.id, {"years_served": 9})
 
         leader_v = await volunteers.create(session, None, "Lena", "Leader")
-        await memberships.assign(
-            session, None, leader_v.id, liturgy.id, TeamRole.leader
+        ok(
+            await memberships.assign(
+                session, None, leader_v.id, liturgy.id, TeamRole.leader
+            )
         )
         leader = await load_actor(
             session,

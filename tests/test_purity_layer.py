@@ -80,7 +80,6 @@ BASELINE: dict[str, dict[str, int]] = {
     "services/ics.py": {"now": 1, "settings": 1},
     "services/mail.py": {"AsyncClient": 1, "print": 1, "settings": 4},
     "services/mail_quota.py": {"db_session": 1, "now": 1, "settings": 2},
-    "services/memberships.py": {"raise": 1},
     "services/pages.py": {"now": 1, "raise": 9},
     "services/photos.py": {"now": 2, "raise": 5},
     "services/roster_sheets.py": {

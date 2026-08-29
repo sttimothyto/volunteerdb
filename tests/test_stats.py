@@ -34,12 +34,12 @@ async def _parish(session):
     mel = await volunteers.create(session, None, "Mel", "Ember")  # no email on purpose
     solo = await volunteers.create(session, None, "Solo", "Nobody", "solo@example.org")
 
-    await memberships.assign(session, None, lea.id, liturgy.id, TeamRole.leader)
-    await memberships.assign(session, None, sam.id, liturgy.id, TeamRole.second)
-    await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core)
-    await memberships.assign(session, None, mel.id, music.id, TeamRole.member)
+    ok(await memberships.assign(session, None, lea.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, None, sam.id, liturgy.id, TeamRole.second))
+    ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
+    ok(await memberships.assign(session, None, mel.id, music.id, TeamRole.member))
     # one person on two teams, so "assignments" and "people" differ
-    await memberships.assign(session, None, lea.id, hospitality.id, TeamRole.member)
+    ok(await memberships.assign(session, None, lea.id, hospitality.id, TeamRole.member))
 
     return {
         "liturgy": liturgy,

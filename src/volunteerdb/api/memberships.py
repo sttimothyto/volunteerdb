@@ -16,7 +16,9 @@ class MembershipPatch(BaseModel):
 @router.post("", status_code=201)
 async def assign(ctx: CtxDep, data: MembershipIn) -> MembershipOut:
     """Add a volunteer to a team, or change their role if already on it."""
-    membership = await service.assign(ctx.session, ctx.actor, **data.model_dump())
+    membership = (
+        await service.assign(ctx.session, ctx.actor, **data.model_dump())
+    ).unwrap()
     return MembershipOut.model_validate(membership)
 
 
@@ -30,14 +32,18 @@ async def update(
     fields = data.model_dump(exclude_unset=True)
     # get_managed authorizes the read, so a body with nothing in it cannot be
     # used to report who holds what on a team the caller has no rights over
-    membership = await service.get_managed(ctx.session, ctx.actor, membership_id)
+    membership = (
+        await service.get_managed(ctx.session, ctx.actor, membership_id)
+    ).unwrap()
     if fields.get("role") is not None:
-        membership = await service.set_role(
-            ctx.session, ctx.actor, membership_id, fields["role"]
-        )
+        membership = (
+            await service.set_role(
+                ctx.session, ctx.actor, membership_id, fields["role"]
+            )
+        ).unwrap()
     return MembershipOut.model_validate(membership)
 
 
 @router.delete("/{membership_id}", status_code=204)
 async def remove(ctx: CtxDep, membership_id: int) -> None:
-    await service.remove(ctx.session, ctx.actor, membership_id)
+    (await service.remove(ctx.session, ctx.actor, membership_id)).unwrap()

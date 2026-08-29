@@ -64,7 +64,11 @@ async def test_leader_sees_scoped_export_on_teams_page(database):
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )
-        await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
+        ok(
+            await memberships.assign(
+                session, None, lena.id, liturgy.id, TeamRole.leader
+            )
+        )
         leader, _ = await users.create(
             session,
             "lena@example.org",

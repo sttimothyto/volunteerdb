@@ -15,14 +15,16 @@ call site rather than defaulted, so skipping the check is always visible.
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..errors import DomainError, Forbidden, not_found, require
+from ..fp import Err, Ok, Result
 from ..models import Membership, TeamRole
-from ..permissions import Actor, require
+from ..permissions import Actor
 
 _UNSET: object = object()
 
 
-def _may_manage(actor: Actor | None, team_id: int) -> None:
-    require(
+def _may_manage(actor: Actor | None, team_id: int) -> Err[Forbidden] | None:
+    return require(
         actor is None or actor.can_manage_team(team_id), "manage this team's roster"
     )
 
@@ -33,7 +35,7 @@ async def get(session: AsyncSession, membership_id: int) -> Membership | None:
 
 async def get_managed(
     session: AsyncSession, actor: Actor | None, membership_id: int
-) -> Membership:
+) -> Result[Membership, DomainError]:
     """The membership, for a caller entitled to manage its team.
 
     A plain `get` answers anybody, so a read that is part of managing a roster
@@ -41,9 +43,10 @@ async def get_managed(
     holds which role on which team to a caller with no rights over it."""
     membership = await get(session, membership_id)
     if membership is None:
-        raise LookupError(f"membership {membership_id} not found")
-    _may_manage(actor, membership.team_id)
-    return membership
+        return not_found("membership", membership_id)
+    if denied := _may_manage(actor, membership.team_id):
+        return denied
+    return Ok(membership)
 
 
 async def find(
@@ -66,12 +69,13 @@ async def assign(
     role: TeamRole,
     *,
     existing: Membership | None | object = _UNSET,
-) -> Membership:
+) -> Result[Membership, DomainError]:
     """Add the volunteer to the team, or update their role if already on it.
 
     `existing` lets bulk callers (the importer) pass a preloaded membership
     — or None — and skip the per-row lookup."""
-    _may_manage(actor, team_id)
+    if denied := _may_manage(actor, team_id):
+        return denied
     membership = (
         await find(session, volunteer_id, team_id) if existing is _UNSET else existing
     )
@@ -85,27 +89,33 @@ async def assign(
     else:
         membership.role = role
     await session.flush()
-    return membership
+    return Ok(membership)
 
 
 async def set_role(
     session: AsyncSession, actor: Actor | None, membership_id: int, role: TeamRole
-) -> Membership:
+) -> Result[Membership, DomainError]:
     """Change the role somebody holds on a team.
 
     Exists because both front doors used to reach in and set the column
     themselves — the API with `setattr` on the ORM object, the GUI from a select
     handler — which meant the operation had no single place to authorize, and
     any rule added later would have had to be added twice."""
-    membership = await get_managed(session, actor, membership_id)
+    managed = await get_managed(session, actor, membership_id)
+    if isinstance(managed, Err):
+        return managed
+    membership = managed.value
     membership.role = role
     await session.flush()
-    return membership
+    return Ok(membership)
 
 
 async def remove(
     session: AsyncSession, actor: Actor | None, membership_id: int
-) -> None:
-    membership = await get_managed(session, actor, membership_id)
-    await session.delete(membership)
+) -> Result[None, DomainError]:
+    managed = await get_managed(session, actor, membership_id)
+    if isinstance(managed, Err):
+        return managed
+    await session.delete(managed.value)
     await session.flush()
+    return Ok(None)

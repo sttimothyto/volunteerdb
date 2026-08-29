@@ -37,8 +37,10 @@ async def _second_member(client, seeded) -> tuple[int, dict]:
     """Another Liturgy member with an account; returns (volunteer_id, header)."""
     async with db_session() as session:
         v = await volunteers.create(session, None, "Noor", "Reader", "noor@example.org")
-        await memberships.assign(
-            session, None, v.id, seeded["team_id"], TeamRole.member
+        ok(
+            await memberships.assign(
+                session, None, v.id, seeded["team_id"], TeamRole.member
+            )
         )
         await users.create(
             session, "noor@example.org", volunteer_id=v.id, password="noor-pass-phrase"
@@ -120,8 +122,10 @@ async def test_rsvp_signup_capacity_and_withdraw(
         extra = await volunteers.create(
             session, None, "Iris", "Extra", "iris@example.org"
         )
-        await memberships.assign(
-            session, None, extra.id, seeded["team_id"], TeamRole.member
+        ok(
+            await memberships.assign(
+                session, None, extra.id, seeded["team_id"], TeamRole.member
+            )
         )
     r = await client.post(
         f"/api/events/{event_id}/slots/{lector['slot']['id']}/assignments",

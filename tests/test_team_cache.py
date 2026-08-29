@@ -45,9 +45,15 @@ async def parish(database):
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )
-        await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader)
-        await memberships.assign(
-            session, None, lena.id, hospitality.id, TeamRole.leader
+        ok(
+            await memberships.assign(
+                session, None, lena.id, liturgy.id, TeamRole.leader
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, None, lena.id, hospitality.id, TeamRole.leader
+            )
         )
         lena_u, _ = await users.create(
             session,

@@ -42,7 +42,7 @@ async def _team_with_members(n: int = 2) -> tuple[int, list[int]]:
                 session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
             )
             role = TeamRole.leader if i == 0 else TeamRole.member
-            await memberships.assign(session, None, v.id, team.id, role)
+            ok(await memberships.assign(session, None, v.id, team.id, role))
             vids.append(v.id)
         return team.id, vids
 
@@ -621,7 +621,11 @@ async def test_list_events_scopes_to_the_actors_teams(database):
         other = await volunteers.create(
             session, None, "Oda", "Choir", "oda@example.org"
         )
-        await memberships.assign(session, None, other.id, team_b.id, TeamRole.member)
+        ok(
+            await memberships.assign(
+                session, None, other.id, team_b.id, TeamRole.member
+            )
+        )
         admin, _ = await users.create(session, "admin@example.org", is_admin=True)
     await _one_event(team_a)
     b_start = _at(date.today() + timedelta(days=7), 18)

@@ -14,6 +14,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, users, volunteers
 
 from tests.conftest import _token
+from tests.fp_helpers import ok
 
 
 async def test_users_endpoints_admin_only(client, seeded):
@@ -229,8 +230,10 @@ async def rostered(seeded):
         nils = await volunteers.create(
             session, None, "Nils", "Nobody", "nils@example.org"
         )
-        await memberships.assign(
-            session, None, nils.id, seeded["team_id"], TeamRole.member
+        ok(
+            await memberships.assign(
+                session, None, nils.id, seeded["team_id"], TeamRole.member
+            )
         )
         return nils.id
 
