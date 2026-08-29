@@ -74,7 +74,6 @@ BASELINE: dict[str, dict[str, int]] = {
     "services/gcal.py": {"AsyncClient": 1, "now": 2, "raise": 10, "settings": 4},
     "services/google_api.py": {"AsyncClient": 1, "raise": 3, "settings": 2},
     "services/gsheets.py": {"AsyncClient": 5, "raise": 13, "settings": 2},
-    "services/ics.py": {"now": 1, "settings": 1},
     "services/mail.py": {"AsyncClient": 1, "print": 1, "settings": 4},
     "services/mail_quota.py": {"db_session": 1, "now": 1, "settings": 2},
     "services/roster_sheets.py": {

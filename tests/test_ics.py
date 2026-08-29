@@ -11,6 +11,8 @@ from volunteerdb.models import Event
 from volunteerdb.services import ics
 from volunteerdb.services.events import CalendarEntry
 
+from tests import mint
+
 pytestmark = pytest.mark.pure
 
 TZ = ZoneInfo("America/Toronto")
@@ -37,6 +39,7 @@ def _render(*entries: CalendarEntry, name="Parish events") -> str:
         host="vdb.example.org",
         base_url="https://vdb.example.org",
         now=NOW,
+        tz=mint.tz(),
     ).decode()
 
 

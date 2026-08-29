@@ -12,8 +12,8 @@ has left the feed, whereas STATUS:CANCELLED would keep the corpse visible.
 """
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from ..config import settings
 from .events import CalendarEntry
 
 PRODID = "-//VolunteerDB//EN"
@@ -91,10 +91,11 @@ def render(
     name: str,
     host: str,
     base_url: str,
-    now: datetime | None = None,
+    now: datetime,
+    tz: ZoneInfo,
 ) -> bytes:
-    """The whole feed, CRLF-terminated, folded, UTF-8."""
-    now = now or datetime.now(UTC)
+    """The whole feed, CRLF-terminated, folded, UTF-8. `now` stamps every
+    entry; `tz` is the parish zone the feed declares."""
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -102,7 +103,7 @@ def render(
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
         f"X-WR-CALNAME:{_escape(name)}",
-        f"X-WR-TIMEZONE:{settings().timezone}",
+        f"X-WR-TIMEZONE:{tz.key}",
         f"REFRESH-INTERVAL;VALUE=DURATION:{REFRESH}",
         f"X-PUBLISHED-TTL:{REFRESH}",
     ]

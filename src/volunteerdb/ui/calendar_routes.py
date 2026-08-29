@@ -65,7 +65,14 @@ async def parish_feed(request: Request) -> Response:
                 session, None, scope="parish", from_=from_, to=to
             )
         ).unwrap()
-    body = ics.render(entries, name=parish_feed_name(), host=host, base_url=base_url)
+    body = ics.render(
+        entries,
+        name=parish_feed_name(),
+        host=host,
+        base_url=base_url,
+        now=current_env().clock.now(),
+        tz=current_env().tz,
+    )
     return Response(content=body, media_type=MEDIA_TYPE, headers=PARISH_CACHE)
 
 
@@ -82,7 +89,14 @@ async def personal_feed(token: str, request: Request) -> Response:
                 session, actor, scope="mine", from_=from_, to=to
             )
         ).unwrap()
-    body = ics.render(entries, name=personal_feed_name(), host=host, base_url=base_url)
+    body = ics.render(
+        entries,
+        name=personal_feed_name(),
+        host=host,
+        base_url=base_url,
+        now=current_env().clock.now(),
+        tz=current_env().tz,
+    )
     return Response(content=body, media_type=MEDIA_TYPE, headers=PERSONAL_CACHE)
 
 
@@ -98,7 +112,14 @@ async def personal_download(request: Request) -> Response:
                 session, actor, scope="mine", from_=from_, to=to
             )
         ).unwrap()
-    body = ics.render(entries, name=personal_feed_name(), host=host, base_url=base_url)
+    body = ics.render(
+        entries,
+        name=personal_feed_name(),
+        host=host,
+        base_url=base_url,
+        now=current_env().clock.now(),
+        tz=current_env().tz,
+    )
     return Response(
         content=body,
         media_type=MEDIA_TYPE,
