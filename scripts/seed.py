@@ -1511,7 +1511,11 @@ async def seed_photos(
 async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:
     for index, spec in enumerate(PAGES, start=1):
         team_id = parish.team_ids[spec.team]
-        await pages.set_home_doc_url(session, None, team_id, DOC_URL.format(n=index))
+        (
+            await pages.set_home_doc_url(
+                session, None, team_id, DOC_URL.format(n=index)
+            )
+        ).unwrap()
         html = pages.sanitize_doc_html(
             f"<h1>{spec.team}</h1><p><em>{spec.blurb}</em></p>"
             f"<p>{spec.detail}</p>"

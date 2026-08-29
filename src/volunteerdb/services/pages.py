@@ -16,7 +16,7 @@ an unextracted inline image would silently lose its src.
 import base64
 import hashlib
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 from html import unescape
 from io import BytesIO
 from urllib.parse import urlsplit
@@ -30,8 +30,10 @@ import structlog
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..errors import DomainError, External, Invalid, invalid, not_found, require
+from ..fp import Err, Ok, Result
 from ..models import PageStatus, Team, TeamPage, TeamPageImage
-from ..permissions import Actor, require
+from ..permissions import Actor
 
 logger = structlog.get_logger(__name__)
 
@@ -61,19 +63,19 @@ _CSS_RULE_RE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 _ALLOWED_ATTRIBUTES = {**nh3.ALLOWED_ATTRIBUTES, "*": {"class", "style", "id"}}
 
 
-def extract_doc_id(url: str) -> str:
-    """The document id, or ValueError for anything but a Google Doc link."""
+def extract_doc_id(url: str) -> Result[str, Invalid]:
+    """The document id, or Invalid for anything but a Google Doc link."""
     match = _DOC_URL_RE.match(url.strip())
     if match is None:
-        raise ValueError(
+        return invalid(
             "not a Google Doc link — expected https://docs.google.com/document/d/…"
         )
-    return match.group(1)
+    return Ok(match.group(1))
 
 
 async def set_home_doc_url(
     session: AsyncSession, actor: Actor | None, team_id: int, url: str | None
-) -> Team:
+) -> Result[Team, DomainError]:
     """Set or clear the team's home page doc; validates the link shape.
 
     Full-roster rights, so **core members included** — deliberately, and not an
@@ -81,20 +83,23 @@ async def set_home_doc_url(
     public page nobody can refresh goes stale. The content is nh3-sanitized and
     the URL must live on docs.google.com, so what is at stake is what the page
     says under a name the parish can correct."""
-    require(
+    if denied := require(
         actor is None or actor.can_view_full_roster(team_id),
         "manage this team's home page",
-    )
+    ):
+        return denied
     team = await session.get(Team, team_id)
     if team is None:
-        raise LookupError(f"team {team_id} not found")
+        return not_found("team", team_id)
     if url and url.strip():
-        extract_doc_id(url)  # raises ValueError on junk
+        parsed = extract_doc_id(url)
+        if isinstance(parsed, Err):
+            return parsed
         team.home_doc_url = url.strip()
     else:
         team.home_doc_url = None
     await session.flush()
-    return team
+    return Ok(team)
 
 
 def slugify(path: str) -> str:
@@ -159,7 +164,7 @@ def sanitize_doc_html(raw: str) -> str:
     return style + nh3.clean(body, attributes=_ALLOWED_ATTRIBUTES)
 
 
-def _prepare_image(data: bytes) -> tuple[bytes, str]:
+def _prepare_image(data: bytes) -> Result[tuple[bytes, str], Invalid]:
     """Sync and CPU-bound — call via anyio.to_thread.run_sync. Doubles as the
     content guard on fetched bytes: whatever Google returned must decode as an
     image or it is not stored. Oversized stills are downscaled to
@@ -172,22 +177,22 @@ def _prepare_image(data: bytes) -> tuple[bytes, str]:
         Image.DecompressionBombError,
         OSError,
         ValueError,
-    ) as exc:
-        raise ValueError("not a readable image") from exc
+    ):
+        return invalid("not a readable image")
     if img.format not in _IMAGE_FORMATS:
-        raise ValueError(f"unsupported image format: {img.format}")
+        return invalid(f"unsupported image format: {img.format}")
     if getattr(img, "is_animated", False) or max(img.size) <= IMAGE_MAX_DIM:
-        return data, Image.MIME[img.format]
+        return Ok((data, Image.MIME[img.format]))
     img = ImageOps.exif_transpose(img)
     img.thumbnail((IMAGE_MAX_DIM, IMAGE_MAX_DIM), Image.Resampling.LANCZOS)
     buffer = BytesIO()
     if img.mode in ("RGBA", "LA", "P"):  # may carry transparency
         img.save(buffer, format="PNG", optimize=True)
-        return buffer.getvalue(), "image/png"
+        return Ok((buffer.getvalue(), "image/png"))
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
     img.save(buffer, format="JPEG", quality=85, optimize=True)
-    return buffer.getvalue(), "image/jpeg"
+    return Ok((buffer.getvalue(), "image/jpeg"))
 
 
 def _is_google_image(url: str) -> bool:
@@ -196,6 +201,31 @@ def _is_google_image(url: str) -> bool:
     return parts.scheme == "https" and (parts.hostname or "").endswith(
         ".googleusercontent.com"
     )
+
+
+async def _one_image(
+    url: str, data_uri: re.Match[str] | None, client: httpx.AsyncClient
+) -> Result[tuple[bytes, str], Invalid | External]:
+    """One embedded image as stored bytes and a content type, or why not."""
+    if data_uri is not None:
+        try:  # b64decode raises a ValueError subclass
+            raw = base64.b64decode(re.sub(r"\s+", "", data_uri.group(1)), validate=True)
+        except ValueError as exc:
+            return invalid(str(exc))
+    else:
+        try:
+            response = await client.get(
+                url, follow_redirects=True, timeout=FETCH_TIMEOUT
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            return Err(External("google docs", str(exc)))
+        if not _is_google_image(str(response.url)):
+            return invalid("image redirected outside googleusercontent.com")
+        raw = response.content
+    if len(raw) > IMAGE_MAX_BYTES:
+        return invalid(f"image over {IMAGE_MAX_BYTES // 1_000_000} MB")
+    return await anyio.to_thread.run_sync(_prepare_image, raw)
 
 
 async def _localize_images(
@@ -225,31 +255,17 @@ async def _localize_images(
         if len(images) >= IMAGES_MAX_COUNT or total >= IMAGES_MAX_TOTAL:
             logger.info("page image budget exhausted", team_id=team_id)
             break
-        try:
-            if data_uri is not None:  # b64decode raises a ValueError subclass
-                raw = base64.b64decode(
-                    re.sub(r"\s+", "", data_uri.group(1)), validate=True
-                )
-            else:
-                response = await client.get(
-                    url, follow_redirects=True, timeout=FETCH_TIMEOUT
-                )
-                response.raise_for_status()
-                if not _is_google_image(str(response.url)):
-                    raise ValueError("image redirected outside googleusercontent.com")
-                raw = response.content
-            if len(raw) > IMAGE_MAX_BYTES:
-                raise ValueError(f"image over {IMAGE_MAX_BYTES // 1_000_000} MB")
-            data, content_type = await anyio.to_thread.run_sync(_prepare_image, raw)
-        except (httpx.HTTPError, ValueError) as exc:
+        prepared = await _one_image(url, data_uri, client)
+        if isinstance(prepared, Err):
             failed.add(url)
             logger.info(
                 "page image not extracted",
                 team_id=team_id,
                 src=url[:100],
-                error=str(exc),
+                error=prepared.error.message,
             )
             continue
+        data, content_type = prepared.value
         seq_by_url[url] = (len(images) + 1, hashlib.sha256(data).hexdigest()[:12])
         images.append(
             TeamPageImage(
@@ -279,7 +295,8 @@ async def fetch_and_store(
     force: bool = False,
     *,
     actor: Actor | None = None,
-) -> TeamPage:
+    now: datetime,
+) -> Result[TeamPage, DomainError]:
     """Fetch the team's doc and upsert its team_page row, downloading embedded
     images into team_page_image (replaced wholesale). `actor` is keyword-only
     and defaults to None because the nightly job is the ordinary caller; pass
@@ -295,53 +312,69 @@ async def fetch_and_store(
     pure WAL/vacuum churn. force=True rewrites regardless — the manual
     "Fetch now" button, and the repair path for image rows damaged
     out-of-band."""
-    require(
+    if denied := require(
         actor is None or actor.can_view_full_roster(team.id),
         "refresh this team's home page",
-    )
+    ):
+        return denied
     page = await session.get(TeamPage, team.id)
     if page is None:
         page = TeamPage(team_id=team.id)
         session.add(page)
+    fetched = await _fetch_doc(team, client)
+    if isinstance(fetched, Err):
+        page.status = PageStatus.error
+        page.error = fetched.error.message[:500]
+        await session.flush()
+        return Ok(page)
+    html, images = fetched.value
+    if force or page.status != PageStatus.ok or page.html != html:
+        await session.execute(
+            sa.delete(TeamPageImage).where(TeamPageImage.team_id == team.id)
+        )
+        session.add_all(images)
+        page.html = html
+    else:
+        logger.info("page unchanged; image rows kept", team_id=team.id)
+    page.fetched_at = now
+    page.status = PageStatus.ok
+    page.error = None
+    await session.flush()
+    return Ok(page)
+
+
+async def _fetch_doc(
+    team: Team, client: httpx.AsyncClient
+) -> Result[tuple[str, list[TeamPageImage]], Invalid | External]:
+    """The doc's sanitized html and its extracted images, or why the fetch
+    could not be used -- which the caller records on the page row rather
+    than refusing anything."""
+    doc_id = extract_doc_id(team.home_doc_url or "")
+    if isinstance(doc_id, Err):
+        return doc_id
     try:
-        doc_id = extract_doc_id(team.home_doc_url or "")
         response = await client.get(
-            EXPORT_URL.format(doc_id=doc_id),
+            EXPORT_URL.format(doc_id=doc_id.value),
             follow_redirects=True,
             timeout=FETCH_TIMEOUT,
         )
         response.raise_for_status()
-        if response.url.host != "docs.google.com":
-            raise ValueError(
-                "the doc is not publicly accessible "
-                "(Google redirected to a sign-in page)"
-            )
-        if len(response.content) > DOC_MAX_BYTES:
-            raise ValueError(f"doc HTML is over {DOC_MAX_BYTES // 1_000_000} MB")
-        # images first: the sanitizer would strip their data: srcs
-        html, images = await _localize_images(response.text, team.id, client)
-        html = sanitize_doc_html(html)
-        if len(html.encode()) > HTML_MAX_BYTES:
-            raise ValueError(
-                f"doc text is over {HTML_MAX_BYTES // 1_000_000} MB"
-                " with its images extracted"
-            )
-        if force or page.status != PageStatus.ok or page.html != html:
-            await session.execute(
-                sa.delete(TeamPageImage).where(TeamPageImage.team_id == team.id)
-            )
-            session.add_all(images)
-            page.html = html
-        else:
-            logger.info("page unchanged; image rows kept", team_id=team.id)
-        page.fetched_at = datetime.now(UTC)
-        page.status = PageStatus.ok
-        page.error = None
-    except (httpx.HTTPError, ValueError) as exc:
-        page.status = PageStatus.error
-        page.error = str(exc)[:500]
-    await session.flush()
-    return page
+    except httpx.HTTPError as exc:
+        return Err(External("google docs", str(exc)))
+    if response.url.host != "docs.google.com":
+        return invalid(
+            "the doc is not publicly accessible (Google redirected to a sign-in page)"
+        )
+    if len(response.content) > DOC_MAX_BYTES:
+        return invalid(f"doc HTML is over {DOC_MAX_BYTES // 1_000_000} MB")
+    # images first: the sanitizer would strip their data: srcs
+    html, images = await _localize_images(response.text, team.id, client)
+    html = sanitize_doc_html(html)
+    if len(html.encode()) > HTML_MAX_BYTES:
+        return invalid(
+            f"doc text is over {HTML_MAX_BYTES // 1_000_000} MB with its images extracted"
+        )
+    return Ok((html, images))
 
 
 def qr_png(url: str) -> bytes:
@@ -355,18 +388,19 @@ def qr_png(url: str) -> bytes:
 
 async def page_status(
     session: AsyncSession, actor: Actor | None, team_id: int
-) -> TeamPage | None:
+) -> Result[TeamPage | None, DomainError]:
     """The cached page's publishing state, or None when the team has no doc set.
 
     Same audience as setting the URL — core members included — because the
     people who keep the page current are the people who need to know whether
     the last fetch worked. The HTML itself is not the point here: that is served
     to the world at /ministries/<slug>.html."""
-    require(
+    if denied := require(
         actor is None or actor.can_view_full_roster(team_id),
         "see this team's page status",
-    )
-    return await session.get(TeamPage, team_id)
+    ):
+        return denied
+    return Ok(await session.get(TeamPage, team_id))
 
 
 async def published_teams(session: AsyncSession) -> list[Team]:

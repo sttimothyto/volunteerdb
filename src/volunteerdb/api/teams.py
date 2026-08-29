@@ -88,9 +88,9 @@ async def set_home_doc(ctx: CtxDep, team_id: int, data: HomeDocPatch) -> TeamOut
     is worth more than narrowing who may speak for the ministry — the content
     is nh3-sanitized and the URL must live on docs.google.com, so the exposure
     is what the page says, under a name the parish can correct."""
-    team = await page_service.set_home_doc_url(
-        ctx.session, ctx.actor, team_id, data.url
-    )
+    team = (
+        await page_service.set_home_doc_url(ctx.session, ctx.actor, team_id, data.url)
+    ).unwrap()
     return TeamOut.model_validate(team)
 
 
@@ -187,7 +187,7 @@ async def get_team_page(ctx: CtxDep, team_id: int) -> TeamPageOut | None:
     Null when the team has no home doc set. The page's HTML is not here: it is
     served to the world at /ministries/<slug>.html, and what a caller needs from
     JSON is whether the nightly fetch is working."""
-    page = await page_service.page_status(ctx.session, ctx.actor, team_id)
+    page = (await page_service.page_status(ctx.session, ctx.actor, team_id)).unwrap()
     return None if page is None else TeamPageOut.model_validate(page)
 
 
@@ -205,7 +205,9 @@ async def fetch_team_page(ctx: CtxDep, team_id: int) -> TeamPageOut:
     if not team.home_doc_url:
         raise ValueError("this team has no home page doc")
     async with httpx.AsyncClient() as http:
-        page = await page_service.fetch_and_store(
-            ctx.session, team, http, force=True, actor=ctx.actor
-        )
+        page = (
+            await page_service.fetch_and_store(
+                ctx.session, team, http, force=True, actor=ctx.actor, now=ctx.now
+            )
+        ).unwrap()
     return TeamPageOut.model_validate(page)

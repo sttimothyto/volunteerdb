@@ -162,7 +162,7 @@ async def test_a_home_doc_url_set_outside_the_teams_service_invalidates(parish):
     async with db_session() as session:
         before = await teams.tree(session)
         assert all(t.home_doc_url is None for t in before.teams)
-        await pages.set_home_doc_url(session, None, parish["liturgy"], url)
+        ok(await pages.set_home_doc_url(session, None, parish["liturgy"], url))
         after = await teams.tree(session)
         assert {t.id: t.home_doc_url for t in after.teams}[parish["liturgy"]] == url
 
@@ -228,7 +228,7 @@ async def test_every_team_mutator_flushes_before_it_returns(parish):
         ok(await teams.update(session, None, made.id, name="Altar Servers"))
         assert not pending(session), "teams.update left a Team unflushed"
 
-        await pages.set_home_doc_url(session, None, made.id, url)
+        ok(await pages.set_home_doc_url(session, None, made.id, url))
         assert not pending(session), "pages.set_home_doc_url left a Team unflushed"
 
         ok(await teams.delete(session, None, made.id))

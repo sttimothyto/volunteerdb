@@ -226,8 +226,10 @@ async def test_home_page_controls_gated_by_full_roster_rights(database):
 
 async def _publish(session, team_id: int) -> None:
     """Give a team a live public page: a doc link plus cached html."""
-    await pages.set_home_doc_url(
-        session, None, team_id, f"https://docs.google.com/document/d/x{team_id}"
+    ok(
+        await pages.set_home_doc_url(
+            session, None, team_id, f"https://docs.google.com/document/d/x{team_id}"
+        )
     )
     session.add(TeamPage(team_id=team_id, html="<p>hello</p>", status="ok"))
 
@@ -306,8 +308,10 @@ async def test_published_page_link_and_qr_use_the_path_slug(database):
 
     async with db_session() as session:
         ids = await _parish(session)
-        await page_service.set_home_doc_url(
-            session, None, ids["music"], "https://docs.google.com/document/d/abc123"
+        ok(
+            await page_service.set_home_doc_url(
+                session, None, ids["music"], "https://docs.google.com/document/d/abc123"
+            )
         )
         session.add(
             TeamPage(team_id=ids["music"], html="<p>rehearsals</p>", status="ok")

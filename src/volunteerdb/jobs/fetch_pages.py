@@ -42,7 +42,11 @@ async def main(env: Env) -> int:
                 team = await session.get(Team, team_id)
                 if team is None or not team.home_doc_url:
                     continue  # changed while the job ran
-                page = await page_service.fetch_and_store(session, team, client)
+                page = (
+                    await page_service.fetch_and_store(
+                        session, team, client, now=env.clock.now()
+                    )
+                ).unwrap()
                 if page.status == "ok":
                     ok += 1
                 else:

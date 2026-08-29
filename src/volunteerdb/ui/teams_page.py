@@ -10,6 +10,7 @@ from nicegui import events, ui
 
 from .. import query_lang
 from ..config import settings
+from ..env import current as current_env
 from ..fp import Err
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
 from ..services import elections as elections_service
@@ -761,7 +762,11 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
         @notify_errors
         async def save(new_value: str | None) -> None:
             async with action_session() as (session, actor):
-                await page_service.set_home_doc_url(session, actor, team_id, new_value)
+                (
+                    await page_service.set_home_doc_url(
+                        session, actor, team_id, new_value
+                    )
+                ).unwrap()
             dialog.close()
             ui.navigate.to(f"/teams/{team_id}")
 
@@ -784,9 +789,16 @@ async def _fetch_home_page(team_id: int) -> None:
         async with httpx.AsyncClient() as client:
             # force: a human clicking "Fetch now" means really refetch — also
             # the repair path when image rows were damaged out-of-band
-            page = await page_service.fetch_and_store(
-                session, team, client, force=True, actor=actor
-            )
+            page = (
+                await page_service.fetch_and_store(
+                    session,
+                    team,
+                    client,
+                    force=True,
+                    actor=actor,
+                    now=current_env().clock.now(),
+                )
+            ).unwrap()
     if page.status == "ok":
         ui.notify("Home page updated", color="positive")
     else:
