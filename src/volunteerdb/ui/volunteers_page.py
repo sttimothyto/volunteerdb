@@ -734,7 +734,12 @@ async def _stage_own_email(address: str, base_url: str) -> None:
     hours = int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600)
     await mail.send_email(
         target,
-        *mail.email_change_email(confirm_email_url(base_url, token), target, hours),
+        *mail.email_change_email(
+            confirm_email_url(base_url, token),
+            target,
+            hours,
+            ctx=current_env().mail_context(),
+        ),
     )
     # and the address being replaced hears about it while it can still say no
     await mail.send_email(

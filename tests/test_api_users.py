@@ -306,17 +306,10 @@ async def test_volunteer_invite_maps_service_refusals(client, seeded, token_admi
 
 
 @pytest.fixture
-def sent_api(monkeypatch) -> list[tuple[str, str, str]]:
-    from volunteerdb.services import mail
-
-    captured: list[tuple[str, str, str]] = []
-
-    async def fake_send(to: str, subject: str, body: str) -> bool:
-        captured.append((to, subject, body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake_send)
-    return captured
+def sent_api(env) -> list[tuple[str, str, str]]:
+    """What the API mailed: the Env's recording mailer, which the api_app
+    fixture hands the routes (they send through ctx.env.mailer)."""
+    return env.mailer.sent
 
 
 async def test_only_an_admin_is_handed_the_invite_link(

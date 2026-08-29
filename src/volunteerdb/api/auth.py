@@ -108,7 +108,7 @@ async def set_own_password(
     audit_log("auth.password_set", user=f"{user.id}:{email}", via="api")
     base_url = str(request.base_url).rstrip("/")
     background.add_task(
-        mail.send_email, email, *mail.password_changed_email(f"{base_url}/login")
+        ctx.env.mailer.send, email, *mail.password_changed_email(f"{base_url}/login")
     )
 
 
@@ -126,7 +126,7 @@ async def clear_own_password(
     audit_log("auth.password_cleared", user=f"{user.id}:{email}", via="api")
     base_url = str(request.base_url).rstrip("/")
     background.add_task(
-        mail.send_email,
+        ctx.env.mailer.send,
         email,
         *mail.password_changed_email(f"{base_url}/login", removed=True),
     )
@@ -164,12 +164,17 @@ async def request_email_change(
     hours = int(service.EMAIL_CHANGE_TTL.total_seconds() // 3600)
     base_url = str(request.base_url).rstrip("/")
     background.add_task(
-        mail.send_email,
+        ctx.env.mailer.send,
         target,
-        *mail.email_change_email(f"{base_url}/confirm-email/{token}", target, hours),
+        *mail.email_change_email(
+            f"{base_url}/confirm-email/{token}",
+            target,
+            hours,
+            ctx=ctx.env.mail_context(),
+        ),
     )
     background.add_task(
-        mail.send_email,
+        ctx.env.mailer.send,
         was,
         *mail.email_change_requested_email(target, f"{base_url}/account", hours),
     )
@@ -222,7 +227,9 @@ async def confirm_email_change(
     # address is owed the last word, and on a hijacked-session takeover it is the
     # only independent channel that can surface it. `now` names the new address.
     background.add_task(
-        mail.send_email, was, *mail.email_change_done_email(now, f"{base_url}/login")
+        env.mailer.send,
+        was,
+        *mail.email_change_done_email(now, f"{base_url}/login"),
     )
     return out
 
@@ -269,7 +276,7 @@ async def redeem_invite(
         )
     base_url = str(request.base_url).rstrip("/")
     background.add_task(
-        mail.send_email,
+        env.mailer.send,
         addr,
         *mail.welcome_email(f"{base_url}/login", has_password=has_password),
     )

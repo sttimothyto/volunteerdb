@@ -254,7 +254,7 @@ async def _sub_request_dialog(assignment_id: int, base_url: str) -> None:
                     event.title,
                     paths.get(event.team_id, f"team {event.team_id}"),
                     slot.name if slot else "volunteer",
-                    mail.event_when(event.starts_at, event.ends_at),
+                    mail.event_when(event.starts_at, event.ends_at, tz=_tz()),
                     asker.full_name if asker else "A teammate",
                     sub.note,
                     f"{base_url}/events",
@@ -331,7 +331,7 @@ async def _substitute_dialog(
                 message = mail.substituted_in_email(
                     event.title,
                     slot.name if slot else "volunteer",
-                    mail.event_when(event.starts_at, event.ends_at),
+                    mail.event_when(event.starts_at, event.ends_at, tz=_tz()),
                     outgoing.full_name,
                     f"{base_url}/events",
                 )
@@ -397,7 +397,7 @@ async def _self_removal_dialog(assignment_id: int) -> None:
                     event.title,
                     paths.get(event.team_id, ""),
                     slot.name if slot else "volunteer",
-                    mail.event_when(event.starts_at, event.ends_at),
+                    mail.event_when(event.starts_at, event.ends_at, tz=_tz()),
                     me.full_name if me else "A volunteer",
                     text,
                 )
@@ -445,7 +445,7 @@ async def _claim_sub(sub_request_id: int) -> None:
         message = mail.sub_claimed_email(
             event.title,
             slot.name,
-            mail.event_when(event.starts_at, event.ends_at),
+            mail.event_when(event.starts_at, event.ends_at, tz=_tz()),
             claimant.full_name if claimant else "A teammate",
             asker.full_name,
         )
@@ -487,7 +487,7 @@ async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
             with ui.column().classes("w-full gap-0 p-2 rounded bg-amber-50"):
                 ui.label(hit.title or "Another team's event").classes("font-medium")
                 ui.label(
-                    f"{mail.event_when(hit.starts_at, hit.ends_at)} · "
+                    f"{mail.event_when(hit.starts_at, hit.ends_at, tz=_tz())} · "
                     f"{hit.location} · {hit.team_path}"
                 ).classes("text-sm text-gray-600")
         with ui.row().classes("justify-end w-full gap-2"):
@@ -694,7 +694,9 @@ async def events_page(
                         )
                         ui.badge(duty.slot.name)
                         ui.label(
-                            mail.event_when(duty.event.starts_at, duty.event.ends_at)
+                            mail.event_when(
+                                duty.event.starts_at, duty.event.ends_at, tz=_tz()
+                            )
                         ).classes("text-sm text-gray-600")
                         ui.space()
                         if duty.open_sub is not None:
@@ -725,7 +727,9 @@ async def events_page(
                         ui.label(f"needs a {c.slot.name} at").classes("text-sm")
                         ui.link(c.event.title, f"/events/{c.event.id}")
                         ui.label(
-                            mail.event_when(c.event.starts_at, c.event.ends_at)
+                            mail.event_when(
+                                c.event.starts_at, c.event.ends_at, tz=_tz()
+                            )
                         ).classes("text-sm text-gray-600")
                         if c.sub.note:
                             ui.label(f"“{c.sub.note}”").classes("text-sm text-gray-500")
@@ -1561,7 +1565,7 @@ async def _do_cancel(event_id: int) -> None:
         message = mail.event_cancelled_email(
             cancelled.title,
             paths.get(cancelled.team_id, ""),
-            mail.event_when(cancelled.starts_at, cancelled.ends_at),
+            mail.event_when(cancelled.starts_at, cancelled.ends_at, tz=_tz()),
         )
     if was_upcoming:  # after commit; nobody needs mail about a past event
         for address in emails:
@@ -1662,7 +1666,7 @@ async def event_detail_page(request: Request, event_id: int):
         with ui.row().classes("w-full items-center gap-2"):
             ui.link(view.path, f"/teams/{event.team_id}").classes("font-medium")
             _status_badge(event)
-            ui.label(mail.event_when(event.starts_at, event.ends_at)).classes(
+            ui.label(mail.event_when(event.starts_at, event.ends_at, tz=_tz())).classes(
                 "text-sm text-gray-600"
             )
             if event.location:

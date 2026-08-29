@@ -10,7 +10,7 @@ whether the *month* is on course to cross 1,000.
 
 Two design notes worth the words:
 
-*The day is the parish day* (`settings().timezone`), not the provider's clock,
+*The day is the parish day* (VDB_TIMEZONE), not the provider's clock,
 because the provider's reset hour is not documented and an admin reasons in
 local days anyway. That makes this an early-warning gauge, not an accounting
 system — it is allowed to disagree with the SMTP2GO dashboard by a few hours'
@@ -36,16 +36,14 @@ in the day the mail goes.
 import calendar
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, timedelta
 
 import sqlalchemy as sa
 import structlog
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
-from ..db import db_session
+from ..config import Settings
 from ..models import MailQuota
 
 log = structlog.get_logger(__name__)
@@ -155,16 +153,6 @@ def project(counts: Mapping[date, int], today: date) -> Projection:
     )
 
 
-def local_today() -> date:
-    """Today in the parish's day (settings().timezone), not the container's.
-
-    Two lines duplicated from `elections.local_today` on purpose: this module
-    is infrastructure and that one is the elections domain, and a services ->
-    services import to save them would be the more expensive coupling.
-    """
-    return datetime.now(ZoneInfo(settings().timezone)).date()
-
-
 async def record(session: AsyncSession, day: date) -> None:
     """One more message on `day`'s row -- an upsert, so the first message of a
     parish day creates it. Pure over the session it is handed; the edge that
@@ -179,25 +167,6 @@ async def record(session: AsyncSession, day: date) -> None:
     )
 
 
-async def record_send(when: date | None = None) -> None:
-    """Count one message that actually left. Never raises.
-
-    Transition: the mail transport's own counter, on its own transaction,
-    until the mailer's interpreter records a send through env.QuotaCell
-    (FUNCTIONAL_REFACTORING.md, Phase 3). Called from `mail.send_email` on
-    the success path only: a message the provider rejected consumed no
-    allowance. A failure here must never turn into a failed send -- the
-    counter exists to protect the mail, not the other way round -- so
-    everything is swallowed and logged.
-    """
-    day = when or local_today()
-    try:
-        async with db_session() as session:
-            await record(session, day)
-    except Exception:  # noqa: BLE001 — see the docstring
-        log.warning("mail_quota.record_failed", day=str(day), exc_info=True)
-
-
 async def read_counts(session: AsyncSession, today: date) -> dict[date, int]:
     """Every ledger row the projection can use: this month, plus the trailing
     week where it reaches back into the last one."""
@@ -210,9 +179,8 @@ async def read_counts(session: AsyncSession, today: date) -> dict[date, int]:
     return {day: sent for day, sent in rows}
 
 
-def support_contact() -> str:
+def support_contact(s: Settings) -> str:
     """Who an admin should tell. VDB_SUPPORT_CONTACT, else the address that
     already receives job-failure alerts, else "" — the banner drops the clause
     rather than naming nobody."""
-    s = settings()
     return (s.support_contact or s.alert_email).strip()

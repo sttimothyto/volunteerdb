@@ -98,7 +98,12 @@ async def account_page(request: Request):
         hours = int(user_service.EMAIL_CHANGE_TTL.total_seconds() // 3600)
         await mail.send_email(
             target,
-            *mail.email_change_email(confirm_email_url(base_url, token), target, hours),
+            *mail.email_change_email(
+                confirm_email_url(base_url, token),
+                target,
+                hours,
+                ctx=current_env().mail_context(),
+            ),
         )
         await mail.send_email(
             email, *mail.email_change_requested_email(target, account_url, hours)

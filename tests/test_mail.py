@@ -1,45 +1,69 @@
-"""SMTP2GO send path via a mocked httpx transport — the 'never raises' contract."""
+"""The SMTP2GO transport via a mocked httpx client -- the 'never raises'
+contract -- and the parish copy the templates build."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import httpx
 
+from volunteerdb.env import LoggingMailer, Smtp2goMailer
 from volunteerdb.services import mail
 
+from tests import mint
 
-def _fake_settings(monkeypatch) -> None:
-    fake = SimpleNamespace(
-        smtp2go_api_key="test-key",
-        mail_from="vdb@example.org",
-        mail_from_name="VolunteerDB",
+SETTINGS = SimpleNamespace(
+    smtp2go_api_key="test-key",
+    mail_from="vdb@example.org",
+    mail_from_name="VolunteerDB",
+    timezone="America/Toronto",
+)
+
+
+class _Http:
+    """An HttpClients whose every client answers with `handler`."""
+
+    def __init__(self, handler) -> None:
+        self._handler = handler
+
+    def client(self, *, timeout: float = 10.0, follow_redirects: bool = False):
+        return httpx.AsyncClient(
+            transport=httpx.MockTransport(self._handler),
+            timeout=timeout,
+            follow_redirects=follow_redirects,
+        )
+
+
+class _Quota:
+    """A QuotaCell that only remembers what it was asked to count."""
+
+    def __init__(self) -> None:
+        self.counted: list[object] = []
+
+    async def record(self, sessions, day) -> None:
+        self.counted.append(day)
+
+
+class _Clock:
+    def now(self) -> datetime:
+        return datetime(2026, 8, 29, 12, 0, tzinfo=UTC)
+
+
+def _mailer(handler, quota: _Quota | None = None) -> Smtp2goMailer:
+    return Smtp2goMailer(
+        SETTINGS, _Http(handler), sessions=None, quota=quota or _Quota(), clock=_Clock()
     )
-    monkeypatch.setattr(mail, "settings", lambda: fake)
 
 
-def _mock_transport(monkeypatch, handler) -> None:
-    real_client = httpx.AsyncClient
-
-    def factory(**kwargs):
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return real_client(**kwargs)
-
-    monkeypatch.setattr(mail.httpx, "AsyncClient", factory)
-
-
-async def test_send_email_posts_to_smtp2go(monkeypatch):
-    _fake_settings(monkeypatch)
+async def test_send_email_posts_to_smtp2go():
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, json={"data": {"succeeded": 1}})
 
-    _mock_transport(monkeypatch, handler)
-
-    assert await mail.send_email("to@example.org", "Hello", "Body text") is True
+    assert await _mailer(handler).send("to@example.org", "Hello", "Body text") is True
     (request,) = seen
     assert str(request.url) == mail.API_URL
     assert request.headers["X-Smtp2go-Api-Key"] == "test-key"
@@ -50,79 +74,52 @@ async def test_send_email_posts_to_smtp2go(monkeypatch):
     assert payload["text_body"] == "Body text"
 
 
-async def test_send_email_api_error_returns_false(monkeypatch):
-    _fake_settings(monkeypatch)
-
-    _mock_transport(
-        monkeypatch, lambda request: httpx.Response(500, json={"error": "boom"})
-    )
-    assert await mail.send_email("to@example.org", "s", "b") is False
-
-    # a 200 that reports zero deliveries is also a failure
-    _mock_transport(
-        monkeypatch,
-        lambda request: httpx.Response(200, json={"data": {"succeeded": 0}}),
-    )
-    assert await mail.send_email("to@example.org", "s", "b") is False
+async def test_send_email_api_error_returns_false():
+    mailer = _mailer(lambda request: httpx.Response(500, json={"error": "boom"}))
+    assert await mailer.send("to@example.org", "s", "b") is False
 
 
-async def test_send_email_network_error_returns_false(monkeypatch):
-    _fake_settings(monkeypatch)
-
+async def test_send_email_transport_error_returns_false():
     def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("connection refused")
+        raise httpx.ConnectError("no route", request=request)
 
-    _mock_transport(monkeypatch, handler)
-    assert await mail.send_email("to@example.org", "s", "b") is False
+    assert await _mailer(handler).send("to@example.org", "s", "b") is False
 
 
-async def test_a_sent_message_counts_itself_against_the_allowance(monkeypatch):
+async def test_send_email_rejects_a_zero_succeeded_reply():
+    mailer = _mailer(
+        lambda request: httpx.Response(200, json={"data": {"succeeded": 0}})
+    )
+    assert await mailer.send("to@example.org", "s", "b") is False
+
+
+async def test_every_message_that_leaves_is_counted():
     """The provider stops delivering at 200 a day / 1,000 a month and tells
     nobody in advance; counting our own sends is the only warning there is."""
-    _fake_settings(monkeypatch)
-    _mock_transport(
-        monkeypatch,
-        lambda request: httpx.Response(200, json={"data": {"succeeded": 1}}),
+    quota = _Quota()
+    mailer = _mailer(
+        lambda request: httpx.Response(200, json={"data": {"succeeded": 1}}), quota
     )
-    counted: list[object] = []
-    monkeypatch.setattr(mail.mail_quota, "record_send", lambda *a: _record(counted, *a))
-
-    assert await mail.send_email("to@example.org", "s", "b") is True
-    assert len(counted) == 1
+    assert await mailer.send("to@example.org", "s", "b") is True
+    assert len(quota.counted) == 1
 
 
-async def test_a_rejected_message_is_not_counted(monkeypatch):
+async def test_a_rejected_message_is_not_counted():
     """It consumed no allowance. A ledger that counted attempts would shout
     loudest exactly when nothing was getting through."""
-    _fake_settings(monkeypatch)
-    _mock_transport(
-        monkeypatch, lambda request: httpx.Response(500, json={"error": "boom"})
-    )
-    counted: list[object] = []
-    monkeypatch.setattr(mail.mail_quota, "record_send", lambda *a: _record(counted, *a))
-
-    assert await mail.send_email("to@example.org", "s", "b") is False
-    assert counted == []
+    quota = _Quota()
+    mailer = _mailer(lambda request: httpx.Response(500, json={"error": "boom"}), quota)
+    assert await mailer.send("to@example.org", "s", "b") is False
+    assert quota.counted == []
 
 
-async def test_an_unconfigured_instance_counts_nothing(monkeypatch):
+async def test_an_unconfigured_instance_counts_nothing(capsys):
     """No API key means nothing left the building — dev, tests, the verify
-    harness. The allowance is untouched, and the ledger must not need a
-    database on a path that never reaches one."""
-    monkeypatch.setattr(
-        mail,
-        "settings",
-        lambda: SimpleNamespace(smtp2go_api_key="", debug_mail=True, reload=False),
-    )
-    counted: list[object] = []
-    monkeypatch.setattr(mail.mail_quota, "record_send", lambda *a: _record(counted, *a))
-
-    assert await mail.send_email("to@example.org", "s", "b") is True
-    assert counted == []
-
-
-async def _record(sink: list, *args) -> None:
-    sink.append(args)
+    harness. The allowance is untouched, and nothing on this path needs a
+    database."""
+    mailer = LoggingMailer(SimpleNamespace(debug_mail=True, reload=False))
+    assert await mailer.send("to@example.org", "s", "b") is True
+    assert "[MAIL]" in capsys.readouterr().out
 
 
 def test_ttl_window_renders_whole_days_as_days():
@@ -133,40 +130,38 @@ def test_ttl_window_renders_whole_days_as_days():
 
 
 def test_invite_email_states_the_default_week():
-    _, body = mail.invite_email("https://vdb.example.org/invite/tok")
+    _, body = mail.invite_email(
+        "https://vdb.example.org/invite/tok", ctx=mint.mail_context()
+    )
     assert "7 days" in body, "the 168-hour default must read as days"
 
 
-def test_mail_names_the_organisation_when_one_is_configured(monkeypatch):
-    from volunteerdb.config import settings
+def test_mail_names_the_organisation_when_one_is_configured():
+    parish = mint.mail_context(org="St. Timothy's")
 
-    monkeypatch.setenv("VDB_ORG_NAME", "St. Timothy's")
-    settings.cache_clear()
-
-    subject, body = mail.invite_email("https://vdb.example.org/invite/tok")
+    subject, body = mail.invite_email("https://vdb.example.org/invite/tok", ctx=parish)
     assert subject == "Your VolunteerDB account at St. Timothy's"
     assert "the volunteer database for St. Timothy's." in body
     # Never a possessive: any name ending in s would produce "Timothy's's".
     assert "'s's" not in body and "'s's" not in subject
 
     _, confirm = mail.email_change_email(
-        "https://vdb.example.org/confirm-email/tok", "new@example.org", 24
+        "https://vdb.example.org/confirm-email/tok", "new@example.org", 24, ctx=parish
     )
     assert "the volunteer database for St. Timothy's, " in confirm
-    settings.cache_clear()
 
 
-def test_mail_reads_cleanly_with_no_organisation_set(monkeypatch):
+def test_mail_reads_cleanly_with_no_organisation_set():
     """The default is empty rather than a placeholder, so the copy has to
     survive it — no double spaces, no dangling "at", no orphaned dash."""
-    from volunteerdb.config import settings
-
-    monkeypatch.setenv("VDB_ORG_NAME", "")
-    settings.cache_clear()
-
-    subject, body = mail.invite_email("https://vdb.example.org/invite/tok")
+    subject, body = mail.invite_email(
+        "https://vdb.example.org/invite/tok", ctx=mint.mail_context()
+    )
     _, confirm = mail.email_change_email(
-        "https://vdb.example.org/confirm-email/tok", "new@example.org", 24
+        "https://vdb.example.org/confirm-email/tok",
+        "new@example.org",
+        24,
+        ctx=mint.mail_context(),
     )
 
     assert subject == "Your VolunteerDB account"
@@ -175,7 +170,6 @@ def test_mail_reads_cleanly_with_no_organisation_set(monkeypatch):
         assert " at ." not in text and text.rstrip() == text.rstrip()
     assert body.startswith("An account has been created for you in VolunteerDB, ")
     assert "in VolunteerDB, the volunteer database, to this one" in confirm
-    settings.cache_clear()
 
 
 def test_event_digest_email_sections_and_link():
@@ -207,7 +201,9 @@ def test_event_digest_email_sections_and_link():
             ends_at=datetime(2026, 8, 24, 21, 0, tzinfo=tz),
         ),
     ]
-    subject, body = mail.event_digest_email(items, "https://vdb.example.org/events")
+    subject, body = mail.event_digest_email(
+        items, "https://vdb.example.org/events", tz=mint.tz()
+    )
     assert subject == "VolunteerDB: your upcoming service"
     assert "You have been scheduled to serve:" in body
     assert "Coming up this week" in body
@@ -219,7 +215,7 @@ def test_event_digest_email_sections_and_link():
     assert "Sunday, August 23, 2026, 10:30 AM–12:00 PM, Main church" in body
     assert "https://vdb.example.org/events" in body
 
-    _, without_link = mail.event_digest_email(items, None)
+    _, without_link = mail.event_digest_email(items, None, tz=mint.tz())
     assert "https://" not in without_link, "no configured base URL, no link"
 
 
@@ -244,18 +240,23 @@ def test_event_when_spans_days_when_needed():
     same_day = mail.event_when(
         datetime(2026, 8, 23, 10, 30, tzinfo=tz),
         datetime(2026, 8, 23, 12, 0, tzinfo=tz),
+        tz=mint.tz(),
     )
     assert same_day == "Sunday, August 23, 2026, 10:30 AM–12:00 PM"
     overnight = mail.event_when(
         datetime(2026, 8, 23, 22, 0, tzinfo=tz),
         datetime(2026, 8, 24, 2, 0, tzinfo=tz),
+        tz=mint.tz(),
     )
     assert "August 23" in overnight and "August 24" in overnight
 
 
 def test_the_address_confirmation_names_the_address_the_link_and_the_window():
     subject, body = mail.email_change_email(
-        "https://vdb.example.org/confirm-email/tok3n", "new@example.org", 24
+        "https://vdb.example.org/confirm-email/tok3n",
+        "new@example.org",
+        24,
+        ctx=mint.mail_context(),
     )
     assert subject == "Confirm your new VolunteerDB address"
     assert "https://vdb.example.org/confirm-email/tok3n" in body

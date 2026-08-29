@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from . import db, passwords, throttle
 from .config import Settings, settings
 from .domain import NotifyMode
-from .services import mail_quota
+from .services import mail, mail_quota
 
 if TYPE_CHECKING:
     from .services import users
@@ -86,14 +86,95 @@ class HttpxClients:
         return httpx.AsyncClient(timeout=timeout, follow_redirects=follow_redirects)
 
 
-class _SendEmailMailer:
-    """Transition: the mail module's own transport, until it becomes a
-    Mailer of its own (FUNCTIONAL_REFACTORING.md, Phase 3)."""
+class LoggingMailer:
+    """No API key: nothing is sent. The body goes to stdout only under
+    VDB_DEBUG_MAIL or VDB_RELOAD (`make dev`), because these bodies carry
+    sign-in codes and invite links -- a production instance that merely
+    forgot the key must not write every credential it issues into journald,
+    where the app's own log redaction cannot reach it."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
 
     async def send(self, to: str, subject: str, body: str) -> bool:
-        from .services import mail
+        s = self._settings
+        if s.debug_mail or s.reload:
+            print(f"[MAIL] to={to} subject={subject!r}\n{body}", flush=True)
+        else:
+            log.warning(
+                "mail.not_configured",
+                to=to,
+                subject=subject,
+                hint="set VDB_SMTP2GO_API_KEY to send, or VDB_DEBUG_MAIL=true to "
+                "print the body (it may contain a sign-in link)",
+            )
+        return True
 
-        return await mail.send_email(to, subject, body)
+
+class Smtp2goMailer:
+    """The SMTP2GO HTTPS API. Never raises; a success is counted into the
+    mail-allowance ledger (a rejected message consumed none of it)."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        http: HttpClients,
+        *,
+        sessions: async_sessionmaker[AsyncSession],
+        quota: QuotaCell,
+        clock: Clock,
+    ) -> None:
+        self._settings = settings
+        self._http = http
+        self._sessions = sessions
+        self._quota = quota
+        self._clock = clock
+
+    async def send(self, to: str, subject: str, body: str) -> bool:
+        s = self._settings
+        payload = {
+            "sender": f"{s.mail_from_name} <{s.mail_from}>",
+            "to": [to],
+            "subject": subject,
+            "text_body": body,
+        }
+        try:
+            async with self._http.client(timeout=10.0) as client:
+                resp = await client.post(
+                    mail.API_URL,
+                    json=payload,
+                    headers={"X-Smtp2go-Api-Key": s.smtp2go_api_key},
+                )
+        except httpx.HTTPError:
+            log.exception("mail.request_failed", to=to)
+            return False
+        ok = (
+            resp.status_code == 200
+            and resp.json().get("data", {}).get("succeeded", 0) >= 1
+        )
+        if not ok:
+            log.error(
+                "mail.send_failed", to=to, status=resp.status_code, body=resp.text[:500]
+            )
+            return False
+        # Successes only: a rejected message consumed none of the allowance, and
+        # a ledger that counted attempts would shout loudest when nothing sent.
+        today = self._clock.now().astimezone(ZoneInfo(s.timezone)).date()
+        await self._quota.record(self._sessions, today)
+        return True
+
+
+def default_mailer(
+    settings: Settings,
+    http: HttpClients,
+    *,
+    sessions: async_sessionmaker[AsyncSession],
+    quota: QuotaCell,
+    clock: Clock,
+) -> Mailer:
+    if not settings.smtp2go_api_key:
+        return LoggingMailer(settings)
+    return Smtp2goMailer(settings, http, sessions=sessions, quota=quota, clock=clock)
 
 
 class ThrottleCell:
@@ -200,6 +281,14 @@ class Env:
             ttl=timedelta(hours=self.settings.invite_ttl_hours),
         )
 
+    def mail_context(self) -> "mail.MailContext":
+        """What the parish copy needs: the organisation's name, the invite
+        lifetime, the zone times are written in."""
+        s = self.settings
+        return mail.MailContext(
+            org=s.org_name, invite_ttl_hours=s.invite_ttl_hours, tz=self.tz
+        )
+
     @property
     def password_terms(self) -> frozenset[str]:
         """This instance's own names, which the password policy refuses."""
@@ -227,16 +316,23 @@ def build(
         sessions = db.sessionmaker()
     else:
         sessions = async_sessionmaker(engine, expire_on_commit=False)
+    clock = clock if clock is not None else SystemClock()
+    http = http if http is not None else HttpxClients()
+    quota = QuotaCell()
+    if mailer is None:
+        mailer = default_mailer(
+            config, http, sessions=sessions, quota=quota, clock=clock
+        )
     return Env(
         settings=config,
-        clock=clock if clock is not None else SystemClock(),
+        clock=clock,
         rng=rng if rng is not None else SecretsRng(),
-        mailer=mailer if mailer is not None else _SendEmailMailer(),
-        http=http if http is not None else HttpxClients(),
+        mailer=mailer,
+        http=http,
         engine=engine,
         sessions=sessions,
         throttle=ThrottleCell(),
-        quota=QuotaCell(),
+        quota=quota,
         notify=notify,
     )
 

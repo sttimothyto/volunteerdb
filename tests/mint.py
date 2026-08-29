@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from volunteerdb.auth import new_otp_code, new_token
 from volunteerdb.config import settings
+from volunteerdb.services.mail import MailContext
 from volunteerdb.services.users import Invite
 
 
@@ -36,3 +37,7 @@ def uuid() -> UUID:
 
 def today() -> date:
     return datetime.now(tz()).date()
+
+
+def mail_context(org: str = "", invite_ttl_hours: int = 168) -> MailContext:
+    return MailContext(org=org, invite_ttl_hours=invite_ttl_hours, tz=tz())

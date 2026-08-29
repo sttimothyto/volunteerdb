@@ -3,6 +3,7 @@ from datetime import datetime
 
 from nicegui import ui
 
+from ..env import current as current_env
 from ..permissions import Actor
 from ..services import mail_quota
 from .a11y import heading, icon_button
@@ -138,7 +139,7 @@ def _mail_quota_banner(actor: Actor) -> None:
             "outgoing_mail",
         )
         headline = "Email sending is heading over its limit"
-    contact = mail_quota.support_contact()
+    contact = mail_quota.support_contact(current_env().settings)
     reach = (
         f" Contact the administrator who set up this website ({contact})."
         if contact

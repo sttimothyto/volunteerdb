@@ -14,21 +14,16 @@ import hashlib
 import pytest
 
 from volunteerdb.db import db_session
-from volunteerdb.services import mail, users
+from volunteerdb.services import users
 
 from tests.conftest import _token
 
 
 @pytest.fixture
-def sent(monkeypatch) -> list[tuple[str, str, str]]:
-    captured: list[tuple[str, str, str]] = []
-
-    async def fake_send(to: str, subject: str, body: str) -> bool:
-        captured.append((to, subject, body))
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake_send)
-    return captured
+def sent(env) -> list[tuple[str, str, str]]:
+    """What the API mailed: the Env's recording mailer (the routes send
+    through ctx.env.mailer, not the mail.send_email shim)."""
+    return env.mailer.sent
 
 
 async def test_changing_your_own_password_needs_the_current_one(client, seeded, sent):

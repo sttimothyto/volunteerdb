@@ -173,7 +173,7 @@ async def main(env: Env, today: date | None = None) -> int:
     sent_count = failed = 0
     for email, items, scheduled_ids, week_ids, day_ids in per_person.values():
         if not await mail.send_email(
-            email, *mail.event_digest_email(items, events_url)
+            email, *mail.event_digest_email(items, events_url, tz=env.tz)
         ):
             failed += 1
             print(f"FAILED digest to {email}", file=sys.stderr)

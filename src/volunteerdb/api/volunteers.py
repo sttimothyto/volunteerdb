@@ -151,7 +151,7 @@ async def update_volunteer(
         if now:
             base_url = str(request.base_url).rstrip("/")
             background.add_task(
-                mail_service.send_email,
+                ctx.env.mailer.send,
                 was,
                 *mail_service.address_edited_email(now, f"{base_url}/login"),
             )
@@ -295,9 +295,11 @@ async def invite_volunteer(
         out.invite_token = None  # mailed instead, see the docstring
         base_url = str(request.base_url).rstrip("/")
         background.add_task(
-            mail_service.send_email,
+            ctx.env.mailer.send,
             account.email,
-            *mail_service.invite_email(f"{base_url}/invite/{token}"),
+            *mail_service.invite_email(
+                f"{base_url}/invite/{token}", ctx=ctx.env.mail_context()
+            ),
         )
     return out
 

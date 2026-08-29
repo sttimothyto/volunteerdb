@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from volunteerdb.config import Settings
 from volunteerdb.db import db_session
+from volunteerdb.env import LoggingMailer
 from volunteerdb.services import mail, users
 from volunteerdb.ui.context import session_expired
 
@@ -164,32 +165,28 @@ async def test_redeem_invite_password_optional(database):
         ).is_ok()
 
 
-async def test_mail_dev_mode_and_builders(monkeypatch, capsys):
+async def test_mail_dev_mode_and_builders(capsys):
     """With no API key nothing is sent — but the BODY only reaches the log
     under VDB_DEBUG_MAIL (or VDB_RELOAD, which means `make dev`). These bodies
     carry sign-in codes and invite links, so an instance that merely forgot the
     API key must not write every credential it issues into journald."""
-    monkeypatch.setattr(mail, "settings", lambda: Settings(smtp2go_api_key=""))
-    assert await mail.send_email("x@example.org", "Subj", "Body")  # no network
+    quiet = LoggingMailer(Settings(smtp2go_api_key=""))
+    assert await quiet.send("x@example.org", "Subj", "Body")  # no network
     out = capsys.readouterr().out
     assert "Body" not in out, "no credentials on stdout without opting in"
 
-    monkeypatch.setattr(
-        mail, "settings", lambda: Settings(smtp2go_api_key="", debug_mail=True)
-    )
-    assert await mail.send_email("x@example.org", "Subj", "Body")
+    loud = LoggingMailer(Settings(smtp2go_api_key="", debug_mail=True))
+    assert await loud.send("x@example.org", "Subj", "Body")
     out = capsys.readouterr().out
     assert "[MAIL]" in out and "x@example.org" in out and "Body" in out
 
-    monkeypatch.setattr(
-        mail, "settings", lambda: Settings(smtp2go_api_key="", reload=True)
-    )
-    assert await mail.send_email("x@example.org", "Subj", "Body")
+    dev = LoggingMailer(Settings(smtp2go_api_key="", reload=True))
+    assert await dev.send("x@example.org", "Subj", "Body")
     assert "Body" in capsys.readouterr().out, "`make dev` needs nothing set"
 
     subject, body = mail.otp_email("123456")
     assert "123456" in subject and "10 minutes" in body
-    subject, body = mail.invite_email("https://x/invite/tok")
+    subject, body = mail.invite_email("https://x/invite/tok", ctx=mint.mail_context())
     assert "https://x/invite/tok" in body and "optional" in body
     assert "7 days" in body, "the link's lifetime is stated where it is handed out"
     subject, body = mail.password_changed_email("https://x/login")

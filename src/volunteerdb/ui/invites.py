@@ -43,7 +43,10 @@ async def email_invite(base_url: str, address: str, token: str) -> bool:
     """Mail the link. False when the send failed — never raises, so a dead mail
     provider still leaves the caller with a link to hand out."""
     return await mail.send_email(
-        address, *mail.invite_email(invite_url(base_url, token))
+        address,
+        *mail.invite_email(
+            invite_url(base_url, token), ctx=current_env().mail_context()
+        ),
     )
 
 

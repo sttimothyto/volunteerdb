@@ -1,9 +1,11 @@
-"""Outbound email via the SMTP2GO HTTPS API.
+"""Outbound email: the parish copy, as pure templates.
 
-With no API key configured (local dev, tests, the verify harness) messages are
-printed to stdout instead of sent, so OTP codes and invite links stay readable.
-Callers should invoke send_email as a module attribute (``mail.send_email``)
-so tests can monkeypatch it.
+Every builder returns (subject, body) for the values it is handed; the
+parish's name and zone arrive in a MailContext. The transport lives at the
+edge (env.Smtp2goMailer; env.LoggingMailer without an API key, which prints
+messages instead so OTP codes and invite links stay readable in dev).
+Callers still invoke ``mail.send_email`` as a module attribute so tests can
+monkeypatch it.
 
 Every message that actually leaves is counted into `mail_quota` (see
 services/mail_quota.py): the free tier allows 200 a day and 1,000 a month, and
@@ -16,66 +18,31 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-import httpx
-import structlog
-
-from ..config import settings
-from . import mail_quota
-
 API_URL = "https://api.smtp2go.com/v3/email/send"
 
-log = structlog.get_logger(__name__)
+
+@dataclass(frozen=True, slots=True)
+class MailContext:
+    """What the parish copy needs from the settings: its name (VDB_ORG_NAME,
+    empty when unset -- every sentence below reads either way), how long an
+    invite link lives, and the parish zone times are written in.
+    env.Env.mail_context() builds one."""
+
+    org: str
+    invite_ttl_hours: int
+    tz: ZoneInfo
 
 
 async def send_email(to: str, subject: str, text_body: str) -> bool:
-    """Send one message; True on success. Never raises."""
-    s = settings()
-    if not s.smtp2go_api_key:
-        # No key: log instead of sending, which is what keeps development and
-        # the test suite offline. The BODY only goes out under VDB_DEBUG_MAIL,
-        # because these bodies carry sign-in codes, invite links and
-        # address-change links — a production instance that simply forgot the
-        # key would otherwise write every credential it ever issued into
-        # journald, where the app's own log redaction cannot reach it.
-        # VDB_RELOAD means `make dev`, which is a development server by
-        # definition — no separate flag to remember there.
-        if s.debug_mail or s.reload:
-            print(f"[MAIL] to={to} subject={subject!r}\n{text_body}", flush=True)
-        else:
-            log.warning(
-                "mail.not_configured",
-                to=to,
-                subject=subject,
-                hint="set VDB_SMTP2GO_API_KEY to send, or VDB_DEBUG_MAIL=true to "
-                "print the body (it may contain a sign-in link)",
-            )
-        return True
-    payload = {
-        "sender": f"{s.mail_from_name} <{s.mail_from}>",
-        "to": [to],
-        "subject": subject,
-        "text_body": text_body,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                API_URL, json=payload, headers={"X-Smtp2go-Api-Key": s.smtp2go_api_key}
-            )
-    except httpx.HTTPError:
-        log.exception("mail.request_failed", to=to)
-        return False
-    ok = (
-        resp.status_code == 200 and resp.json().get("data", {}).get("succeeded", 0) >= 1
-    )
-    if not ok:
-        log.error(
-            "mail.send_failed", to=to, status=resp.status_code, body=resp.text[:500]
-        )
-        return False
-    # Successes only: a rejected message consumed none of the allowance, and a
-    # ledger that counted attempts would shout loudest when nothing was sent.
-    await mail_quota.record_send()  # never raises
-    return True
+    """Send one message; True on success. Never raises.
+
+    Transition: the transport is the running Env's Mailer (env.Smtp2goMailer,
+    or env.LoggingMailer without an API key); this name stays so the edges and
+    the tests' monkeypatches keep working until the edges hand SendMail
+    effects to the interpreter (FUNCTIONAL_REFACTORING.md, Phase 4)."""
+    from ..env import current
+
+    return await current().mailer.send(to, subject, text_body)
 
 
 def ttl_window(hours: int) -> str:
@@ -85,20 +52,22 @@ def ttl_window(hours: int) -> str:
     return f"{hours} hours"
 
 
-def org() -> str:
+def org(ctx: MailContext) -> str:
     """The parish this instance serves (VDB_ORG_NAME), or "" if unset.
 
     Every use below reads as a complete sentence either way. The phrasing
     deliberately avoids a possessive — "St. Timothy's's volunteer database" is
     otherwise unavoidable for any name ending in s.
     """
-    return settings().org_name.strip()
+    return ctx.org.strip()
 
 
-def invite_email(invite_url: str, ttl_hours: int | None = None) -> tuple[str, str]:
-    hours = settings().invite_ttl_hours if ttl_hours is None else ttl_hours
+def invite_email(
+    invite_url: str, ctx: MailContext, ttl_hours: int | None = None
+) -> tuple[str, str]:
+    hours = ctx.invite_ttl_hours if ttl_hours is None else ttl_hours
     window = ttl_window(hours)
-    where = org()
+    where = org(ctx)
     subject = "Your VolunteerDB account"
     if where:
         subject += f" at {where}"
@@ -153,7 +122,7 @@ def password_changed_email(login_url: str, *, removed: bool = False) -> tuple[st
 
 
 def email_change_email(
-    confirm_url: str, new_address: str, ttl_hours: int
+    confirm_url: str, new_address: str, ttl_hours: int, ctx: MailContext
 ) -> tuple[str, str]:
     """Sent to the address somebody wants to move an account to.
 
@@ -163,7 +132,7 @@ def email_change_email(
     address it would set, says what it would move, and gives an unmistakable
     "not you? ignore this". The address being *replaced* hears separately —
     see email_change_requested_email."""
-    where = org()
+    where = org(ctx)
     subject = "Confirm your new VolunteerDB address"
     what = (
         f"VolunteerDB, the volunteer database for {where}"
@@ -307,9 +276,8 @@ def proposal_digest_email(items: list[DigestItem]) -> tuple[str, str]:
 # --- events -------------------------------------------------------------------
 
 
-def event_when(starts_at: datetime, ends_at: datetime) -> str:
+def event_when(starts_at: datetime, ends_at: datetime, tz: ZoneInfo) -> str:
     """'Sunday, August 23, 2026, 10:30 AM–12:00 PM' in the parish's clock."""
-    tz = ZoneInfo(settings().timezone)
     s, e = starts_at.astimezone(tz), ends_at.astimezone(tz)
     if e.date() == s.date():
         return f"{s:%A, %B %-d, %Y}, {s:%-I:%M %p}–{e:%-I:%M %p}"
@@ -339,10 +307,10 @@ _EVENT_DIGEST_HEADERS = {
 
 
 def event_digest_email(
-    items: list[EventDigestItem], events_url: str | None = None
+    items: list[EventDigestItem], events_url: str | None = None, *, tz: ZoneInfo
 ) -> tuple[str, str]:
     """One nightly email covering all of this volunteer's event notices —
-    never one email per event. events_url is settings().public_base_url via
+    never one email per event. events_url is VDB_PUBLIC_BASE_URL via
     the job; unset omits the link (the proposal-digest precedent)."""
     sections = []
     for kind, header in _EVENT_DIGEST_HEADERS.items():
@@ -351,7 +319,7 @@ def event_digest_email(
             where = f", {item.location}" if item.location else ""
             lines.append(
                 f"  • {item.title} — {item.slot} ({item.path})\n"
-                f"    {event_when(item.starts_at, item.ends_at)}{where}"
+                f"    {event_when(item.starts_at, item.ends_at, tz)}{where}"
             )
         if lines:
             sections.append(header + "\n" + "\n".join(lines))

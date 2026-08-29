@@ -105,7 +105,7 @@ async def _create_meta_team(
     where = f" at {event.location}" if event.location else ""
     description = (
         f"[Auto] Task force for the event “{event.title}” on "
-        f"{mail.event_when(event.starts_at, event.ends_at)}{where}. Managed "
+        f"{mail.event_when(event.starts_at, event.ends_at, tz=tz)}{where}. Managed "
         "from the event page; removed automatically after the event ends."
     )
     return await team_service.create(

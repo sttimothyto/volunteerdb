@@ -1057,7 +1057,9 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                             "font-medium"
                         )
                         ui.label(
-                            mail.event_when(s.event.starts_at, s.event.ends_at)
+                            mail.event_when(
+                                s.event.starts_at, s.event.ends_at, tz=current_env().tz
+                            )
                         ).classes("text-sm text-gray-600")
                         ui.space()
                         cap = "∞" if s.capacity is None else s.capacity

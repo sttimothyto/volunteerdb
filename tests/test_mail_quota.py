@@ -121,11 +121,11 @@ def test_missing_days_are_zero_not_absent():
 # --- the ledger ---------------------------------------------------------------
 
 
-async def test_record_send_counts_one_row_per_parish_day(database):
+async def test_record_counts_one_row_per_parish_day(env):
     day = date(2026, 3, 4)
     for _ in range(3):
-        await mail_quota.record_send(day)
-    await mail_quota.record_send(day + timedelta(days=1))
+        await env.quota.record(env.sessions, day)
+    await env.quota.record(env.sessions, day + timedelta(days=1))
 
     async with db_session() as session:
         rows = dict(
@@ -134,17 +134,7 @@ async def test_record_send_counts_one_row_per_parish_day(database):
     assert rows == {day: 3, day + timedelta(days=1): 1}
 
 
-async def test_record_send_never_raises(database, monkeypatch):
-    """The counter protects the mail, not the other way round."""
-
-    def explode(*a, **k):
-        raise RuntimeError("db is gone")
-
-    monkeypatch.setattr(mail_quota, "db_session", explode)
-    await mail_quota.record_send(date(2026, 3, 4))  # no exception escapes
-
-
-async def test_read_counts_spans_the_month_and_the_trailing_week(database):
+async def test_read_counts_spans_the_month_and_the_trailing_week(env):
     today = date(2026, 6, 3)  # early enough that the week reaches into May
     for day, n in {
         date(2026, 5, 20): 1,  # outside the window entirely
@@ -154,7 +144,7 @@ async def test_read_counts_spans_the_month_and_the_trailing_week(database):
         date(2026, 6, 9): 5,  # the future: a manual run cannot pull it in
     }.items():
         for _ in range(n):
-            await mail_quota.record_send(day)
+            await env.quota.record(env.sessions, day)
 
     async with db_session() as session:
         counts = await mail_quota.read_counts(session, today)
@@ -165,10 +155,10 @@ async def test_projection_is_memoised_and_droppable(env):
     """The gauge is memoised for a minute in the Env's cell -- one holder,
     dropped on demand -- never in this module."""
     cell, today, now = env.quota, env.today(), env.clock.now()
-    await mail_quota.record_send(today)
+    await env.quota.record(env.sessions, today)
     assert (await cell.projection(env.sessions, today, now)).today == 1
 
-    await mail_quota.record_send(today)
+    await env.quota.record(env.sessions, today)
     assert (await cell.projection(env.sessions, today, now)).today == 1, (
         "served from the memo"
     )

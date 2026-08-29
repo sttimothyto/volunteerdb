@@ -189,7 +189,7 @@ async def test_the_header_avatar_and_the_profile_avatar_are_addressed_apart(data
 
 
 async def _spend(day_offset: int, messages: int) -> None:
-    day = mail_quota.local_today() - timedelta(days=day_offset)
+    day = mint.today() - timedelta(days=day_offset)
     async with db_session() as session:
         await session.execute(
             pg_insert(MailQuota)
