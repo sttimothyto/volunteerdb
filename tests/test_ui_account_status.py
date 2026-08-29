@@ -15,6 +15,8 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 # late morning in Toronto, so the rendered date is the same day in any
@@ -29,8 +31,8 @@ async def _parish(session) -> dict[str, int]:
     Note that users.create with no password arms an invite link, so Mia — who
     has never used hers — reads as "invite sent" rather than "account". Opal is
     given a password to make her the plain settled case."""
-    liturgy = await teams.create(session, None, "Liturgy")
-    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+    liturgy = ok(await teams.create(session, None, "Liturgy"))
+    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
 
     lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
     mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")

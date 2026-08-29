@@ -104,7 +104,6 @@ DISCARDED_GATE_BASELINE: dict[str, int] = {
     "services/pages.py": 3,
     "services/roster_sheets.py": 1,
     "services/task_force.py": 2,
-    "services/teams.py": 6,
     "services/users.py": 7,
     "services/volunteers.py": 5,
     "services/workload.py": 2,

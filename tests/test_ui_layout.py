@@ -16,6 +16,7 @@ from volunteerdb.models import MailQuota
 from volunteerdb.services import mail_quota, photos, teams, users, volunteers
 
 from .conftest import SLOW
+from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -30,7 +31,7 @@ def _png(width: int, height: int) -> bytes:
 
 async def test_settings_menu_carries_reading_preferences(database):
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
         admin, _ = await users.create(session, "admin@example.org", is_admin=True)
 
     async with user_simulation(main_file=SIM_MAIN) as user:

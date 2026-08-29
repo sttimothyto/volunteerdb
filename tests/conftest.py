@@ -30,6 +30,8 @@ from volunteerdb.log import shared_processors
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 # Go through Settings rather than os.environ so the suite reads .env exactly
 # like the app does. Reading the environment alone meant an edited
 # VDB_DATABASE_URL (or POSTGRES_PASSWORD) in .env gave you a working `make
@@ -315,7 +317,7 @@ def debug_logging(monkeypatch):
 @pytest.fixture
 async def seeded(database):
     async with db_session() as session:
-        team = await teams.create(session, None, "Liturgy")
+        team = ok(await teams.create(session, None, "Liturgy"))
         v = await volunteers.create(
             session, None, "Maria", "Alvarez", "maria@example.org"
         )

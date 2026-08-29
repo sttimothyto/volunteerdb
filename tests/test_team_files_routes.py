@@ -6,11 +6,13 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 
 async def _seed() -> dict:
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy Team")
-        choir = await teams.create(session, None, "Choir")
+        liturgy = ok(await teams.create(session, None, "Liturgy Team"))
+        choir = ok(await teams.create(session, None, "Choir"))
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )

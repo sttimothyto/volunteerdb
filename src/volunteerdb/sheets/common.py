@@ -3,6 +3,8 @@ round-trippable (export → edit → import)."""
 
 import re
 
+from ..errors import Invalid, invalid
+from ..fp import Ok, Result
 from ..models import ROLE_LABELS, TeamRole
 
 ROSTER_SHEET = "Roster"
@@ -32,15 +34,15 @@ _SHEET_URL_RE = re.compile(
 )
 
 
-def extract_spreadsheet_id(url: str) -> str:
-    """The Drive file id, or ValueError for anything but a Google Sheets link."""
+def extract_spreadsheet_id(url: str) -> Result[str, Invalid]:
+    """The Drive file id, or Invalid for anything but a Google Sheets link."""
     match = _SHEET_URL_RE.match(url.strip())
     if match is None:
-        raise ValueError(
+        return invalid(
             "not a Google Sheets link — expected "
             "https://docs.google.com/spreadsheets/d/…"
         )
-    return match.group(1)
+    return Ok(match.group(1))
 
 
 def sheet_url(file_id: str) -> str:

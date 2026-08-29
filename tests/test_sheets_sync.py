@@ -23,6 +23,8 @@ from volunteerdb.services import memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests.fp_helpers import ok
+
 
 def _csv_bytes(rows: list[list]) -> bytes:
     buffer = StringIO()
@@ -37,8 +39,8 @@ async def choir(database):
     """Choir with Lena (leader), Mia and Carl (members); Carl also serves on
     Hospitality. Dora is on Choir only."""
     async with db_session() as session:
-        choir = await teams.create(session, None, "Choir")
-        hospitality = await teams.create(session, None, "Hospitality")
+        choir = ok(await teams.create(session, None, "Choir"))
+        hospitality = ok(await teams.create(session, None, "Hospitality"))
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )
@@ -68,7 +70,7 @@ async def choir(database):
 
 async def _team_volunteer_ids(team_id: int) -> set[int]:
     async with db_session() as session:
-        pairs = await teams.roster(session, None, team_id)
+        pairs = ok(await teams.roster(session, None, team_id))
         return {volunteer.id for _, volunteer in pairs}
 
 
@@ -188,7 +190,7 @@ async def test_sync_dry_run_reports_without_writing(choir):
 
 async def test_sync_empty_sheet_for_an_empty_team_is_fine(choir):
     async with db_session() as session:
-        fresh = await teams.create(session, None, "Fresh")
+        fresh = ok(await teams.create(session, None, "Fresh"))
         fresh_id = fresh.id
     report = await importer.run_team_sync(
         _csv_bytes([]), team_id=fresh_id, user_id=None
@@ -230,7 +232,7 @@ async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir):
         outsider = await volunteers.create(
             session, None, "Orla", "Outsider", "orla@example.org"
         )
-        other = await teams.create(session, None, "Altar Servers")
+        other = ok(await teams.create(session, None, "Altar Servers"))
         await memberships.assign(session, None, outsider.id, other.id, TeamRole.member)
         outsider_id = outsider.id
 

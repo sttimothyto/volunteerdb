@@ -13,10 +13,12 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 
+from tests.fp_helpers import ok
+
 
 async def _fixtures(session, team_name="Choir"):
     v = await volunteers.create(session, None, "Tim", "Traveller")
-    t = await teams.create(session, None, team_name)
+    t = ok(await teams.create(session, None, team_name))
     return v.id, t.id
 
 
@@ -79,7 +81,7 @@ async def test_spells_on_two_teams_stay_independent_and_sort_by_start(database):
     team_id and the final sort are otherwise unexercised."""
     async with db_session(user_id=1) as session:
         vid, choir = await _fixtures(session)
-        ushers = await teams.create(session, None, "Ushers")
+        ushers = ok(await teams.create(session, None, "Ushers"))
         ushers_id = ushers.id
         await memberships.assign(session, None, vid, choir, TeamRole.member)
         await memberships.assign(session, None, vid, ushers_id, TeamRole.core)
@@ -108,7 +110,7 @@ async def test_deleted_team_uses_last_historical_name(database):
         vid, tid = await _fixtures(session)
         await memberships.assign(session, None, vid, tid, TeamRole.member)
     async with db_session(user_id=1) as session:
-        await teams.delete(session, None, tid)
+        ok(await teams.delete(session, None, tid))
 
     async with db_session() as session:
         (spell,) = await volunteers.timeline(session, vid)
@@ -192,7 +194,7 @@ async def test_team_anniversaries_role_change_keeps_one_entry(database):
 async def test_team_anniversaries_skip_departed_members_and_other_teams(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        other = await teams.create(session, None, "Ushers")
+        other = ok(await teams.create(session, None, "Ushers"))
         m = await memberships.assign(session, None, vid, tid, TeamRole.member)
         await memberships.assign(session, None, vid, other.id, TeamRole.member)
         mid, other_id = m.id, other.id

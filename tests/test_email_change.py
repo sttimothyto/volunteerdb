@@ -24,6 +24,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import mail, memberships, teams, users, volunteers
 
 from .conftest import SLOW, mail_to
+from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -75,7 +76,7 @@ async def test_the_address_reaches_every_active_membership(database):
     async with db_session() as session:
         volunteer, account = await _volunteer_with_account(session)
         for name in ("Liturgy", "Hospitality"):
-            team = await teams.create(session, None, name)
+            team = ok(await teams.create(session, None, name))
             await memberships.assign(
                 session, None, volunteer.id, team.id, TeamRole.member
             )
@@ -344,7 +345,7 @@ async def test_a_leader_correcting_someone_elses_address_applies_at_once(
     monkeypatch.setattr(mail, "send_email", fake_ok)
 
     async with db_session() as session:
-        team = await teams.create(session, None, "Liturgy")
+        team = ok(await teams.create(session, None, "Liturgy"))
         member = await volunteers.create(
             session, None, "Felix", "Garcia", email="typo@example.org"
         )

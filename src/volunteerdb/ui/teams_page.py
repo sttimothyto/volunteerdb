@@ -376,26 +376,30 @@ def _team_dialog(parent_options: dict[int, str], team=None) -> None:
                     Decimal(str(weight.value)) if weight.value is not None else None
                 )
                 if team is None:
-                    created = await team_service.create(
-                        session,
-                        actor,
-                        name.value,
-                        parent_id,
-                        description.value or None,
-                        workload_weight=weight_value,
-                    )
+                    created = (
+                        await team_service.create(
+                            session,
+                            actor,
+                            name.value,
+                            parent_id,
+                            description.value or None,
+                            workload_weight=weight_value,
+                        )
+                    ).unwrap()
                     team_id = created.id
                 else:
-                    await team_service.update(
-                        session,
-                        actor,
-                        team.id,
-                        name=name.value,
-                        parent_team_id=parent_id,
-                        description=description.value or None,
-                        workload_weight=weight_value,
-                        is_active=active.value if active is not None else None,
-                    )
+                    (
+                        await team_service.update(
+                            session,
+                            actor,
+                            team.id,
+                            name=name.value,
+                            parent_team_id=parent_id,
+                            description=description.value or None,
+                            workload_weight=weight_value,
+                            is_active=active.value if active is not None else None,
+                        )
+                    ).unwrap()
                     team_id = team.id
             dialog.close()
             ui.navigate.to(f"/teams/{team_id}")
@@ -703,9 +707,11 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
         @notify_errors
         async def save() -> None:
             async with action_session() as (session, actor):
-                await team_service.set_roster_sheet(
-                    session, actor, team_id, url.value or ""
-                )
+                (
+                    await team_service.set_roster_sheet(
+                        session, actor, team_id, url.value or ""
+                    )
+                ).unwrap()
                 user_id = actor.user.id
             dialog.close()
             ui.notify("Syncing with Google Sheets…")
@@ -810,7 +816,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         # snapshot, where the roster is history and the addresses may be stale
         can_invite = can_full and at is None
         roster = (
-            await team_service.roster(session, actor, team_id, at=at)
+            (await team_service.roster(session, actor, team_id, at=at)).unwrap()
             if can_names
             else []
         )
@@ -1063,5 +1069,5 @@ async def _remove_member(membership_id: int) -> None:
 @notify_errors
 async def _delete_team(team_id: int) -> None:
     async with action_session() as (session, actor):
-        await team_service.delete(session, actor, team_id)
+        (await team_service.delete(session, actor, team_id)).unwrap()
     ui.navigate.to("/teams")

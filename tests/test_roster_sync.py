@@ -19,6 +19,8 @@ from volunteerdb.services import gsheets, memberships, teams, users, volunteers
 from volunteerdb.services import roster_sheets as service
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests.fp_helpers import ok
+
 
 def _csv_bytes(rows: list[list]) -> bytes:
     buffer = StringIO()
@@ -79,7 +81,7 @@ def fake(monkeypatch):
 async def choir(database):
     """Choir with Lena (leader) and Mia (member), already linked to a sheet."""
     async with db_session() as session:
-        team = await teams.create(session, None, "Choir")
+        team = ok(await teams.create(session, None, "Choir"))
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )
@@ -100,7 +102,7 @@ async def choir(database):
 
 async def _roster_names(team_id: int) -> set[str]:
     async with db_session() as session:
-        roster = await teams.roster(session, None, team_id)
+        roster = ok(await teams.roster(session, None, team_id))
     return {v.first_name for _m, v in roster}
 
 
@@ -179,7 +181,7 @@ async def test_a_bad_row_fails_the_team_whole_and_leaves_the_sheet_alone(choir, 
 
 async def test_a_team_with_no_sheet_cannot_be_synced(database, fake):
     async with db_session() as session:
-        team = await teams.create(session, None, "Choir")
+        team = ok(await teams.create(session, None, "Choir"))
     with pytest.raises(LookupError):
         await service.sync_team(team.id, direction=service.EXPORT, user_id=None)
 
@@ -219,7 +221,7 @@ async def test_the_leader_may_sync(choir, fake):
 
 async def test_the_job_creates_a_sheet_for_a_team_that_has_none(database, fake, env):
     async with db_session() as session:
-        team = await teams.create(session, None, "Choir")
+        team = ok(await teams.create(session, None, "Choir"))
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )
@@ -240,8 +242,8 @@ async def test_the_job_never_gives_a_task_force_a_sheet(
     """A meta team holds a borrowed roster; a link-shared sheet of it would
     publish the collaborating teams' contact details."""
     async with db_session() as session:
-        team = await teams.create(session, None, "Choir")
-        meta = await teams.create(session, None, "Task force")
+        team = ok(await teams.create(session, None, "Choir"))
+        meta = ok(await teams.create(session, None, "Task force"))
         meta_id = meta.id
         team_id = team.id
 
@@ -262,8 +264,8 @@ async def test_the_job_is_a_noop_when_unconfigured(database, monkeypatch, env):
 
 async def test_one_broken_sheet_does_not_stop_the_others(database, fake, env):
     async with db_session() as session:
-        good = await teams.create(session, None, "Choir")
-        bad = await teams.create(session, None, "Altar")
+        good = ok(await teams.create(session, None, "Choir"))
+        bad = ok(await teams.create(session, None, "Altar"))
         session.add(TeamSheet(team_id=good.id, file_id="good1"))
         session.add(TeamSheet(team_id=bad.id, file_id="bad1"))
         good_id, bad_id = good.id, bad.id

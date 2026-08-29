@@ -10,14 +10,18 @@ from volunteerdb.models import TeamRole
 from volunteerdb.permissions import volunteer_team_ids
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 
 @pytest.fixture
 async def parish(database):
     """Liturgy > Music; separate Hospitality. One volunteer per role on Liturgy."""
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
-        music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
-        hospitality = await teams.create(session, None, "Hospitality")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        music = ok(
+            await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+        )
+        hospitality = ok(await teams.create(session, None, "Hospitality"))
 
         people = {}
         for name, role in [

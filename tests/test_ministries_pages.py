@@ -18,6 +18,8 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamPage, TeamPageImage
 from volunteerdb.services import pages, teams
 
+from tests.fp_helpers import ok
+
 DOC_HTML = (
     "<html><head><meta content='text/html'>"
     "<style type='text/css'>.c1{font-weight:700}</style></head>"
@@ -129,7 +131,7 @@ def test_sanitize_drops_style_block_containing_markup():
 
 async def test_set_home_doc_url_validates_and_clears(database):
     async with db_session() as session:
-        team = await teams.create(session, None, "Choir")
+        team = ok(await teams.create(session, None, "Choir"))
         await pages.set_home_doc_url(
             session, None, team.id, "https://docs.google.com/document/d/abc123/edit"
         )
@@ -156,7 +158,7 @@ def _doc_client(handler) -> httpx.AsyncClient:
 
 async def _team_with_doc(name="Choir", doc_id="abc123"):
     async with db_session() as session:
-        team = await teams.create(session, None, name)
+        team = ok(await teams.create(session, None, name))
         await pages.set_home_doc_url(
             session, None, team.id, f"https://docs.google.com/document/d/{doc_id}/edit"
         )
@@ -510,7 +512,7 @@ async def test_error_then_identical_doc_rewrites_and_clears_error(database):
 
 async def _publish(name: str, html: str = "<p>hello</p>", active=True) -> int:
     async with db_session() as session:
-        team = await teams.create(session, None, name)
+        team = ok(await teams.create(session, None, name))
         await pages.set_home_doc_url(
             session,
             None,
@@ -519,7 +521,7 @@ async def _publish(name: str, html: str = "<p>hello</p>", active=True) -> int:
         )
         session.add(TeamPage(team_id=team.id, html=html, status="ok"))
         if not active:
-            await teams.update(session, None, team.id, is_active=False)
+            ok(await teams.update(session, None, team.id, is_active=False))
         return team.id
 
 
@@ -527,7 +529,7 @@ async def test_public_index_lists_only_published_active_teams(real_app_client):
     await _publish("Choir")
     await _publish("Closed Ministry", active=False)
     async with db_session() as session:
-        await teams.create(session, None, "No Page Team")
+        ok(await teams.create(session, None, "No Page Team"))
 
     r = await real_app_client.get("/ministries/", follow_redirects=False)
     assert r.status_code == 200, "anonymous — no login redirect"
@@ -568,7 +570,7 @@ async def test_public_team_page_serves_cached_html(real_app_client):
 
 async def test_unpublished_team_page_404s(real_app_client):
     async with db_session() as session:
-        await teams.create(session, None, "Quiet Team")
+        ok(await teams.create(session, None, "Quiet Team"))
     r = await real_app_client.get("/ministries/quiet-team.html")
     assert r.status_code == 404
 
@@ -580,12 +582,12 @@ async def test_published_page_and_teams_share_the_predicate(database):
     published_id = await _publish("Choir")
     inactive_id = await _publish("Closed Ministry", active=False)
     async with db_session() as session:
-        no_html = await teams.create(session, None, "Pending Fetch")
+        no_html = ok(await teams.create(session, None, "Pending Fetch"))
         await pages.set_home_doc_url(
             session, None, no_html.id, "https://docs.google.com/document/d/p1"
         )
         session.add(TeamPage(team_id=no_html.id, html=None, status="error"))
-        no_doc = await teams.create(session, None, "Unlinked")
+        no_doc = ok(await teams.create(session, None, "Unlinked"))
         session.add(TeamPage(team_id=no_doc.id, html="<p>orphan</p>", status="ok"))
         no_html_id, no_doc_id = no_html.id, no_doc.id
 
@@ -626,12 +628,12 @@ async def test_ministry_image_route_serves_published_teams_only(real_app_client)
     assert r.status_code == 404, "unknown seq"
 
     async with db_session() as session:
-        await teams.update(session, None, team_id, is_active=False)
+        ok(await teams.update(session, None, team_id, is_active=False))
     r = await real_app_client.get(f"/ministries/img/{team_id}/1")
     assert r.status_code == 404, "deactivating a team takes its images offline"
 
     async with db_session() as session:
-        await teams.update(session, None, team_id, is_active=True)
+        ok(await teams.update(session, None, team_id, is_active=True))
         await pages.set_home_doc_url(session, None, team_id, None)
     r = await real_app_client.get(f"/ministries/img/{team_id}/1")
     assert r.status_code == 404, "unlinking the doc takes its images offline"
@@ -697,7 +699,7 @@ async def test_page_rows_cascade_with_their_team(database):
             )
         )
     async with db_session() as session:
-        await teams.delete(session, None, team_id)
+        ok(await teams.delete(session, None, team_id))
     async with db_session() as session:
         assert await session.get(TeamPage, team_id) is None
         assert await session.get(TeamPageImage, (team_id, 1)) is None

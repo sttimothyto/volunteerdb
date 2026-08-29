@@ -8,6 +8,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests.fp_helpers import ok
+
 
 def _upload(content: bytes) -> dict:
     return {"file": ("import.csv", content, "text/csv")}
@@ -59,7 +61,7 @@ async def test_team_export_permission_matrix(client, seeded, token_admin, token_
         await memberships.assign(
             session, None, seeded["volunteer_id"], team_id, TeamRole.core
         )
-        music = await teams.create(session, None, "Music", parent_team_id=team_id)
+        music = ok(await teams.create(session, None, "Music", parent_team_id=team_id))
         singer = await volunteers.create(
             session, None, "Sally", "Singer", "sally@example.org"
         )
@@ -99,7 +101,7 @@ async def test_leader_import_scoped_over_http(client, seeded, token_leader):
 
     # out of scope: a team the leader does not manage → row error, nothing applied
     async with db_session() as session:
-        await teams.create(session, None, "Hospitality")
+        ok(await teams.create(session, None, "Hospitality"))
     content = _csv_bytes(
         [["", "Maria", "Alvarez", "maria@example.org", "", "", "Hospitality", "member"]]
     )

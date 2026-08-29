@@ -6,6 +6,8 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 
+from tests.fp_helpers import ok
+
 
 async def test_create_normalizes_fields(database):
     async with db_session() as session:
@@ -92,8 +94,8 @@ async def test_search_private_fields_are_scope_aware(database):
     from volunteerdb.services import custom_fields, users
 
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
-        garden = await teams.create(session, None, "Garden")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        garden = ok(await teams.create(session, None, "Garden"))
         insider = await volunteers.create(
             session, None, "Inne", "Sider", None, "555-0100"
         )
@@ -197,8 +199,8 @@ async def test_missing_volunteer_raises_lookup(database):
 
 async def test_impact_counts_and_critical_first_ordering(database):
     async with db_session() as session:
-        solo = await teams.create(session, None, "Solo-led")
-        backed = await teams.create(session, None, "Well-backed")
+        solo = ok(await teams.create(session, None, "Solo-led"))
+        backed = ok(await teams.create(session, None, "Well-backed"))
         v = await volunteers.create(session, None, "Key", "Person")
         other_lead = await volunteers.create(session, None, "Other", "Leader")
         other_second = await volunteers.create(session, None, "Other", "Second")
@@ -230,8 +232,8 @@ async def test_search_or_query_scopes_rows_per_role(database):
     from volunteerdb.services import custom_fields, users
 
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
-        garden = await teams.create(session, None, "Garden")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        garden = ok(await teams.create(session, None, "Garden"))
         insider = await volunteers.create(
             session, None, "Inne", "Sider", None, "555-0100"
         )

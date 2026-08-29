@@ -9,6 +9,8 @@ from volunteerdb.services import custom_fields, memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests.fp_helpers import ok
+
 
 def _csv_bytes(rows: list[list], header: list[str] = ROSTER_HEADERS) -> bytes:
     buffer = StringIO()
@@ -23,8 +25,8 @@ def _rows(content: bytes) -> list[list[str]]:
 
 
 async def _setup(session):
-    liturgy = await teams.create(session, None, "Liturgy")
-    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+    liturgy = ok(await teams.create(session, None, "Liturgy"))
+    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
     anna = await volunteers.create(
         session, None, "Anna", "Smith", "anna@example.org", phone="555-1"
     )
@@ -164,7 +166,7 @@ async def test_unknown_team_blocks_everything(database):
 
 async def test_dry_run_writes_nothing(database):
     async with db_session() as session:
-        await teams.create(session, None, "Liturgy")
+        ok(await teams.create(session, None, "Liturgy"))
 
     content = _csv_bytes(
         [

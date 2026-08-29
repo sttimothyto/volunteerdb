@@ -16,6 +16,8 @@ from volunteerdb.db import db_session
 from volunteerdb.models import AppUser, ProposalStatus, TeamRole
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 TODAY = date(2026, 8, 10)  # nominating
 D1 = date(2026, 8, 15)  # nomination deadline
 VOTING_DAY = date(2026, 8, 20)  # voting
@@ -43,9 +45,9 @@ class Parish:
 async def _parish(session) -> Parish:
     """Liturgy has a leader but no second; Garden has nobody; Clergy is the
     team the roll builder finds by name."""
-    liturgy = await teams.create(session, None, "Liturgy")
-    garden = await teams.create(session, None, "Garden")
-    clergy = await teams.create(session, None, "Clergy")
+    liturgy = ok(await teams.create(session, None, "Liturgy"))
+    garden = ok(await teams.create(session, None, "Garden"))
+    clergy = ok(await teams.create(session, None, "Clergy"))
     lena = await volunteers.create(session, None, "Lena", "Leader")
     cora = await volunteers.create(session, None, "Cora", "Core")
     mia = await volunteers.create(session, None, "Mia", "Member")
@@ -122,7 +124,7 @@ async def test_default_roll_without_a_clergy_team(database):
     team's own leadership and core members."""
     async with db_session() as session:
         p = await _parish(session)
-        await teams.delete(session, None, p.clergy_id)
+        ok(await teams.delete(session, None, p.clergy_id))
         proposal = await _open_proposal(session, p)
         view = await elections.detail(session, None, proposal.id, today=TODAY)
         assert {v.volunteer.id for v in view.voters} == {p.lena_id, p.cora_id}
@@ -149,7 +151,7 @@ async def test_renaming_the_clergy_team_retires_the_standing(database):
     async with db_session() as session:
         p = await _parish(session)
         before = await _open_proposal(session, p)
-        await teams.update(session, None, p.clergy_id, name="Presbyterate")
+        ok(await teams.update(session, None, p.clergy_id, name="Presbyterate"))
         after = await _open_proposal(session, p, team_id=p.garden_id)
 
         rolls = {
@@ -171,8 +173,8 @@ async def test_a_team_renamed_to_clergy_takes_up_the_standing(database):
     """Nothing registers the clergy team, so the name alone confers it."""
     async with db_session() as session:
         p = await _parish(session)
-        await teams.delete(session, None, p.clergy_id)
-        await teams.update(session, None, p.liturgy_id, name="Clergy")
+        ok(await teams.delete(session, None, p.clergy_id))
+        ok(await teams.update(session, None, p.liturgy_id, name="Clergy"))
         proposal = await _open_proposal(session, p, team_id=p.garden_id)
         view = await elections.detail(session, None, proposal.id, today=TODAY)
         assert {v.volunteer.id for v in view.voters} == {

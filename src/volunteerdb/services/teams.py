@@ -7,15 +7,12 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import team_cache
+from ..errors import DomainError, Invalid, invalid, not_found, require
+from ..fp import Err, Ok, Result
 from ..history import entity, fetch
 from ..models import Event, Membership, Team, TeamRole, TeamSheet, Volunteer
-from ..permissions import Actor, require
+from ..permissions import Actor
 from ..sheets.common import extract_spreadsheet_id
-
-
-class CycleError(ValueError):
-    pass
-
 
 _UNSET: object = object()
 
@@ -174,11 +171,12 @@ def team_paths(teams: Sequence[Team]) -> dict[int, str]:
     return paths
 
 
-def _check_workload_weight(workload_weight: Decimal | None) -> None:
+def _check_workload_weight(workload_weight: Decimal | None) -> Err[Invalid] | None:
     """Shared by create and update: they disagreed once, and a negative weight
     silently corrupts every workload band downstream."""
     if workload_weight is not None and workload_weight < 0:
-        raise ValueError("workload weight must not be negative")
+        return invalid("workload weight must not be negative")
+    return None
 
 
 async def create(
@@ -188,15 +186,17 @@ async def create(
     parent_team_id: int | None = None,
     description: str | None = None,
     workload_weight: Decimal | None = None,
-) -> Team:
+) -> Result[Team, DomainError]:
     """Create a ministry. Admin-only — a team is the unit permissions hang off,
     so minting one is not a roster operation.
 
     `actor=None` is the trusted internal caller (the seed script, and
     services.task_force, which creates the meta team on behalf of whoever was
     already allowed to manage the event)."""
-    require(actor is None or actor.is_admin, "only admins create teams")
-    _check_workload_weight(workload_weight)
+    if denied := require(actor is None or actor.is_admin, "only admins create teams"):
+        return denied
+    if bad := _check_workload_weight(workload_weight):
+        return bad
     team = Team(
         name=name.strip(),
         parent_team_id=parent_team_id,
@@ -205,7 +205,7 @@ async def create(
     )
     session.add(team)
     await session.flush()
-    return team
+    return Ok(team)
 
 
 async def update(
@@ -218,43 +218,47 @@ async def update(
     description: str | None | object = _UNSET,
     is_active: bool | None = None,
     workload_weight: Decimal | None | object = _UNSET,
-) -> Team:
-    require(actor is None or actor.is_admin, "only admins edit teams")
+) -> Result[Team, DomainError]:
+    if denied := require(actor is None or actor.is_admin, "only admins edit teams"):
+        return denied
     team = await get(session, team_id)
     if team is None:
-        raise LookupError(f"team {team_id} not found")
+        return not_found("team", team_id)
     if name is not None:
         team.name = name.strip()
     if parent_team_id is not _UNSET:
-        await _check_no_cycle(session, team_id, parent_team_id)  # type: ignore[arg-type]
+        if cycle := await _check_no_cycle(session, team_id, parent_team_id):  # type: ignore[arg-type]
+            return cycle
         team.parent_team_id = parent_team_id  # type: ignore[assignment]
     if description is not _UNSET:
         team.description = description  # type: ignore[assignment]
     if is_active is not None:
         team.is_active = is_active
     if workload_weight is not _UNSET:
-        _check_workload_weight(workload_weight)  # type: ignore[arg-type]
+        if bad := _check_workload_weight(workload_weight):  # type: ignore[arg-type]
+            return bad
         # None from a caller means "no weight", which is 0 — the column has no
         # third state any more (models.Team.workload_weight)
         team.workload_weight = (
             Decimal(0) if workload_weight is None else workload_weight
         )  # type: ignore[assignment]
     await session.flush()
-    return team
+    return Ok(team)
 
 
 async def _check_no_cycle(
     session: AsyncSession, team_id: int, new_parent_id: int | None
-) -> None:
+) -> Err[Invalid] | None:
     if new_parent_id is None:
-        return
+        return None
     # The session's memo is safe to read here even mid-update: update() assigns
     # parent_team_id only AFTER this check, and any earlier update() in the same
     # transaction flushed, which drops the memo. So the parent edges below are
     # never behind the caller's own writes.
     subtree = (await tree(session)).descendants(team_id)
     if new_parent_id == team_id or new_parent_id in subtree:
-        raise CycleError("a team cannot be its own ancestor")
+        return invalid("a team cannot be its own ancestor")
+    return None
 
 
 async def _sheet_row(session: AsyncSession, team_id: int) -> TeamSheet:
@@ -269,19 +273,20 @@ async def _sheet_row(session: AsyncSession, team_id: int) -> TeamSheet:
 
 async def roster_sheet(
     session: AsyncSession, actor: Actor | None, team_id: int
-) -> TeamSheet | None:
+) -> Result[TeamSheet | None, DomainError]:
     """The team's Drive roster sheet record, or None if the sync has not made
     one yet. Management rights, matching what the team page already shows."""
-    require(
+    if denied := require(
         actor is None or actor.can_manage_team(team_id),
         "see this team's roster spreadsheet",
-    )
-    return await session.get(TeamSheet, team_id)
+    ):
+        return denied
+    return Ok(await session.get(TeamSheet, team_id))
 
 
 async def set_roster_sheet(
     session: AsyncSession, actor: Actor | None, team_id: int, url: str
-) -> TeamSheet:
+) -> Result[TeamSheet, DomainError]:
     """Point the team at the roster spreadsheet behind `url`.
 
     Leaders and seconds, not admins only. The old admin-only rule existed
@@ -300,14 +305,18 @@ async def set_roster_sheet(
     so a link keeps working when Google rewrites its own URL shapes, and the
     caller is expected to sync afterwards — this function touches no network.
     """
-    require(
+    if denied := require(
         actor is None or actor.can_manage_team(team_id),
         "change this team's roster spreadsheet",
-    )
+    ):
+        return denied
     team = await get(session, team_id)
     if team is None:
-        raise LookupError(f"team {team_id} not found")
-    file_id = extract_spreadsheet_id(url)
+        return not_found("team", team_id)
+    parsed = extract_spreadsheet_id(url)
+    if isinstance(parsed, Err):
+        return parsed
+    file_id = parsed.value
     # a sheet already spoken for is taken: two teams on one sheet would each
     # overwrite the other's roster every night
     clash = await session.scalar(
@@ -318,21 +327,21 @@ async def set_roster_sheet(
     )
     if clash is not None:
         other = await get(session, clash.team_id)
-        raise ValueError(
+        return invalid(
             f"that spreadsheet already belongs to "
             f"{other.name if other else 'another team'} — a sheet syncs with "
             "exactly one team"
         )
     sheet = await _sheet_row(session, team_id)
     if sheet.file_id == file_id:
-        raise ValueError(f"{team.name} already syncs with that spreadsheet")
+        return invalid(f"{team.name} already syncs with that spreadsheet")
     sheet.file_id = file_id
     sheet.file_name = None  # the sync fills this in from the sheet itself
     sheet.last_synced_at = None
     sheet.last_status = None
     sheet.last_error = None
     await session.flush()
-    return sheet
+    return Ok(sheet)
 
 
 async def leader_emails(session: AsyncSession, team_id: int) -> list[str]:
@@ -354,11 +363,14 @@ async def leader_emails(session: AsyncSession, team_id: int) -> list[str]:
     return sorted({email.strip().lower() for email in rows if email.strip()})
 
 
-async def delete(session: AsyncSession, actor: Actor | None, team_id: int) -> None:
-    require(actor is None or actor.is_admin, "only admins delete teams")
+async def delete(
+    session: AsyncSession, actor: Actor | None, team_id: int
+) -> Result[None, DomainError]:
+    if denied := require(actor is None or actor.is_admin, "only admins delete teams"):
+        return denied
     team = await get(session, team_id)
     if team is None:
-        raise LookupError(f"team {team_id} not found")
+        return not_found("team", team_id)
     # a live task force is torn down by its event, never deleted directly —
     # neither the meta team (event.team_id CASCADEs, so a direct delete takes
     # the event and its attendance record with it) NOR the owner team (the meta
@@ -373,13 +385,14 @@ async def delete(session: AsyncSession, actor: Actor | None, team_id: int) -> No
         )
     )
     if live is not None:
-        raise ValueError(
+        return invalid(
             f"this team is part of the task force staffing event {live} — it is "
             "removed automatically after the event ends (manage it from the "
             "event page)"
         )
     await session.delete(team)
     await session.flush()
+    return Ok(None)
 
 
 async def roster(
@@ -387,17 +400,18 @@ async def roster(
     actor: Actor | None,
     team_id: int,
     at: datetime | None = None,
-) -> list[tuple[Membership, Volunteer]]:
+) -> Result[list[tuple[Membership, Volunteer]], DomainError]:
     """Memberships with their volunteers, leaders first.
 
     Roster-NAMES rights: this returns whole Volunteer rows, and it is the
     caller's job to redact the contact fields a viewer may not read
     (api.volunteers.redacted, and the tiers the team page renders). The check
     here is the one that decides whether the roster exists for you at all."""
-    require(
+    if denied := require(
         actor is None or actor.can_view_roster_names(team_id),
         "view this team's roster",
-    )
+    ):
+        return denied
     M, V = entity(Membership, at), entity(Volunteer, at)
     role_order = sa.case(
         {role.value: i for i, role in enumerate(TeamRole)},
@@ -409,4 +423,4 @@ async def roster(
         .where(M.team_id == team_id)
         .order_by(role_order, V.last_name, V.first_name)
     )
-    return [(m, v) for m, v in await fetch(session, stmt, at)]
+    return Ok([(m, v) for m, v in await fetch(session, stmt, at)])

@@ -17,14 +17,16 @@ from volunteerdb.services import (
     volunteers,
 )
 
+from tests.fp_helpers import ok
+
 
 async def test_coverage_counts_and_hole_first_sorting(database):
     async with db_session() as session:
-        altar = await teams.create(session, None, "Altar")
-        bakers = await teams.create(session, None, "Bakers")
-        choir = await teams.create(session, None, "Choir")
-        await teams.create(session, None, "Drama")
-        await teams.update(session, None, choir.id, is_active=False)
+        altar = ok(await teams.create(session, None, "Altar"))
+        bakers = ok(await teams.create(session, None, "Bakers"))
+        choir = ok(await teams.create(session, None, "Choir"))
+        ok(await teams.create(session, None, "Drama"))
+        ok(await teams.update(session, None, choir.id, is_active=False))
 
         lead = await volunteers.create(session, None, "Lea", "Der")
         second = await volunteers.create(session, None, "Sec", "Ond")
@@ -55,9 +57,9 @@ async def test_coverage_counts_and_hole_first_sorting(database):
 
 async def _parish(session):
     """Parent team with a sub-team and an unrelated team, one volunteer each."""
-    parent = await teams.create(session, None, "Liturgy")
-    child = await teams.create(session, None, "Music", parent_team_id=parent.id)
-    other = await teams.create(session, None, "Hospitality")
+    parent = ok(await teams.create(session, None, "Liturgy"))
+    child = ok(await teams.create(session, None, "Music", parent_team_id=parent.id))
+    other = ok(await teams.create(session, None, "Hospitality"))
 
     on_parent = await volunteers.create(session, None, "Pat", "Parent")
     on_child = await volunteers.create(session, None, "Chris", "Child")

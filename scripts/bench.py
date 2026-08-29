@@ -189,19 +189,23 @@ async def seed(scale: int) -> None:
         team_ids: list[int] = []
         for i, parent_name in enumerate(PARENT_TEAMS):
             weight = Decimal(rng.choice(["1", "1.5", "2", "3"])) if i % 2 == 0 else None
-            parent = await team_service.create(
-                session, None, parent_name, workload_weight=weight
-            )
+            parent = (
+                await team_service.create(
+                    session, None, parent_name, workload_weight=weight
+                )
+            ).unwrap()
             team_ids.append(parent.id)
             for k in range(4):
                 weight = Decimal(rng.choice(["1", "1.5", "2"])) if k % 2 == 0 else None
-                child = await team_service.create(
-                    session,
-                    None,
-                    f"{parent_name} Group {k + 1}",
-                    parent_team_id=parent.id,
-                    workload_weight=weight,
-                )
+                child = (
+                    await team_service.create(
+                        session,
+                        None,
+                        f"{parent_name} Group {k + 1}",
+                        parent_team_id=parent.id,
+                        workload_weight=weight,
+                    )
+                ).unwrap()
                 team_ids.append(child.id)
 
         # 15 published ministry pages (~100 KB html + 3 small images each) —

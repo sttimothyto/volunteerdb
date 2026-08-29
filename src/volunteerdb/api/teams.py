@@ -46,7 +46,7 @@ async def list_teams(ctx: CtxDep, as_of: AsOf) -> list[TeamWithPath]:
 async def create_team(ctx: CtxDep, data: TeamIn) -> TeamOut:
     fields = data.model_dump()
     _weight_to_decimal(fields)
-    team = await service.create(ctx.session, ctx.actor, **fields)
+    team = (await service.create(ctx.session, ctx.actor, **fields)).unwrap()
     return TeamOut.model_validate(team)
 
 
@@ -67,13 +67,13 @@ async def update_team(ctx: CtxDep, team_id: int, data: TeamPatch) -> TeamOut:
         fields["workload_weight"] = Decimal(0)  # 0 IS unweighted
     else:
         _weight_to_decimal(fields)
-    team = await service.update(ctx.session, ctx.actor, team_id, **fields)
+    team = (await service.update(ctx.session, ctx.actor, team_id, **fields)).unwrap()
     return TeamOut.model_validate(team)
 
 
 @router.delete("/{team_id}", status_code=204)
 async def delete_team(ctx: CtxDep, team_id: int) -> None:
-    await service.delete(ctx.session, ctx.actor, team_id)
+    (await service.delete(ctx.session, ctx.actor, team_id)).unwrap()
 
 
 @router.patch("/{team_id}/home-doc")
@@ -102,7 +102,7 @@ async def get_roster_sheet(ctx: CtxDep, team_id: int) -> TeamSheetOut | None:
     Management rights, matching what the team page shows — the sheet is the
     roster, so who may see the link is who may manage the roster. And the link
     *is* the access: the sheet is shared to anyone holding it."""
-    sheet = await service.roster_sheet(ctx.session, ctx.actor, team_id)
+    sheet = (await service.roster_sheet(ctx.session, ctx.actor, team_id)).unwrap()
     return None if sheet is None else TeamSheetOut.model_validate(sheet)
 
 
@@ -123,7 +123,9 @@ async def set_roster_sheet(
     address and phone and grants a bulk write over the roster.
 
     The link is only recorded here. Call `/roster-sheet/sync` to move data."""
-    sheet = await service.set_roster_sheet(ctx.session, ctx.actor, team_id, data.url)
+    sheet = (
+        await service.set_roster_sheet(ctx.session, ctx.actor, team_id, data.url)
+    ).unwrap()
     return TeamSheetOut.model_validate(sheet)
 
 
@@ -138,13 +140,15 @@ async def sync_roster_sheet(
     back, so the sheet ends up showing what the database holds.
     `direction="export"` skips the read and overwrites the sheet — the answer
     that cannot lose parish data. Importing never removes anybody."""
-    await service.roster_sheet(ctx.session, ctx.actor, team_id)  # rights + 404
+    (
+        await service.roster_sheet(ctx.session, ctx.actor, team_id)
+    ).unwrap()  # rights + 404
     outcome = await sheet_service.sync_team(
         team_id, direction=data.direction, user_id=ctx.actor.user.id
     )
     if outcome.failed:
         raise ValueError(outcome.message)
-    sheet = await service.roster_sheet(ctx.session, ctx.actor, team_id)
+    sheet = (await service.roster_sheet(ctx.session, ctx.actor, team_id)).unwrap()
     return TeamSheetOut.model_validate(sheet)
 
 
@@ -154,7 +158,7 @@ async def team_roster(ctx: CtxDep, team_id: int, as_of: AsOf) -> list[RosterEntr
     # otherwise answer with an empty roster, which reads as "nobody serves here"
     if await service.get(ctx.session, team_id, at=as_of) is None:
         raise LookupError(f"team {team_id} not found")
-    rows = await service.roster(ctx.session, ctx.actor, team_id, at=as_of)
+    rows = (await service.roster(ctx.session, ctx.actor, team_id, at=as_of)).unwrap()
     full = ctx.actor.can_view_full_roster(team_id)
     manage = ctx.actor.can_manage_team(team_id)
     entries = []

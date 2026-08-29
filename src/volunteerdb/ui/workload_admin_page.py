@@ -150,9 +150,11 @@ async def workload_page():
                         # ministry from the scores has always meant
                         new = Decimal(str(inp.value or 0))
                         if new != originals[team_id]:
-                            await team_service.update(
-                                session, actor, team_id, workload_weight=new
-                            )
+                            (
+                                await team_service.update(
+                                    session, actor, team_id, workload_weight=new
+                                )
+                            ).unwrap()
                             changed += 1
                 ui.notify(
                     f"Updated {changed} team weight{'s' if changed != 1 else ''}",

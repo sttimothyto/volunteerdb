@@ -10,6 +10,8 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
@@ -58,7 +60,7 @@ async def test_leader_sees_scoped_export_on_teams_page(database):
     """The retired /import page's "My teams export" now lives on /teams, as a
     button whose scope follows the actor."""
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )

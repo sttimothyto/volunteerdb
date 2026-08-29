@@ -21,6 +21,8 @@ from volunteerdb.models import (
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 TZ = ZoneInfo("America/Toronto")
 
 
@@ -33,7 +35,7 @@ def _at(day: date, hour: int, minute: int = 0) -> datetime:
 async def _team_with_members(n: int = 2) -> tuple[int, list[int]]:
     """A team with volunteer 0 as leader and the rest as members."""
     async with db_session() as session:
-        team = await teams.create(session, None, "Altar Servers")
+        team = ok(await teams.create(session, None, "Altar Servers"))
         vids = []
         for i in range(n):
             v = await volunteers.create(
@@ -615,7 +617,7 @@ async def test_hours_sum_past_uncancelled_events_only(database):
 async def test_list_events_scopes_to_the_actors_teams(database):
     team_a, vids_a = await _team_with_members(2)
     async with db_session() as session:
-        team_b = await teams.create(session, None, "Choir")
+        team_b = ok(await teams.create(session, None, "Choir"))
         other = await volunteers.create(
             session, None, "Oda", "Choir", "oda@example.org"
         )
@@ -728,7 +730,7 @@ async def test_similar_events_masks_titles_outside_the_actors_scope(database):
     team_id, vids = await _team_with_members()
     day = date.today() + timedelta(days=7)
     async with db_session() as session:
-        other = await teams.create(session, None, "Garden Guild")
+        other = ok(await teams.create(session, None, "Garden Guild"))
         await event_service.create_event(
             session,
             None,
@@ -1006,7 +1008,7 @@ async def test_sign_up_series_on_a_standalone_event_is_just_a_sign_up(database):
 async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
     team_id, vids = await _team_with_members(2)
     async with db_session() as session:
-        other_team = (await teams.create(session, None, "Choir")).id
+        other_team = (ok(await teams.create(session, None, "Choir"))).id
     start = _at(date.today() + timedelta(days=7), 10)
     mine = await _one_event(team_id, start=start)
     theirs = await _one_event(team_id, start=start + timedelta(days=1))

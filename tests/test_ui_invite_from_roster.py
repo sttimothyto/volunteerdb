@@ -23,6 +23,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import mail, memberships, teams, users, volunteers
 
 from .conftest import SLOW, mail_to
+from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -45,8 +46,8 @@ async def _parish(session) -> dict[str, int]:
     """Liturgy (Lena leads, Cora is core) > Music, whose members cover every
     state the control has to deal with: Nils has no account, Stale's invite ran
     out unused, Live's is still good, Void has no email address at all."""
-    liturgy = await teams.create(session, None, "Liturgy")
-    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+    liturgy = ok(await teams.create(session, None, "Liturgy"))
+    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
 
     lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
     cora = await volunteers.create(session, None, "Cora", "Core", "cora@example.org")

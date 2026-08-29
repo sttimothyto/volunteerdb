@@ -15,6 +15,7 @@ from volunteerdb.models import (
 from volunteerdb.services import memberships, teams, volunteers
 
 from .conftest import _now
+from tests.fp_helpers import ok
 
 
 async def test_update_archives_old_version(database):
@@ -92,7 +93,7 @@ async def test_rolled_back_changes_leave_no_history(database):
 async def test_membership_role_changes_are_versioned(database):
     async with db_session(user_id=11) as session:
         v = await volunteers.create(session, None, "Ada", "Archivist")
-        t = await teams.create(session, None, "Choir")
+        t = ok(await teams.create(session, None, "Choir"))
         vid, tid = v.id, t.id
         await memberships.assign(session, None, vid, tid, TeamRole.member)
 
@@ -143,7 +144,7 @@ async def test_workload_weight_is_versioned(database):
     and coalesced to 0 at every read, so it was a third state with no distinct
     behaviour (models.Team.workload_weight)."""
     async with db_session(user_id=9) as session:
-        t = await teams.create(session, None, "Liturgy")
+        t = ok(await teams.create(session, None, "Liturgy"))
         tid = t.id
         assert t.workload_weight == Decimal(0), "unweighted is 0, not NULL"
     t_unweighted = await _now()

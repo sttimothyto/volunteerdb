@@ -15,13 +15,15 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def _parish(session):
     """Liturgy (Lena leads, Cora core, Mia member) + Clergy (Dan, no account)."""
-    liturgy = await teams.create(session, None, "Liturgy")
-    clergy = await teams.create(session, None, "Clergy")
+    liturgy = ok(await teams.create(session, None, "Liturgy"))
+    clergy = ok(await teams.create(session, None, "Clergy"))
     lena = await volunteers.create(session, None, "Lena", "Leader")
     cora = await volunteers.create(session, None, "Cora", "Core")
     mia = await volunteers.create(session, None, "Mia", "Member")

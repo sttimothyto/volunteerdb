@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session, sessionmaker
 from volunteerdb.models import Team, TeamRole
@@ -24,6 +25,7 @@ from volunteerdb.services import (
 )
 
 from .conftest import TEAM_TREE_SQL, _now, count_sql
+from tests.fp_helpers import ok, refused
 
 
 @pytest.fixture
@@ -35,9 +37,11 @@ async def parish(database):
     reads this file is here to count.
     """
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
-        music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
-        hospitality = await teams.create(session, None, "Hospitality")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        music = ok(
+            await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+        )
+        hospitality = ok(await teams.create(session, None, "Hospitality"))
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )
@@ -103,7 +107,7 @@ async def test_each_front_door_gets_its_own_memo(parish):
 async def test_a_created_team_is_visible_to_the_next_read(parish):
     async with db_session() as session:
         assert "Servers" not in (await teams.tree(session)).paths.values()
-        made = await teams.create(session, None, "Servers")
+        made = ok(await teams.create(session, None, "Servers"))
         after = await teams.tree(session)
         assert after.paths[made.id] == "Servers"
 
@@ -112,7 +116,7 @@ async def test_a_rename_changes_the_paths_of_the_children_too(parish):
     async with db_session() as session:
         before = await teams.tree(session)
         assert before.paths[parish["music"]] == "Liturgy / Music"
-        await teams.update(session, None, parish["liturgy"], name="Worship")
+        ok(await teams.update(session, None, parish["liturgy"], name="Worship"))
         after = await teams.tree(session)
         assert after.paths[parish["music"]] == "Worship / Music"
 
@@ -121,8 +125,10 @@ async def test_a_reparent_changes_the_shape(parish):
     async with db_session() as session:
         before = await teams.tree(session)
         assert before.descendants(parish["hospitality"]) == {parish["hospitality"]}
-        await teams.update(
-            session, None, parish["music"], parent_team_id=parish["hospitality"]
+        ok(
+            await teams.update(
+                session, None, parish["music"], parent_team_id=parish["hospitality"]
+            )
         )
         after = await teams.tree(session)
         assert after.descendants(parish["hospitality"]) == {
@@ -134,7 +140,7 @@ async def test_a_reparent_changes_the_shape(parish):
 async def test_a_deleted_team_leaves_the_memo(parish):
     async with db_session() as session:
         assert parish["music"] in (await teams.tree(session)).paths
-        await teams.delete(session, None, parish["music"])
+        ok(await teams.delete(session, None, parish["music"]))
         assert parish["music"] not in (await teams.tree(session)).paths
 
 
@@ -155,7 +161,7 @@ async def test_a_rolled_back_team_does_not_survive_in_the_memo(parish):
     """db_session() owns its transaction and rolling back inside its block closes
     it, so this drives a bare session to reach the after_rollback path."""
     async with sessionmaker()() as session:
-        made = await teams.create(session, None, "Provisional")
+        made = ok(await teams.create(session, None, "Provisional"))
         assert made.id in (await teams.tree(session)).paths
         await session.rollback()
         assert "Provisional" not in (await teams.tree(session)).paths.values()
@@ -163,11 +169,11 @@ async def test_a_rolled_back_team_does_not_survive_in_the_memo(parish):
 
 async def test_a_snapshot_is_never_served_for_a_live_read(parish):
     async with db_session() as session:
-        await teams.update(session, None, parish["liturgy"], name="Worship")
+        ok(await teams.update(session, None, parish["liturgy"], name="Worship"))
     t_renamed = await _now()
 
     async with db_session() as session:
-        await teams.update(session, None, parish["liturgy"], name="Divine Worship")
+        ok(await teams.update(session, None, parish["liturgy"], name="Divine Worship"))
 
     async with db_session() as session:
         # both keys live in one session; neither may answer for the other
@@ -186,10 +192,12 @@ async def test_a_snapshot_is_never_served_for_a_live_read(parish):
 async def test_the_cycle_check_still_bites_with_a_warm_memo(parish):
     async with db_session() as session:
         await teams.tree(session)  # warm it before the mutation
-        with pytest.raises(teams.CycleError):
+        refused(
             await teams.update(
                 session, None, parish["liturgy"], parent_team_id=parish["music"]
-            )
+            ),
+            errors.Invalid,
+        )
 
 
 async def test_every_team_mutator_flushes_before_it_returns(parish):
@@ -204,14 +212,14 @@ async def test_every_team_mutator_flushes_before_it_returns(parish):
         return [o for o in (*session.new, *session.dirty) if isinstance(o, Team)]
 
     async with db_session() as session:
-        made = await teams.create(session, None, "Servers")
+        made = ok(await teams.create(session, None, "Servers"))
         assert not pending(session), "teams.create left a Team unflushed"
 
-        await teams.update(session, None, made.id, name="Altar Servers")
+        ok(await teams.update(session, None, made.id, name="Altar Servers"))
         assert not pending(session), "teams.update left a Team unflushed"
 
         await pages.set_home_doc_url(session, None, made.id, url)
         assert not pending(session), "pages.set_home_doc_url left a Team unflushed"
 
-        await teams.delete(session, None, made.id)
+        ok(await teams.delete(session, None, made.id))
         assert not pending(session), "teams.delete left a Team unflushed"

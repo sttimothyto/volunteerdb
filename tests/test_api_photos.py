@@ -7,6 +7,8 @@ from PIL import Image
 from volunteerdb.db import db_session
 from volunteerdb.services import photos, teams, volunteers
 
+from tests.fp_helpers import ok
+
 
 def _png(width: int = 500, height: int = 400, color=(90, 60, 30)) -> bytes:
     buffer = BytesIO()
@@ -22,7 +24,7 @@ async def test_any_signed_in_account_may_manage_any_photo(client, seeded, token_
     """Pins the product decision: photo upload/view/delete needs only a signed-in
     account, NOT can_edit_volunteer — even for a volunteer on someone else's team."""
     async with db_session() as session:
-        other_team = await teams.create(session, None, "Hospitality")
+        other_team = ok(await teams.create(session, None, "Hospitality"))
         zoe = await volunteers.create(session, None, "Zoe", "Zimmer", "zoe@example.org")
         from volunteerdb.models import TeamRole
         from volunteerdb.services import memberships

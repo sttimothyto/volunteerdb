@@ -13,6 +13,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import _token
+from tests.fp_helpers import ok
 
 
 def _iso(day_offset: int, hour: int) -> str:
@@ -68,7 +69,7 @@ async def test_listing_is_scoped_and_detail_is_gated(
         "/api/events", json=_payload(seeded["team_id"]), headers=token_leader
     )
     async with db_session() as session:
-        other = await teams.create(session, None, "Garden Guild")
+        other = ok(await teams.create(session, None, "Garden Guild"))
     r = await client.post(
         "/api/events",
         json=_payload(other.id, title="Weeding bee"),

@@ -14,6 +14,8 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 DASHBOARD_BOX = "Find volunteers or teams…"
@@ -22,9 +24,9 @@ LIST_BOX = "Search volunteers…"
 
 async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
     async with db_session() as session:
-        music = await teams.create(session, None, "Music")
-        choir = await teams.create(
-            session, None, "Alvarado Choir", parent_team_id=music.id
+        music = ok(await teams.create(session, None, "Music"))
+        choir = ok(
+            await teams.create(session, None, "Alvarado Choir", parent_team_id=music.id)
         )
         maria = await volunteers.create(
             session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
@@ -140,7 +142,7 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
     from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
     async with db_session() as session:
-        music = await teams.create(session, None, "Music")
+        music = ok(await teams.create(session, None, "Music"))
         maria = await volunteers.create(
             session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
         )

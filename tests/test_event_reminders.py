@@ -14,6 +14,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import mail, memberships, teams, volunteers
 
+from tests.fp_helpers import ok
+
 TZ = ZoneInfo("America/Toronto")
 
 
@@ -35,7 +37,7 @@ def _at(days_ahead: int, hour: int) -> datetime:
 
 async def _team(n: int = 2) -> tuple[int, list[int]]:
     async with db_session() as session:
-        team = await teams.create(session, None, "Liturgy")
+        team = ok(await teams.create(session, None, "Liturgy"))
         vids = []
         for i in range(n):
             v = await volunteers.create(

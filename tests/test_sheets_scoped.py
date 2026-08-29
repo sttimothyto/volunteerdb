@@ -12,15 +12,19 @@ from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
+from tests.fp_helpers import ok
+
 
 @pytest.fixture
 async def parish(database):
     """Liturgy > Music; separate Hospitality. Lena leads Liturgy; Mia is a
     Liturgy member; Otto belongs to Hospitality only."""
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
-        music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
-        hospitality = await teams.create(session, None, "Hospitality")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        music = ok(
+            await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+        )
+        hospitality = ok(await teams.create(session, None, "Hospitality"))
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )

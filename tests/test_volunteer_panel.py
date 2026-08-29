@@ -20,6 +20,7 @@ from volunteerdb.services import mail, memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
 from .conftest import SLOW, mail_to
+from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -34,7 +35,7 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
     monkeypatch.setattr(mail, "send_email", fake_send)
 
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
         maria = await volunteers.create(
             session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
         )
@@ -117,7 +118,7 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatc
 
 async def test_photo_dialog_disclaimer_gates_upload(database):
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
         maria = await volunteers.create(
             session, None, "Maria", "Alvarez", "maria@example.org"
         )

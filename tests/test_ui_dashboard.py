@@ -17,6 +17,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
+from tests.fp_helpers import ok
+
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 # distinctive tile captions, not the section headings: "Parish" also appears
@@ -28,8 +30,8 @@ SLOW = 30
 
 
 async def _parish(session):
-    liturgy = await teams.create(session, None, "Liturgy")
-    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+    liturgy = ok(await teams.create(session, None, "Liturgy"))
+    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
 
     lea = await volunteers.create(session, None, "Lea", "Der", "lea@example.org")
     cora = await volunteers.create(session, None, "Cora", "Core", "cora@example.org")

@@ -10,6 +10,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import graph as graph_service
 from volunteerdb.services import memberships, teams, users, volunteers, workload
 
+from tests.fp_helpers import ok
+
 
 def _config(multipliers=None, bands=None) -> workload.WorkloadConfig:
     return workload.WorkloadConfig(
@@ -86,12 +88,14 @@ def test_band_for_boundaries():
 
 async def test_scores_role_multiplied_and_null_weights(database):
     async with db_session() as session:
-        liturgy = await teams.create(
-            session, None, "Liturgy", workload_weight=Decimal("3")
+        liturgy = ok(
+            await teams.create(session, None, "Liturgy", workload_weight=Decimal("3"))
         )
-        choir = await teams.create(session, None, "Choir", workload_weight=Decimal("2"))
-        social = await teams.create(
-            session, None, "Social"
+        choir = ok(
+            await teams.create(session, None, "Choir", workload_weight=Decimal("2"))
+        )
+        social = ok(
+            await teams.create(session, None, "Social")
         )  # unweighted -> contributes 0
 
         busy = await volunteers.create(session, None, "Busy", "Bee")
@@ -128,11 +132,11 @@ async def test_scores_role_multiplied_and_null_weights(database):
 
 async def test_visible_scores_respects_permissions(database):
     async with db_session() as session:
-        liturgy = await teams.create(
-            session, None, "Liturgy", workload_weight=Decimal("2")
+        liturgy = ok(
+            await teams.create(session, None, "Liturgy", workload_weight=Decimal("2"))
         )
-        garden = await teams.create(
-            session, None, "Garden", workload_weight=Decimal("1")
+        garden = ok(
+            await teams.create(session, None, "Garden", workload_weight=Decimal("1"))
         )
 
         lead = await volunteers.create(session, None, "Lead", "Er")
@@ -176,11 +180,11 @@ async def test_visible_scores_respects_permissions(database):
 
 async def test_graph_colors_only_permitted_nodes(database):
     async with db_session() as session:
-        liturgy = await teams.create(
-            session, None, "Liturgy", workload_weight=Decimal("2")
+        liturgy = ok(
+            await teams.create(session, None, "Liturgy", workload_weight=Decimal("2"))
         )
-        garden = await teams.create(
-            session, None, "Garden", workload_weight=Decimal("1")
+        garden = ok(
+            await teams.create(session, None, "Garden", workload_weight=Decimal("1"))
         )
 
         lead = await volunteers.create(session, None, "Lead", "Er")

@@ -21,6 +21,8 @@ from volunteerdb.models import (
 )
 from volunteerdb.services import elections, mail, memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 TODAY = date(2026, 8, 10)  # nominating
 D1 = date(2026, 8, 15)  # nomination deadline
 VOTING_DAY = date(2026, 8, 20)  # voting
@@ -32,7 +34,7 @@ async def _parish():
     """Liturgy: Lena leads, Cora is core, Noel is core WITHOUT an email —
     create_proposal prefills its roll with exactly those three."""
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
         lena = await volunteers.create(
             session, None, "Lena", "Leader", "lena@example.org"
         )

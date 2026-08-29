@@ -16,6 +16,8 @@ from volunteerdb.models import Event
 from volunteerdb.services import events as event_service
 from volunteerdb.services import gcal, teams
 
+from tests.fp_helpers import ok
+
 TZ = ZoneInfo("America/Toronto")
 CALENDAR_ID = "abc123@group.calendar.google.com"
 
@@ -26,7 +28,7 @@ def _at(day: date, hour: int) -> datetime:
 
 async def _team_and_event(title: str = "Sunday Mass") -> tuple[int, int]:
     async with db_session() as session:
-        team = await teams.create(session, None, "Altar Servers")
+        team = ok(await teams.create(session, None, "Altar Servers"))
         start = _at(date.today() + timedelta(days=7), 10)
         created = await event_service.create_event(
             session,

@@ -1310,14 +1310,16 @@ async def _cast_ballots(
 
 async def seed_teams(session: AsyncSession, parish: Parish) -> None:
     for spec, parent in _flatten(TEAMS):
-        team = await teams.create(
-            session,
-            None,
-            spec.name,
-            parent_team_id=parish.team_ids[parent] if parent else None,
-            description=spec.description,
-            workload_weight=Decimal(spec.weight) if spec.weight else None,
-        )
+        team = (
+            await teams.create(
+                session,
+                None,
+                spec.name,
+                parent_team_id=parish.team_ids[parent] if parent else None,
+                description=spec.description,
+                workload_weight=Decimal(spec.weight) if spec.weight else None,
+            )
+        ).unwrap()
         parish.team_ids[spec.name] = team.id
         parish.rosters[spec.name] = []
 

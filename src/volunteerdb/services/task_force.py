@@ -107,15 +107,17 @@ async def _create_meta_team(
         f"{mail.event_when(event.starts_at, event.ends_at)}{where}. Managed "
         "from the event page; removed automatically after the event ends."
     )
-    return await team_service.create(
-        # None: the caller already holds manage rights on the event whose task
-        # force this is, and the meta team exists only to carry its roster
-        session,
-        None,
-        name,
-        parent_team_id=owner_team_id,
-        description=description,
-    )
+    return (
+        await team_service.create(
+            # None: the caller already holds manage rights on the event whose task
+            # force this is, and the meta team exists only to carry its roster
+            session,
+            None,
+            name,
+            parent_team_id=owner_team_id,
+            description=description,
+        )
+    ).unwrap()
 
 
 async def add_collaborating_team(
@@ -277,4 +279,6 @@ async def teardown(session: AsyncSession, event_id: int) -> None:
         sa.delete(EventTaskForceSource).where(EventTaskForceSource.event_id == event_id)
     )
     await session.flush()
-    await team_service.delete(session, None, meta_team_id)  # teardown, not a user act
+    (
+        await team_service.delete(session, None, meta_team_id)
+    ).unwrap()  # teardown, not a user act

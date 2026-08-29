@@ -18,6 +18,8 @@ from volunteerdb.services import teams, volunteers
 from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import ROSTER_HEADERS, ROSTER_SHEET
 
+from tests.fp_helpers import ok
+
 
 def _csv_bytes(rows: list[list]) -> bytes:
     buffer = StringIO()
@@ -93,7 +95,7 @@ async def test_family_shared_email_is_disambiguated_by_name(database):
     """Two people on one address is normal in a parish. The name breaks the tie;
     without a usable name the row is an error rather than a coin flip."""
     async with db_session() as session:
-        await teams.create(session, None, "Liturgy")
+        ok(await teams.create(session, None, "Liturgy"))
         await volunteers.create(session, None, "Maria", "Alvarez", "family@example.org")
         await volunteers.create(session, None, "Jose", "Alvarez", "family@example.org")
 

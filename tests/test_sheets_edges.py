@@ -14,6 +14,8 @@ from volunteerdb.sheets.common import (
     safe_cell,
 )
 
+from tests.fp_helpers import ok
+
 
 def _csv_bytes(rows: list[list], header: list[str] = ROSTER_HEADERS) -> bytes:
     buffer = StringIO()
@@ -88,7 +90,7 @@ async def test_formula_injection_escape_roundtrips(database):
 
 async def test_import_row_validation_errors(database):
     async with db_session() as session:
-        await teams.create(session, None, "Liturgy")
+        ok(await teams.create(session, None, "Liturgy"))
         await volunteers.create(session, None, "Rhea", "Roleless", "rhea@example.org")
 
     content = _csv_bytes(
@@ -120,10 +122,10 @@ async def test_import_row_validation_errors(database):
 
 async def test_import_ambiguous_matches_error(database):
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
-        youth = await teams.create(session, None, "Youth")
-        await teams.create(session, None, "Music", parent_team_id=liturgy.id)
-        await teams.create(session, None, "Music", parent_team_id=youth.id)
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        youth = ok(await teams.create(session, None, "Youth"))
+        ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
+        ok(await teams.create(session, None, "Music", parent_team_id=youth.id))
         await volunteers.create(session, None, "Sam", "Same")
         await volunteers.create(session, None, "Sam", "Same")
         await volunteers.create(session, None, "Uma", "Unique", "uma@example.org")

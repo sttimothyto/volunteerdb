@@ -18,6 +18,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import mail, memberships, teams, users, volunteers
 
 from .conftest import SLOW, mail_to
+from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -130,7 +131,7 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
         maria = await volunteers.create(
             session, None, "Maria", "Alvarez", email="maria@example.org"
         )
-        liturgy = await teams.create(session, None, "Liturgy")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
         await memberships.assign(session, None, maria.id, liturgy.id, TeamRole.leader)
         account, _ = await users.create(
             session, "maria@example.org", volunteer_id=maria.id

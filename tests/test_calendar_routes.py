@@ -11,6 +11,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 TZ = ZoneInfo("America/Toronto")
 
 
@@ -20,8 +22,8 @@ def _at(days: int, hour: int) -> datetime:
 
 async def _seed() -> dict:
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
-        choir = await teams.create(session, None, "Choir")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        choir = ok(await teams.create(session, None, "Choir"))
         mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
         await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member)
         mia_u, _ = await users.create(session, "mia@example.org", volunteer_id=mia.id)

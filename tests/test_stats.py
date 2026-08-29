@@ -18,13 +18,15 @@ from volunteerdb.services import (
     volunteers,
 )
 
+from tests.fp_helpers import ok
+
 
 async def _parish(session):
     """Liturgy (leader + second + core + member) with a Music sub-team, plus
     an unrelated Hospitality team that has nobody leading it."""
-    liturgy = await teams.create(session, None, "Liturgy")
-    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
-    hospitality = await teams.create(session, None, "Hospitality")
+    liturgy = ok(await teams.create(session, None, "Liturgy"))
+    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
+    hospitality = ok(await teams.create(session, None, "Hospitality"))
 
     lea = await volunteers.create(session, None, "Lea", "Der", "lea@example.org")
     sam = await volunteers.create(session, None, "Sam", "Second", "sam@example.org")

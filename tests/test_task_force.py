@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.db import db_session
 from volunteerdb.jobs import task_force_cleanup
@@ -15,6 +16,8 @@ from volunteerdb.models import Event, TeamRole
 from volunteerdb.permissions import volunteer_team_ids
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, task_force, teams, users, volunteers
+
+from tests.fp_helpers import ok, refused
 
 TZ = ZoneInfo("America/Toronto")
 
@@ -27,8 +30,8 @@ async def _parish() -> dict:
     """Liturgy (Lena leads, Mia member) and Choir (Carl leads, Oda member;
     Mia sings in the choir too — the dedupe case)."""
     async with db_session() as session:
-        liturgy = await teams.create(session, None, "Liturgy")
-        choir = await teams.create(session, None, "Choir")
+        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        choir = ok(await teams.create(session, None, "Choir"))
         ids = {"liturgy": liturgy.id, "choir": choir.id}
         for key, first, team_id, role in (
             ("lena", "Lena", liturgy.id, TeamRole.leader),
@@ -84,7 +87,7 @@ async def test_collaboration_builds_the_task_force(database):
         view = await task_force.get_for_event(session, event_id)
         assert {t.id for t in view.sources} == {ids["liturgy"], ids["choir"]}
 
-        roster = await teams.roster(session, None, meta.id)
+        roster = ok(await teams.roster(session, None, meta.id))
         by_vid = {v.id: m.role for m, v in roster}
         assert by_vid == {
             ids["lena"]: TeamRole.leader,
@@ -175,7 +178,7 @@ async def test_refresh_picks_up_source_drift_without_downgrades(database):
     async with db_session() as session:
         added = await task_force.refresh_rosters(session, None, event_id)
         assert added == 1
-        roster = await teams.roster(session, None, meta_id)
+        roster = ok(await teams.roster(session, None, meta_id))
         by_vid = {v.id: m.role for m, v in roster}
         assert by_vid[newbie_id] == TeamRole.member
         assert by_vid[ids["oda"]] == TeamRole.core, "never downgraded"
@@ -251,8 +254,11 @@ async def test_live_task_force_team_cannot_be_deleted_directly(database):
             source_team_id=ids["choir"],
             created_by=None,
         )
-        with pytest.raises(ValueError, match="task force"):
-            await teams.delete(session, None, meta.id)
+        refused(
+            await teams.delete(session, None, meta.id),
+            errors.Invalid,
+            match="task force",
+        )
 
 
 async def test_adding_to_a_finished_event_is_refused(database):

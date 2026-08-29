@@ -17,6 +17,8 @@ from volunteerdb.db import db_session
 from volunteerdb.models import TeamPage, TeamRole, TeamSheet
 from volunteerdb.services import memberships, pages, teams, users, volunteers
 
+from tests.fp_helpers import ok
+
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 SLOW = 30  # conftest.SLOW: argon2 makes the dev-login round trip slow
 
@@ -26,11 +28,11 @@ SEARCH_BOX = "Search teams…"
 
 async def _parish(session) -> dict[str, int]:
     """Liturgy (Lena leads) > Music, plus Hospitality and a retired team."""
-    liturgy = await teams.create(session, None, "Liturgy")
-    music = await teams.create(session, None, "Music", parent_team_id=liturgy.id)
-    hospitality = await teams.create(session, None, "Hospitality")
-    retired = await teams.create(session, None, "Retired Guild")
-    await teams.update(session, None, retired.id, is_active=False)
+    liturgy = ok(await teams.create(session, None, "Liturgy"))
+    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
+    hospitality = ok(await teams.create(session, None, "Hospitality"))
+    retired = ok(await teams.create(session, None, "Retired Guild"))
+    ok(await teams.update(session, None, retired.id, is_active=False))
 
     lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
     mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")

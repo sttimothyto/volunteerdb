@@ -92,11 +92,9 @@ BASELINE: dict[str, dict[str, int]] = {
     },
     "services/stats.py": {"now": 1},
     "services/task_force.py": {"now": 2, "raise": 9, "settings": 1},
-    "services/teams.py": {"raise": 8},
     "services/users.py": {"now": 9, "raise": 23, "settings": 1},
     "services/volunteers.py": {"raise": 2, "settings": 1},
     "services/workload.py": {"now": 1, "raise": 10},
-    "sheets/common.py": {"raise": 1},
     "sheets/exporter.py": {"raise": 1},
     "sheets/importer.py": {"db_session": 2, "raise": 2},
 }

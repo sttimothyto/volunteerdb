@@ -18,6 +18,7 @@ from volunteerdb.services import events as event_service
 from volunteerdb.services import mail, memberships, teams, users, volunteers
 
 from .conftest import SLOW
+from tests.fp_helpers import ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 TZ = ZoneInfo("America/Toronto")
@@ -37,8 +38,8 @@ def sent_mail(monkeypatch):
 
 async def _parish(session):
     """Liturgy (Lena leads, Mia + Noor members) and Choir (Oda member)."""
-    liturgy = await teams.create(session, None, "Liturgy")
-    choir = await teams.create(session, None, "Choir")
+    liturgy = ok(await teams.create(session, None, "Liturgy"))
+    choir = ok(await teams.create(session, None, "Choir"))
     lena = await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
     mia = await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
     noor = await volunteers.create(session, None, "Noor", "Member", "noor@example.org")
