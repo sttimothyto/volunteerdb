@@ -23,8 +23,6 @@ from . import column_order, invites
 from .account_status import invitable, last_login_text
 from .context import (
     PageCtx,
-    action_session,
-    notify_errors,
     page_session,
     perform,
     run_command,
@@ -230,25 +228,26 @@ def _new_volunteer_dialog() -> None:
         email = ui.input("Email").props("outlined dense").classes("w-full")
         phone = ui.input("Phone").props("outlined dense").classes("w-full")
 
-        @notify_errors
         async def save() -> None:
             if not (first.value or "").strip() or not (last.value or "").strip():
                 ui.notify("First and last name are required", color="warning")
                 return
-            async with action_session() as (session, actor):
-                v = (
-                    await volunteer_service.create(
-                        session,
-                        actor,
-                        first.value,
-                        last.value,
-                        email.value or None,
-                        phone.value or None,
-                    )
-                ).unwrap()
-                new_id = v.id
-            dialog.close()
-            ui.navigate.to(f"/volunteers/{new_id}")
+
+            async def command(ctx: PageCtx):
+                return await volunteer_service.create(
+                    ctx.session,
+                    ctx.actor,
+                    first.value,
+                    last.value,
+                    email.value or None,
+                    phone.value or None,
+                )
+
+            def done(volunteer, _effects, _report) -> None:
+                dialog.close()
+                ui.navigate.to(f"/volunteers/{volunteer.id}")
+
+            await run_command(command, on_ok=done, reload=False)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -409,9 +408,7 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                 if actor.can_manage_team(team.id):
                     ui.button(
                         icon="person_remove",
-                        on_click=notify_errors(
-                            lambda _, mid=membership.id: _unassign(mid)
-                        ),
+                        on_click=lambda _, mid=membership.id: _unassign(mid),
                     ).props("dense flat color=negative").tooltip("Remove from team")
 
         if assignable:
@@ -428,22 +425,21 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                     .classes("w-52")
                 )
 
-                @notify_errors
                 async def add() -> None:
                     if not team_select.value:
                         ui.notify("Pick a team", color="warning")
                         return
-                    async with action_session() as (session, actor):
-                        (
-                            await membership_service.assign(
-                                session,
-                                actor,
-                                volunteer_id,
-                                team_select.value,
-                                TeamRole(role_select.value),
-                            )
-                        ).unwrap()
-                    ui.navigate.reload()
+
+                    async def command(ctx: PageCtx):
+                        return await membership_service.assign(
+                            ctx.session,
+                            ctx.actor,
+                            volunteer_id,
+                            team_select.value,
+                            TeamRole(role_select.value),
+                        )
+
+                    await run_command(command, reload=True)
 
                 ui.button("Add", icon="group_add", on_click=add).props("dense")
 
@@ -625,7 +621,6 @@ def _edit_dialog(
         }
         active = ui.switch("Active", value=volunteer.is_active) if is_admin else None
 
-        @notify_errors
         async def save() -> None:
             values = {}
             for key, widget in custom_widgets.items():
@@ -733,12 +728,11 @@ async def _stage_own_email(address: str) -> None:
 
 
 async def _unassign(membership_id: int) -> None:
-    async with action_session() as (session, actor):
-        (await membership_service.remove(session, actor, membership_id)).unwrap()
-    ui.navigate.reload()
+    await run_command(
+        lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id)
+    )
 
 
-@notify_errors
 async def _delete_volunteer(volunteer_id: int) -> None:
     with ui.dialog() as dialog, ui.card().classes("gap-3"):
         ui.label("Delete this volunteer and all their memberships?").classes(
@@ -749,12 +743,18 @@ async def _delete_volunteer(volunteer_id: int) -> None:
         )
 
         async def confirm() -> None:
-            async with action_session() as (session, actor):
-                (await volunteer_service.delete(session, actor, volunteer_id)).unwrap()
-            dialog.close()
-            ui.navigate.to("/volunteers")
+            async def command(ctx: PageCtx):
+                return await volunteer_service.delete(
+                    ctx.session, ctx.actor, volunteer_id
+                )
+
+            def done(_value, _effects, _report) -> None:
+                dialog.close()
+                ui.navigate.to("/volunteers")
+
+            await run_command(command, on_ok=done, reload=False)
 
         with ui.row().classes("justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Delete", on_click=notify_errors(confirm)).props("color=negative")
+            ui.button("Delete", on_click=confirm).props("color=negative")
     dialog.open()

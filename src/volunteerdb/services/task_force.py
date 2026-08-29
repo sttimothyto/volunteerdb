@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..domain import CollaboratorAdded, Outcome
 from ..errors import DomainError, Invalid, invalid, not_found, require
 from ..fp import Err, Ok, Result
 from ..models import (
@@ -128,10 +129,11 @@ async def add_collaborating_team(
     created_by: int | None,
     now: datetime,
     tz: ZoneInfo,
-) -> Result[Team, DomainError]:
+) -> Result[Outcome[Team], DomainError]:
     """First collaborator: create the meta team, seed sources with the owner
     and the newcomer, copy both rosters, repoint the event. Later ones: add
-    the source and copy its roster. Returns the meta team.
+    the source and copy its roster. Returns the meta team; the
+    CollaboratorAdded event is the audit line both doors write.
 
     Manage rights on the event's own team — and deliberately NOT on the source:
     inviting another ministry to staff your event is a request you make of the
@@ -190,7 +192,12 @@ async def add_collaborating_team(
         return refreshed
     meta_team = await session.get(Team, event.task_force_team_id)  # type: ignore[arg-type]
     assert meta_team is not None  # just created or repointed to
-    return Ok(meta_team)
+    return Ok(
+        Outcome(
+            meta_team,
+            (CollaboratorAdded(event.id, source_team_id, meta_team.id),),
+        )
+    )
 
 
 async def refresh_rosters(

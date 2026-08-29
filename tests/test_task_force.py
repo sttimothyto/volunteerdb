@@ -16,7 +16,7 @@ from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, task_force, teams, users, volunteers
 
 from tests import mint
-from tests.fp_helpers import ok, refused
+from tests.fp_helpers import done, ok, refused
 
 TZ = ZoneInfo("America/Toronto")
 
@@ -74,7 +74,7 @@ async def test_collaboration_builds_the_task_force(database):
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
-        meta = ok(
+        meta = done(
             await task_force.add_collaborating_team(
                 session,
                 None,
@@ -84,7 +84,7 @@ async def test_collaboration_builds_the_task_force(database):
                 now=mint.now(),
                 tz=mint.tz(),
             )
-        )
+        ).value
         assert meta.parent_team_id == ids["liturgy"], (
             "child of the owner: its leaders manage via the subtree cascade"
         )
@@ -123,7 +123,7 @@ async def test_collaborator_members_can_sign_up(database):
             match="only members",
         )
     async with db_session() as session:
-        ok(
+        done(
             await task_force.add_collaborating_team(
                 session,
                 None,
@@ -164,7 +164,7 @@ async def test_duplicate_and_self_sources_are_refused(database):
             errors.Invalid,
             match="already staffs",
         )
-        ok(
+        done(
             await task_force.add_collaborating_team(
                 session,
                 None,
@@ -194,7 +194,7 @@ async def test_refresh_picks_up_source_drift_without_downgrades(database):
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
-        meta = ok(
+        meta = done(
             await task_force.add_collaborating_team(
                 session,
                 None,
@@ -204,7 +204,7 @@ async def test_refresh_picks_up_source_drift_without_downgrades(database):
                 now=mint.now(),
                 tz=mint.tz(),
             )
-        )
+        ).value
         meta_id = meta.id
         # a newcomer joins Choir after the copy; Oda gets promoted INSIDE
         # the task force (a per-event decision the refresh must not undo)
@@ -231,7 +231,7 @@ async def test_teardown_restores_the_event_and_keeps_history(database, env):
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
-        meta = ok(
+        meta = done(
             await task_force.add_collaborating_team(
                 session,
                 None,
@@ -241,7 +241,7 @@ async def test_teardown_restores_the_event_and_keeps_history(database, env):
                 now=mint.now(),
                 tz=mint.tz(),
             )
-        )
+        ).value
         meta_id = meta.id
         detail = ok(await event_service.detail(session, None, event_id))
         ok(
@@ -287,7 +287,7 @@ async def test_cancelled_events_tear_down_too(database, env):
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
-        ok(
+        done(
             await task_force.add_collaborating_team(
                 session,
                 None,
@@ -314,7 +314,7 @@ async def test_live_task_force_team_cannot_be_deleted_directly(database):
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
-        meta = ok(
+        meta = done(
             await task_force.add_collaborating_team(
                 session,
                 None,
@@ -324,7 +324,7 @@ async def test_live_task_force_team_cannot_be_deleted_directly(database):
                 now=mint.now(),
                 tz=mint.tz(),
             )
-        )
+        ).value
         refused(
             await teams.delete(session, None, meta.id),
             errors.Invalid,
@@ -374,7 +374,7 @@ async def test_a_task_force_lends_a_roster_it_does_not_hand_over_its_people(data
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
-        meta = ok(
+        meta = done(
             await task_force.add_collaborating_team(
                 session,
                 None,
@@ -384,7 +384,7 @@ async def test_a_task_force_lends_a_roster_it_does_not_hand_over_its_people(data
                 now=mint.now(),
                 tz=mint.tz(),
             )
-        )
+        ).value
         lena, _ = ok(
             await users.create(
                 session,

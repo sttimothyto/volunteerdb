@@ -14,9 +14,9 @@ from datetime import datetime
 import anyio.to_thread
 from nicegui import events, ui
 
-from ..env import current as current_env
+from ..fp import Err
 from ..services import photos as photo_service
-from .context import action_session, notify_errors
+from .context import PageCtx, run_command, toast
 
 DISCLAIMER = (
     "I confirm this is an appropriate professional photo. "
@@ -40,12 +40,13 @@ def open_photo_dialog(
         else:
             preview.classes("hidden")
 
-        @notify_errors
         async def on_upload(e: events.UploadEventArguments) -> None:
             raw = await e.file.read()
-            state["image"] = (
-                await anyio.to_thread.run_sync(photo_service.normalize, raw)
-            ).unwrap()
+            shaped = await anyio.to_thread.run_sync(photo_service.normalize, raw)
+            if isinstance(shaped, Err):
+                toast(shaped.error)
+                return
+            state["image"] = shaped.value
             preview.set_source(
                 "data:image/jpeg;base64,"
                 + base64.b64encode(state["image"]).decode("ascii")
@@ -61,7 +62,6 @@ def open_photo_dialog(
 
         agree = ui.checkbox(DISCLAIMER).classes("text-sm")
 
-        @notify_errors
         async def save() -> None:
             if state["image"] is None:
                 ui.notify("Choose a photo first", color="warning")
@@ -69,28 +69,35 @@ def open_photo_dialog(
             if not agree.value:
                 ui.notify("Please confirm the declaration first", color="warning")
                 return
-            async with action_session() as (session, actor):
-                (
-                    await photo_service.set_photo(
-                        session,
-                        volunteer_id,
-                        state["image"],
-                        uploaded_by=actor.user.id,
-                        normalized=True,
-                        now=current_env().clock.now(),
-                    )
-                ).unwrap()
-            dialog.close()
-            ui.notify("Photo saved", color="positive")
-            await on_change()
 
-        @notify_errors
+            async def command(ctx: PageCtx):
+                return await photo_service.set_photo(
+                    ctx.session,
+                    volunteer_id,
+                    state["image"],
+                    uploaded_by=ctx.actor.user.id,
+                    normalized=True,
+                    now=ctx.now,
+                )
+
+            async def done(_value, _effects, _report) -> None:
+                dialog.close()
+                ui.notify("Photo saved", color="positive")
+                await on_change()
+
+            await run_command(command, on_ok=done, reload=False)
+
         async def remove() -> None:
-            async with action_session() as (session, _actor):
-                (await photo_service.delete_photo(session, volunteer_id)).unwrap()
-            dialog.close()
-            ui.notify("Photo removed", color="positive")
-            await on_change()
+
+            async def command(ctx: PageCtx):
+                return await photo_service.delete_photo(ctx.session, volunteer_id)
+
+            async def done(_value, _effects, _report) -> None:
+                dialog.close()
+                ui.notify("Photo removed", color="positive")
+                await on_change()
+
+            await run_command(command, on_ok=done, reload=False)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")

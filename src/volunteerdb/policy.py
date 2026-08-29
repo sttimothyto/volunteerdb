@@ -21,6 +21,7 @@ from . import throttle
 from .domain import (
     AddressReplaced,
     ApiTokenIssued,
+    CollaboratorAdded,
     DomainEvent,
     EmailChangeAttempted,
     EmailChangeCancelled,
@@ -73,6 +74,19 @@ def plan_one(event: DomainEvent, ctx: PolicyCtx) -> tuple[Effect, ...]:
             return _self_removed(event, ctx)
         case EventCancelled():
             return _event_cancelled(event, ctx)
+        case CollaboratorAdded(
+            event_id=event_id, source_team_id=source, task_force_team_id=meta
+        ):
+            return (
+                Audit(
+                    "event.collaboration_added",
+                    (
+                        ("event_id", event_id),
+                        ("source_team_id", source),
+                        ("task_force_team_id", meta),
+                    ),
+                ),
+            )
         # sign-in and the account: mailed and logged whichever door, because
         # these notices are the account's, not the roster's (SP 800-63B §4.1.2
         # wants them on a channel the session making the change cannot suppress)

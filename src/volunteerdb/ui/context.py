@@ -1,5 +1,6 @@
 """Per-page/per-action helpers bridging NiceGUI sessions and the service layer."""
 
+import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
@@ -240,7 +241,9 @@ async def run_command[T](
         return Err(ForbiddenValue(str(exc)))
     report = await effects.run(planned, env)
     if on_ok is not None:
-        on_ok(value, planned, report)
+        outcome = on_ok(value, planned, report)
+        if inspect.isawaitable(outcome):  # a tail that refreshes a widget
+            await outcome
     if reload:
         ui.navigate.reload()
     return Ok(value)

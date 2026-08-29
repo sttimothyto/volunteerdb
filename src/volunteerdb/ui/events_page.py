@@ -31,7 +31,6 @@ from ..effects import Effect, SendMail, ThrottleHit
 from ..env import current as current_env
 from ..errors import NotFound, not_found, require
 from ..fp import Err
-from ..log import audit_log
 from ..models import (
     Event,
     EventAssignment,
@@ -48,7 +47,7 @@ from ..services import teams as team_service
 from ..services import users as user_service
 from . import calendar_grid, column_order
 from .calendar_panel import subscribe_panel
-from .context import PageCtx, action_session, notify_errors, page_session, run_command
+from .context import PageCtx, page_session, run_command
 from .date_input import date_input, time_input
 from .layout import frame
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -443,7 +442,6 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
             "Repeat weekly until (YYYY-MM-DD, optional)", clearable=True
         ).classes("w-full")
 
-        @notify_errors
         async def save() -> None:
             if not team.value:
                 ui.notify("Pick the team", color="warning")
@@ -466,44 +464,48 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
                 for i, (n, c) in enumerate(slot_rows)
                 if (n.value or "").strip()
             ]
-            async with action_session() as (session, actor):
-                hits = (
-                    await event_service.similar_events(
-                        session,
-                        actor,
-                        starts_at=starts_at,
-                        ends_at=ends_at,
-                        repeat_until=until,
-                        location=location.value,
-                        tz=_tz(),
-                    )
-                ).unwrap()
-            if hits and not await _confirm_similar(hits):
+
+            async def lookalikes(ctx: PageCtx):
+                return await event_service.similar_events(
+                    ctx.session,
+                    ctx.actor,
+                    starts_at=starts_at,
+                    ends_at=ends_at,
+                    repeat_until=until,
+                    location=location.value,
+                    tz=_tz(),
+                )
+
+            hits = await run_command(lookalikes, reload=False)
+            if isinstance(hits, Err):
+                return
+            if hits.value and not await _confirm_similar(hits.value):
                 return  # back to the still-open form
-            async with action_session() as (session, actor):
-                created = (
-                    await event_service.create_event(
-                        session,
-                        actor,
-                        team_id=team.value,
-                        title=title.value or "",
-                        starts_at=starts_at,
-                        ends_at=ends_at,
-                        description=description.value,
-                        location=location.value,
-                        slots=slots,
-                        repeat_weekly_until=until,
-                        created_by=actor.user.id,
-                        tz=_tz(),
-                        series_id=current_env().rng.uuid(),
-                    )
-                ).unwrap()
-                first_id = created[0].id
-                n_created = len(created)
-            dialog.close()
-            if n_created > 1:
-                ui.notify(f"{n_created} events created", color="positive")
-            ui.navigate.to(f"/events/{first_id}")
+
+            async def command(ctx: PageCtx):
+                return await event_service.create_event(
+                    ctx.session,
+                    ctx.actor,
+                    team_id=team.value,
+                    title=title.value or "",
+                    starts_at=starts_at,
+                    ends_at=ends_at,
+                    description=description.value,
+                    location=location.value,
+                    slots=slots,
+                    repeat_weekly_until=until,
+                    created_by=ctx.actor.user.id,
+                    tz=_tz(),
+                    series_id=ctx.env.rng.uuid(),
+                )
+
+            def done(created, _effects, _report) -> None:
+                dialog.close()
+                if len(created) > 1:
+                    ui.notify(f"{len(created)} events created", color="positive")
+                ui.navigate.to(f"/events/{created[0].id}")
+
+            await run_command(command, on_ok=done, reload=False)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -880,27 +882,28 @@ def _edit_event_dialog(event) -> None:
             .classes("w-full")
         )
 
-        @notify_errors
         async def save() -> None:
             starts_at = _parse_local(day.value, start.value, "Start")
             ends_at = _parse_local(day.value, end.value, "End")
             if starts_at is None or ends_at is None:
                 return
-            async with action_session() as (session, actor):
-                (
-                    await event_service.update_event(
-                        session,
-                        actor,
-                        event.id,
-                        title=title.value or "",
-                        description=description.value,
-                        location=location.value,
-                        starts_at=starts_at,
-                        ends_at=ends_at,
-                    )
-                ).unwrap()
-            dialog.close()
-            ui.navigate.reload()
+
+            async def command(ctx: PageCtx):
+                return await event_service.update_event(
+                    ctx.session,
+                    ctx.actor,
+                    event.id,
+                    title=title.value or "",
+                    description=description.value,
+                    location=location.value,
+                    starts_at=starts_at,
+                    ends_at=ends_at,
+                )
+
+            def done(_value, _effects, _report) -> None:
+                dialog.close()
+
+            await run_command(command, on_ok=done, reload=True)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -926,22 +929,23 @@ def _add_slot_dialog(event_id: int) -> None:
             .mark("slot-add-description")
         )
 
-        @notify_errors
         async def save() -> None:
-            async with action_session() as (session, actor):
-                (
-                    await event_service.add_slot(
-                        session,
-                        actor,
-                        event_id,
-                        name=name.value or "",
-                        capacity=int(capacity.value) if capacity.value else None,
-                        description=description.value,
-                        now=current_env().clock.now(),
-                    )
-                ).unwrap()
-            dialog.close()
-            ui.navigate.reload()
+
+            async def command(ctx: PageCtx):
+                return await event_service.add_slot(
+                    ctx.session,
+                    ctx.actor,
+                    event_id,
+                    name=name.value or "",
+                    capacity=int(capacity.value) if capacity.value else None,
+                    description=description.value,
+                    now=ctx.now,
+                )
+
+            def done(_value, _effects, _report) -> None:
+                dialog.close()
+
+            await run_command(command, on_ok=done, reload=True)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -994,22 +998,23 @@ def _edit_slot_dialog(
             .mark("slot-edit-description")
         )
 
-        @notify_errors
         async def save() -> None:
-            async with action_session() as (session, actor):
-                (
-                    await event_service.update_slot(
-                        session,
-                        actor,
-                        slot_id,
-                        name=name.value or "",
-                        capacity=int(capacity.value) if capacity.value else None,
-                        description=description.value,
-                        now=current_env().clock.now(),
-                    )
-                ).unwrap()
-            dialog.close()
-            ui.navigate.reload()
+
+            async def command(ctx: PageCtx):
+                return await event_service.update_slot(
+                    ctx.session,
+                    ctx.actor,
+                    slot_id,
+                    name=name.value or "",
+                    capacity=int(capacity.value) if capacity.value else None,
+                    description=description.value,
+                    now=ctx.now,
+                )
+
+            def done(_value, _effects, _report) -> None:
+                dialog.close()
+
+            await run_command(command, on_ok=done, reload=True)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -1052,7 +1057,6 @@ def _collaboration_card(
                 ).mark("confirm-collaborator")
         return bool(await dialog)
 
-    @notify_errors
     async def _add_collaborator(team_id_value) -> None:
         if not team_id_value:
             ui.notify("Pick a team first", color="warning")
@@ -1060,35 +1064,37 @@ def _collaboration_card(
         label = collaborator_options.get(team_id_value, "that team")
         if not await _confirm_add_collaborator(label):
             return
-        async with action_session() as (session, actor):
-            meta = (
-                await task_force_service.add_collaborating_team(
-                    session,
-                    actor,
-                    event_id=event_id,
-                    source_team_id=team_id_value,
-                    created_by=actor.user.id,
-                    now=current_env().clock.now(),
-                    tz=_tz(),
-                )
-            ).unwrap()
-            audit_log(
-                "event.collaboration_added",
+
+        async def command(ctx: PageCtx):
+            return await task_force_service.add_collaborating_team(
+                ctx.session,
+                ctx.actor,
                 event_id=event_id,
                 source_team_id=team_id_value,
-                task_force_team_id=meta.id,
+                created_by=ctx.actor.user.id,
+                now=ctx.now,
+                tz=_tz(),
             )
-        ui.notify("Team added — their roster can sign up now", color="positive")
-        ui.navigate.reload()
 
-    @notify_errors
+        await run_command(
+            command,
+            on_ok=lambda _v, _e, _r: ui.notify(
+                "Team added — their roster can sign up now", color="positive"
+            ),
+        )
+
     async def _sync_rosters() -> None:
-        async with action_session() as (session, actor):
-            added = (
-                await task_force_service.refresh_rosters(session, actor, event_id)
-            ).unwrap()
-        ui.notify(f"Rosters synced — {added} member(s) added", color="positive")
-        ui.navigate.reload()
+
+        async def command(ctx: PageCtx):
+            return await task_force_service.refresh_rosters(
+                ctx.session, ctx.actor, event_id
+            )
+
+        def done(value, _effects, _report) -> None:
+            added = value
+            ui.notify(f"Rosters synced — {added} member(s) added", color="positive")
+
+        await run_command(command, on_ok=done, reload=True)
 
     with ui.card().classes("w-full gap-2 p-3"):
         with ui.row().classes("w-full items-center gap-2"):
@@ -1138,21 +1144,20 @@ def _collaboration_card(
 def _availability_card(event_id: int, my_rsvp: EventRsvp | None) -> None:
     """ "Can you serve?" — an answer, not a commitment; the assignment is that."""
 
-    @notify_errors
     async def _rsvp(available: bool, note_value: str) -> None:
-        async with action_session() as (session, actor):
-            (
-                await event_service.set_rsvp(
-                    session,
-                    actor,
-                    event_id=event_id,
-                    volunteer_id=actor.volunteer_id,
-                    available=available,
-                    note=note_value,
-                    now=current_env().clock.now(),
-                )
-            ).unwrap()
-        ui.navigate.reload()
+
+        async def command(ctx: PageCtx):
+            return await event_service.set_rsvp(
+                ctx.session,
+                ctx.actor,
+                event_id=event_id,
+                volunteer_id=ctx.actor.volunteer_id,
+                available=available,
+                note=note_value,
+                now=ctx.now,
+            )
+
+        await run_command(command, reload=True)
 
     with ui.card().classes("w-full gap-2 p-3"):
         with ui.row().classes("w-full items-center gap-2"):
@@ -1235,7 +1240,6 @@ def _attendance_section(
     exists only to correct it: a row with no override shows the automatic
     answer, and Reset puts it back."""
 
-    @notify_errors
     async def _save_attendance(
         assignment_id: int, attended_value: bool, hours_value
     ) -> None:
@@ -1244,34 +1248,35 @@ def _attendance_section(
         except InvalidOperation:
             ui.notify("Hours must be a number", color="warning")
             return
-        async with action_session() as (session, actor):
-            (
-                await event_service.set_attendance(
-                    session,
-                    actor,
-                    assignment_id=assignment_id,
-                    attended=attended_value,
-                    hours=hours,
-                    now=current_env().clock.now(),
-                )
-            ).unwrap()
-        ui.notify("Attendance saved", color="positive")
-        ui.navigate.reload()
 
-    @notify_errors
+        async def command(ctx: PageCtx):
+            return await event_service.set_attendance(
+                ctx.session,
+                ctx.actor,
+                assignment_id=assignment_id,
+                attended=attended_value,
+                hours=hours,
+                now=ctx.now,
+            )
+
+        def done(_value, _effects, _report) -> None:
+            ui.notify("Attendance saved", color="positive")
+
+        await run_command(command, on_ok=done, reload=True)
+
     async def _clear_attendance(assignment_id: int) -> None:
-        async with action_session() as (session, actor):
-            (
-                await event_service.set_attendance(
-                    session,
-                    actor,
-                    assignment_id=assignment_id,
-                    attended=None,
-                    hours=None,
-                    now=current_env().clock.now(),
-                )
-            ).unwrap()
-        ui.navigate.reload()
+
+        async def command(ctx: PageCtx):
+            return await event_service.set_attendance(
+                ctx.session,
+                ctx.actor,
+                assignment_id=assignment_id,
+                attended=None,
+                hours=None,
+                now=ctx.now,
+            )
+
+        await run_command(command, reload=True)
 
     ui.label("Attendance").classes("text-lg font-medium mt-2")
     ui.label(
@@ -1338,45 +1343,45 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
         week = ui.checkbox("7 days before", value=False).props("dense")
         day = ui.checkbox("24 hours before", value=True).props("dense")
 
-        @notify_errors
         async def save() -> None:
-            async with action_session() as (session, actor):
+            async def command(ctx: PageCtx):
                 if repeat is not None and repeat.value:
-                    _, result = (
-                        await event_service.sign_up_series(
-                            session,
-                            actor,
-                            slot_id=slot_id,
-                            volunteer_id=actor.volunteer_id,
-                            notify_7d=bool(week.value),
-                            notify_24h=bool(day.value),
-                            now=current_env().clock.now(),
-                        )
-                    ).unwrap()
-                else:
-                    (
-                        await event_service.sign_up(
-                            session,
-                            actor,
-                            slot_id=slot_id,
-                            volunteer_id=actor.volunteer_id,
-                            notify_7d=bool(week.value),
-                            notify_24h=bool(day.value),
-                            now=current_env().clock.now(),
-                        )
-                    ).unwrap()
-                    result = None
-            dialog.close()
-            if result is None or result == event_service.SeriesSignupResult(0, 0, 0):
-                ui.notify("You're on the list", color="positive")
-            else:
-                skipped = result.skipped_full + result.skipped_conflict
-                ui.notify(
-                    f"You're on the list — this week plus {result.joined} more"
-                    + (f", {skipped} week(s) skipped" if skipped else ""),
-                    color="positive",
+                    return await event_service.sign_up_series(
+                        ctx.session,
+                        ctx.actor,
+                        slot_id=slot_id,
+                        volunteer_id=ctx.actor.volunteer_id,
+                        notify_7d=bool(week.value),
+                        notify_24h=bool(day.value),
+                        now=ctx.now,
+                    )
+                return await event_service.sign_up(
+                    ctx.session,
+                    ctx.actor,
+                    slot_id=slot_id,
+                    volunteer_id=ctx.actor.volunteer_id,
+                    notify_7d=bool(week.value),
+                    notify_24h=bool(day.value),
+                    now=ctx.now,
                 )
-            ui.navigate.reload()
+
+            def done(value, _effects, _report) -> None:
+                # sign_up_series answers (assignment, SeriesSignupResult)
+                result = value[1] if isinstance(value, tuple) else None
+                dialog.close()
+                if result is None or result == event_service.SeriesSignupResult(
+                    0, 0, 0
+                ):
+                    ui.notify("You're on the list", color="positive")
+                else:
+                    skipped = result.skipped_full + result.skipped_conflict
+                    ui.notify(
+                        f"You're on the list — this week plus {result.joined} more"
+                        + (f", {skipped} week(s) skipped" if skipped else ""),
+                        color="positive",
+                    )
+
+            await run_command(command, on_ok=done)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -1386,45 +1391,42 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
     dialog.open()
 
 
-@notify_errors
 async def _withdraw(assignment_id: int) -> None:
-    async with action_session() as (session, actor):
-        (
-            await event_service.remove_assignment(
-                session, actor, assignment_id, now=current_env().clock.now()
-            )
-        ).unwrap()
-    ui.navigate.reload()
+
+    async def command(ctx: PageCtx):
+        return await event_service.remove_assignment(
+            ctx.session, ctx.actor, assignment_id, now=ctx.now
+        )
+
+    await run_command(command, reload=True)
 
 
-@notify_errors
 async def _assign(slot_id: int, volunteer_id: int | None) -> None:
     if not volunteer_id:
         ui.notify("Pick a person first", color="warning")
         return
-    async with action_session() as (session, actor):
-        (
-            await event_service.assign(
-                session,
-                actor,
-                slot_id=slot_id,
-                volunteer_id=volunteer_id,
-                assigned_by=actor.user.id,
-                now=current_env().clock.now(),
-            )
-        ).unwrap()
-    ui.navigate.reload()
+
+    async def command(ctx: PageCtx):
+        return await event_service.assign(
+            ctx.session,
+            ctx.actor,
+            slot_id=slot_id,
+            volunteer_id=volunteer_id,
+            assigned_by=ctx.actor.user.id,
+            now=ctx.now,
+        )
+
+    await run_command(command, reload=True)
 
 
-@notify_errors
 async def _delete_slot(slot_id: int) -> None:
-    async with action_session() as (session, actor):
-        (
-            await event_service.delete_slot(
-                session, actor, slot_id, now=current_env().clock.now()
-            )
-        ).unwrap()
-    ui.navigate.reload()
+
+    async def command(ctx: PageCtx):
+        return await event_service.delete_slot(
+            ctx.session, ctx.actor, slot_id, now=ctx.now
+        )
+
+    await run_command(command, reload=True)
 
 
 async def _cancel_event(event_id: int) -> None:

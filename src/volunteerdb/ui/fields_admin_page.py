@@ -4,7 +4,7 @@ from nicegui import ui
 
 from ..models import FIELD_TYPE_LABELS, FieldType
 from ..services import custom_fields as custom_field_service
-from .context import action_session, notify_errors, page_session
+from .context import PageCtx, page_session, run_command
 from .layout import frame
 
 TYPE_OPTIONS = {ft.value: FIELD_TYPE_LABELS[ft] for ft in FieldType}
@@ -96,40 +96,35 @@ def _field_dialog(defn=None) -> None:
         )
         active = ui.switch("Active", value=defn.is_active) if defn else None
 
-        @notify_errors
         async def save() -> None:
             option_list = [
                 line for line in (options.value or "").splitlines() if line.strip()
             ]
-            async with action_session() as (session, actor):
+
+            async def command(ctx: PageCtx):
                 if defn is None:
-                    (
-                        await custom_field_service.create_def(
-                            session,
-                            actor,
-                            label.value,
-                            field_type.value,
-                            options=option_list,
-                            show_in_list=show_in_list.value,
-                            position=int(position.value or 0),
-                        )
-                    ).unwrap()
-                else:
-                    is_select = defn.field_type == FieldType.select.value
-                    (
-                        await custom_field_service.update_def(
-                            session,
-                            actor,
-                            defn.id,
-                            label=label.value,
-                            show_in_list=show_in_list.value,
-                            position=int(position.value or 0),
-                            is_active=active.value,
-                            **({"options": option_list} if is_select else {}),
-                        )
-                    ).unwrap()
-            dialog.close()
-            ui.navigate.reload()
+                    return await custom_field_service.create_def(
+                        ctx.session,
+                        ctx.actor,
+                        label.value,
+                        field_type.value,
+                        options=option_list,
+                        show_in_list=show_in_list.value,
+                        position=int(position.value or 0),
+                    )
+                is_select = defn.field_type == FieldType.select.value
+                return await custom_field_service.update_def(
+                    ctx.session,
+                    ctx.actor,
+                    defn.id,
+                    label=label.value,
+                    show_in_list=show_in_list.value,
+                    position=int(position.value or 0),
+                    is_active=active.value,
+                    **({"options": option_list} if is_select else {}),
+                )
+
+            await run_command(command, on_ok=lambda _v, _e, _r: dialog.close())
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -145,14 +140,17 @@ def _delete_dialog(defn) -> None:
             "Consider deactivating instead if you may want it back."
         ).classes("text-sm text-gray-500")
 
-        @notify_errors
         async def confirm() -> None:
-            async with action_session() as (session, actor):
-                (
-                    await custom_field_service.delete_def(session, actor, defn.id)
-                ).unwrap()
-            dialog.close()
-            ui.navigate.reload()
+
+            async def command(ctx: PageCtx):
+                return await custom_field_service.delete_def(
+                    ctx.session, ctx.actor, defn.id
+                )
+
+            def done(_value, _effects, _report) -> None:
+                dialog.close()
+
+            await run_command(command, on_ok=done, reload=True)
 
         with ui.row().classes("justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")

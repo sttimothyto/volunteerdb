@@ -9,7 +9,7 @@ from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from . import invites
 from .a11y import icon_button
-from .context import PageCtx, action_session, notify_errors, page_session, run_command
+from .context import PageCtx, page_session, run_command
 from .layout import frame
 
 
@@ -32,7 +32,6 @@ async def users_page(request: Request):
     with frame("Accounts", actor):
         with ui.row().classes("gap-2"):
 
-            @notify_errors
             async def provision() -> None:
                 with ui.dialog() as confirm_dialog, ui.card().classes("w-96 gap-3"):
                     ui.label(
@@ -207,29 +206,27 @@ async def users_page(request: Request):
                         "text-xs text-gray-400"
                     )
 
-                @notify_errors
                 async def toggle_admin(
                     _, uid=account.id, current=account.is_admin
                 ) -> None:
-                    async with action_session() as (session, actor):
-                        (
-                            await user_service.set_flags(
-                                session, uid, actor=actor, is_admin=not current
-                            )
-                        ).unwrap()
-                    ui.navigate.reload()
 
-                @notify_errors
+                    async def command(ctx: PageCtx):
+                        return await user_service.set_flags(
+                            ctx.session, uid, actor=ctx.actor, is_admin=not current
+                        )
+
+                    await run_command(command, reload=True)
+
                 async def toggle_active(
                     _, uid=account.id, current=account.is_active
                 ) -> None:
-                    async with action_session() as (session, actor):
-                        (
-                            await user_service.set_flags(
-                                session, uid, actor=actor, is_active=not current
-                            )
-                        ).unwrap()
-                    ui.navigate.reload()
+
+                    async def command(ctx: PageCtx):
+                        return await user_service.set_flags(
+                            ctx.session, uid, actor=ctx.actor, is_active=not current
+                        )
+
+                    await run_command(command, reload=True)
 
                 def relink_dialog(
                     uid=account.id, addr=account.email, current=account.volunteer_id
@@ -247,20 +244,24 @@ async def users_page(request: Request):
                             .mark(f"relink-pick-{uid}")
                         )
 
-                        @notify_errors
                         async def save_link() -> None:
-                            async with action_session() as (session, actor):
-                                (
-                                    await user_service.set_volunteer(
-                                        session, uid, pick.value or None, actor=actor
-                                    )
-                                ).unwrap()
-                            dialog.close()
-                            ui.notify(
-                                f"{addr} → {volunteer_names.get(pick.value, 'nobody')}",
-                                color="positive",
-                            )
-                            ui.navigate.reload()
+
+                            async def command(ctx: PageCtx):
+                                return await user_service.set_volunteer(
+                                    ctx.session,
+                                    uid,
+                                    pick.value or None,
+                                    actor=ctx.actor,
+                                )
+
+                            def done(_value, _effects, _report) -> None:
+                                dialog.close()
+                                ui.notify(
+                                    f"{addr} → {volunteer_names.get(pick.value, 'nobody')}",
+                                    color="positive",
+                                )
+
+                            await run_command(command, on_ok=done, reload=True)
 
                         with ui.row().classes("justify-end w-full gap-2"):
                             ui.button("Cancel", on_click=dialog.close).props("flat")

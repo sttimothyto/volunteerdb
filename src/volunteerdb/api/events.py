@@ -17,7 +17,6 @@ from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Query
 
-from ..log import audit_log
 from ..models import Event, EventSlot, EventStatus, EventSubRequest, Volunteer
 from ..permissions import require
 from ..services import events as event_service
@@ -567,7 +566,7 @@ async def get_task_force(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
 
 @router.post("/{event_id}/collaborators", status_code=201)
 async def add_collaborator(
-    ctx: CtxDep, event_id: int, data: CollaboratorIn
+    ctx: CtxDep, event_id: int, data: CollaboratorIn, background: BackgroundTasks
 ) -> TaskForceOut:
     """Invite another team to staff this event.
 
@@ -576,7 +575,9 @@ async def add_collaborator(
     event, deliberately not on the team being invited — and gives none over that
     team's people, which is what makes asking safe (permissions.Actor).
     """
-    (
+    dispatch(
+        ctx,
+        background,
         await task_force_service.add_collaborating_team(
             ctx.session,
             ctx.actor,
@@ -585,13 +586,7 @@ async def add_collaborator(
             created_by=ctx.actor.user.id,
             now=ctx.now,
             tz=ctx.env.tz,
-        )
-    ).unwrap()
-    audit_log(
-        "event.collaboration_added",
-        event_id=event_id,
-        source_team_id=data.team_id,
-        via="api",
+        ),
     )
     # already authorized by add_collaborating_team; build the payload without
     # re-checking, so the first collaborator (which creates the meta team the

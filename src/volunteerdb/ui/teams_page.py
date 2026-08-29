@@ -4,14 +4,14 @@ from functools import partial
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-import httpx
 from fastapi import Request
 from nicegui import events, ui
 
 from .. import query_lang
 from ..config import settings
 from ..env import current as current_env
-from ..fp import Err
+from ..errors import not_found
+from ..fp import Err, Ok
 from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
 from ..services import events as event_service
 from ..services import mail, roster_sheets
@@ -26,10 +26,12 @@ from ..sheets.common import sheet_url
 from . import column_order, invites
 from .account_status import roster_account
 from .context import (
-    action_session,
-    notify_errors,
+    PageCtx,
+    page_ctx,
     page_session,
     parse_as_of,
+    run_command,
+    toast,
 )
 from .layout import frame
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -370,41 +372,38 @@ def _team_dialog(parent_options: dict[int, str], team=None) -> None:
                 "and stops appearing in pickers. Deleting removes it entirely."
             )
 
-        @notify_errors
         async def save() -> None:
-            async with action_session() as (session, actor):
-                parent_id = parent.value or None
-                weight_value = (
-                    Decimal(str(weight.value)) if weight.value is not None else None
-                )
+            parent_id = parent.value or None
+            weight_value = (
+                Decimal(str(weight.value)) if weight.value is not None else None
+            )
+
+            async def command(ctx: PageCtx):
                 if team is None:
-                    created = (
-                        await team_service.create(
-                            session,
-                            actor,
-                            name.value,
-                            parent_id,
-                            description.value or None,
-                            workload_weight=weight_value,
-                        )
-                    ).unwrap()
-                    team_id = created.id
-                else:
-                    (
-                        await team_service.update(
-                            session,
-                            actor,
-                            team.id,
-                            name=name.value,
-                            parent_team_id=parent_id,
-                            description=description.value or None,
-                            workload_weight=weight_value,
-                            is_active=active.value if active is not None else None,
-                        )
-                    ).unwrap()
-                    team_id = team.id
-            dialog.close()
-            ui.navigate.to(f"/teams/{team_id}")
+                    return await team_service.create(
+                        ctx.session,
+                        ctx.actor,
+                        name.value,
+                        parent_id,
+                        description.value or None,
+                        workload_weight=weight_value,
+                    )
+                return await team_service.update(
+                    ctx.session,
+                    ctx.actor,
+                    team.id,
+                    name=name.value,
+                    parent_team_id=parent_id,
+                    description=description.value or None,
+                    workload_weight=weight_value,
+                    is_active=active.value if active is not None else None,
+                )
+
+            def done(saved, _effects, _report) -> None:
+                dialog.close()
+                ui.navigate.to(f"/teams/{saved.id}")
+
+            await run_command(command, on_ok=done, reload=False)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -545,25 +544,24 @@ def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -
     _sheet_import_block(is_admin)
 
 
-@notify_errors
 async def _sync_sheet(team_id: int, direction: str) -> None:
     """Sync on demand, the way the home-page section's Fetch now works.
 
     The actor is re-derived server-side inside sync_team, so a tab left open
-    across a demotion stops syncing.
+    across a demotion stops syncing. sync_team is an orchestrator with units
+    of work of its own, so it is not a command: the refusal is toasted here.
     """
-    async with action_session() as (_session, actor):
-        user_id = actor.user.id
+    env = current_env()
+    async with page_ctx() as ctx:
+        user_id = ctx.actor.user.id
     ui.notify("Syncing with Google Sheets…")
-    outcome = (
-        await roster_sheets.sync_team(
-            current_env(),
-            team_id,
-            direction=direction,
-            user_id=user_id,
-            now=current_env().clock.now(),
-        )
-    ).unwrap()
+    synced = await roster_sheets.sync_team(
+        env, team_id, direction=direction, user_id=user_id, now=env.clock.now()
+    )
+    if isinstance(synced, Err):
+        toast(synced.error)
+        return
+    outcome = synced.value
     if outcome.failed:
         ui.notify(f"Sync failed: {outcome.message}", color="negative", multi_line=True)
     else:
@@ -646,28 +644,30 @@ def _sheet_import_block(is_admin: bool) -> None:
                     "Apply this import", icon="publish", on_click=apply_import
                 ).props("color=positive")
 
-    @notify_errors
+    async def _import(content: bytes, *, dry_run: bool):
+        """run_import is an orchestrator with a unit of work of its own, so it
+        is not a command; the refusal to import at all is toasted here."""
+        async with page_ctx() as ctx:
+            user_id = ctx.actor.user.id  # run_import checks the right itself
+        report = await importer.run_import(
+            current_env(), content, dry_run=dry_run, user_id=user_id
+        )
+        if isinstance(report, Err):
+            toast(report.error)
+            return None
+        return report.value
+
     async def on_upload(e: events.UploadEventArguments) -> None:
         state["content"] = await e.file.read()
         state["filename"] = e.file.name
-        async with action_session() as (_, actor):
-            user_id = actor.user.id  # run_import checks the right itself
-        report = (
-            await importer.run_import(
-                current_env(), state["content"], dry_run=True, user_id=user_id
-            )
-        ).unwrap()
-        await render_report(report)
+        report = await _import(state["content"], dry_run=True)
+        if report is not None:
+            await render_report(report)
 
-    @notify_errors
     async def apply_import() -> None:
-        async with action_session() as (_, actor):
-            user_id = actor.user.id  # run_import checks the right itself
-        report = (
-            await importer.run_import(
-                current_env(), state["content"], dry_run=False, user_id=user_id
-            )
-        ).unwrap()
+        report = await _import(state["content"], dry_run=False)
+        if report is None:
+            return
         await render_report(report)
         if report.applied:
             ui.notify(f"Imported {state['filename']}", color="positive")
@@ -716,30 +716,37 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
             "sheet is shared and shaped correctly."
         ).classes("text-sm text-gray-500")
 
-        @notify_errors
         async def save() -> None:
-            async with action_session() as (session, actor):
-                (
-                    await team_service.set_roster_sheet(
-                        session, actor, team_id, url.value or ""
-                    )
-                ).unwrap()
-                user_id = actor.user.id
+            async def command(ctx: PageCtx):
+                linked = await team_service.set_roster_sheet(
+                    ctx.session, ctx.actor, team_id, url.value or ""
+                )
+                if isinstance(linked, Err):
+                    return linked
+                return Ok(ctx.actor.user.id)
+
+            linked = await run_command(command, reload=False)
+            if isinstance(linked, Err):
+                return
+            user_id = linked.value
             dialog.close()
             ui.notify("Syncing with Google Sheets…")
-            outcome = (
-                await roster_sheets.sync_team(
-                    current_env(),
-                    team_id,
-                    direction=(
-                        roster_sheets.IMPORT
-                        if direction.value == _IMPORT_ROWS
-                        else roster_sheets.EXPORT
-                    ),
-                    user_id=user_id,
-                    now=current_env().clock.now(),
-                )
-            ).unwrap()
+            env = current_env()
+            synced = await roster_sheets.sync_team(
+                env,
+                team_id,
+                direction=(
+                    roster_sheets.IMPORT
+                    if direction.value == _IMPORT_ROWS
+                    else roster_sheets.EXPORT
+                ),
+                user_id=user_id,
+                now=env.clock.now(),
+            )
+            if isinstance(synced, Err):
+                toast(synced.error)
+                return
+            outcome = synced.value
             if outcome.failed:
                 ui.notify(
                     f"Linked, but the first sync failed: {outcome.message}",
@@ -772,16 +779,18 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
             .classes("w-full")
         )
 
-        @notify_errors
         async def save(new_value: str | None) -> None:
-            async with action_session() as (session, actor):
-                (
-                    await page_service.set_home_doc_url(
-                        session, actor, team_id, new_value
-                    )
-                ).unwrap()
-            dialog.close()
-            ui.navigate.to(f"/teams/{team_id}")
+
+            async def command(ctx: PageCtx):
+                return await page_service.set_home_doc_url(
+                    ctx.session, ctx.actor, team_id, new_value
+                )
+
+            def done(_value, _effects, _report) -> None:
+                dialog.close()
+                ui.navigate.to(f"/teams/{team_id}")
+
+            await run_command(command, on_ok=done, reload=False)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -793,30 +802,26 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
     dialog.open()
 
 
-@notify_errors
 async def _fetch_home_page(team_id: int) -> None:
-    async with action_session() as (session, actor):
-        team = await team_service.get(session, team_id)
+    async def command(ctx: PageCtx):
+        team = await team_service.get(ctx.session, team_id)
         if team is None or not team.home_doc_url:
-            raise LookupError("this team has no home page doc")
-        async with httpx.AsyncClient() as client:
+            return not_found("home page doc for this team")
+        async with ctx.env.http.client() as client:
             # force: a human clicking "Fetch now" means really refetch — also
             # the repair path when image rows were damaged out-of-band
-            page = (
-                await page_service.fetch_and_store(
-                    session,
-                    team,
-                    client,
-                    force=True,
-                    actor=actor,
-                    now=current_env().clock.now(),
-                )
-            ).unwrap()
-    if page.status == "ok":
-        ui.notify("Home page updated", color="positive")
-    else:
-        ui.notify(f"Fetch failed: {page.error}", color="negative")
-    ui.navigate.to(f"/teams/{team_id}")
+            return await page_service.fetch_and_store(
+                ctx.session, team, client, force=True, actor=ctx.actor, now=ctx.now
+            )
+
+    def done(page, _effects, _report) -> None:
+        if page.status == "ok":
+            ui.notify("Home page updated", color="positive")
+        else:
+            ui.notify(f"Fetch failed: {page.error}", color="negative")
+        ui.navigate.to(f"/teams/{team_id}")
+
+    await run_command(command, on_ok=done, reload=False)
 
 
 @ui.page("/teams/{team_id}")
@@ -976,18 +981,21 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                     .classes("w-52")
                 )
 
-                @notify_errors
                 async def add() -> None:
                     if not who.value:
                         ui.notify("Pick a volunteer", color="warning")
                         return
-                    async with action_session() as (session, actor):
-                        (
-                            await membership_service.assign(
-                                session, actor, who.value, team_id, TeamRole(role.value)
-                            )
-                        ).unwrap()
-                    ui.navigate.reload()
+
+                    async def command(ctx: PageCtx):
+                        return await membership_service.assign(
+                            ctx.session,
+                            ctx.actor,
+                            who.value,
+                            team_id,
+                            TeamRole(role.value),
+                        )
+
+                    await run_command(command, reload=True)
 
                 ui.button("Add", icon="person_add", on_click=add).props("dense")
 
@@ -1011,9 +1019,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                             ROLE_OPTIONS, value=membership.role.value
                         ).props("dense outlined")
                         role_select.on_value_change(
-                            notify_errors(
-                                lambda e, mid=membership.id: _change_role(mid, e.value)
-                            )
+                            lambda e, mid=membership.id: _change_role(mid, e.value)
                         )
                     else:
                         ui.badge(ROLE_LABELS[membership.role])
@@ -1044,9 +1050,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                     if can_manage:
                         ui.button(
                             icon="person_remove",
-                            on_click=notify_errors(
-                                lambda _, mid=membership.id: _remove_member(mid)
-                            ),
+                            on_click=lambda _, mid=membership.id: _remove_member(mid),
                         ).props("dense flat color=negative").tooltip("Remove from team")
 
         if can_manage:
@@ -1087,23 +1091,30 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
 
 
 async def _change_role(membership_id: int, role_value: str) -> None:
-    async with action_session() as (session, actor):
-        (
-            await membership_service.set_role(
-                session, actor, membership_id, TeamRole(role_value)
-            )
-        ).unwrap()
-    ui.notify("Role updated", color="positive")
+    async def command(ctx: PageCtx):
+        return await membership_service.set_role(
+            ctx.session, ctx.actor, membership_id, TeamRole(role_value)
+        )
+
+    await run_command(
+        command,
+        on_ok=lambda _v, _e, _r: ui.notify("Role updated", color="positive"),
+        reload=False,
+    )
 
 
 async def _remove_member(membership_id: int) -> None:
-    async with action_session() as (session, actor):
-        (await membership_service.remove(session, actor, membership_id)).unwrap()
-    ui.navigate.reload()
+    await run_command(
+        lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id)
+    )
 
 
-@notify_errors
 async def _delete_team(team_id: int) -> None:
-    async with action_session() as (session, actor):
-        (await team_service.delete(session, actor, team_id)).unwrap()
-    ui.navigate.to("/teams")
+
+    async def command(ctx: PageCtx):
+        return await team_service.delete(ctx.session, ctx.actor, team_id)
+
+    def done(_value, _effects, _report) -> None:
+        ui.navigate.to("/teams")
+
+    await run_command(command, on_ok=done, reload=False)

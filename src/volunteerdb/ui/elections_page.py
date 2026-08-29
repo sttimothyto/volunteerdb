@@ -22,7 +22,7 @@ from ..services import elections as elections_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from ..star import StarResult
-from .context import action_session, notify_errors, page_session
+from .context import PageCtx, page_session, run_command
 from .date_input import date_input
 from .layout import frame
 
@@ -150,32 +150,35 @@ async def elections_page():
                 "candidates until nominations close."
             ).classes("text-xs text-gray-500")
 
-            @notify_errors
             async def save() -> None:
                 if not who.value:
                     ui.notify("Pick the first candidate", color="warning")
                     return
                 if (deadlines := _parse_deadlines(d1, d2)) is None:
                     return
-                async with action_session() as (session, actor):
-                    proposal = (
-                        await elections_service.create_proposal(
-                            session,
-                            actor,
-                            team_id=team_id,
-                            role=TeamRole(role.value),
-                            nomination_deadline=deadlines[0],
-                            voting_deadline=deadlines[1],
-                            created_by=actor.user.id,
-                            candidates=[
-                                elections_service.CandidateInput(who.value, why.value)
-                            ],
-                            notes=notes.value or None,
-                            today=current_env().today(),
-                        )
-                    ).unwrap()
-                dialog.close()
-                ui.navigate.to(f"/elections/{proposal.id}")
+
+                async def command(ctx: PageCtx):
+                    return await elections_service.create_proposal(
+                        ctx.session,
+                        ctx.actor,
+                        team_id=team_id,
+                        role=TeamRole(role.value),
+                        nomination_deadline=deadlines[0],
+                        voting_deadline=deadlines[1],
+                        created_by=ctx.actor.user.id,
+                        candidates=[
+                            elections_service.CandidateInput(who.value, why.value)
+                        ],
+                        notes=notes.value or None,
+                        today=ctx.env.today(),
+                    )
+
+                def done(value, _effects, _report) -> None:
+                    proposal = value
+                    dialog.close()
+                    ui.navigate.to(f"/elections/{proposal.id}")
+
+                await run_command(command, on_ok=done, reload=False)
 
             with ui.row().classes("justify-end w-full gap-2"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -241,24 +244,23 @@ def _nominate_row(proposal_id: int, volunteer_options: dict[int, str]) -> None:
         )
         why = ui.input("Why them?").props("outlined dense").classes("grow")
 
-        @notify_errors
         async def nominate() -> None:
             if not who.value:
                 ui.notify("Pick a volunteer", color="warning")
                 return
-            async with action_session() as (session, actor):
-                (
-                    await elections_service.add_candidate(
-                        session,
-                        actor,
-                        proposal_id,
-                        volunteer_id=who.value,
-                        nominated_by=actor.user.id,
-                        note=why.value,
-                        today=current_env().today(),
-                    )
-                ).unwrap()
-            ui.navigate.reload()
+
+            async def command(ctx: PageCtx):
+                return await elections_service.add_candidate(
+                    ctx.session,
+                    ctx.actor,
+                    proposal_id,
+                    volunteer_id=who.value,
+                    nominated_by=ctx.actor.user.id,
+                    note=why.value,
+                    today=ctx.env.today(),
+                )
+
+            await run_command(command, reload=True)
 
         ui.button("Nominate", icon="person_add", on_click=nominate).props("dense")
 
@@ -288,9 +290,7 @@ def _voters_section(
                 if can_manage and nominating:
                     ui.button(
                         "Remove",
-                        on_click=notify_errors(
-                            lambda _, v=vv.voter.id: _remove_voter(proposal_id, v)
-                        ),
+                        on_click=lambda _, v=vv.voter.id: _remove_voter(proposal_id, v),
                     ).props("dense flat")
         if can_manage and nominating:
             with ui.row().classes("w-full items-center gap-2"):
@@ -300,23 +300,22 @@ def _voters_section(
                     .classes("w-64")
                 )
 
-                @notify_errors
                 async def add_voter() -> None:
                     if not extra.value:
                         ui.notify("Pick a volunteer", color="warning")
                         return
-                    async with action_session() as (session, actor):
-                        (
-                            await elections_service.add_voter(
-                                session,
-                                actor,
-                                proposal_id,
-                                volunteer_id=extra.value,
-                                added_by=actor.user.id,
-                                today=current_env().today(),
-                            )
-                        ).unwrap()
-                    ui.navigate.reload()
+
+                    async def command(ctx: PageCtx):
+                        return await elections_service.add_voter(
+                            ctx.session,
+                            ctx.actor,
+                            proposal_id,
+                            volunteer_id=extra.value,
+                            added_by=ctx.actor.user.id,
+                            today=ctx.env.today(),
+                        )
+
+                    await run_command(command, reload=True)
 
                 ui.button("Add voter", icon="person_add", on_click=add_voter).props(
                     "dense"
@@ -343,27 +342,27 @@ def _ballot_section(
                     value=mine.get(cv.candidate.id, 0),
                 ).props("dense")
 
-    @notify_errors
     async def submit_ballot() -> None:
         scores = {c: t.value or 0 for c, t in toggles.items()}
-        async with action_session() as (session, actor):
-            # cast_ballot checks the seat, and that the seat is *yours*
-            (
-                await elections_service.cast_ballot(
-                    session,
-                    actor,
-                    proposal_id,
-                    voter_volunteer_id=actor.volunteer_id,
-                    scores=scores,
-                    today=current_env().today(),
-                    now=current_env().clock.now(),
-                )
-            ).unwrap()
-        ui.notify(
-            f"Ballot recorded — you may revise it until {voting_deadline}",
-            color="positive",
-        )
-        ui.navigate.reload()
+
+        async def command(ctx: PageCtx):
+            return await elections_service.cast_ballot(
+                ctx.session,
+                ctx.actor,
+                proposal_id,
+                voter_volunteer_id=ctx.actor.volunteer_id,
+                scores=scores,
+                today=ctx.env.today(),
+                now=ctx.now,
+            )
+
+        def done(_value, _effects, _report) -> None:
+            ui.notify(
+                f"Ballot recorded — you may revise it until {voting_deadline}",
+                color="positive",
+            )
+
+        await run_command(command, on_ok=done, reload=True)
 
     ui.button("Submit ballot", icon="how_to_vote", on_click=submit_ballot)
 
@@ -416,13 +415,11 @@ async def proposal_detail(proposal_id: int):
     voting = phase is Phase.voting
     names = {cv.candidate.id: cv.volunteer.full_name for cv in view.candidates}
 
-    @notify_errors
     async def _managed_action(what: str, action) -> None:
         """`what` survives only as the toast's subject when a service refuses;
-        the refusal itself comes from the service (services/elections.py)."""
-        async with action_session() as (session, actor):
-            await action(session, actor)
-        ui.navigate.reload()
+        the refusal itself comes from the service (services/elections.py) and
+        run_command toasts it -- the Result was silently dropped here once."""
+        await run_command(lambda ctx: action(ctx.session, ctx.actor))
 
     def edit_deadlines_dialog() -> None:
         with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
@@ -515,25 +512,28 @@ async def proposal_detail(proposal_id: int):
                 today + timedelta(days=14), today + timedelta(days=28)
             )
 
-            @notify_errors
             async def save() -> None:
                 if (deadlines := _parse_deadlines(d1, d2)) is None:
                     return
-                async with action_session() as (session, actor):
-                    fresh = (
-                        await elections_service.new_round(
-                            session,
-                            actor,
-                            proposal_id,
-                            created_by=actor.user.id,
-                            nomination_deadline=deadlines[0],
-                            voting_deadline=deadlines[1],
-                            today=current_env().today(),
-                            now=current_env().clock.now(),
-                        )
-                    ).unwrap()
-                dialog.close()
-                ui.navigate.to(f"/elections/{fresh.id}")
+
+                async def command(ctx: PageCtx):
+                    return await elections_service.new_round(
+                        ctx.session,
+                        ctx.actor,
+                        proposal_id,
+                        created_by=ctx.actor.user.id,
+                        nomination_deadline=deadlines[0],
+                        voting_deadline=deadlines[1],
+                        today=ctx.env.today(),
+                        now=ctx.now,
+                    )
+
+                def done(value, _effects, _report) -> None:
+                    fresh = value
+                    dialog.close()
+                    ui.navigate.to(f"/elections/{fresh.id}")
+
+                await run_command(command, on_ok=done, reload=False)
 
             with ui.row().classes("justify-end w-full gap-2"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -596,9 +596,7 @@ async def proposal_detail(proposal_id: int):
                     if can_manage and nominating:
                         ui.button(
                             "Remove",
-                            on_click=notify_errors(
-                                lambda _, c=cid: _remove_candidate(proposal_id, c)
-                            ),
+                            on_click=lambda _, c=cid: _remove_candidate(proposal_id, c),
                         ).props("dense flat color=negative")
                     if can_manage and phase is Phase.concluded:
                         ui.button(
@@ -682,20 +680,16 @@ def _result_section(tally: StarResult, names: dict[int, str]) -> None:
 
 
 async def _remove_candidate(proposal_id: int, candidate_id: int) -> None:
-    async with action_session() as (session, actor):
-        (
-            await elections_service.remove_candidate(
-                session, actor, proposal_id, candidate_id, today=current_env().today()
-            )
-        ).unwrap()
-    ui.navigate.reload()
+    await run_command(
+        lambda ctx: elections_service.remove_candidate(
+            ctx.session, ctx.actor, proposal_id, candidate_id, today=ctx.env.today()
+        )
+    )
 
 
 async def _remove_voter(proposal_id: int, voter_id: int) -> None:
-    async with action_session() as (session, actor):
-        (
-            await elections_service.remove_voter(
-                session, actor, proposal_id, voter_id, today=current_env().today()
-            )
-        ).unwrap()
-    ui.navigate.reload()
+    await run_command(
+        lambda ctx: elections_service.remove_voter(
+            ctx.session, ctx.actor, proposal_id, voter_id, today=ctx.env.today()
+        )
+    )

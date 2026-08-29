@@ -96,6 +96,13 @@ class SelfRemoved:
 
 
 @dataclass(frozen=True, slots=True)
+class CollaboratorAdded:
+    event_id: int
+    source_team_id: int
+    task_force_team_id: int
+
+
+@dataclass(frozen=True, slots=True)
 class EventCancelled:
     event_id: int
     title: str
@@ -216,6 +223,7 @@ type DomainEvent = (
     | SlotHandedOver
     | SubClaimed
     | SelfRemoved
+    | CollaboratorAdded
     | EventCancelled
     | InviteIssued
     | InviteRedeemed

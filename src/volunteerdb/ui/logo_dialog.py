@@ -13,10 +13,10 @@ from collections.abc import Awaitable, Callable
 import anyio.to_thread
 from nicegui import events, ui
 
-from ..env import current as current_env
+from ..fp import Err
 from ..permissions import Actor
 from ..services import branding
-from .context import action_session, notify_errors
+from .context import PageCtx, run_command, toast
 
 # /logo serves the uploaded image or the shipped placeholder, so the src never
 # has to be decided at render time (ui/logo_route.py explains why it must not).
@@ -53,12 +53,13 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
         ):
             preview = logo_img(LOGO_URL, "h-24 w-auto object-contain")
 
-        @notify_errors
         async def on_upload(e: events.UploadEventArguments) -> None:
             raw = await e.file.read()
-            state["image"] = (
-                await anyio.to_thread.run_sync(branding.normalize, raw)
-            ).unwrap()
+            shaped = await anyio.to_thread.run_sync(branding.normalize, raw)
+            if isinstance(shaped, Err):
+                toast(shaped.error)
+                return
+            state["image"] = shaped.value
             data_url = "data:image/png;base64," + base64.b64encode(
                 state["image"]
             ).decode("ascii")
@@ -72,32 +73,38 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
             max_file_size=branding.MAX_UPLOAD_BYTES,
         ).props('accept="image/*" max-files=1').classes("w-full")
 
-        @notify_errors
         async def save() -> None:
             if state["image"] is None:
                 ui.notify("Choose an image first", color="warning")
                 return
-            async with action_session() as (session, actor):
-                (
-                    await branding.set_logo(
-                        session,
-                        actor,
-                        state["image"],
-                        normalized=True,
-                        now=current_env().clock.now(),
-                    )
-                ).unwrap()
-            dialog.close()
-            ui.notify("Logo saved", color="positive")
-            await on_change()
 
-        @notify_errors
+            async def command(ctx: PageCtx):
+                return await branding.set_logo(
+                    ctx.session,
+                    ctx.actor,
+                    state["image"],
+                    normalized=True,
+                    now=ctx.now,
+                )
+
+            async def done(_value, _effects, _report) -> None:
+                dialog.close()
+                ui.notify("Logo saved", color="positive")
+                await on_change()
+
+            await run_command(command, on_ok=done, reload=False)
+
         async def remove() -> None:
-            async with action_session() as (session, actor):
-                (await branding.delete_logo(session, actor)).unwrap()
-            dialog.close()
-            ui.notify("Logo removed", color="positive")
-            await on_change()
+
+            async def command(ctx: PageCtx):
+                return await branding.delete_logo(ctx.session, ctx.actor)
+
+            async def done(_value, _effects, _report) -> None:
+                dialog.close()
+                ui.notify("Logo removed", color="positive")
+                await on_change()
+
+            await run_command(command, on_ok=done, reload=False)
 
         with ui.row().classes("justify-end w-full gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")

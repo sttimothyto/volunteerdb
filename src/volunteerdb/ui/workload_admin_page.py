@@ -4,11 +4,11 @@ from decimal import Decimal
 
 from nicegui import ui
 
-from ..env import current as current_env
+from ..fp import Err, Ok
 from ..models import ROLE_LABELS, TeamRole
 from ..services import teams as team_service
 from ..services import workload as workload_service
-from .context import action_session, notify_errors, page_session
+from .context import PageCtx, page_session, run_command
 from .layout import frame
 
 
@@ -97,7 +97,6 @@ async def workload_page():
                         )
                     band_rows.append((label, color, upper))
 
-            @notify_errors
             async def save_config() -> None:
                 new_config = workload_service.WorkloadConfig(
                     multipliers={
@@ -113,13 +112,16 @@ async def workload_page():
                         for label, color, upper in band_rows
                     ],
                 )
-                async with action_session() as (session, actor):
-                    (
-                        await workload_service.set_config(
-                            session, actor, new_config, now=current_env().clock.now()
-                        )
-                    ).unwrap()
-                ui.notify("Workload settings saved", color="positive")
+
+                async def command(ctx: PageCtx):
+                    return await workload_service.set_config(
+                        ctx.session, ctx.actor, new_config, now=ctx.now
+                    )
+
+                def done(_value, _effects, _report) -> None:
+                    ui.notify("Workload settings saved", color="positive")
+
+                await run_command(command, on_ok=done, reload=False)
 
             ui.button("Save settings", icon="save", on_click=save_config).props("dense")
 
@@ -145,24 +147,29 @@ async def workload_page():
                         .classes("w-32")
                     )
 
-            @notify_errors
             async def save_weights() -> None:
-                changed = 0
-                async with action_session() as (session, actor):
+                async def command(ctx: PageCtx):
+                    changed = 0
                     for team_id, inp in weight_inputs.items():
                         # a cleared box is weight 0, which is what excluding a
                         # ministry from the scores has always meant
                         new = Decimal(str(inp.value or 0))
                         if new != originals[team_id]:
-                            (
-                                await team_service.update(
-                                    session, actor, team_id, workload_weight=new
-                                )
-                            ).unwrap()
+                            put = await team_service.update(
+                                ctx.session, ctx.actor, team_id, workload_weight=new
+                            )
+                            if isinstance(put, Err):
+                                return put
                             changed += 1
-                ui.notify(
-                    f"Updated {changed} team weight{'s' if changed != 1 else ''}",
-                    color="positive",
+                    return Ok(changed)
+
+                await run_command(
+                    command,
+                    on_ok=lambda changed, _e, _r: ui.notify(
+                        f"Updated {changed} team weight{'s' if changed != 1 else ''}",
+                        color="positive",
+                    ),
+                    reload=False,
                 )
 
             ui.button("Save weights", icon="save", on_click=save_weights).props("dense")
