@@ -25,29 +25,19 @@ from datetime import datetime
 
 from nicegui import ui
 
-from ..audit import audit_log
 from ..config import settings
+from ..effects import delivered
 from ..env import current as current_env
+from ..errors import require
 from ..models import AppUser
-from ..permissions import require, volunteer_team_ids
+from ..permissions import volunteer_team_ids
 from ..services import mail
 from ..services import users as user_service
-from .context import action_session, notify_errors
+from .context import PageCtx, run_command
 
 
 def invite_url(base_url: str, token: str) -> str:
     return f"{base_url}/invite/{token}"
-
-
-async def email_invite(base_url: str, address: str, token: str) -> bool:
-    """Mail the link. False when the send failed — never raises, so a dead mail
-    provider still leaves the caller with a link to hand out."""
-    return await mail.send_email(
-        address,
-        *mail.invite_email(
-            invite_url(base_url, token), ctx=current_env().mail_context()
-        ),
-    )
 
 
 def show_invite(
@@ -194,40 +184,45 @@ async def confirm_send(name: str, email: str, *, again: bool = False) -> bool:
 
 
 async def send_invite(
-    volunteer_id: int, name: str, email: str, base_url: str, *, again: bool = False
+    volunteer_id: int,
+    name: str,
+    email: str,
+    base_url: str,
+    *,
+    again: bool = False,
+    reveal: bool = False,
 ) -> None:
-    """Confirm, create-or-rearm, mail, then show the link.
+    """Confirm, create-or-rearm, then show the link; the policy mails it.
 
-    Re-checks the permission inside its own session: the rendered control is a
-    hint, never the gate."""
+    Re-checks the permission inside its own unit of work: the rendered
+    control is a hint, never the gate."""
     if not await confirm_send(name, email, again=again):
         return
-    async with action_session() as (session, actor):
-        team_ids = await volunteer_team_ids(session, volunteer_id)
-        require(actor.can_invite_volunteer(team_ids), "invite this volunteer")
-        account, token = (
-            await user_service.invite_volunteer(
-                session, volunteer_id, invite=current_env().invite()
-            )
-        ).unwrap()
-        addr = account.email
-        reveal = actor.is_admin
-        audit_log(
-            "auth.invite_minted",
-            volunteer_id=volunteer_id,
-            account_id=account.id,
-            address=addr,
-            revealed=reveal,
+
+    async def command(ctx: PageCtx):
+        team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
+        if denied := require(
+            ctx.actor.can_invite_volunteer(team_ids), "invite this volunteer"
+        ):
+            return denied
+        return await user_service.invite_volunteer(
+            ctx.session, volunteer_id, invite=ctx.env.invite()
         )
-    # Mail goes out after the commit: a send that fails must not roll the
-    # account back, since the link is still re-sendable (and, for an admin,
-    # still on screen).
-    sent = await email_invite(base_url, addr, token)
-    ui.notify(
-        f"Invite emailed to {addr}" if sent else f"Invite created for {addr}",
-        color="positive" if sent else "warning",
-    )
-    show_invite(base_url, token, addr, sent, reveal=reveal, reload_on_close=True)
+
+    def done(value, effects, report) -> None:
+        # The mail went out after the commit: a send that failed did not roll
+        # the account back, since the link is still re-sendable (and, for an
+        # admin, still on screen).
+        account, token = value
+        addr = account.email
+        sent = delivered(effects, report)
+        ui.notify(
+            f"Invite emailed to {addr}" if sent else f"Invite created for {addr}",
+            color="positive" if sent else "warning",
+        )
+        show_invite(base_url, token, addr, sent, reveal=reveal, reload_on_close=True)
+
+    await run_command(command, on_ok=done, reload=False)
 
 
 def invite_control(
@@ -265,9 +260,10 @@ def invite_control(
     )
     mark = f"invite-{where}-{volunteer_id}"
 
-    @notify_errors
     async def go() -> None:
-        await send_invite(volunteer_id, name, address, base_url, again=pending)
+        await send_invite(
+            volunteer_id, name, address, base_url, again=pending, reveal=reveal
+        )
 
     if pending and account is not None:
         # Same affordance as the admin page's clickable "invite pending" badge,

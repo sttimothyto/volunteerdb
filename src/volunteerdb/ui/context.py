@@ -205,7 +205,7 @@ async def run_command[T](
     command: Callable[[PageCtx], Awaitable[Result[Outcome[T] | T, DomainError]]],
     *,
     reload: bool = True,
-    on_ok: Callable[[T, tuple[Effect, ...]], None] | None = None,
+    on_ok: Callable[[T, tuple[Effect, ...], effects.EffectReport], None] | None = None,
 ) -> Result[T, DomainError]:
     """One GUI action, start to finish.
 
@@ -214,8 +214,8 @@ async def run_command[T](
     An Ok is planned (policy.plan over its events) inside the transaction and
     committed; the effects -- mail, audit lines, throttle charges -- run AFTER
     the commit, so mail never rides a transaction; then `on_ok` (the success
-    toast, a dialog to close: a pure function of the value and the effects)
-    and, unless told otherwise, a reload. A conflict at commit (IntegrityError)
+    toast, a dialog to close: a function of the value, the effects planned
+    and how they went) and, unless told otherwise, a reload. A conflict at commit (IntegrityError)
     is a Conflict toast. A command may still call .unwrap() on the way
     (transition); the carrier is read back as the Err it wraps.
     """
@@ -238,9 +238,9 @@ async def run_command[T](
         return Err(conflict)
     except Forbidden as exc:  # page_ctx: not signed in; it already redirected
         return Err(ForbiddenValue(str(exc)))
-    await effects.run(planned, env)
+    report = await effects.run(planned, env)
     if on_ok is not None:
-        on_ok(value, planned)
+        on_ok(value, planned, report)
     if reload:
         ui.navigate.reload()
     return Ok(value)

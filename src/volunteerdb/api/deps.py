@@ -196,15 +196,23 @@ def raise_http[T](result: Result[T, DomainError] | T) -> T:
 
 
 def dispatch[T](
-    ctx: Ctx, background: BackgroundTasks, result: Result[Outcome[T] | T, DomainError]
+    ctx: Ctx,
+    background: BackgroundTasks,
+    result: Result[Outcome[T] | T, DomainError],
+    *,
+    silent: bool = False,
 ) -> T:
     """A mutation's Result, seen through: the refusal becomes its status, the
     Outcome's events are planned (policy.plan) now and its effects run as
     background tasks -- after the response, which is after api_ctx committed
     -- so mail never rides a transaction. The plain value comes back for the
-    response body."""
+    response body. `silent`: the response itself carries what the mail would
+    (a link an admin asked for), so the sends are dropped and the audit lines
+    kept."""
     value, events = _split(raise_http(result))
     planned = policy.plan(events, ctx.policy_ctx())
+    if silent:
+        planned = tuple(e for e in planned if not isinstance(e, effects.SendMail))
     if planned:
         background.add_task(effects.run, planned, ctx.env)
     return value

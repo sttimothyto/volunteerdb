@@ -30,7 +30,7 @@ async def test_bulk_provision_dedupes_and_skips(database):
         inactive = ok(
             await volunteers.create(session, None, "Dora", "Gone", "dora@example.org")
         )
-        ok(await volunteers.update(session, None, inactive.id, is_active=False))
+        done(await volunteers.update(session, None, inactive.id, is_active=False))
         linked = ok(
             await volunteers.create(session, None, "Eli", "Linked", "eli@example.org")
         )
@@ -43,7 +43,9 @@ async def test_bulk_provision_dedupes_and_skips(database):
             )
         )
 
-        report = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
+        report = done(
+            await users.bulk_provision(session, None, mint=mint.fresh_invite)
+        ).value
 
         assert [v.id for v, _, _ in report.created] == [family1.id]
         created_user = report.created[0][1]
@@ -60,11 +62,15 @@ async def test_bulk_provision_dedupes_and_skips(database):
 async def test_bulk_provision_second_run_is_noop(database):
     async with db_session() as session:
         ok(await volunteers.create(session, None, "Ana", "Solo", "ana@example.org"))
-        first = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
+        first = done(
+            await users.bulk_provision(session, None, mint=mint.fresh_invite)
+        ).value
         assert len(first.created) == 1
 
     async with db_session() as session:
-        second = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
+        second = done(
+            await users.bulk_provision(session, None, mint=mint.fresh_invite)
+        ).value
         assert second.created == []
         assert [reason for _, reason in second.skipped] == ["already has an account"]
 
@@ -112,7 +118,7 @@ async def test_create_declines_ambiguous_or_unavailable_matches(database):
         gone = ok(
             await volunteers.create(session, None, "Dora", "Gone", "dora@example.org")
         )
-        ok(await volunteers.update(session, None, gone.id, is_active=False))
+        done(await volunteers.update(session, None, gone.id, is_active=False))
 
         family, _ = ok(
             await users.create(
@@ -169,14 +175,18 @@ async def test_bulk_provision_adopts_an_unlinked_account(database):
             )
         )
 
-        report = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
+        report = done(
+            await users.bulk_provision(session, None, mint=mint.fresh_invite)
+        ).value
 
         assert report.created == []
         assert [(vol.id, u.id) for vol, u in report.linked] == [(v.id, orphan.id)]
         assert orphan.volunteer_id == v.id
 
     async with db_session() as session:
-        again = ok(await users.bulk_provision(session, None, mint=mint.fresh_invite))
+        again = done(
+            await users.bulk_provision(session, None, mint=mint.fresh_invite)
+        ).value
         assert again.linked == []
         assert [reason for _, reason in again.skipped] == ["already has an account"]
 
@@ -270,9 +280,9 @@ async def test_reissue_invite_invalidates_password(database):
             )
         ).is_ok()
 
-        invite = ok(
+        invite = done(
             await users.reissue_invite(session, user.id, invite=mint.fresh_invite())
-        )
+        ).value
         assert (
             await users.authenticate(
                 session, "reset@example.org", "old-pass-phrase-1", now=mint.now()
@@ -376,9 +386,9 @@ async def test_invite_volunteer_creates_a_linked_passwordless_account(database):
             await volunteers.create(session, None, "Nils", "Nobody", "Nils@Example.org")
         )
 
-        account, token = ok(
+        account, token = done(
             await users.invite_volunteer(session, nils.id, invite=mint.fresh_invite())
-        )
+        ).value
 
         assert account.volunteer_id == nils.id, "linked, or they sign in to nothing"
         assert account.email == "nils@example.org", "normalized"
@@ -396,18 +406,18 @@ async def test_invite_volunteer_rearms_a_link_nobody_used(database):
         nils = ok(
             await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
         )
-        account, first = ok(
+        account, first = done(
             await users.invite_volunteer(session, nils.id, invite=mint.fresh_invite())
-        )
+        ).value
 
         # let it lapse unredeemed, as it does after a week of nobody reading email
         account.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.flush()
         assert not users.invite_live(account, now=mint.now())
 
-        again, second = ok(
+        again, second = done(
             await users.invite_volunteer(session, nils.id, invite=mint.fresh_invite())
-        )
+        ).value
         assert again is account, "the same account, not a second one"
         assert second != first, "a genuinely new token"
         assert users.invite_live(account, now=mint.now())
@@ -470,7 +480,7 @@ async def test_invite_volunteer_refuses_what_only_an_admin_can_fix(database):
         gone = ok(
             await volunteers.create(session, None, "Dora", "Gone", "dora@example.org")
         )
-        ok(await volunteers.update(session, None, gone.id, is_active=False))
+        done(await volunteers.update(session, None, gone.id, is_active=False))
         refused(
             await users.invite_volunteer(session, gone.id, invite=mint.fresh_invite()),
             errors.Invalid,
@@ -527,9 +537,9 @@ async def test_invite_volunteer_will_not_adopt_a_stranger_at_the_same_address(da
                 session, None, "Bob", "Family", "family@example.org"
             )
         )
-        theirs, _ = ok(
+        theirs, _ = done(
             await users.invite_volunteer(session, parent.id, invite=mint.fresh_invite())
-        )
+        ).value
         before = theirs.volunteer_id
 
         refused(
@@ -558,11 +568,11 @@ async def test_invitable_agrees_with_what_invite_volunteer_does(database):
         lapsed_v = ok(
             await volunteers.create(session, None, "Lap", "Sed", "lap@example.org")
         )
-        lapsed_a, _ = ok(
+        lapsed_a, _ = done(
             await users.invite_volunteer(
                 session, lapsed_v.id, invite=mint.fresh_invite()
             )
-        )
+        ).value
         lapsed_a.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
 
         settled_v = ok(
@@ -619,7 +629,7 @@ async def test_reissue_invite_arms_a_fresh_window(database):
         )
         assert user.invite_token is None and user.invite_expires_at is None
 
-        ok(await users.reissue_invite(session, user.id, invite=mint.fresh_invite()))
+        done(await users.reissue_invite(session, user.id, invite=mint.fresh_invite()))
         assert users.invite_live(user, now=mint.now())
         expected = datetime.now(UTC) + timedelta(hours=settings().invite_ttl_hours)
         assert abs((user.invite_expires_at - expected).total_seconds()) < 60

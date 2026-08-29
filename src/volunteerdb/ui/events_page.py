@@ -214,7 +214,7 @@ async def _sub_request_dialog(assignment_id: int) -> None:
                     now=ctx.now,
                 )
 
-            def done(_sub, effects: tuple[Effect, ...]) -> None:
+            def done(_sub, effects: tuple[Effect, ...], _report) -> None:
                 # The request itself is never refused — it belongs on the
                 # events page whether or not it is announced — but the blast
                 # is capped: a team that has already sent its allowance today
@@ -277,7 +277,7 @@ async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> Non
                     now=ctx.now,
                 )
 
-            def done(value, _effects) -> None:
+            def done(value, _effects, _report) -> None:
                 _assignment, _outgoing, incoming = value
                 dialog.close()
                 ui.notify(f"{incoming.full_name} now holds the slot", color="positive")
@@ -327,7 +327,7 @@ async def _self_removal_dialog(assignment_id: int) -> None:
                     ctx.session, ctx.actor, assignment_id, now=ctx.now, reason=text
                 )
 
-            def done(_event, _effects) -> None:
+            def done(_event, _effects, _report) -> None:
                 dialog.close()
                 ui.notify(
                     "You're off the slot — the leaders have been told",
@@ -354,7 +354,7 @@ async def _claim_sub(sub_request_id: int) -> None:
 
     await run_command(
         command,
-        on_ok=lambda _v, _e: ui.notify(
+        on_ok=lambda _v, _e, _r: ui.notify(
             "The slot is yours — thank you!", color="positive"
         ),
     )
@@ -367,7 +367,8 @@ async def _withdraw_sub(sub_request_id: int) -> None:
         )
 
     await run_command(
-        command, on_ok=lambda _v, _e: ui.notify("Request withdrawn", color="positive")
+        command,
+        on_ok=lambda _v, _e, _r: ui.notify("Request withdrawn", color="positive"),
     )
 
 

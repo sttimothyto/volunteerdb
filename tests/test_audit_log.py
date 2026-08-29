@@ -13,7 +13,7 @@ from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
 from tests import mint
-from tests.fp_helpers import ok, otp_started
+from tests.fp_helpers import done, ok, otp_started
 
 
 def _by_event(records, event):
@@ -48,7 +48,7 @@ async def test_update_logs_old_to_new_diff(database, log_records):
     async with db_session() as session:
         v = ok(await volunteers.create(session, None, "Ada", "Lovelace"))
     async with db_session(user_id=7) as session:
-        ok(await volunteers.update(session, None, v.id, phone="555-0100"))
+        done(await volunteers.update(session, None, v.id, phone="555-0100"))
     updates = _by_event(log_records, "db.update")
     assert len(updates) == 1
     record = updates[0]

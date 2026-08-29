@@ -4,16 +4,15 @@ from fastapi import Request
 from nicegui import app, ui
 
 from .. import query_lang
+from ..domain import EmailChangeAttempted
 from ..env import current
 from ..env import current as current_env
 from ..fp import Err
-from ..log import audit_log
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
 from ..services import events as event_service
-from ..services import mail
 from ..services import memberships as membership_service
 from ..services import photos as photo_service
 from ..services import teams as team_service
@@ -22,7 +21,15 @@ from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from . import column_order, invites
 from .account_status import invitable, last_login_text
-from .context import PageCtx, action_session, notify_errors, page_session, run_command
+from .context import (
+    PageCtx,
+    action_session,
+    notify_errors,
+    page_session,
+    perform,
+    run_command,
+    throttled,
+)
 from .date_input import date_input, time_input
 from .elections_page import phase_badge
 from .layout import frame
@@ -646,45 +653,49 @@ def _edit_dialog(
                 # F1: charge the send budget the /account and API doors charge,
                 # on every attempt (before the service reveals whether the
                 # address is taken), so this door is not the loose one.
-                key = f"email-change:{own_user_id}"
-                env = current()
-                now = env.clock.now()
-                if env.throttle.blocked(key, now):
+                now = current().clock.now()
+                if throttled(f"email-change:{own_user_id}", now=now):
                     ui.notify(
                         "Too many address changes requested — try again in a "
                         "few minutes.",
                         color="negative",
                     )
                     return
-                env.throttle.hit(key, now)
+                await perform(
+                    [EmailChangeAttempted(own_user_id)], base_url=base_url, now=now
+                )
             fields = {} if staged else {"email": email.value or None}
+
             # somebody else's address moving is worth a word to the address it
-            # moved away from; see _notify_replaced_address
-            replaced = on_file if not is_self and on_file and typed != on_file else None
-            async with action_session() as (session, actor):
-                (
-                    await volunteer_service.update(
-                        session,
-                        actor,
-                        volunteer.id,
-                        first_name=first.value,
-                        last_name=last.value,
-                        phone=phone.value or None,
-                        notes=notes.value or None,
-                        is_active=active.value if active is not None else None,
-                        **fields,
-                    )
-                ).unwrap()
+            # moved away from: the service says so (AddressReplaced) and the
+            # policy mails it after the commit
+            async def command(ctx: PageCtx):
+                updated = await volunteer_service.update(
+                    ctx.session,
+                    ctx.actor,
+                    volunteer.id,
+                    first_name=first.value,
+                    last_name=last.value,
+                    phone=phone.value or None,
+                    notes=notes.value or None,
+                    is_active=active.value if active is not None else None,
+                    **fields,
+                )
+                if isinstance(updated, Err):
+                    return updated
                 if values:
-                    (
-                        await custom_field_service.set_values(
-                            session, actor, volunteer.id, values
-                        )
-                    ).unwrap()
+                    put = await custom_field_service.set_values(
+                        ctx.session, ctx.actor, volunteer.id, values
+                    )
+                    if isinstance(put, Err):
+                        return put
+                return updated
+
+            saved = await run_command(command, reload=False)
+            if isinstance(saved, Err):
+                return
             if staged:
                 await _stage_own_email(staged)
-            elif replaced:
-                await _notify_replaced_address(volunteer.id, replaced, typed, base_url)
             dialog.close()
             ui.navigate.reload()
 
@@ -692,28 +703,6 @@ def _edit_dialog(
             ui.button("Cancel", on_click=dialog.close).props("flat")
             ui.button("Save", on_click=save)
     dialog.open()
-
-
-async def _notify_replaced_address(
-    volunteer_id: int, was: str, now: str, base_url: str
-) -> None:
-    """Tell the address a leader just moved a volunteer away from.
-
-    The edit itself is immediate and stays that way — a leader correcting a
-    bounced address cannot wait on somebody who cannot read their mail. But a
-    redirected address is also the first step of a takeover (point it at your
-    own, ask for their invite, redeem it), so the mailbox losing the account
-    hears about it on a channel the person doing the edit does not control.
-    After the commit, like every other message this page sends."""
-    audit_log(
-        "volunteer.address_replaced_by_other",
-        volunteer_id=volunteer_id,
-        was=was,
-        now=now or "(none)",
-    )
-    if not now:  # cleared rather than redirected: nothing to point them at
-        return
-    await mail.send_email(was, *mail.address_edited_email(now, f"{base_url}/login"))
 
 
 async def _stage_own_email(address: str) -> None:
@@ -730,7 +719,7 @@ async def _stage_own_email(address: str) -> None:
             token=ctx.env.rng.token(),
         )
 
-    def done(value, _effects) -> None:
+    def done(value, _effects, _report) -> None:
         account, _token = value
         ui.notify(
             f"Confirmation sent to {account.pending_email}. Your address changes "

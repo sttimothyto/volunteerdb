@@ -6,7 +6,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 
 from tests import mint
-from tests.fp_helpers import ok, refused
+from tests.fp_helpers import done, ok, refused
 
 
 async def test_create_normalizes_fields(database):
@@ -31,20 +31,22 @@ async def test_update_unset_vs_none_semantics(database):
             )
         )
 
-        renamed = ok(await volunteers.update(session, None, v.id, first_name="Anne"))
+        renamed = done(
+            await volunteers.update(session, None, v.id, first_name="Anne")
+        ).value
         assert renamed.email == "ann@example.org", "omitted fields stay untouched"
         assert renamed.phone == "555-1" and renamed.notes == "some notes"
 
-        cleared = ok(
+        cleared = done(
             await volunteers.update(
                 session, None, v.id, email=None, phone=None, notes=None
             )
-        )
+        ).value
         assert cleared.email is None and cleared.phone is None and cleared.notes is None
 
-        recased = ok(
+        recased = done(
             await volunteers.update(session, None, v.id, email="  NEW@Example.ORG ")
-        )
+        ).value
         assert recased.email == "new@example.org"
 
 
@@ -55,7 +57,7 @@ async def test_name_map_orders_and_filters(database):
         z = ok(await volunteers.create(session, None, "Ann", "Zed"))
         a = ok(await volunteers.create(session, None, "Bea", "Able"))
         gone = ok(await volunteers.create(session, None, "Faded", "Ghost"))
-        ok(await volunteers.update(session, None, gone.id, is_active=False))
+        done(await volunteers.update(session, None, gone.id, is_active=False))
 
         active = await volunteers.name_map(session)
         assert list(active.items()) == [(a.id, "Bea Able"), (z.id, "Ann Zed")], (
@@ -71,7 +73,7 @@ async def test_search_by_name_email_and_inactive_flag(database):
         )
         ok(await volunteers.create(session, None, "Bruno", "Costa", "bruno@two.org"))
         gone = ok(await volunteers.create(session, None, "Faded", "Ghost"))
-        ok(await volunteers.update(session, None, gone.id, is_active=False))
+        done(await volunteers.update(session, None, gone.id, is_active=False))
 
         hits = await volunteers.search(session, "ria Alv")
         assert [v.id for v in hits] == [a.id], "matches across first+last name"
@@ -228,7 +230,7 @@ async def test_search_private_fields_are_scope_aware(database):
         # email is scoped with the rest of the contact details, not public.
         # The list renders it as `•••` to these viewers, and a bare match let
         # the query language walk it out a character at a time.
-        ok(
+        done(
             await volunteers.update(
                 session, None, outsider.id, email="outt@example.org"
             )
@@ -242,7 +244,7 @@ async def test_search_private_fields_are_scope_aware(database):
         assert [
             v.id for v in await volunteers.search(session, "outt@example", actor=admin)
         ] == [outsider.id], "admins still match every column"
-        ok(
+        done(
             await volunteers.update(
                 session, None, plain.id, email="plain.v@example.org"
             )
@@ -486,12 +488,12 @@ async def test_search_or_query_inactive_and_as_of(database):
             await volunteers.create(session, None, "Before", "Rename", "b@example.org")
         )
         gone = ok(await volunteers.create(session, None, "Faded", "Ghost"))
-        ok(await volunteers.update(session, None, gone.id, is_active=False))
+        done(await volunteers.update(session, None, gone.id, is_active=False))
         vid, gone_id = v.id, gone.id
 
     when = datetime.now(UTC)
     async with db_session() as session:
-        ok(await volunteers.update(session, None, vid, first_name="After"))
+        done(await volunteers.update(session, None, vid, first_name="After"))
 
     async with db_session() as session:
         found = ok(await volunteers.search_or_query(session, "first_name = 'After'"))

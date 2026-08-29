@@ -19,6 +19,7 @@ from datetime import datetime
 
 from . import throttle
 from .domain import (
+    AddressReplaced,
     ApiTokenIssued,
     DomainEvent,
     EmailChangeAttempted,
@@ -26,6 +27,7 @@ from .domain import (
     EmailChanged,
     EmailChangeRequested,
     EventCancelled,
+    InviteIssued,
     InviteRedeemed,
     NotifyMode,
     OtpIssued,
@@ -129,6 +131,35 @@ def plan_one(event: DomainEvent, ctx: PolicyCtx) -> tuple[Effect, ...]:
                 SendMail(
                     was, *mail.email_change_done_email(now, f"{ctx.base_url}/login")
                 ),
+            )
+        case InviteIssued(user_id=user_id, email=email, token=token):
+            # the link is a bearer credential: it goes to the address on the
+            # volunteer's own record, and the audit line never carries it
+            return (
+                Audit(
+                    "auth.invite_minted", (("account_id", user_id), ("address", email))
+                ),
+                SendMail(
+                    email,
+                    *mail.invite_email(f"{ctx.base_url}/invite/{token}", ctx=ctx.copy),
+                ),
+            )
+        case AddressReplaced(volunteer_id=volunteer_id, was=was, now=now):
+            audit = Audit(
+                "volunteer.address_replaced_by_other",
+                (
+                    ("volunteer_id", volunteer_id),
+                    ("was", was),
+                    ("now", now or "(none)"),
+                ),
+            )
+            if (
+                not was or not now
+            ):  # cleared rather than redirected: nowhere to point them
+                return (audit,)
+            return (
+                audit,
+                SendMail(was, *mail.address_edited_email(now, f"{ctx.base_url}/login")),
             )
         case InviteRedeemed(user_id=user_id, email=email, has_password=has_password):
             return (

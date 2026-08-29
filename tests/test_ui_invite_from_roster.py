@@ -25,7 +25,7 @@ from volunteerdb.services import memberships, teams, users, volunteers
 from .conftest import SLOW, mail_to
 from tests import mint
 from tests.fakes import SIM_MAILER
-from tests.fp_helpers import ok
+from tests.fp_helpers import done, ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -68,11 +68,11 @@ async def _parish(session) -> dict[str, int]:
     for v in (nils, stale, livev, void, mia):
         ok(await memberships.assign(session, None, v.id, music.id, TeamRole.member))
 
-    stale_u, _ = ok(
+    stale_u, _ = done(
         await users.invite_volunteer(session, stale.id, invite=mint.fresh_invite())
-    )
+    ).value
     stale_u.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    ok(await users.invite_volunteer(session, livev.id, invite=mint.fresh_invite()))
+    done(await users.invite_volunteer(session, livev.id, invite=mint.fresh_invite()))
 
     # actor accounts: password written straight in, so no argon2 pass is spent
     accounts = {}

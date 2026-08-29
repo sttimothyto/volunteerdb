@@ -1,12 +1,15 @@
 from fastapi import Request
 from nicegui import ui
 
+from ..domain import InviteIssued, Outcome
+from ..effects import SendMail, delivered
 from ..env import current as current_env
+from ..fp import Err, Ok
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from . import invites
 from .a11y import icon_button
-from .context import action_session, notify_errors, page_session
+from .context import PageCtx, action_session, notify_errors, page_session, run_command
 from .layout import frame
 
 
@@ -22,9 +25,6 @@ async def users_page(request: Request):
         volunteer_names = await volunteer_service.name_map(
             session, include_inactive=True
         )
-
-    async def email_invite(address: str, token: str) -> bool:
-        return await invites.email_invite(base_url, address, token)
 
     def show_invite(token: str, email: str, sent: bool | None = None) -> None:
         invites.show_invite(base_url, token, email, sent)
@@ -51,33 +51,31 @@ async def users_page(request: Request):
                         )
                 if not await confirm_dialog:
                     return
-                async with action_session() as (session, actor):
-                    report = (
-                        await user_service.bulk_provision(
-                            session, actor, mint=current_env().invite
-                        )
-                    ).unwrap()
-                    # the plaintext token rides in the report: the column
-                    # holds only its digest (services.users._issue_invite)
-                    created = [(u.email, token) for _, u, token in report.created]
-                    relinked, skipped = len(report.linked), len(report.skipped)
-                emailed = sum(
-                    [await email_invite(addr, token) for addr, token in created]
-                )
-                failed = len(created) - emailed
-                ui.notify(
-                    f"Created {len(created)} accounts ({emailed} invites emailed"
-                    + (f", {failed} failed" if failed else "")
-                    + ")"
-                    + (
-                        f", linked {relinked} existing accounts to their volunteer"
-                        if relinked
-                        else ""
+
+                async def command(ctx: PageCtx):
+                    return await user_service.bulk_provision(
+                        ctx.session, ctx.actor, mint=ctx.env.invite
                     )
-                    + f", skipped {skipped}",
-                    color="positive",
-                )
-                ui.navigate.reload()
+
+                def done(report, effects, run) -> None:
+                    # one invite mailed per account created, after the commit
+                    created = len(report.created)
+                    failed = sum(isinstance(e, SendMail) for e in effects) - run.mailed
+                    relinked, skipped = len(report.linked), len(report.skipped)
+                    ui.notify(
+                        f"Created {created} accounts ({run.mailed} invites emailed"
+                        + (f", {failed} failed" if failed else "")
+                        + ")"
+                        + (
+                            f", linked {relinked} existing accounts to their volunteer"
+                            if relinked
+                            else ""
+                        )
+                        + f", skipped {skipped}",
+                        color="positive",
+                    )
+
+                await run_command(command, on_ok=done)
 
             ui.button(
                 "Create accounts for all volunteers with email",
@@ -110,30 +108,49 @@ async def users_page(request: Request):
                 )
                 admin_flag = ui.switch("Parish admin (full access)")
 
-                @notify_errors
                 async def save() -> None:
-                    async with action_session() as (session, actor):
-                        user, token = (
-                            await user_service.create(
-                                session,
-                                email.value or "",
-                                actor=actor,
-                                volunteer_id=link.value or None,
-                                is_admin=admin_flag.value,
-                                invite=current_env().invite(),
-                            )
-                        ).unwrap()
-                        addr = user.email
-                        matched = user.volunteer_id if not link.value else None
-                    dialog.close()
-                    if matched is not None:
-                        ui.notify(
-                            f"Linked to {volunteer_names.get(matched, matched)} "
-                            "by email address",
-                            color="info",
+                    async def command(ctx: PageCtx):
+                        made = await user_service.create(
+                            ctx.session,
+                            email.value or "",
+                            actor=ctx.actor,
+                            volunteer_id=link.value or None,
+                            is_admin=admin_flag.value,
+                            invite=ctx.env.invite(),
                         )
-                    sent = await email_invite(addr, token)
-                    show_invite(token, addr, sent)
+                        if isinstance(made, Err):
+                            return made
+                        user, token = made.value
+                        # no password here, so create() armed a link: that is
+                        # an invite minted, and the policy mails it
+                        issued = (
+                            (
+                                InviteIssued(
+                                    user.id,
+                                    user.email,
+                                    token,
+                                    ctx.env.settings.invite_ttl_hours,
+                                ),
+                            )
+                            if token
+                            else ()
+                        )
+                        return Ok(Outcome((user, token), issued))
+
+                    def done(value, effects, run) -> None:
+                        user, token = value
+                        dialog.close()
+                        matched = user.volunteer_id if not link.value else None
+                        if matched is not None:
+                            ui.notify(
+                                f"Linked to {volunteer_names.get(matched, matched)} "
+                                "by email address",
+                                color="info",
+                            )
+                        if token:
+                            show_invite(token, user.email, delivered(effects, run))
+
+                    await run_command(command, on_ok=done, reload=False)
 
                 with ui.row().classes("justify-end w-full gap-2"):
                     ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -250,16 +267,19 @@ async def users_page(request: Request):
                             ui.button("Save", on_click=save_link)
                     dialog.open()
 
-                @notify_errors
                 async def reinvite(_, uid=account.id, addr=account.email) -> None:
-                    async with action_session() as (session, actor):
-                        token = (
-                            await user_service.reissue_invite(
-                                session, uid, actor=actor, invite=current_env().invite()
-                            )
-                        ).unwrap()
-                    sent = await email_invite(addr, token)
-                    show_invite(token, addr, sent)
+                    async def command(ctx: PageCtx):
+                        return await user_service.reissue_invite(
+                            ctx.session, uid, actor=ctx.actor, invite=ctx.env.invite()
+                        )
+
+                    await run_command(
+                        command,
+                        on_ok=lambda token, effects, run: show_invite(
+                            token, addr, delivered(effects, run)
+                        ),
+                        reload=False,
+                    )
 
                 icon_button(
                     "link", "Change linked volunteer", on_click=relink_dialog

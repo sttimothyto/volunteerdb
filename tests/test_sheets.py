@@ -9,7 +9,7 @@ from volunteerdb.services import custom_fields, memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
-from tests.fp_helpers import ok
+from tests.fp_helpers import done, ok
 
 
 def _csv_bytes(rows: list[list], header: list[str] = ROSTER_HEADERS) -> bytes:
@@ -138,8 +138,8 @@ async def test_parish_export_omits_archived_unassigned_but_keeps_members(databas
                 session, None, "Gone", "Quietly", "gone@example.org"
             )
         )
-        ok(await volunteers.update(session, None, gone.id, is_active=False))
-        ok(
+        done(await volunteers.update(session, None, gone.id, is_active=False))
+        done(
             await volunteers.update(session, None, anna.id, is_active=False)
         )  # keeps membership
         content = ok(await exporter.export_csv(session, None))

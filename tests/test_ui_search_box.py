@@ -15,7 +15,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
-from tests.fp_helpers import ok
+from tests.fp_helpers import done, ok
 
 SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
@@ -36,7 +36,7 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
         )
         ok(await memberships.assign(session, None, maria.id, choir.id, TeamRole.member))
         retired = ok(await volunteers.create(session, None, "Pedro", "Alvarez"))
-        ok(await volunteers.update(session, None, retired.id, is_active=False))
+        done(await volunteers.update(session, None, retired.id, is_active=False))
         ok(await volunteers.create(session, None, "Bruno", "Costa"))
         admin, _ = ok(
             await users.create(

@@ -93,7 +93,7 @@ async def account_page(request: Request):
                 token=ctx.env.rng.token(),
             )
 
-        def done(value, _effects) -> None:
+        def done(value, _effects, _report) -> None:
             account, _token = value
             ui.notify(
                 f"Confirmation sent to {account.pending_email}. Nothing changes "
@@ -113,7 +113,7 @@ async def account_page(request: Request):
 
         await run_command(
             command,
-            on_ok=lambda _v, _e: ui.notify(
+            on_ok=lambda _v, _e, _r: ui.notify(
                 "Address change cancelled — the link no longer works."
             ),
         )
@@ -155,7 +155,7 @@ async def account_page(request: Request):
 
         await run_command(
             command,
-            on_ok=lambda _v, _e: ui.notify(
+            on_ok=lambda _v, _e, _r: ui.notify(
                 "Password saved. You can sign in with it from now on.",
                 color="positive",
             ),
@@ -181,7 +181,7 @@ async def account_page(request: Request):
 
         await run_command(
             command,
-            on_ok=lambda _v, _e: ui.notify(
+            on_ok=lambda _v, _e, _r: ui.notify(
                 "Password removed — you now sign in with emailed codes."
             ),
         )

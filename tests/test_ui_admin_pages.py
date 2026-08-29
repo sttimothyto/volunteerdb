@@ -102,13 +102,6 @@ async def test_leader_sees_scoped_export_on_teams_page(database):
 
 
 async def test_admin_users_provision_button(database, monkeypatch):
-    from volunteerdb.services import mail
-
-    async def fake_send(to: str, subject: str, body: str) -> bool:
-        return True
-
-    monkeypatch.setattr(mail, "send_email", fake_send)
-
     async with db_session() as session:
         admin, _ = ok(
             await users.create(

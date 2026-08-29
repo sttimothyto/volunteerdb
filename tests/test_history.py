@@ -15,7 +15,7 @@ from volunteerdb.models import (
 from volunteerdb.services import memberships, teams, volunteers
 
 from .conftest import _now
-from tests.fp_helpers import ok
+from tests.fp_helpers import done, ok
 
 
 async def test_update_archives_old_version(database):
@@ -25,7 +25,7 @@ async def test_update_archives_old_version(database):
     t_created = await _now()
 
     async with db_session(user_id=42) as session:
-        ok(await volunteers.update(session, None, vid, first_name="New"))
+        done(await volunteers.update(session, None, vid, first_name="New"))
     t_updated = await _now()
 
     async with db_session() as session:
@@ -69,7 +69,7 @@ async def test_rolled_back_changes_leave_no_history(database):
 
     try:
         async with db_session() as session:
-            ok(await volunteers.update(session, None, vid, first_name="Doomed"))
+            done(await volunteers.update(session, None, vid, first_name="Doomed"))
             raise RuntimeError("boom")
     except RuntimeError:
         pass

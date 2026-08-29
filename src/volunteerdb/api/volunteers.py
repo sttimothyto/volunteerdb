@@ -1,17 +1,15 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFile
 from starlette.responses import Response
 
-from ..audit import audit_log
 from ..models import Volunteer
 from ..permissions import Actor, require, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
 from ..services import events as event_service
-from ..services import mail as mail_service
 from ..services import photos as photo_service
 from ..services import users as user_service
 from ..services import volunteers as service
-from .deps import AsOf, CtxDep
+from .deps import AsOf, CtxDep, dispatch
 from .elections import proposal_out
 from .schemas import (
     AssignmentOut,
@@ -120,43 +118,20 @@ async def update_volunteer(
                 "and we will mail a confirmation link there"
             )
     # somebody else's address moving is worth a word to the address it moved
-    # away from: the edit is immediate by design (a leader fixing a bounced
-    # address cannot wait on the person who cannot read their mail), and that
-    # same immediacy is a takeover step — redirect the address, ask for their
-    # invite, redeem it. The notice rides a background task, so it goes out
-    # after the commit, and the acting session cannot suppress it.
-    replaced = None
-    if "email" in fields and volunteer_id != ctx.actor.volunteer_id:
-        on_file = await service.get(ctx.session, volunteer_id)
-        was = (on_file.email or "").strip().lower() if on_file else ""
-        now = (fields["email"] or "").strip().lower()
-        replaced = (was, now) if was and was != now else None
-
+    # away from (the service's AddressReplaced event): the notice runs after
+    # the commit, so the acting session cannot suppress it
     custom = fields.pop("custom", None)
-    volunteer = (
-        await service.update(ctx.session, ctx.actor, volunteer_id, **fields)
-    ).unwrap()
+    volunteer = dispatch(
+        ctx,
+        background,
+        await service.update(ctx.session, ctx.actor, volunteer_id, **fields),
+    )
     if custom is not None:
         volunteer = (
             await custom_field_service.set_values(
                 ctx.session, ctx.actor, volunteer_id, custom
             )
         ).unwrap()
-    if replaced is not None:
-        was, now = replaced
-        audit_log(
-            "volunteer.address_replaced_by_other",
-            volunteer_id=volunteer_id,
-            was=was,
-            now=now or "(none)",
-        )
-        if now:
-            base_url = str(request.base_url).rstrip("/")
-            background.add_task(
-                ctx.env.mailer.send,
-                was,
-                *mail_service.address_edited_email(now, f"{base_url}/login"),
-            )
     return redacted(ctx.actor, volunteer, team_ids)
 
 
@@ -277,32 +252,20 @@ async def invite_volunteer(
     """
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
     require(ctx.actor.can_invite_volunteer(team_ids), "invite this volunteer")
-    account, token = (
+    # an admin gets the link in the body, so the send is dropped (silent);
+    # anybody else's link goes out by mail, after the commit
+    account, token = dispatch(
+        ctx,
+        background,
         await user_service.invite_volunteer(
             ctx.session, volunteer_id, invite=ctx.env.invite()
-        )
-    ).unwrap()
+        ),
+        silent=ctx.actor.is_admin,
+    )
     out = UserOut.model_validate(account)
     out.has_password = account.password_hash is not None
     # never off the row — the column holds only a digest (services.users)
-    out.invite_token = token
-    audit_log(
-        "auth.invite_minted",
-        volunteer_id=volunteer_id,
-        account_id=account.id,
-        address=account.email,
-        revealed=ctx.actor.is_admin,
-    )
-    if not ctx.actor.is_admin:
-        out.invite_token = None  # mailed instead, see the docstring
-        base_url = str(request.base_url).rstrip("/")
-        background.add_task(
-            ctx.env.mailer.send,
-            account.email,
-            *mail_service.invite_email(
-                f"{base_url}/invite/{token}", ctx=ctx.env.mail_context()
-            ),
-        )
+    out.invite_token = token if ctx.actor.is_admin else None
     return out
 
 

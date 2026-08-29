@@ -19,7 +19,7 @@ from volunteerdb.services import (
 )
 
 from tests import mint
-from tests.fp_helpers import ok
+from tests.fp_helpers import done, ok
 
 
 async def _parish(session):
@@ -76,7 +76,7 @@ async def _actor(session, email, **kwargs):
 async def test_parish_tier_counts(database):
     async with db_session() as session:
         p = await _parish(session)
-        ok(await volunteers.update(session, None, p["solo"].id, is_active=False))
+        done(await volunteers.update(session, None, p["solo"].id, is_active=False))
         ok(
             await users.create(
                 session,

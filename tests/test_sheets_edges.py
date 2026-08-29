@@ -14,7 +14,7 @@ from volunteerdb.sheets.common import (
     safe_cell,
 )
 
-from tests.fp_helpers import ok
+from tests.fp_helpers import done, ok
 
 
 def _csv_bytes(rows: list[list], header: list[str] = ROSTER_HEADERS) -> bytes:
@@ -224,7 +224,7 @@ async def test_volunteer_only_row_does_not_reactivate(database, env):
         v = ok(
             await volunteers.create(session, None, "Ana", "Archived", "ana@example.org")
         )
-        ok(await volunteers.update(session, None, v.id, is_active=False))
+        done(await volunteers.update(session, None, v.id, is_active=False))
 
     content = _csv_bytes(
         [["", "Ana", "Archived", "ana@example.org", "555-3", "", "", ""]]

@@ -27,6 +27,7 @@ from ..domain import (
     EmailChangeCancelled,
     EmailChanged,
     EmailChangeRequested,
+    InviteIssued,
     InviteRedeemed,
     OtpIssued,
     Outcome,
@@ -72,6 +73,13 @@ class Invite:
 
 def _token_digest(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _invite_issued(user: AppUser, token: str, invite: Invite) -> InviteIssued:
+    """The fact an armed link is: who, where it goes, and for how long."""
+    return InviteIssued(
+        user.id, user.email, token, int(invite.ttl.total_seconds() // 3600)
+    )
 
 
 def _issue_invite(user: AppUser, invite: Invite) -> str:
@@ -322,7 +330,7 @@ async def reissue_invite(
     *,
     invite: Invite,
     actor: Actor | None = None,
-) -> Result[str, DomainError]:
+) -> Result[Outcome[str], DomainError]:
     """New invite link for a user who lost their password. Invalidates the old
     password — this is also how an admin forces a change on an account believed
     to be compromised (NIST SP 800-63B §3.1.1.2).
@@ -340,14 +348,15 @@ async def reissue_invite(
     user.password_hash = None
     user.api_token = None
     await session.flush()
-    return Ok(token)
+    return Ok(Outcome(token, (_invite_issued(user, token, invite),)))
 
 
 async def invite_volunteer(
     session: AsyncSession, volunteer_id: int, *, invite: Invite
-) -> Result[tuple[AppUser, str], DomainError]:
+) -> Result[Outcome[tuple[AppUser, str]], DomainError]:
     """Give one volunteer the sign-in account they don't have yet, with its
-    invite link armed. Returns (account, token).
+    invite link armed. Returns (account, token); the InviteIssued event is
+    what the policy mails to the address on the volunteer's own record.
 
     This is the narrow, team-scoped counterpart to bulk_provision: it is what a
     ministry leader triggers from their own roster, so it refuses anything that
@@ -393,7 +402,8 @@ async def invite_volunteer(
         user, token = made.value
         # create() arms an invite whenever no password is given, which is our
         # case; the fallback keeps the return type honest rather than asserting.
-        return Ok((user, token or _issue_invite(user, invite)))
+        token = token or _issue_invite(user, invite)
+        return Ok(Outcome((user, token), (_invite_issued(user, token, invite),)))
 
     if not account.is_active:
         return invalid(
@@ -410,7 +420,7 @@ async def invite_volunteer(
         )
     token = _issue_invite(account, invite)
     await session.flush()
-    return Ok((account, token))
+    return Ok(Outcome((account, token), (_invite_issued(account, token, invite),)))
 
 
 async def redeem_invite(
@@ -785,8 +795,9 @@ async def bulk_provision(
     actor: Actor | None = None,
     *,
     mint: Callable[[], Invite],
-) -> Result[ProvisionReport, DomainError]:
+) -> Result[Outcome[ProvisionReport], DomainError]:
     """Give every active volunteer with an email an account they can sign in to.
+    One InviteIssued event per account created: the policy mails each link.
 
     A volunteer with no account gets a fresh invite-token one -- `mint` is
     the edge's supply of them, one per account, since the number needed is
@@ -799,6 +810,7 @@ async def bulk_provision(
     if denied := _require_admin(actor):
         return denied
     report = ProvisionReport()
+    issued: list[InviteIssued] = []
     volunteers = list(
         (
             await session.execute(
@@ -832,7 +844,9 @@ async def bulk_provision(
             user, token = made.value
             by_email[email] = user
             linked.add(v.id)
-            report.created.append((v, user, token or _issue_invite(user, invite)))
+            token = token or _issue_invite(user, invite)
+            report.created.append((v, user, token))
+            issued.append(_invite_issued(user, token, invite))
         elif existing.volunteer_id is None:
             existing.volunteer_id = v.id
             linked.add(v.id)
@@ -840,4 +854,4 @@ async def bulk_provision(
         else:
             report.skipped.append((v, f"email {email} already used by another account"))
     await session.flush()
-    return Ok(report)
+    return Ok(Outcome(report, tuple(issued)))

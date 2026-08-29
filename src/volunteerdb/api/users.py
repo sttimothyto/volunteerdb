@@ -1,8 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 
+from ..domain import InviteIssued, Outcome
+from ..fp import Ok
 from ..services import users as service
-from .deps import CtxDep
+from .deps import CtxDep, dispatch, raise_http
 from .schemas import UserIn, UserOut, UserPatch
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -28,12 +30,21 @@ async def list_users(ctx: CtxDep) -> list[UserOut]:
 
 
 @router.post("", status_code=201)
-async def create_user(ctx: CtxDep, data: UserIn) -> UserOut:
-    user, token = (
+async def create_user(
+    ctx: CtxDep, data: UserIn, background: BackgroundTasks
+) -> UserOut:
+    """Admin-only, and the response carries the link, so nothing is mailed;
+    the invite minted is still logged."""
+    user, token = raise_http(
         await service.create(
             ctx.session, actor=ctx.actor, **data.model_dump(), invite=ctx.env.invite()
         )
-    ).unwrap()
+    )
+    if token:
+        issued = InviteIssued(
+            user.id, user.email, token, ctx.env.settings.invite_ttl_hours
+        )
+        dispatch(ctx, background, Ok(Outcome(None, (issued,))), silent=True)
     return _user_out(user, token)
 
 
@@ -54,17 +65,20 @@ async def update_user(ctx: CtxDep, user_id: int, data: UserPatch) -> UserOut:
 
 
 @router.post("/{user_id}/reinvite")
-async def reinvite(ctx: CtxDep, user_id: int) -> UserOut:
+async def reinvite(ctx: CtxDep, user_id: int, background: BackgroundTasks) -> UserOut:
     """Invalidate the password and issue a fresh invite link.
 
     Also revokes the account's API token: it was issued against the password
     being invalidated, and this route is how an admin acts on an account they
     believe is compromised."""
-    token = (
+    token = dispatch(
+        ctx,
+        background,
         await service.reissue_invite(
             ctx.session, user_id, actor=ctx.actor, invite=ctx.env.invite()
-        )
-    ).unwrap()
+        ),
+        silent=True,  # the caller is an admin and gets the link here
+    )
     return _user_out(await service.get(ctx.session, user_id), token)
 
 
@@ -75,13 +89,16 @@ class ProvisionOut(BaseModel):
 
 
 @router.post("/provision")
-async def provision(ctx: CtxDep) -> ProvisionOut:
+async def provision(ctx: CtxDep, background: BackgroundTasks) -> ProvisionOut:
     """Create invite-token accounts for all active volunteers with an email
     and no account yet, and link existing unlinked accounts to the volunteer
-    at the same address."""
-    report = (
-        await service.bulk_provision(ctx.session, ctx.actor, mint=ctx.env.invite)
-    ).unwrap()
+    at the same address. The links come back in the body; nothing is mailed."""
+    report = dispatch(
+        ctx,
+        background,
+        await service.bulk_provision(ctx.session, ctx.actor, mint=ctx.env.invite),
+        silent=True,
+    )
     return ProvisionOut(
         created=[_user_out(u, token) for _, u, token in report.created],
         linked=[_user_out(u) for _, u in report.linked],

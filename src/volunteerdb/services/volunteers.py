@@ -6,6 +6,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import query_lang
+from ..domain import AddressReplaced, Outcome
 from ..errors import DomainError, QueryError, not_found, require
 from ..fp import Err, Ok, Result
 from ..history import entity, fetch
@@ -226,10 +227,19 @@ async def update(
     phone: str | None | object = _UNSET,
     notes: str | None | object = _UNSET,
     is_active: bool | None = None,
-) -> Result[Volunteer, DomainError]:
+) -> Result[Outcome[Volunteer], DomainError]:
+    """Somebody ELSE's address moving is worth a word to the address it moved
+    away from: the edit is immediate by design (a leader fixing a bounced
+    address cannot wait on the person who cannot read their mail), and that
+    same immediacy is a takeover step -- redirect the address, ask for their
+    invite, redeem it. The AddressReplaced event is that word; the policy
+    sends it after the commit, on a channel the acting session cannot
+    suppress. Your own address goes the long way round (start_email_change)
+    and never raises it."""
     volunteer = await get(session, volunteer_id)
     if volunteer is None:
         return not_found("volunteer", volunteer_id)
+    previous = (volunteer.email or "").strip().lower()
     if actor is not None:
         if denied := require(
             actor.can_edit_volunteer(
@@ -245,8 +255,13 @@ async def update(
         volunteer.first_name = first_name.strip()
     if last_name is not None:
         volunteer.last_name = last_name.strip()
+    events: tuple[AddressReplaced, ...] = ()
     if email is not _UNSET:
-        volunteer.email = email.strip().lower() if email else None  # type: ignore[union-attr]
+        settled = email.strip().lower() if email else None  # type: ignore[union-attr]
+        volunteer.email = settled
+        by_other = actor is None or actor.volunteer_id != volunteer_id
+        if by_other and previous and previous != (settled or ""):
+            events = (AddressReplaced(volunteer_id, was=previous, now=settled),)
     if phone is not _UNSET:
         volunteer.phone = phone  # type: ignore[assignment]
     if notes is not _UNSET:
@@ -254,7 +269,7 @@ async def update(
     if is_active is not None:
         volunteer.is_active = is_active
     await session.flush()
-    return Ok(volunteer)
+    return Ok(Outcome(volunteer, events))
 
 
 async def delete(

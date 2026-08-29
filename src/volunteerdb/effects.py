@@ -51,6 +51,14 @@ class EffectReport:
     failed: int = 0
 
 
+def delivered(planned: Sequence[Effect], report: EffectReport) -> bool | None:
+    """How the mail went, for an edge that has to say so: None when nothing
+    was to be sent, else whether every send landed."""
+    if not any(isinstance(e, SendMail) for e in planned):
+        return None
+    return report.failed == 0
+
+
 async def run(effects: Sequence[Effect], env: Env) -> EffectReport:
     """Perform every effect, in order. Never raises."""
     mailed = failed = 0
