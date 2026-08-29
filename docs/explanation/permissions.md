@@ -45,8 +45,9 @@ Two design details follow the same "least surprise, least exposure" line:
 plus three precomputed team-id sets (managed, full-view, names-view, with
 the cascade already applied). Every service function takes the actor and
 asks it questions (`can_manage_team`, `can_view_full_roster`, …); a failed
-check raises `Forbidden`, which the GUI renders as a toast and the API maps
-to 403.
+check is a returned `Err(Forbidden)` — never an exception — which the GUI
+renders as a toast and the API maps to 403
+([Errors are values](architecture.md#errors-are-values)).
 
 Because GUI pages and API routers call the *same* service functions with
 the *same* actor type, there is exactly one implementation of the matrix —

@@ -34,11 +34,22 @@ uv run pytest --cov                 # with coverage (skip_covered configured)
 
 Tests marked `pure` (`pytestmark = pytest.mark.pure`) never touch the
 database and run with the container down — the toolkit, the parsers, the
-structural sweeps:
+policy rules, the jobs' plans, and the structural sweeps:
 
 ```sh
 uv run pytest -m pure                    # no Postgres, no browser, seconds
 ```
+
+The sweeps are the ratchets the architecture rests on
+([Architecture](../explanation/architecture.md#the-layering-rule)); each
+fails on the first regression and names the offending line:
+
+| Sweep | Fails on |
+|---|---|
+| `test_purity_layer.py` | a `raise`, a clock read, `settings()`, a random draw or session-making under `services/`, `sheets/` and the pure leaves |
+| `test_authorization_layer.py` | a service that takes an `Actor` and never checks it; a gate whose `Err` is dropped; a `require()`/`gate()` at a front door that is not on the allowlist |
+| `test_effects_layer.py` | a `send_email(`, `audit_log(` or throttle charge under `api/`, `ui/` or `services/` — effects go through the interpreter |
+| `test_ui_layer.py` | a `ui.*` call inside a session block, a `nonlocal`, a nested handler writing into its parent's container |
 
 The browser tests take the same arguments plus Playwright's own:
 
@@ -54,11 +65,18 @@ uv run playwright show-trace test-results/*/trace.zip
 
 `tests/conftest.py` drops and recreates `volunteerdb_test` once per session,
 migrates it with a real `alembic upgrade head`, and truncates all tables
-between tests (identities restart). API tests drive the FastAPI app
-in-process over `httpx.ASGITransport` — no server or browser is started.
-UI tests use NiceGUI's user simulation via `tests/ui_sim_main.py`; the
-`real_app_client` fixture reuses that harness to reach the fully assembled
-`create_app()` over HTTP.
+between tests (identities restart). There is no process-global engine: the
+`database` fixture keeps the test engine, `conftest.db_session()` is the
+suite's own unit of work over it for fixtures and setup, and the `env`
+fixture builds an `Env` on it with a `RecordingMailer` (read `env.mailer.sent`
+for what a service or job mailed; `env.with_(clock=FakeClock(...))`,
+`FakeRng`, `FakeHttp` and `FailingMailer` live in `tests/fakes.py`). API
+tests drive the FastAPI app in-process over `httpx.ASGITransport` — no
+server or browser is started. UI tests use NiceGUI's user simulation via
+`tests/ui_sim_main.py`, which builds the simulated app's `Env` over the same
+engine with `tests.fakes.SIM_MAILER` as its mailer — a UI test reads
+`SIM_MAILER.sent`; the `real_app_client` fixture reuses that harness to
+reach the fully assembled `create_app()` over HTTP.
 
 `tests/e2e/conftest.py` adds a browser layer on top of the same database: one
 `python -m volunteerdb.main` process for the session, on a free port, with the

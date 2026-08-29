@@ -42,13 +42,17 @@ history rows written by API calls carry `changed_by`
 
 | Status | Meaning |
 |---|---|
-| 401 | Missing/invalid Bearer token (`WWW-Authenticate: Bearer`) |
+| 401 | Missing/invalid Bearer token (`WWW-Authenticate: Bearer`), or bad credentials on login (`BadCredentials`) |
 | 403 | Authenticated but not permitted (`Forbidden`) |
-| 404 | Entity not found (`LookupError`) |
-| 409 | Constraint conflict, e.g. duplicate team name (`IntegrityError`) |
+| 404 | Entity not found (`NotFound`) |
+| 409 | Constraint conflict, e.g. duplicate team name (`Conflict`, the boundary's mapping of a dead transaction) |
 | 413 | Import workbook larger than 10 MB |
-| 422 | Validation failure (`ValueError` / Pydantic) |
-| 429 | Login throttled (5 failures per email or 30 per IP, per 15 min) |
+| 422 | Validation failure (`Invalid`, `WeakPassword`, `QueryError`, or Pydantic) |
+| 429 | Throttled (`Throttled`, with `Retry-After`): 5 failed sign-ins per email or 30 per IP per 15 min, 5 address changes per account per 15 min |
+| 502 | An upstream service refused (`External`: Google Sheets, Google Calendar) |
+
+Every refusal is one of the `DomainError` values in `errors.py`; `detail` is
+`errors.message(err)`, the same sentence the GUI shows as a toast.
 
 ## Endpoints
 

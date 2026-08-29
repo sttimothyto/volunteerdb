@@ -86,15 +86,29 @@ src/volunteerdb/
                    volunteer+team, role enum), app_user — plus *_history twins
   history.py       as-of queries: live ∪ history rows whose sys_period @> t
   permissions.py   Actor with per-team rights derived from the fourfold roles
+  fp.py, errors.py Result = Ok | Err, and the closed set of refusals (values,
+                   never exceptions)
+  domain.py        the events a mutation establishes; policy.py turns them
+  policy.py        into effects (mail, audit, throttle) — pure, tested alone
+  effects.py       the one interpreter, run after the commit
+  env.py           Env: settings, clock, rng, mailer, http, engine — built at
+                   the composition roots only
   services/        the one business layer (used by both API and GUI)
   api/             FastAPI routers under /api (Bearer-token auth)
   ui/              NiceGUI pages (session-cookie auth) + Cytoscape element
   sheets/          csv template/export/import (all-or-nothing, dry-run)
+  jobs/            nightly one-shots: read → plan (pure) → execute
 migrations/        alembic; 0001 creates tables, history twins, triggers
 ```
 
 The GUI runs server-side and calls the service layer directly; the JSON API is
 a thin wrapper over the same services. Postgres MVCC handles concurrent use.
+The core — services, sheets, the pure leaves — never raises, never reads the
+clock or the configuration, and never sends anything: refusals are returned
+values, time and identifiers arrive as parameters, and mail, audit lines and
+throttle charges are effects one interpreter performs after the commit. Four
+structural tests keep it that way
+([architecture](docs/explanation/architecture.md)).
 
 ### History / time travel
 
