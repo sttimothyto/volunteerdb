@@ -260,7 +260,9 @@ async def verify_readonly(
     can write to it. Returns the problems it could not fix.
 
     The acceptable rule set is exactly two rules: the parish account as owner
-    (Google adds it at creation) and "anyone" as reader. A missing or
+    (Google adds it at creation) and "anyone" as reader. A Workspace account's
+    calendar carries a third: the calendar's own id, listed as a user-owner —
+    an artefact of creation, not a person, and not a problem. A missing or
     downgraded public rule is *fixed* -- that rule is what makes the calendar
     the public thing it is documented to be. A rule that lets anybody else
     write is *reported*, not removed: it was set on purpose by somebody with
@@ -292,6 +294,8 @@ async def verify_readonly(
         kind, who, role = scope.get("type"), scope.get("value", ""), rule.get("role")
         if kind == "default" or role not in ("writer", "owner"):
             continue  # the public rule, or a read-only grant: harmless
+        if kind == "user" and who == calendar_id:
+            continue  # the calendar's own identity (Workspace lists it first)
         if kind == "user" and role == "owner" and not owner_seen:
             owner_seen = True  # the parish account itself
             continue

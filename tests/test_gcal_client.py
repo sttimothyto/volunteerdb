@@ -204,6 +204,21 @@ async def test_other_writers_are_reported_not_removed():
     assert [r.method for r in seen] == ["GET"], "nothing was deleted"
 
 
+async def test_the_calendars_own_identity_is_not_a_foreign_owner():
+    """A Workspace account's calendar lists the calendar's own id as a
+    user-owner ahead of the parish account; neither is anybody else."""
+    self_rule = {
+        "id": f"user:{CID}",
+        "role": "owner",
+        "scope": {"type": "user", "value": CID},
+    }
+    client, seen = _client(
+        lambda r: httpx.Response(200, json={"items": [self_rule, OWNER, PUBLIC]})
+    )
+    assert ok(await gcal.verify_readonly(client, "tok", CID)) == []
+    assert [r.method for r in seen] == ["GET"]
+
+
 async def test_acl_listing_follows_pages():
     pages = iter(
         [
