@@ -90,7 +90,7 @@ def frame(
         ui.element("div").props('id="main" tabindex="-1"').classes("w-full"),
         ui.column().classes("w-full p-4 gap-4"),
     ):
-        heading(title).classes("text-2xl vdb-page-title")
+        heading(title).classes("vdb-page-title")
         if as_of is not None and asof_path is not None:
             asof_banner(as_of, asof_path)
         _mail_quota_banner(actor)
