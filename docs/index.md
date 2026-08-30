@@ -36,6 +36,9 @@ appears below the user guide: installation, deployment, backups, the HTTP
 API, the database schema, and the design decisions behind them. The switch
 works on any page, and your browser remembers the choice.
 
+The technical manual is behind the sign-in. Sign in to the site first, and
+then turn on the switch. The user guide itself is open to everybody.
+
 VolunteerDB answers one question for a transient parish: when this
 parishioner leaves, what holes do I have to fill? It tracks about 500
 volunteers across about 50 ministry teams, with sub-teams and 4 roles per

@@ -1,4 +1,4 @@
-"""Which pages of the manual the dashboard offers, by what the reader can do.
+"""Which pages of the manual the app offers, by what the reader can do.
 
 The user guide (docs/guide/) is written for a parishioner with no technical
 background, and the one place they will find it is the bottom of the page they
@@ -9,6 +9,12 @@ same tiers permissions.Actor is cut into, and a group the reader cannot act on
 is absent rather than empty. A pure table over the Actor: nothing here reads
 a session, so tests/test_help_links.py can hold every tier to its links and
 every link to a page that exists.
+
+SIGNING_IN is the other reader: the one who has not signed in yet, and who
+the sign-in page offers these pages to under a help icon (ui/login.py). It
+takes no Actor because there is nobody to ask about — and it is the reason
+docs/guide/ is public (main.PUBLIC_MANUAL_PREFIXES): help held behind the
+sign-in cannot help anyone who cannot sign in.
 """
 
 from dataclasses import dataclass
@@ -16,6 +22,9 @@ from dataclasses import dataclass
 from ..permissions import Actor
 
 GUIDE = "/manual/guide/"
+# The manual's landing page, which is the guide's own front door: public with
+# the rest of the guide, and the way into all of it from one link.
+GUIDE_HOME = "/manual/"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +43,22 @@ class HelpGroup:
     title: str
     links: tuple[HelpLink, ...]
 
+
+SIGNING_IN = HelpGroup(
+    "Help signing in",
+    (
+        HelpLink("Sign in for the first time", "tutorials/first-sign-in.html", True),
+        HelpLink("Sign in with an emailed code", "how-to/sign-in-with-a-code.html"),
+        # why the site asks for no password, for the reader hunting for one
+        HelpLink(
+            "Sign in without a password",
+            "explanation/sign-in-without-a-password.html",
+        ),
+        HelpLink("Why VolunteerDB", "explanation/why-volunteerdb.html"),
+        HelpLink("Report a problem", "how-to/report-a-problem.html"),
+        HelpLink("The user guide", GUIDE_HOME),
+    ),
+)
 
 EVERYONE = HelpGroup(
     "For everyone",

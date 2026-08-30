@@ -43,6 +43,51 @@ UNRESTRICTED_PREFIXES = (
     "/calendar/parish.ics",
     "/calendar/mine/",
 )
+
+# The user-guide half of the manual, public. The sign-in page offers it under
+# a help icon, and the questions it answers -- how do I sign in the first
+# time, what do I do without a password -- are exactly the ones a reader who
+# cannot sign in has; a manual behind the sign-in cannot answer them. The line
+# is the one manual_search.audience_of already draws: the landing page and
+# docs/guide/ are the user guide, everything else is the technical manual and
+# stays behind a session.
+#
+# An allowlist, not a carve-out of technical prefixes: a new directory under
+# docs/ must fail closed (a reader is bounced to /login) rather than fall
+# public by default. tests/test_manual_routes.py holds both halves.
+PUBLIC_MANUAL_PREFIXES = (
+    "/manual/guide/",
+    "/manual/_sources/guide/",  # Furo's "View this page" link in the footer
+    "/manual/_static/",  # the theme's CSS, JS and fonts
+    "/manual/_images/",  # figures; Sphinx pools them from every page
+)
+# Exact paths, not a "/manual/" prefix, which would open the technical half.
+# Sphinx's own search.html, searchindex.js and genindex.html stay behind the
+# session: their index covers the whole manual, technical pages included. No
+# page links to them -- the sidebar's box is answered by /manual/_search, which
+# tells an anonymous reader's browser that the full-text fallback is not
+# theirs to reach (ui/manual_routes.py, docs/_static/vdb-manual.js).
+PUBLIC_MANUAL_PATHS = frozenset(
+    {
+        "/manual",
+        "/manual/",
+        "/manual/index.html",
+        "/manual/_sources/index.md.txt",
+        "/manual/_search",
+    }
+)
+
+
+def is_public(path: str) -> bool:
+    """Whether an anonymous browser may have this path: the sign-in flows, the
+    API, the public ministry pages and the user guide."""
+    return (
+        any(path.startswith(prefix) for prefix in UNRESTRICTED_PREFIXES)
+        or path in PUBLIC_MANUAL_PATHS
+        or any(path.startswith(prefix) for prefix in PUBLIC_MANUAL_PREFIXES)
+    )
+
+
 # /photos/ is cookie-authed but asset-like: skipping the session re-issue keeps
 # its long-lived Cache-Control effective (a Set-Cookie per image defeats caching)
 ASSET_PREFIXES = (
@@ -121,9 +166,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # was modified, so without this touch it would hard-expire max_age
             # after the FIRST visit, even for active users.
             request.session["id"] = request.session["id"]
-        if not any(path.startswith(p) for p in UNRESTRICTED_PREFIXES):
-            if session_user_id() is None:
-                return RedirectResponse(f"/login?redirect_to={quote(path)}")
+        if not is_public(path) and session_user_id() is None:
+            return RedirectResponse(f"/login?redirect_to={quote(path)}")
         return await call_next(request)
 
     @staticmethod
@@ -219,12 +263,13 @@ def create_app(env: env_mod.Env | None = None) -> None:
         str(Path(__file__).parent / "ui" / "static"),
         max_cache_age=30 * 24 * 3600,
     )
-    # Built Sphinx manual. Deliberately NOT in UNRESTRICTED_PREFIXES — but
-    # "signed in" here means every account, volunteers included, not just
-    # admins: the manual is the app's own help and splitting it would make
-    # ordinary pages cross-link into 403s. The ops pages (secret rotation,
-    # backups, deploy) therefore reach every signed-in reader. That is
-    # accepted: they describe procedure, never credentials.
+    # Built Sphinx manual, one mount over both halves. The user guide is
+    # public and the technical pages need a session; the split is drawn in
+    # PUBLIC_MANUAL_PREFIXES above, by path, before this mount is reached.
+    # "Signed in" for the technical half means every account, volunteers
+    # included, not just admins: the ops pages (secret rotation, backups,
+    # deploy) therefore reach every signed-in reader. That is accepted: they
+    # describe procedure, never credentials.
     docs_dir = Path(s.docs_dir)
     # The manual's search (manual_search.py): the index is built on first
     # use, off the event loop, from the same directory -- or at startup, in

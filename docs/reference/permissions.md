@@ -192,6 +192,8 @@ Additional rules:
   - `/login`, `/invite/{token}`, `/confirm-email/{token}`
   - `/api/`
   - the public ministry pages
+  - the user guide: `/manual/`, `/manual/guide/`, and the search box on its
+    pages. The technical manual needs an account.
   - the parish calendar feed
   - the personal feed (its token is the credential)
   - static assets
@@ -223,7 +225,9 @@ Additional rules:
 | `/events/{id}` | One event: slots (add, rename, re-capacity, remove), sign-up, RSVP, substitutions, attendance | roster-names rights on the owning team |
 | `/elections` | Vacancies + the proposal pipeline | admin, leader/second, or voting member of any proposal |
 | `/elections/{id}` | One proposal: candidates, roll, ballot form, tally, appoint; deadlines and notes are editable while it is open | managers of that team or its voting members |
-| `/manual` | This documentation (header settings gear → *Manual*) | signed in |
+| `/manual/`, `/manual/guide/…` | The user guide: the landing page and every page written for volunteers (sign-in page → help icon; header settings gear → *Manual*) | public |
+| `/manual/…` (the rest) | The technical manual: install, deploy, backups, the HTTP API, the schema, the design decisions | signed in (every account, not only admins) |
+| `/manual/_search` | The search box in the manual's sidebar | public; a signed-out reader searches the user guide only |
 | `/admin/users` | Accounts: create, invite, bulk provision | admin |
 | `/admin/fields` | Custom field definitions | admin |
 | `/admin/workload` | Workload multipliers, bands, team weights | admin |

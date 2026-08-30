@@ -1,3 +1,5 @@
+import html
+
 import structlog
 from fastapi import Request
 from nicegui import ui
@@ -11,10 +13,43 @@ from ..errors import Invalid
 from ..fp import Err, Ok
 from ..services import users as user_service
 from .context import establish_session, perform, session_user_id, throttled
+from .help_links import SIGNING_IN
 from .logo_dialog import logo_img
 from .theme import apply_theme
 
 logger = structlog.get_logger(__name__)
+
+
+def help_menu() -> None:
+    """The user guide, offered at the door under one icon.
+
+    The pages behind it are public (main.PUBLIC_MANUAL_PREFIXES) for exactly
+    this reason: the reader who most needs "sign in with an emailed code" is
+    the one who cannot sign in, and help kept behind the sign-in reaches
+    everybody except them.
+
+    Each opens in a new tab, as the dashboard's guide links do -- a half-typed
+    address, or a 6-digit code with minutes left on it, survives the reading.
+    """
+    # Built out rather than with a11y.icon_button, for the same reason the
+    # header's settings gear is: .tooltip() anchors under the icon, which is
+    # where this button's own menu opens, and the two would sit on each other.
+    with (
+        ui.button(icon="help_outline")
+        .props('flat round color=primary aria-label="Help signing in"')
+        .classes("absolute-top-right q-ma-sm")
+    ):
+        # to the left, clear of the menu dropping down over the corner
+        ui.tooltip(SIGNING_IN.title).props('anchor="center left" self="center right"')
+        with ui.menu(), ui.column().classes("p-3 gap-2 w-72"):
+            ui.label(SIGNING_IN.title).classes("text-sm font-medium")
+            for link in SIGNING_IN.links:
+                label = html.escape(link.title, quote=True)
+                ui.button(link.title).props(
+                    f'flat dense no-caps align=left href="{link.href}" '
+                    f'target="_blank" rel="noopener" '
+                    f'aria-label="{label} (opens in a new tab)"'
+                ).classes("w-full")
 
 
 def _safe_target(redirect_to: str) -> str:
@@ -138,6 +173,7 @@ def login_page(request: Request, redirect_to: str = "/"):
         credentials_step.set_visibility(step is credentials_step)
         code_step.set_visibility(step is code_step)
 
+    help_menu()
     with ui.column().classes("absolute-center items-center gap-4"):
         # the parish's mark above its name; /logo serves the placeholder until
         # an admin uploads one, and this page has no session to gate on
@@ -258,6 +294,9 @@ def invite_page(token: str, request: Request):
         )
         ui.navigate.to("/")
 
+    # the same help as the sign-in page: "Sign in for the first time" is the
+    # page written for the reader who is on this one
+    help_menu()
     with ui.column().classes("absolute-center items-center gap-4"):
         ui.label("Finish your account setup").classes("text-2xl vdb-brand")
         with ui.card().classes("w-80 gap-3"):

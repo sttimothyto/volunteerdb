@@ -10,6 +10,12 @@
  * search.html. While the app answers /manual/_search with JSON, typing shows
  * live results under the box instead; any failure (no app behind the files,
  * an expired session that lands on the login page) leaves the form alone.
+ *
+ * That fallback is not everyone's to take: the user guide is public and
+ * Sphinx's search page is not, so a signed-out reader submitting the form
+ * would land on /login. The endpoint says which reader this is ("fallback":
+ * false), and the offer is withdrawn -- the box stops promising a search it
+ * cannot deliver, and the form stops submitting.
  */
 (function () {
   "use strict";
@@ -41,6 +47,9 @@
   if (!form || !input || !list) { return; }
 
   var timer = 0, seq = 0, active = -1, results = [], unavailable = false, open = false, dismissed = false;
+  /* true until the endpoint says otherwise: with no app behind the files the
+     form is all there is, and Sphinx's search.html sits right beside them. */
+  var fallback = true;
 
   function span(cls, text) {
     var el = document.createElement("span");
@@ -60,7 +69,9 @@
     if (!results.length) {
       var none = document.createElement("li");
       none.className = "vdb-hit-empty";
-      none.textContent = "No page matches. Press Enter to search every word.";
+      none.textContent = fallback
+        ? "No page matches. Press Enter to search every word."
+        : "No page matches.";
       list.appendChild(none);
     }
     for (var i = 0; i < results.length; i++) {
@@ -96,6 +107,7 @@
       .then(function (data) {
         if (mine !== seq) { return; }
         unavailable = false;
+        fallback = data.fallback !== false;
         results = data.results || [];
         active = -1;
         render();
@@ -108,6 +120,11 @@
       });
   }
 
+  form.addEventListener("submit", function (event) {
+    /* Enter with no hit to jump to, on a page whose reader may not open
+       search.html: swallow it rather than bounce them to the sign-in. */
+    if (!fallback) { event.preventDefault(); }
+  });
   input.addEventListener("input", function () {
     clearTimeout(timer);
     dismissed = false;

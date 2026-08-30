@@ -96,7 +96,14 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
         "here means every API client gets bounced to the login page instead of a 401"
     )
 
-    for guarded in ("/volunteers", "/manual", "/photos/1", "/manual/_search?q=x"):
+    # /manual is two halves: the technical pages and Sphinx's own full-text
+    # index over both of them stay behind the session (main.PUBLIC_MANUAL_*)
+    for guarded in (
+        "/volunteers",
+        "/manual/how-to/deploy.html",
+        "/manual/searchindex.js",
+        "/photos/1",
+    ):
         response = await real_app_client.get(guarded, follow_redirects=False)
         assert response.status_code in (302, 303, 307), (
             f"{guarded} served an anonymous browser with {response.status_code}"
@@ -104,6 +111,17 @@ async def test_real_app_serves_the_api_and_guards_the_pages(real_app_client):
         assert "/login" in response.headers.get("location", ""), (
             f"{guarded} must send anonymous browsers to the login page"
         )
+
+    # the user guide half is public: it is the help the sign-in page offers,
+    # and its reader has no session by definition. A 404 here means this
+    # checkout never ran `make docs`; a redirect would mean the split broke.
+    guide = await real_app_client.get(
+        "/manual/guide/tutorials/first-sign-in.html", follow_redirects=False
+    )
+    assert guide.status_code in (200, 404), (
+        f"the user guide answered an anonymous reader with {guide.status_code} — "
+        "docs/guide/ is public (main.PUBLIC_MANUAL_PREFIXES)"
+    )
 
     for asset in ("cytoscape.esm.min.js", "column_drag.js"):
         response = await real_app_client.get(f"/static/{asset}", follow_redirects=False)

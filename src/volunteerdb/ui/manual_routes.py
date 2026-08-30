@@ -7,21 +7,30 @@ renders.
 
     GET /manual/_search?q=…&audience=user|all
 
-        {"query": "…", "results": [{"title", "section", "url",
-                                    "snippet", "audience"}, …]}
+        {"query": "…", "fallback": true|false,
+         "results": [{"title", "section", "url", "snippet", "audience"}, …]}
 
-Under /manual on purpose: the AuthMiddleware sends an anonymous caller to
-/login exactly as it does for the pages, and the script reads that HTML
-reply as "unavailable" and falls back to Sphinx's own search page. Wired
-from main.create_app() BEFORE the /manual mount, not from register_pages():
-Starlette dispatches to the first route that matches, in registration
-order, and a Mount matches everything under its prefix.
+Answers anonymous callers, because the user guide is public
+(main.PUBLIC_MANUAL_PATHS) and its sidebar carries this box. What they get
+is the guide and only the guide: `audience` is theirs to ask for and not
+theirs to widen, so an anonymous "all" is read as "user" rather than
+refused — the switch that sends it lives in the reader's own browser.
+
+`fallback` is the other half of that. Sphinx's own search page indexes the
+whole manual and stays behind the session, so the script must not send a
+signed-out reader to it: false means "you are the search, there is nothing
+behind you", and the script drops the Enter-to-search-everything offer.
+
+Wired from main.create_app() BEFORE the /manual mount, not from
+register_pages(): Starlette dispatches to the first route that matches, in
+registration order, and a Mount matches everything under its prefix.
 """
 
 from nicegui import app
 from starlette.responses import JSONResponse
 
 from ..manual_search import search, snippet, tokenize
+from .context import session_user_id
 
 # A query is what somebody typed into a box, not a document.
 MAX_QUERY = 200
@@ -42,6 +51,9 @@ async def search_manual(q: str = "", audience: str = "user") -> JSONResponse:
         return _bad_request(f"q is longer than {MAX_QUERY} characters")
     if audience not in AUDIENCES:
         return _bad_request("audience must be user or all")
+    signed_in = session_user_id() is not None
+    if not signed_in:
+        audience = "user"  # the technical manual is not theirs to search
     index = await app.state.manual_index.get()
     terms = tokenize(query)
     results = [
@@ -54,7 +66,9 @@ async def search_manual(q: str = "", audience: str = "user") -> JSONResponse:
         }
         for chunk in search(index, query, audience=audience)
     ]
-    return JSONResponse({"query": query, "results": results}, headers=NO_STORE)
+    return JSONResponse(
+        {"query": query, "fallback": signed_in, "results": results}, headers=NO_STORE
+    )
 
 
 def _bad_request(detail: str) -> JSONResponse:

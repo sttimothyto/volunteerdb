@@ -205,15 +205,26 @@ _HREF = re.compile(r'href="([^"#]*)')
 _FIRST_UL = re.compile(r"<ul\b[^>]*>")
 
 
+def _docname(href: str, pagename: str) -> str:
+    """The page a link on `pagename` points at, as a docname. An empty href
+    (a bare fragment) is the page itself."""
+    path = href.split("#")[0].removesuffix(".html")
+    if not path:
+        return pagename
+    return posixpath.normpath(posixpath.join(posixpath.dirname(pagename), path))
+
+
+def _audience(pagename: str) -> str:
+    """The same line src/volunteerdb/manual_search.py draws, and the same one
+    main.PUBLIC_MANUAL_PREFIXES gates on: the landing page and guide/ are the
+    user guide, everything else is the technical manual."""
+    return "user" if pagename == "index" or pagename.startswith("guide/") else "dev"
+
+
 def _targets_the_guide(group: str, pagename: str) -> bool:
-    base = posixpath.dirname(pagename)
-    for href in _HREF.findall(group):
-        target = (
-            pagename if href == "" else posixpath.normpath(posixpath.join(base, href))
-        )
-        if target.startswith("guide/"):
-            return True
-    return False
+    return any(
+        _docname(href, pagename).startswith("guide/") for href in _HREF.findall(group)
+    )
 
 
 def _hide_from_users(group: str) -> str:
@@ -247,5 +258,22 @@ def _mark_developer_groups(app, pagename, templatename, context, doctree):
     context["furo_navigation_tree"] = head + "".join(marked)
 
 
+def _close_the_boundary(app, pagename, templatename, context, doctree):
+    """Cut Furo's prev/next where the two halves meet.
+
+    The toctrees run end to end, so the last page of the user guide offers
+    *next: Install and run* -- a technical page, which a signed-out reader
+    cannot open at all (main.PUBLIC_MANUAL_PREFIXES) and which no
+    parishioner wanted. They are two books in one build; a reader leaves one
+    for the other by the sidebar switch, never by walking off the end.
+    """
+    here = _audience(pagename)
+    for key in ("prev", "next"):
+        link = context.get(key)
+        if link and _audience(_docname(link["link"], pagename)) != here:
+            context[key] = None
+
+
 def setup(app):
     app.connect("html-page-context", _mark_developer_groups, priority=600)
+    app.connect("html-page-context", _close_the_boundary, priority=600)

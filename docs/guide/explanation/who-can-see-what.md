@@ -6,6 +6,14 @@ leader can call about a shift, not so that anyone can look it up. So on
 every page the site asks what your role on that team is before it shows a
 detail. Your role on one team says nothing about another team.
 
+## Anybody can read this guide
+
+This guide is open to everybody. You do not need an account to read it, and
+the sign-in page offers it under the question mark. The guide holds no names,
+no addresses and no phone numbers. The ministry home pages are open in the
+same way. Everything else on the site asks you to sign in first. The
+technical manual, written for the people who run the site, asks the same.
+
 ## Everyone who signs in
 
 Everyone who signs in sees the *Dashboard*, the list of teams on the *Teams*
