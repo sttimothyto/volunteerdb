@@ -35,6 +35,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uvx --from 'sphinx>=9,<10' --with myst-parser --with furo --with sphinx-copybutton \
     sphinx-build -W --keep-going -b html docs docs/_build/html
 
+# ---- model stage ----
+# The manual's search model. src/volunteerdb/manual_model.py pins one
+# revision of minishlab/potion-base-8M and the sha256 of each file, and is
+# standard library only; copying in that one file, and nothing else, means
+# the 30 MB fetch from huggingface.co is cached until the pin itself changes.
+FROM docker.io/library/python:3.13-slim-trixie AS model
+COPY src/volunteerdb/manual_model.py /manual_model.py
+RUN python /manual_model.py /models/potion-base-8M
+
 # ---- runtime stage ----
 # Must share the builder's Debian base so the venv's interpreter symlink resolves.
 FROM docker.io/library/python:3.13-slim-trixie
@@ -43,7 +52,12 @@ RUN useradd --system --uid 10001 --create-home app
 # alembic.ini and migrations/.
 COPY --from=builder --chown=app:app /app /app
 COPY --from=docs --chown=app:app /build/docs/_build/html /app/docs-html
-ENV VDB_DOCS_DIR=/app/docs-html
+COPY --from=model --chown=app:app /models /app/models
+# HF_HUB_OFFLINE: the model is loaded from that directory and never fetched;
+# this makes huggingface_hub refuse to try, whatever a future upgrade does.
+ENV VDB_DOCS_DIR=/app/docs-html \
+    VDB_MANUAL_MODEL_DIR=/app/models/potion-base-8M \
+    HF_HUB_OFFLINE=1
 # NiceGUI writes session storage to .nicegui/ in the cwd; pre-create the
 # mountpoint so the named volume's copy-up inherits app's uid.
 RUN mkdir -p /app/.nicegui && chown app:app /app/.nicegui

@@ -8,6 +8,8 @@ __pycache__/
 *.egg-info/
 dist/
 docs/_build/
+# the manual's search model (make model)
+.models/
 bench-results/
 # playwright's screenshots, videos and traces (pytest --output)
 test-results/

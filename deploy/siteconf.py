@@ -94,6 +94,7 @@ SYNC_EXCLUDE_DIR = (
     "scripts",
     "deploy",
     "docs/_build",  # the image's docs stage builds fresh HTML itself
+    ".models",  # likewise the model stage fetches the search model itself
     "__pycache__",
     "*/__pycache__",
 )
@@ -125,6 +126,7 @@ CONTAINERIGNORE_MAP = {
     "deploy/": "deploy",
     "compose.yaml": "*/compose.yaml",
     "docs/_build/": "docs/_build",
+    ".models/": ".models",
     # These two must be SYNCED even though they are excluded from the image:
     # they are what `podman build` reads to produce it.
     ".containerignore": None,

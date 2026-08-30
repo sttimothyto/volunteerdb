@@ -22,8 +22,8 @@ PYINFRA ?= uvx pyinfra==3.10.0
 # Which deploy/sites/<name>.toml to deploy: make deploy SITE=<name>
 SITE ?=
 
-.PHONY: help db down clean migrate seed dev serve test lint format docs fresh \
-        deploy-dry deploy
+.PHONY: help db down clean migrate seed dev serve test lint format docs model \
+        fresh deploy-dry deploy
 
 help: ## list these targets
 	@echo "VolunteerDB developer tasks"
@@ -82,6 +82,10 @@ format: ## reformat and sort imports in place (ruff)
 
 docs: ## build the HTML manual into docs/_build/html
 	$(UV) run --group docs sphinx-build -W -b html docs docs/_build/html
+
+# Without it the manual's search box still works, on keywords alone.
+model: ## fetch the manual's search model into .models/ (30 MB, once)
+	$(UV) run python -m volunteerdb.manual_model .models/potion-base-8M
 
 fresh: ## wipe the database volume, then migrate and seed from scratch
 	@$(MAKE) clean

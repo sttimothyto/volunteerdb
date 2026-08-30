@@ -95,6 +95,12 @@ jobs:
       # would otherwise fail the image build on the production host mid-deploy.
       - name: sphinx -W
         run: uv run --group docs sphinx-build -W -b html docs docs/_build/html
+      # The chunker behind /manual/_search reads Furo's markup by its
+      # <section id> and heading tags. If a theme or Sphinx upgrade changed
+      # that, the search box would quietly find nothing; this prints the
+      # page and section counts and fails below a floor. No model needed.
+      - name: the search chunker still reads the built manual
+        run: uv run python -m volunteerdb.manual_search docs/_build/html
 
   deploy:
     needs: [lint, test, docs]

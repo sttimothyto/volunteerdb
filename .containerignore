@@ -18,3 +18,4 @@ compose.yaml
 .containerignore
 Containerfile
 docs/_build/
+.models/
