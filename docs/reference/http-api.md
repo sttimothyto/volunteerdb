@@ -1,11 +1,12 @@
 # HTTP API
 
-All endpoints live under `/api` and speak JSON (`src/volunteerdb/api/`).
-Request and response schemas are Pydantic models in
-`src/volunteerdb/api/schemas.py`; a running instance serves interactive
-OpenAPI documentation with the exact schemas at `/docs` — that is the
-authoritative schema reference, which is why this page lists endpoints and
-semantics only.
+- All endpoints live under `/api` and speak JSON (`src/volunteerdb/api/`).
+- Request and response schemas are Pydantic models in
+  `src/volunteerdb/api/schemas.py`.
+- A live instance serves interactive OpenAPI documentation, with the exact
+  schemas, at `/docs`.
+- That documentation is the authoritative schema reference. This page lists
+  endpoints and semantics only.
 
 ## Authentication
 
@@ -15,28 +16,31 @@ Every endpoint except `POST /api/auth/login` requires a Bearer token:
 Authorization: Bearer <token>
 ```
 
-Tokens are personal, issued by `POST /api/auth/login` (email + password),
-and stored server-side only as SHA-256 digests. Each login issues a fresh
-token and revokes the previous one. Accounts without a password (OTP-only)
-cannot obtain API tokens — and removing a password on `/account` revokes the
-token that was issued against it. Only active accounts authenticate.
-
-Requests run in a single transaction with the acting user recorded, so
-history rows written by API calls carry `changed_by`
-(see [History and time travel](../explanation/history.md)).
+- Tokens are personal. `POST /api/auth/login` (email + password) issues
+  them. The server stores only their SHA-256 digests.
+- Each login issues a fresh token and revokes the previous one.
+- An account without a password (OTP-only) cannot get an API token.
+- If you remove your password on `/account`, that revokes the token issued
+  against it.
+- Only active accounts authenticate.
+- A request runs in one transaction, and the transaction records the user
+  who acts. So the history rows written by API calls carry `changed_by` (see
+  [History and time travel](../explanation/history.md)).
 
 ## Common query parameters
 
 `as_of` (ISO 8601 date or timestamp)
-: Accepted by most GET endpoints on versioned entities: returns the state
-  as of that moment. A naive timestamp is interpreted in server-local time.
-  A **bare date means the end of that day**, so `as_of=2026-07-30` includes
-  everything that happened on the 30th; write `as_of=2026-07-30T00:00:00` for
-  its first instant. The GUI's date box resolves identically. A value that is
-  not a valid ISO date or timestamp is a `422`.
+: Most GET endpoints on versioned entities accept it. The endpoint returns
+  the state as of that moment.
+  - The server interprets a naive timestamp in server-local time.
+  - A **bare date means the end of that day**. So `as_of=2026-07-30`
+    includes everything that happened on the 30th.
+  - Write `as_of=2026-07-30T00:00:00` for the first instant of that day.
+  - The GUI's date box resolves identically.
+  - A value that is not a valid ISO date or timestamp is a `422`.
 
 `dry_run` (bool)
-: `POST /api/import` only — validate and report without writing.
+: `POST /api/import` only. Validate and report, but do not write.
 
 ## Error contract
 
@@ -51,14 +55,15 @@ history rows written by API calls carry `changed_by`
 | 429 | Throttled (`Throttled`, with `Retry-After`): 5 failed sign-ins per email or 30 per IP per 15 min, 5 address changes per account per 15 min |
 | 502 | An upstream service refused (`External`: Google Sheets, Google Calendar) |
 
-Every refusal is one of the `DomainError` values in `errors.py`; `detail` is
-`errors.message(err)`, the same sentence the GUI shows as a toast.
+- Every refusal is one of the `DomainError` values in `errors.py`.
+- `detail` is `errors.message(err)`, the same sentence that the GUI shows as
+  a toast.
 
 ## Endpoints
 
-Minimum-permission column values refer to the
-[permission matrix](permissions.md#permission-matrix); "signed in" means any
-authenticated account.
+- The values in the Permission column refer to the
+  [permission matrix](permissions.md#permission-matrix).
+- "Signed in" means any authenticated account.
 
 ### Auth — `api/auth.py`
 
@@ -73,9 +78,10 @@ authenticated account.
 | `POST /api/auth/email-change/confirm` | — | `{token}` → the moved account. **Unauthenticated**, like the login: the token is the proof, and it is opened from whatever browser reads the mailbox. The account's address and the volunteer record behind it move together. Unknown, expired and already-spent links all answer 404 |
 | `POST /api/auth/redeem-invite` | — | `{token, password?, agreed_to_confidentiality}` → the account. **Unauthenticated** for the same reason. Without a password the account stays email-code-only (and so cannot hold an API token). Refusing the confidentiality agreement is a 422; a spent or dead link is a 404 |
 
-**Deliberately absent: emailed-code sign-in.** An API token is issued against a
-password and revoked with it, so a mailbox round-trip must not produce one. An
-OTP-only account sets a password first if it wants API access.
+- **Deliberately absent: emailed-code sign-in.**
+- The API issues a token against a password and revokes it with that
+  password. So a mailbox round-trip must not produce one.
+- An OTP-only account must set a password first if it wants API access.
 
 ### Volunteers — `api/volunteers.py`
 
@@ -95,10 +101,11 @@ OTP-only account sets a password first if it wants API access.
 | `GET /api/volunteers/{id}/proposals` | admin, leader/second, or voting member | Proposals involving them, with `as_candidate`/`as_voter`/`appointed` flags; scoped like `GET /api/elections/proposals` |
 | `POST /api/volunteers/{id}/invite` | admin, or full-roster rights on one of their teams | Create (or re-arm) their account and return it with `invite_expires_at`. The one account-creating route that is not admin-only — see the [permission matrix](permissions.md#permission-matrix). **`invite_token` comes back only to an admin.** The link signs its holder in as that volunteer, and a leader may add anybody to their own team and then edit their address, so for a non-admin caller the link is instead **mailed** to the address on the volunteer's own record — the one place this API sends email, because the alternative is minting a credential that reaches nobody. 422 when the volunteer is archived, has no address on file, the address belongs to another account, or the account already carries a password or has been signed into; 409 if two callers race |
 
-The volunteer list and detail responses carry `has_photo` (null on embedded
-volunteer objects elsewhere). Browsers load images from the cookie-
-authenticated `GET /photos/{id}?v=…` route instead — it sits behind the
-normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
+- The volunteer list and detail responses carry `has_photo`. It is null on
+  embedded volunteer objects elsewhere.
+- Browsers load images from the cookie-authenticated `GET /photos/{id}?v=…`
+  route instead. That route sits behind the normal session, not Bearer auth,
+  so `<img>` tags and the graph canvas work.
 
 ### Teams — `api/teams.py`
 
@@ -133,9 +140,10 @@ normal session, not Bearer auth, so `<img>` tags and the graph canvas work.
 | `GET /api/reports/dashboard` | signed in | The dashboard's statistics. See below |
 | `GET /api/graph` | signed in | Cytoscape.js elements; `team_id=` focus filter, `as_of=` |
 
-`GET /api/reports/dashboard` answers every caller, but answers each of them
-differently: it has no single permission because it is three tiers, each
-gated by the right that already governs the page it summarises.
+- `GET /api/reports/dashboard` answers every caller, but answers each caller
+  differently.
+- It has no single permission because it is three tiers. The right that
+  already governs the page a tier summarises gates that tier.
 
 | Field | Who gets a value | Otherwise |
 |---|---|---|
@@ -145,19 +153,20 @@ gated by the right that already governs the page it summarises.
 | `leadership.bands` | admin or leader/second, per volunteer (`can_view_workload`) | `null` |
 | `personal` | any account linked to a volunteer | `null` |
 
-A `null` section was never computed — the queries behind it did not run —
-whereas a `0` is a real count. `as_of=` answers the versioned figures from
-the snapshot and nulls the live-only ones (events, elections, ballots, hours,
-account counts), setting `live: false` to say so.
-
-Deliberately absent from `personal`: the caller's own workload band. Nobody
-sees their own — see [workload](../explanation/workload.md).
+- A `null` section was never computed: the queries behind it did not run. A
+  `0` is a real count.
+- `as_of=` answers the versioned figures from the snapshot. It nulls the
+  live-only ones (events, elections, ballots, hours, account counts) and sets
+  `live: false` to say so.
+- Deliberately absent from `personal`: the caller's own workload band. Nobody
+  sees their own. See [workload](../explanation/workload.md).
 
 ### Users — `api/users.py` (all admin-only)
 
-Account *management* is admin-only throughout. The one exception lives with the
-volunteer it concerns: `POST /api/volunteers/{id}/invite` above lets a team's
-leaders, seconds and core members create an account for one of their own people.
+- Account *management* is admin-only throughout.
+- The one exception lives with the volunteer it concerns.
+  `POST /api/volunteers/{id}/invite` above lets a team's leaders, seconds and
+  core members create an account for one of their own people.
 
 | Method & path | Notes |
 |---|---|
@@ -177,7 +186,7 @@ leaders, seconds and core members create an account for one of their own people.
 | `GET /api/export/my-teams.csv` | leads/seconds any team | Union of managed teams, `as_of=`. The GUI's *Export team(s)* button on `/teams` covers the same ground, widened to core members |
 | `POST /api/import` | admin or leader/second (rows scoped) | Multipart `file=` (roster `.csv`); `dry_run=`; all-or-nothing; 10 MB cap. Sends no mail: a redirect used to notify the mailbox it moved away from, but one pass over a messy sheet fires dozens at once against a 200-message day, mostly at the dead addresses being fixed. Redirects still land in `volunteer_history` |
 
-Column layout: see the [spreadsheet format](spreadsheets.md).
+- Column layout: see the [spreadsheet format](spreadsheets.md).
 
 ### Custom fields — `api/custom_fields.py`
 
@@ -198,11 +207,11 @@ Column layout: see the [spreadsheet format](spreadsheets.md).
 
 ### Elections — `api/elections.py`
 
-Vacancies need no endpoint of their own: `GET /api/reports/coverage` already
-returns `missing_leader`/`missing_second` with the same scoping.
-
-Ballots are secret: no route ever returns an individual voter's scores —
-only per-voter turnout flags and, once voting concludes, aggregates.
+- Vacancies need no endpoint of their own. `GET /api/reports/coverage`
+  already returns `missing_leader`/`missing_second` with the same scope.
+- Ballots are secret. No route ever returns an individual voter's scores.
+  Routes return only per-voter turnout flags and, after the voting deadline,
+  aggregates.
 
 | Method & path | Permission | Notes |
 |---|---|---|
@@ -224,12 +233,15 @@ only per-voter turnout flags and, once voting concludes, aggregates.
 
 ### Events — `api/events.py`
 
-Every event belongs to one team; viewing follows the roster-names rule and
-taking part (RSVP, sign-up, claiming) additionally requires actual
-membership of that team, enforced in the service. Unlike the GUI, **these
-mutations send no email** (the repo rule: mail goes out from UI handlers
-after commit, and from the nightly digest) — an API-created assignment
-still reaches its volunteer through `jobs.event_reminders`.
+- Every event belongs to one team.
+- To view an event, a caller needs roster-name rights on its team (the
+  roster-names rule).
+- To take part (RSVP, sign-up, claim), the caller must also be a member of
+  that team. The service enforces this.
+- Unlike the GUI, **these mutations send no email**. The repo rule: mail goes
+  out from UI handlers after commit, and from the nightly digest.
+- An API-created assignment still reaches its volunteer through
+  `jobs.event_reminders`.
 
 | Method & path | Permission | Notes |
 |---|---|---|
@@ -259,4 +271,4 @@ still reaches its volunteer through `jobs.event_reminders`.
 
 ## Worked examples
 
-See [Use the JSON API](../how-to/api-recipes.md) for curl recipes.
+- See [Use the JSON API](../how-to/api-recipes.md) for curl recipes.

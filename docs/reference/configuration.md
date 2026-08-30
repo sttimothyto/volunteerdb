@@ -21,20 +21,22 @@ ignored. Copy `.env.example` as a starting point.
 
 `VDB_COOKIE_SECURE`
 : Adds the `Secure` attribute to the session cookie. Default: `false`.
-  Set `true` whenever the app is served over HTTPS (production sets it via
-  the deploy template).
+  Set `true` when the app is served over HTTPS. In production the deploy
+  template sets it.
 
 `FORWARDED_ALLOW_IPS`
 : Uvicorn's trusted-proxy list (no `VDB_` prefix). Default: `127.0.0.1`.
-  When the app runs behind a TLS-terminating reverse proxy, the proxy's
-  `X-Forwarded-Proto` header is only honored if the connection comes from a
-  listed address — otherwise absolute URLs the app generates (invite and
-  sign-in links in emails, the admin backup-link dialog) come out `http://`.
-  In the production container, Caddy's connections arrive from the podman
-  gateway address, so the deploy template sets `*`; that is safe because the
-  container port is published on the host loopback only. Behind a proxy other
-  than Caddy, make sure it sets `X-Forwarded-Proto` itself
-  (`deploy/examples/nginx.conf` does).
+
+  * Behind a TLS-terminating reverse proxy, uvicorn honours the proxy's
+    `X-Forwarded-Proto` header only from a listed address.
+  * From an unlisted address, the absolute URLs the app generates come out
+    `http://`: invite and sign-in links in emails, and the admin backup-link
+    dialog.
+  * In the production container, Caddy's connections arrive from the podman
+    gateway address, so the deploy template sets `*`. That is safe: the
+    container port is published on the host loopback only.
+  * Behind a proxy other than Caddy, make sure the proxy sets
+    `X-Forwarded-Proto` itself (`deploy/examples/nginx.conf` does).
 
 `VDB_HOST`
 : Bind address. Default: `0.0.0.0`.
@@ -61,29 +63,29 @@ ignored. Copy `.env.example` as a starting point.
   (only `/app/.nicegui` is writable by default).
 
 `VDB_SMTP2GO_API_KEY`
-: API key for outbound email via SMTP2GO. Default: empty, in which case
-  nothing is sent and each message is logged instead. Pair it with
-  `VDB_DEBUG_MAIL` in development to read the printed OTP code and complete a
+: API key for outbound email through SMTP2GO. Default: empty. Then nothing
+  is sent, and each message is logged instead. In development, pair it with
+  `VDB_DEBUG_MAIL` to read the printed sign-in code and complete a
   passwordless login.
 
 `VDB_DEBUG_MAIL`
 : With no API key, print the whole message body rather than a one-line
   warning. Default: `false`, and **implied by `VDB_RELOAD`** — so `make dev`
-  shows you the OTP code without setting anything. For development only: the
-  bodies carry one-time sign-in codes, invite links and address-change links,
-  so an instance that merely forgot `VDB_SMTP2GO_API_KEY` would otherwise
+  shows you the OTP code without setting anything. For development only.
+  The bodies carry one-time sign-in codes, invite links and address-change
+  links. An instance that only forgot `VDB_SMTP2GO_API_KEY` would otherwise
   write every credential it issues into the process log, where the app's own
   redaction cannot reach it.
 
 `VDB_ORG_NAME`
-: The organisation this instance serves, e.g. `St. Timothy's`. It appears in
-  outbound mail ("Your VolunteerDB account at …"), and its name and mail
-  domain become context-specific terms in the
-  [password policy](../explanation/auth.md) — so a parish's own name cannot
-  be used as a password. Default: empty, in which case the mail copy drops
-  the clause rather than naming a placeholder. Production sets it from the
-  site file, which also passes it to the docs build so the manual at
-  `/manual` carries the same name.
+: The organisation this instance serves, for example `St. Timothy's`. It
+  appears in outbound mail ("Your VolunteerDB account at …"). Its name and
+  mail domain also become context-specific terms in the
+  [password policy](../explanation/auth.md), so a parish's own name cannot
+  be a password. Default: empty. Then the mail copy drops the clause rather
+  than naming a placeholder. Production sets it from the site file, which
+  also passes it to the docs build so the manual at `/manual` carries the
+  same name.
 
 `VDB_MAIL_FROM`
 : Sender address for outbound email. Default: `no-reply@example.invalid` —
@@ -97,32 +99,30 @@ ignored. Copy `.env.example` as a starting point.
 : Sender display name. Default: `VolunteerDB`.
 
 `VDB_PUBLIC_BASE_URL`
-: Absolute origin (e.g. `https://vdb.example.org`) used for links in
-  emails sent by nightly jobs, which have no live request to derive one from —
-  today, the events link in the nightly reminder digest. Default: empty, in
-  which case those emails simply omit the link (mail sent from the GUI
-  keeps deriving links from the request either way). The deploy writes the
-  production domain and reads it back on later runs, like
-  `VDB_TEMPLATE_SHEET_URL`.
+: Absolute origin, for example `https://vdb.example.org`, for links in
+  emails sent by nightly jobs. Those jobs have no live request to derive one
+  from — today, the events link in the nightly reminder digest. Default:
+  empty. Then those emails omit the link. Mail sent from the GUI derives
+  links from the request either way. The deploy writes the production domain
+  and reads it back on later runs, like `VDB_TEMPLATE_SHEET_URL`.
 
 `VDB_SCHEDULER_ENABLED`
-: The in-app scheduler that runs the nightly jobs (`roster_sync`,
-  `fetch_pages`, `proposal_digest`, `event_reminders`) and the interval jobs
-  (`calendar_sync` every 30 minutes, `task_force_cleanup` hourly) inside the
-  server process. Off, none of them run — the Google Calendar stops syncing
-  too. Default:
-  `true`. Always off under `VDB_RELOAD=true` regardless — dev reload
-  restarts the process on every save, which would re-fire startup hooks.
-  See [CLI and jobs](cli.md).
+: The in-app scheduler inside the server process. It runs the nightly jobs
+  (`roster_sync`, `fetch_pages`, `proposal_digest`, `event_reminders`) and
+  the interval jobs (`calendar_sync` every 30 minutes, `task_force_cleanup`
+  hourly). Off, none of them run, and the Google Calendar stops syncing too.
+  Default: `true`. Always off under `VDB_RELOAD=true`: dev reload restarts
+  the process on every save, which would re-fire startup hooks. See
+  [CLI and jobs](cli.md).
 
 `VDB_ALERT_EMAIL`
 : Where the scheduler emails when a nightly job fails. Default: empty —
   failures only log at ERROR. Production sets the same address the host
-  backup/sync wrappers alert. **One alert per job per parish day**, however
-  many times it fails: a nightly job retries every 30 minutes up to 3 times,
-  and an interval job keeps retrying on its own cadence, but the second and
-  third messages say nothing the first did not and the instance sends on a
-  1,000-a-month allowance. The retries still happen and still log.
+  backup wrapper alerts. **One alert per job per parish day**, however many
+  times it fails. A nightly job retries every 30 minutes up to 3 times, and
+  an interval job retries again on its own cadence. The second and third
+  messages would say nothing new, and the instance sends on a 1,000-a-month
+  allowance; the retries still happen and still log.
 
 `VDB_SUPPORT_CONTACT`
 : Who the mail-allowance banner tells an admin to contact — whoever set the
@@ -138,19 +138,19 @@ ignored. Copy `.env.example` as a starting point.
   ahead is the way to watch a job fire in dev.
 
 `VDB_INVITE_TTL_HOURS`
-: How long an invite link stays redeemable — and since re-inviting is how a
-  password is reset, how long a reset link lives. Default: `168` (7 days) — a
-  deliberate deviation from the 24-hour ceiling NIST SP 800-63B §4.2.1.2 puts
-  on a recovery code sent to an email address, sized for a parish where
-  invitees read email weekly. Lower it if that trade-off changes. Expiry is
-  never a lockout: the account still signs in with an emailed code and can
-  set a password from **/account**. See
+: How long an invite link stays redeemable. A re-invite is how a password
+  is reset, so this is also how long a reset link lives. Default: `168`
+  (7 days), a deliberate deviation from the 24-hour ceiling of NIST SP
+  800-63B §4.2.1.2 for a recovery code sent by email. It is sized for a
+  parish where invitees read email weekly; lower it if that trade-off
+  changes. Expiry is never a lockout: the account still signs in with an
+  emailed code and can set a password from **/account**. See
   [Authentication design](../explanation/auth.md).
 
 `VDB_TIMEZONE`
 : IANA zone the parish lives in. Default: `America/Toronto`. Date-typed
-  values like election deadlines mean "through the end of that day *here*":
-  the phase of an open proposal is computed against today's date in this
+  values like election deadlines mean "through the end of that day *here*".
+  The phase of an open proposal is computed against today's date in this
   zone, not against the container's clock (UTC in production). Event
   reminder windows and the weekly repeat helper use the same zone.
 
@@ -163,10 +163,11 @@ ignored. Copy `.env.example` as a starting point.
   [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md).
 
 `VDB_SHEETS_CLIENT_ID`, `VDB_SHEETS_CLIENT_SECRET`, `VDB_SHEETS_REFRESH_TOKEN`, `VDB_SHEETS_FOLDER_ID`
-: The parish Google token — the OAuth client and refresh token authorised as
-  the parish Google account (`scripts/google_authorize.py`) — and the id of
-  the Drive folder new roster sheets are created in. Named for the roster
-  sheets, which came first, but the token serves both Google integrations:
+: The parish Google token and the Drive folder. The token is the OAuth
+  client and refresh token authorised as the parish Google account
+  (`scripts/google_authorize.py`). The folder id is the Drive folder new
+  roster sheets are created in. The names come from the roster sheets, which
+  came first, but the token serves both Google integrations:
 
   * **Roster spreadsheets** need all four. The in-app scheduler then syncs
     every team's roster with its sheet nightly and a team page can sync one
@@ -174,9 +175,9 @@ ignored. Copy `.env.example` as a starting point.
     "anyone with the link can edit" takes no credentials at all. See
     [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md).
   * **The parish calendar** needs the first three. The in-app scheduler
-    then creates a public Google Calendar for the parish (remembering its id
-    in the `app_setting` table — there is nothing to configure) and
-    reconciles upcoming events onto it every 30 minutes, one-way. See
+    then creates a public Google Calendar for the parish and keeps its id in
+    the `app_setting` table. There is nothing to configure. It reconciles
+    upcoming events onto the calendar every 30 minutes, one-way. See
     [Publish events to a Google Calendar](../how-to/google-calendar-sync.md).
 
   Defaults: empty — each job exits "not configured" and the team page says
@@ -207,9 +208,9 @@ ignored. Copy `.env.example` as a starting point.
 `VDB_SEED_ADMIN_PASSWORD`
 : Password for the demo admin account created by `scripts/seed.py`.
   Default: `demo`, the same password every other seeded account gets. The
-  seed hashes it directly, so — unlike every other way into the database —
-  it is **not** held to the password policy; set this to something real if
-  the demo instance is going to be reachable by anyone else.
+  seed hashes it directly, so it is **not** held to the password policy,
+  unlike every other way into the database. Set it to something real if
+  anyone else can reach the demo instance.
 
 `VDB_CONTACT_EMAIL`
 : Address in this manual's page footer ("See something inappropriate? Report
@@ -228,13 +229,13 @@ Consumed by the PostgreSQL 17 container, not by VolunteerDB itself
 
 :::{warning}
 `POSTGRES_PASSWORD` must be **actually set** — in `.env` or the environment —
-before you first start the db container. podman-compose (checked on 1.3.0)
-does not apply the `${VAR:-default}` fallback when the variable name matches
-the key it is assigned to, as in
-`POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-volunteerdb}`; it writes the literal
-string `${POSTGRES_PASSWORD:-volunteerdb}` into the container instead, baking
-that placeholder into the data volume as the real password. An empty `.env`,
-or one without this key, does not help — only a set value does.
+before you first start the db container. The reason is a podman-compose
+quirk (checked on 1.3.0). It does not apply the `${VAR:-default}` fallback
+when the variable name matches the key it is assigned to. With
+`POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-volunteerdb}` it writes the literal
+string `${POSTGRES_PASSWORD:-volunteerdb}` into the container. That
+placeholder then becomes the real password, baked into the data volume. An
+empty `.env`, or one without this key, does not help — only a set value does.
 
 `.env.example` sets it, so a copied `.env` is enough, and `make db` creates
 that file before starting anything. If you started the container by hand
@@ -253,10 +254,10 @@ change the database password — see
 ## Configuration stored in the database
 
 Workload settings (role multipliers and color bands) are not environment
-variables: they live in the `app_setting` table under the key `"workload"`
-and are edited on the `/admin/workload` page or via
-`PUT /api/workload/config`. See [The workload model](../explanation/workload.md)
-and the {ref}`schema reference <app_setting>`.
+variables. They live in the `app_setting` table under the key `"workload"`.
+Edit them on the `/admin/workload` page or with `PUT /api/workload/config`.
+See [The workload model](../explanation/workload.md) and the
+{ref}`schema reference <app_setting>`.
 
 ## The clergy team
 
