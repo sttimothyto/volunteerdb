@@ -73,6 +73,7 @@ explanation/elections
 explanation/events
 explanation/deployment
 explanation/accessibility
+explanation/writing-style
 ```
 
 ```{toctree}
