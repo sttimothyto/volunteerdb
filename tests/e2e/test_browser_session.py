@@ -61,7 +61,7 @@ async def test_dark_mode_is_kept_by_the_browser_across_a_sign_out(seeded, page):
     await expect(body).not_to_have_class(re.compile(r"body--dark"))
 
     await icon_button(page, "settings").click()
-    await page.get_by_text("Dark mode").click()
+    await page.get_by_text("Dark mode", exact=True).click()
     await expect(body).to_have_class(re.compile(r"body--dark"))
 
     # persisted server-side against the session id in the cookie, so it comes

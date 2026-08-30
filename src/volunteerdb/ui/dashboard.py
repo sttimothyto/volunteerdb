@@ -7,11 +7,13 @@ from .. import query_lang
 from ..env import current as current_env
 from ..fp import Err
 from ..models import ROLE_LABELS
+from ..permissions import Actor
 from ..services import graph as graph_service
 from ..services import stats as stats_service
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
+from . import help_links
 from .a11y import icon_button
 from .assets import static_url
 from .context import page_ctx, parse_as_of, toast
@@ -184,6 +186,8 @@ async def dashboard(request: Request, as_of: str = "", q: str = ""):
             "connections."
         ).classes("text-sm text-gray-400")
 
+        _guides_section(actor)
+
 
 def _parish_section(p: stats_service.ParishStats, *, live: bool) -> None:
     with stat_section("Parish", None if live else AS_OF_NOTE):
@@ -344,6 +348,31 @@ def _my_service_section(mine: stats_service.PersonalStats) -> None:
                 sub=f"{mine.events_attended} event"
                 f"{'' if mine.events_attended == 1 else 's'} attended",
             )
+
+
+def _guides_section(actor: Actor) -> None:
+    """The user guide, for what this reader can do -- the tail of the page,
+    after the graph, where somebody who has run out of things to click will
+    look for what else there is. Tiers accumulate with reach (help_links);
+    each link is a real anchor into a new tab, like the Manual entry in the
+    settings menu, so the page they were on stays where it was."""
+    with stat_section(
+        "Guides", "Short pages on what you can do here. Each opens in a new tab."
+    ):
+        for group in help_links.groups_for(actor):
+            with ui.column().classes("w-full gap-1").mark(f"guides-{group.title}"):
+                ui.label(group.title).classes("text-sm font-medium")
+                with ui.row().classes("items-center flex-wrap gap-x-4 gap-y-1"):
+                    for link in group.links:
+                        with ui.row().classes("items-center gap-1"):
+                            if link.tutorial:
+                                ui.badge("Tutorial").props("outline color=secondary")
+                            ui.link(link.title, link.href).classes(
+                                "text-sm vdb-quiet"
+                            ).props(
+                                'target="_blank" rel="noopener" '
+                                f'aria-label="{link.title} (opens in a new tab)"'
+                            )
 
 
 def _legend_entry(

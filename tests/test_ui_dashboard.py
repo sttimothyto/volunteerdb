@@ -84,6 +84,11 @@ async def test_admin_sees_every_tier(database):
         await user.should_not_see(LEADERSHIP_TILE)
         # no volunteer record behind this account, so no own-service section
         await user.should_not_see(PERSONAL_TILE)
+        # the guides accumulate with reach: an admin gets every group but the
+        # one that needs a volunteer record of their own
+        await user.should_see("For administrators")
+        await user.should_see("For leaders and seconds")
+        await user.should_not_see("For team members")
 
 
 async def test_leader_sees_leadership_but_not_the_parish(database):
@@ -99,6 +104,8 @@ async def test_leader_sees_leadership_but_not_the_parish(database):
         await user.should_see("Without a leader", retries=SLOW)
         await user.should_see(PERSONAL_TILE)
         await user.should_not_see(PARISH_TILE)
+        await user.should_see("For leaders and seconds")
+        await user.should_not_see("For administrators")
 
 
 async def test_core_member_sees_reach_without_coverage_or_workload(database):
@@ -114,6 +121,8 @@ async def test_core_member_sees_reach_without_coverage_or_workload(database):
         await user.should_not_see(PARISH_TILE)
         await user.should_not_see("Without a leader")
         await user.should_not_see("Workload:")
+        await user.should_see("For core members")
+        await user.should_not_see("For leaders and seconds")
 
 
 async def test_plain_member_sees_only_their_own_service(database):
@@ -139,3 +148,10 @@ async def test_plain_member_sees_only_their_own_service(database):
         service_head = user.find("My service", kind=ui.label).elements.pop()
         graph = user.find(kind=CytoscapeGraph).elements.pop()
         assert teams_head.id < service_head.id < graph.id
+
+        # the guides are the tail of the page, after the graph, and a plain
+        # member gets the two groups anybody with a volunteer record gets
+        await user.should_see("For team members")
+        await user.should_not_see("For core members")
+        guides_head = user.find("Guides", kind=ui.label).elements.pop()
+        assert graph.id < guides_head.id
