@@ -41,9 +41,11 @@ Two design details follow the same "least surprise, least exposure" line:
 
 ## One enforcement point
 
-`permissions.py` reduces an account to a frozen `Actor`: its direct roles
-plus three precomputed team-id sets (managed, full-view, names-view, with
-the cascade already applied). Every service function takes the actor and
+`actors.load_actor` reduces an account to a frozen `Actor` (the type lives
+in `permissions.py`, a pure leaf): four precomputed team-id sets — managed,
+people, full-view, names-view — with the cascade already applied. The
+*people* set is the managed set minus task forces, so leading a task force
+never grants rights over the members it borrowed. Every service function takes the actor and
 asks it questions (`can_manage_team`, `can_view_full_roster`, …); a failed
 check is a returned `Err(Forbidden)` — never an exception — which the GUI
 renders as a toast and the API maps to 403

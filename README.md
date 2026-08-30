@@ -16,8 +16,13 @@ to fill?"**
   *as of any past date*
 - Spreadsheet **import/export** (.csv) that round-trips
 - **Cytoscape.js graph** of volunteers ↔ teams, front and center on the dashboard
-- Collaborative **elections**: leadership vacancies with volunteer proposals
-  (propose → accept/decline), and leadership-only **workload** scoring
+- **Elections**: leadership vacancies filled by nomination and a secret
+  STAR vote, and leadership-only **workload** scoring
+- **Events and scheduling**: shifts with sign-up, RSVP, substitutions and
+  derived attendance; an app-owned public Google Calendar and iCalendar feeds
+- Nightly two-way **roster sync** with each team's Google Sheet
+- Public **ministry pages** published from a team's Google Doc, and the
+  parish's own **site logo**
   
 ## Documentation
 

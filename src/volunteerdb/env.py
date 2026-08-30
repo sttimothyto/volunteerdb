@@ -5,8 +5,9 @@ database engine and its session factory, the settings. Services never see an
 ``Env``; they receive the VALUES they need (``now``, ``tz``, a token) from an
 edge that holds one. There are exactly these composition roots: ``main.run``
 (which hands it to ``create_app``), every ``jobs/*.cli``, ``admin_bootstrap``,
-the seed and bench scripts, and the ``env`` test fixture -- where the clock is
-a ``FakeClock``, the mailer a recorder, and nothing reaches the network.
+the seed, bench and share_roster_sheets scripts, and the test suite's ``env``
+fixture and simulation main -- where the clock is a ``FakeClock``, the mailer
+a recorder, and nothing reaches the network.
 
 ``current()`` reads the one the app holds (``nicegui.app.state.env``): a
 ``@ui.page`` function has no dependency injection, so the app object is the

@@ -53,6 +53,7 @@ how-to/roster-spreadsheets
 how-to/team-home-pages
 how-to/google-calendar-sync
 how-to/custom-fields-and-workload
+how-to/site-logo
 how-to/api-recipes
 how-to/audit-logs
 how-to/write-a-migration

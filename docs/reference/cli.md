@@ -50,8 +50,9 @@ voting roll. Refuses to run if any volunteers exist.
 Everything is deterministic — one fixed RNG seed, dates relative to today —
 so reseeding reproduces the same parish.
 
-Created logins: 33 accounts, one for the administrator and one for each
-ministry leader, **all on the password `demo`**. The notable ones:
+Created logins: one for the administrator, a few shaped accounts (below)
+and one for each ministry leader — 33 in all as of this writing; `make seed`
+prints the full list — **all on the password `demo`**. The notable ones:
 
 | Email | Password | Role |
 |---|---|---|
@@ -72,6 +73,57 @@ account itself instead. That bypass exists only in this script — no path a
 user can reach was widened — and it is why nothing but a throwaway
 development database should ever be seeded.
 ```
+
+## `scripts/google_authorize.py` — the parish Google token
+
+```sh
+python scripts/google_authorize.py CLIENT_ID CLIENT_SECRET [PORT]
+```
+
+Run once, on a machine with a browser (never the server), signed in — in the
+browser — as the parish Google account, and with the OAuth client the rclone
+backup remote already uses: `drive.file` and `calendar.app.created` are scoped
+per client per file, so only that client can reach the sheets and the calendar
+it created. Opens the consent screen, catches the redirect on loopback port
+`PORT` (default 8765; a *Web application* client accepts only its registered
+ports — rclone registers 53682), exchanges the code and prints
+`VDB_SHEETS_REFRESH_TOKEN`. Asks for four scopes at once — `spreadsheets`,
+`drive.file`, `calendar.app.created`, `calendar.acls` — so one token serves
+both the [roster sheets](../how-to/roster-spreadsheets.md) and the
+[parish calendar](../how-to/google-calendar-sync.md). Stdlib only.
+
+## `scripts/share_roster_sheets.py` — re-share existing sheets
+
+```sh
+uv run python scripts/share_roster_sheets.py --dry-run
+uv run python scripts/share_roster_sheets.py
+```
+
+One-shot for an instance whose roster sheets were created by the retired
+rclone sync, which shared them per leader: shares every sheet in `team_sheet`
+as "anyone with the link can edit", which is what the sync now reads. Run once
+after `VDB_SHEETS_*` is set and before the first nightly run; until then the
+sync gets a sign-in page instead of a roster and reports "the spreadsheet is
+not shared". Idempotent, and it leaves the old per-leader grants alone.
+Requires the OAuth client that created the sheets. A fresh instance never
+needs it.
+
+## `scripts/bench.py` — query benchmark
+
+```sh
+uv run python scripts/bench.py setup --scale 500
+uv run python scripts/bench.py run --json bench-results/base-500.json [--explain] [--only NAME] [--runs N]
+uv run python scripts/bench.py compare bench-results/base-500.json bench-results/after-500.json
+```
+
+Against a disposable `volunteerdb_bench` database — never the development or
+test one. `setup` drops, recreates, migrates and seeds it with a deterministic
+parish of `--scale` volunteers (default 500; 5000 is the growth-headroom
+scale). `run` times each hot-query pattern (median and p90 after warm-up,
+15 runs by default) and counts the SQL statements it issues, which is the N+1
+headline; `--explain` prints `EXPLAIN (ANALYZE, BUFFERS)` for every `SELECT`
+exactly as the app issued it. `compare` diffs two run files.
+`bench-results/` is gitignored.
 
 ## `volunteerdb.admin_bootstrap` — admin bootstrap
 
@@ -191,3 +243,22 @@ uv run --group docs sphinx-build -W --keep-going -b html docs docs/_build/html
 Sphinx and its extensions come from PyPI, pinned in the `docs` dependency
 group in `pyproject.toml`. The container image builds the same manual in its
 own stage, so `/manual` always documents the release that is running.
+
+## `make` — developer tasks
+
+Thin wrappers over the commands above; `make` alone lists them. Override the
+tooling with variables, e.g. `make db COMPOSE=docker-compose`.
+
+| Target | Does |
+|---|---|
+| `make db` | start PostgreSQL and wait until it accepts queries (creates `.env` with a generated secret if missing) |
+| `make migrate` | `alembic upgrade head` |
+| `make seed` | migrate, then load the demo parish and print its logins |
+| `make dev` | serve `http://localhost:8080`, restarting on source changes |
+| `make serve` | serve without auto-reload |
+| `make test ARGS="…"` | the test suite, `ARGS` passed to pytest |
+| `make lint` / `make format` | ruff check, or reformat in place |
+| `make docs` | build this manual into `docs/_build/html` |
+| `make fresh` | wipe the database volume, then migrate and seed from scratch |
+| `make down` / `make clean` | stop the containers, keeping or deleting the data volume |
+| `make deploy-dry SITE=…` / `make deploy SITE=…` | preview or apply the production deploy |

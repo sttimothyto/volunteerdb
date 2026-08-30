@@ -171,6 +171,14 @@ It prints `VDB_SHEETS_REFRESH_TOKEN`. Set that alongside
 [configuration](../reference/configuration.md). The deploy reads them back on
 later runs, so they are set once.
 
+An instance whose sheets were created by the retired rclone sync has them
+shared per leader rather than by link, and until that changes the read leg
+gets a sign-in page instead of a roster ("the spreadsheet is not shared").
+Run `scripts/share_roster_sheets.py` once — after the settings are in place
+and before the first nightly run, `--dry-run` first — to share every sheet in
+`team_sheet` by link ([Commands and scripts](../reference/cli.md)). A fresh
+instance never needs it.
+
 The scopes the sheets use are `spreadsheets` (read and write any sheet the
 account can reach) and `drive.file` (create a sheet in the folder and set
 its sharing, limited to files this client created). Deliberately **not**

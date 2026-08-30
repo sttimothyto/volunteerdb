@@ -17,14 +17,15 @@ of *Liturgy* and *Altar Society*, helper in *Hospitality*. You need a
 4. Type the code and press **Sign in with code**. You're in.
 
 That is the everyday login for volunteers who don't want a password. (Maria
-also has one — `volunteer` — and either works; the code expires after 10
+also has one — `demo` — and either works; the code expires after 10
 minutes.)
 
 ## 2. Read the dashboard
 
 The page runs from the widest audience to the narrowest: what the parish
-looks like, then what the people running ministries must act on, then the
-graph, then what is only about Maria. A section you have no right to is not
+looks like, then what the people running ministries must act on, then what
+is only about Maria — her teams and her own service — and the ministry graph
+last of all. A section you have no right to is not
 there at all — Maria is a leader, not an administrator, so her page opens on
 **Needs attention** and the parish-wide figures above it never appear.
 
@@ -36,12 +37,13 @@ there at all — Maria is a leader, not an administrator, so her page opens on
   volunteers in the next 30 days, and any seat currently being filled. A
   core team member would see the first three tiles and none of the rest:
   they read rosters, they do not run the teams.
-- The **ministry graph** shows the whole parish as a network — more on it
-  in step 7.
-- **My service**, below the graph, is Maria's own: her next duty, shifts she
-  could cover, a ballot waiting on her, her hours, and **My teams** listing
-  her three ministries with her role in each. Her own workload band is not
-  here and never will be — see step 7.
+- **My teams** lists her three ministries with her role in each; a row
+  opens the team's page.
+- **My service** is Maria's own: her next duty, shifts she could cover, a
+  ballot waiting on her, her hours. Her own workload band is not here and
+  never will be — see step 7.
+- The **ministry graph**, below all of these, shows the whole parish as a
+  network — more on it in step 7.
 - The **search box** finds any volunteer or team — try `felix`. Matches appear
   in a dropdown as you type (from two letters on): pick a team to open its
   page, a volunteer to open their side panel, or press Enter for the full
@@ -131,8 +133,8 @@ you also…?" conversation should know.
 
 ## 8. Know what you can't see
 
-Sign out (header menu) and sign in as `felix.garcia@example.org` /
-`volunteer` — a plain member of Altar Servers and Youth Group. The same
+Sign out (the exit icon at the right end of the header) and sign in as
+`felix.garcia@example.org` / `demo` — a plain member of Altar Servers and Youth Group. The same
 pages now show less: rosters list names but contact details are `•••`, no
 workload badges, no Elections page, no roster editing. Same data, same
 pages — access follows

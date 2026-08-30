@@ -69,9 +69,9 @@ through a deploy.
 `timezone`
 : IANA zone, e.g. `America/Toronto`. Date-typed values — election deadlines,
   event reminder windows — mean "through the end of that day *here*", not in
-  the container's UTC clock. The host's backup and Drive-sync timers fire on
-  this zone too, from this same key, so the app's notion of the parish day
-  and the hour its backup runs cannot drift apart. Becomes `VDB_TIMEZONE`.
+  the container's UTC clock. The host's backup timer fires on this zone too,
+  from this same key, so the app's notion of the parish day and the hour its
+  backup runs cannot drift apart. Becomes `VDB_TIMEZONE`.
 
 ## `[host]`
 
@@ -127,8 +127,9 @@ through a deploy.
 : Sender address. **Must be on a domain your mail provider is authorised to
   send for**, or delivery simply fails — leaving another parish's address
   here is the likeliest reason a new instance sends nothing. The
-  `drive-sync@…` account that owns Drive-sync history entries is derived from
-  this domain.
+  `drive-sync@…` pseudo-account that owns the roster-sheet sync's history
+  entries (the name predates the sheet-based sync) is derived from this
+  domain.
 
 `from_name`
 : Sender display name.
@@ -138,8 +139,8 @@ through a deploy.
   on the first deploy or there is no way into the instance.
 
 `alert_email`
-: Where a failed backup, a failed Drive sync, or a failed nightly job
-  reports. Point it at a mailbox a human reads; empty disables the emails.
+: Where a failed backup or a failed nightly job (the roster-sheet sync
+  among them) reports. Point it at a mailbox a human reads; empty disables the emails.
 
 `contact_email`
 : Shown in the manual's footer ("report it to …"). Baked in at image build

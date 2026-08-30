@@ -131,8 +131,11 @@ Values are stored per volunteer in `volunteer.custom` under `key`.
 | `value` | jsonb | |
 | `updated_at` | timestamptz | |
 
-Holds one key: `"workload"` — role multipliers and color bands (see
-[The workload model](../explanation/workload.md)).
+Holds two keys: `"workload"` — role multipliers and color bands (see
+[The workload model](../explanation/workload.md)) — and `"gcal"` —
+`{"calendar_id", "created_at", "verified_at"}`, the public Google Calendar
+the sync created for itself and when its sharing was last checked (see
+[Publish events to a Google Calendar](../how-to/google-calendar-sync.md)).
 
 A `"planning"` key once stored `{"clergy_team_id": <id>}`, naming the team
 whose members join every new proposal's voting roll. It was deleted: the answer
@@ -264,6 +267,23 @@ URLs expire, so `team_page.html` is rewritten to these). Replaced wholesale
 on every successful fetch; a failed fetch keeps the previous set alongside
 the kept html.
 
+(site_logo)=
+## `site_logo` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | PK; `CHECK (id = 1)` (`ck_site_logo_singleton`), so an upload upserts the one row |
+| `image` | bytea | PNG, scaled to fit 1000 × 1000 and kept under 500 KB by `services.branding.normalize` |
+| `content_type` | varchar(50) | default `image/png` |
+| `uploaded_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
+| `uploaded_at` | timestamptz | also the `/logo` ETag, so a revalidation never reads the blob |
+
+The parish's own mark, shown in the app header, above the login box and on
+the public ministries shell, uploaded by an admin
+([Set the site logo](../how-to/site-logo.md)). Absent, `/logo` serves the
+shipped placeholder. Current-state only, like the two image tables above it.
+
+(team_sheet)=
 ## `team_sheet` (not versioned)
 
 | Column | Type | Notes |
@@ -364,7 +384,7 @@ override columns.
 | `kind` | assignment_kind | provenance only, no logic branches on it |
 | `assigned_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
 | `created_at` | timestamptz | |
-| `notify_7d`, `notify_24h` | boolean | not null, default true; reminder-stage *preferences* chosen at sign-up — settings, not records, which is why they stayed here when the stamps left |
+| `notify_7d`, `notify_24h` | boolean | not null; `notify_24h` defaults true, `notify_7d` false since `0007` (the week-ahead reminder restated a notice the volunteer already had). Reminder-stage *preferences* chosen at sign-up — settings, not records, which is why they stayed here when the stamps left |
 | `attended_override` | boolean | nullable; NULL = auto (attended) |
 | `hours_override` | numeric(5,2) | nullable; NULL = auto (scheduled duration), CHECK `>= 0` |
 
@@ -470,6 +490,22 @@ Scheduler bookkeeping for the in-app nightly jobs
 skip a night — the scheduler runs any job whose `last_success_on` predates the
 parish today.
 
+(mail_quota)=
+## `mail_quota` (not versioned)
+
+| Column | Type | Notes |
+|---|---|---|
+| `day` | date | PK; the *parish* date (`VDB_TIMEZONE`), not UTC |
+| `sent` | integer | NOT NULL DEFAULT 0; messages that actually left that day |
+
+A counter, not a log — no address, no subject — bumped by an upsert from the
+one success path in `services.mail.send_email`. `services.mail_quota` reads
+it into the admin-only header banner that warns before the mail provider's
+allowance (200 messages a day, 1,000 a month) runs out, since the app
+otherwise discovers that only by a sign-in code failing to send.
+Infrastructure bookkeeping like `job_run`, and not versioned for the same
+reason.
+
 ## History twins and triggers
 
 `volunteer_history`, `team_history`, `membership_history` each hold the live
@@ -502,6 +538,27 @@ positionally, dropping the column meant rebuilding `team_history` to the
 post-drop order; the historical values went with it. The two catch-up scripts in
 `deploy/` still create `interest`, and correctly so — they bring a pre-squash
 database up to `0001`, and `0002` drops it from there.
+
+The revisions since, in order:
+
+- `0003` added a `requested_file_id`/`requested_import` pair to `team_sheet`,
+  parking a pasted spreadsheet link beside `file_id` until the nightly rclone
+  run could check it; `0005` dropped the pair again once link-shared sheets
+  made a pasted link checkable on the spot ({ref}`team_sheet <team_sheet>`).
+- `0004` added `event_slot.description`, so a slot's detail no longer has to
+  ride in the name the weekly copy-forward matches on.
+- `0006` created [`site_logo`](#site_logo).
+- `0007` created [`mail_quota`](#mail_quota) and flipped the default of
+  `event_assignment.notify_7d` to false — the 7-day reminder restated a
+  notice the volunteer already had, and was a third of all event mail on a
+  weekend roster; rows already carrying a preference keep it.
+- `0008` added `app_user.calendar_token`, the personal calendar feed's
+  credential, stored in clear because the subscribe panel has to show it
+  again.
+
+`0004`, `0006`, `0007` and `0008` are purely additive, so the previous image
+keeps serving while they apply; `0002` is the one that needed the deploy
+attended ([Deploy and upgrade production](../how-to/deploy.md)).
 
 The statements in `0001` are a frozen snapshot, deliberately written out
 rather than generated from `models.Base.metadata` at run time: a migration that

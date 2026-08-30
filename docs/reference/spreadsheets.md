@@ -148,8 +148,10 @@ every active team, since it is copied for hand imports.
 
 All data exports accept `as_of=` over the API for historical snapshots
 (`my-teams` applies the *current* set of managed teams to the historical
-data). GUI entry points: the `/import` page and the "Export roster (.csv)"
-button on team pages. See
+data). GUI entry points: *Export team(s)* on `/teams`, and on a team's page the
+*Export roster (.csv)* button and the **Roster spreadsheet** section (the
+*Roster template* link and the *Import a .csv* upload — there is no separate
+import page). See
 [Import and export spreadsheets](../how-to/roster-spreadsheets.md) for the
 workflow and the {ref}`HTTP API reference <api-import-export>` for the
 endpoints.

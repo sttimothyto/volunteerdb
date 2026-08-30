@@ -108,9 +108,10 @@ values alone; `tests/test_effects_layer.py` fails on a `send_email(`,
 Everything impure the app touches is one frozen value, `env.Env`: the
 settings, a `Clock`, an `Rng`, a `Mailer`, `HttpClients`, the engine and
 session factory, and the two mutable cells the process legitimately holds
-(`ThrottleCell`, `QuotaCell`). It is built in exactly five places —
-`main.run`, each job's `cli()`, `admin_bootstrap`, the seed/bench scripts,
-and the test suite's `env` fixture (with a `FakeClock`, a `FakeRng`, a
+(`ThrottleCell`, `QuotaCell`). It is built only at composition roots —
+`main.run`, each job's `cli()`, `admin_bootstrap`, the seed, bench and
+`share_roster_sheets` scripts, and the test suite's `env` fixture and
+simulation main (with a `FakeClock`, a `FakeRng`, a
 `RecordingMailer`, a `FakeHttp`) — and never seen by a service: services take
 values (`now`, `tz`, `token`) and a session, and the edges' `Ctx`/`PageCtx`
 carry the `Env` to perform effects with. There is no process-global engine

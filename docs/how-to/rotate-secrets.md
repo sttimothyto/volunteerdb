@@ -48,6 +48,36 @@ signed out (their accounts are unaffected). API tokens do not use this
 secret and keep working.
 :::
 
+## Parish Google token (`VDB_SHEETS_REFRESH_TOKEN`)
+
+One refresh token serves both the [roster-sheet sync](roster-spreadsheets.md)
+and the [parish calendar](google-calendar-sync.md). Google revokes it on a
+password reset of the parish account and after long disuse; the first sign is
+a team page reporting that its sync failed, and the calendar stops updating
+at the same moment.
+
+Re-authorise with the **same** OAuth client id and secret — a different
+client cannot see the sheets and the calendar this one created — on a machine
+with a browser, signed in as the parish account:
+
+```sh
+python scripts/google_authorize.py "$CLIENT_ID" "$CLIENT_SECRET"
+```
+
+Then pass the new token on one deploy; it is read back on later runs:
+
+```sh
+VDB_SHEETS_REFRESH_TOKEN='…' make deploy SITE=<your-site>
+```
+
+Verify with *Sync now* on a team page that has a linked sheet, or run
+`python -m volunteerdb.jobs.calendar_sync` in the container
+([Commands and scripts](../reference/cli.md)).
+
+The rclone token and the crypt password behind the nightly backup are
+provisioned by hand and are outside this page — see
+[Back up and restore](backup-restore.md).
+
 ## Database password
 
 :::{warning}

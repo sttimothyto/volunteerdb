@@ -6,11 +6,10 @@ front door (``api/deps.py``, ``ui/context.py``, ``jobs``). ``message()`` is the
 single user-facing phrasing, which is how the JSON API's ``detail`` and the
 GUI's toast say the same thing about the same refusal.
 
-``DomainErrorRaised`` and ``from_exception`` are the transition shims: while
-services convert one module at a time, a converted callee's ``Err.unwrap()``
-raises the carrier for an unconverted caller, and ``fp.lift`` turns an
-unconverted callee's exception into the matching value. Both are deleted with
-the last raising service.
+The transition shims that carried the conversion one module at a time
+(``DomainErrorRaised``, ``from_exception``, ``fp.lift``, ``Err.unwrap()``) are
+gone: every service returns a ``Result``, and ``fp.expect()`` is what a guarded
+read uses where an ``Err`` would be a bug rather than a refusal.
 """
 
 from __future__ import annotations

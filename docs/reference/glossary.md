@@ -163,4 +163,116 @@ seeded data
   filled {term}`clergy team`), ~150 volunteers, history spells, a schedule
   either side of today, a proposal in every state and 33 demo logins (all on
   the password `demo`) — used by the tutorials. The tests build their own.
+
+event
+  One occasion a {term}`team` serves — a Mass, a fundraiser shift, a work
+  day — with a start, an end, a location and any number of {term}`slot`s.
+  Belongs to exactly one team; status *scheduled* or *cancelled*, and "past"
+  is derived from the end time. See
+  [Events and scheduling](../explanation/events.md).
+
+slot
+  A named position at an {term}`event` (*Lector*, *Greeter*) with a
+  capacity and an optional description line, filled by {term}`assignment`s.
+
+assignment
+  A volunteer holding a {term}`slot` — the commitment, whether they signed
+  up themselves or a manager scheduled them. Carries the per-sign-up
+  reminder preferences.
+
+RSVP
+  A volunteer's signal of whether they can make an {term}`event`. A signal
+  only: the {term}`assignment` is the commitment.
+
+substitution request
+  A volunteer's call to be replaced on a {term}`slot`, mailed to the team's
+  members for any of them to claim, and capped per team per day. Status
+  *open* → *claimed* or *cancelled*.
+
+task force
+  The temporary team created when an event's manager adds a collaborating
+  team: a copy of both rosters, with rights over the {term}`event` only and
+  never over the people it borrowed. An hourly job dismantles it once the
+  event has ended or been cancelled.
+
+attendance
+  Who actually served, derived from the assignments and a manager's
+  overrides once the event is past; what *Hours served* on the dashboard
+  counts.
+
+parish feed
+  The public iCalendar feed of every team's scheduled events, at
+  `/calendar/parish.ics` — the same events the public Google Calendar
+  carries.
+
+personal feed
+  An account's own duties as an iCalendar feed, at
+  `/calendar/mine/<token>.ics`; the {term}`calendar token` in the address is
+  the credential.
+
+calendar token
+  The last path segment of a {term}`personal feed` address
+  (`app_user.calendar_token`), created the first time the account asks for
+  one and rotated from the events page's subscribe panel, after which the
+  old address stops working.
+
+roster spreadsheet
+  The Google Sheet a team's roster reconciles with, both ways, every night —
+  in the [roster CSV format](spreadsheets.md), shared "anyone with the link
+  can edit", and linked from the **Roster spreadsheet** section of the team
+  page.
+
+decorated sheet
+  A {term}`roster spreadsheet` (or the template) carrying the sync's
+  cosmetic guardrails — role and team dropdowns, a hidden ID column, a
+  protected header row — re-applied every night.
+
+link-shared
+  Shared as "anyone with the link": how roster spreadsheets are shared. The
+  link is the access; there is no per-person list.
+
+site logo
+  The parish's own mark, uploaded by an admin by clicking the logo in the
+  header; shown in the header, above the login box and on the public
+  ministries pages, and served to everyone at `/logo`.
+
+mail allowance
+  The mail provider's free tier — 200 messages a day, 1,000 a month — which
+  the app counts its own sends against (`mail_quota`) so that an admin is
+  warned in the header before a sign-in code fails to send.
+
+Result
+  What a fallible service returns instead of raising: `Ok(value)` or
+  `Err(error)` (`fp.py`), the error being a {term}`domain error`. A guarded
+  read unwraps with `fp.expect()`.
+
+domain error
+  One of the closed set of refusal values in `errors.py` — `Forbidden`,
+  `NotFound`, `Invalid`, `Conflict`, `Throttled`, `External`, `WeakPassword`,
+  `QueryError`, `BadCredentials` — each with one user-facing message, one
+  HTTP status and one toast.
+
+Env
+  The one frozen value holding everything impure the process needs —
+  settings, clock, random source, mailer, HTTP clients, database engine —
+  built only at a composition root and never seen by a service.
+
+domain event
+  A fact a mutating service established (`SubRequested`, `InviteIssued`, …),
+  returned beside its value; the input to {term}`policy`.
+
+policy
+  The pure function from {term}`domain event`s and a context to
+  {term}`effect`s — what to mail, audit or charge — decided from values
+  alone (`policy.py`).
+
+effect
+  Something the edge performs after the commit — `SendMail`, `Audit`,
+  `ThrottleHit` — through the one interpreter in `effects.py`, so a failed
+  send never undoes committed work.
+
+Actor
+  A frozen view of the signed-in account with its team-id sets precomputed
+  (managed, people, full-view, names-view), built by `actors.load_actor` and
+  asked every permission question ([permissions](permissions.md)).
 ```

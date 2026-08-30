@@ -38,6 +38,7 @@ GUI and the API. For the rationale, see
 | Create/delete volunteers; toggle active | ✓ | | | | |
 | Parish-wide export | ✓ | | | | |
 | Accounts, custom fields, workload config | ✓ | | | | |
+| Upload, replace or remove the site logo | ✓ | | | | |
 
 Additional rules:
 
@@ -116,6 +117,11 @@ Additional rules:
   contact detail. The app bar carries your *own* headshot beside your address
   and opens the same upload dialog; an account with no volunteer record
   behind it shows nothing there, having no row a photo could hang off.
+- The **site logo** is the parish's mark, not a person's photo: admins
+  upload, replace or remove it by clicking the logo in the header
+  ([Set the site logo](../how-to/site-logo.md)), and everyone sees it — the
+  login page and the public ministries shell fetch it from `/logo` with no
+  session at all.
 - Your **own email address** is the one field you may not simply set: it is
   also your login, so it changes only after a link mailed to the new address
   is opened. Somebody else's address, edited by an admin or a leader with
@@ -164,6 +170,11 @@ credential) and static assets are exempt.
 | `/` | Dashboard: quick search, statistics, ministry graph; as-of picker | signed in (statistics per the tiers below) |
 | `/login` | Password or email-OTP sign-in | public |
 | `/invite/{token}` | Redeem invite, optionally set password | public (valid, unexpired token) |
+| `/confirm-email/{token}` | Confirm a new email address from the link mailed to it | public (valid, unexpired token) |
+| `/ministries/`, `/ministries/{slug}.html`, `/ministries/img/{team}/{seq}` | Public ministry home pages: the index, one page per published team, its cached images | public |
+| `/logo` | The site logo (the shipped placeholder until an admin uploads one) | public |
+| `/photos/{id}` | A volunteer's headshot | signed in |
+| `/docs`, `/openapi.json` | Interactive OpenAPI reference for the JSON API | signed in |
 | `/account` | Own sign-in settings: set, change or remove the password (header gear → *Password & sign-in*) | signed in |
 | `/teams` | Team hierarchy + coverage counts in one sortable table, search box, as-of picker, *Export team(s)* | signed in (coverage columns: admin/leaders; "New team": admin; export: admin/leader/second/core) |
 | `/teams/{id}` | Team detail, roster, as-of picker, roster export, the **Roster spreadsheet** section (link, sync, template, .csv import), invite a member; archive/reactivate the ministry | signed in; roster per matrix; invite needs full-roster rights; archiving is admin-only, like every other team edit |
@@ -187,8 +198,9 @@ credential) and static assets are exempt.
 | `/admin/workload` | Workload multipliers, bands, team weights | admin |
 
 The header nav shows Elections to admins, team leaders/seconds, and anyone
-sitting on a proposal's voting roll; Import/Export to admins and team
-leaders/seconds; and Accounts, Fields, and Workload entries to admins only.
+sitting on a proposal's voting roll, and Accounts, Fields, and Workload
+entries to admins only. Spreadsheet import and export have no nav entry of
+their own: they live on `/teams` and on each team's page.
 On narrow screens the nav collapses into a menu button with the same
 entries. Direct navigation without the required role is rejected
 server-side.
@@ -196,8 +208,8 @@ server-side.
 ### Dashboard statistics
 
 The dashboard's figures run down the page from the widest audience to the
-narrowest — parish, then leadership, then the ministry graph, then the
-reader's own service. A section a reader has no right to is *absent*, not
+narrowest — parish, then leadership, then the reader's own teams and
+service — with the ministry graph last of all. A section a reader has no right to is *absent*, not
 empty: the queries behind it never run. Same answers over the API at
 `GET /api/reports/dashboard`.
 
@@ -208,7 +220,8 @@ empty: the queries behind it never run. Same answers over the API at
 | ⤷ leadership gaps | admin or leader/second, per team | Teams missing a leader or a second, worst first |
 | ⤷ workload spread | admin or leader/second, per volunteer | How many people sit in each band |
 | ⤷ shifts and open seats | admin or leader/second | Understaffed events in the next 30 days; open proposals by phase |
-| My service | any account linked to a volunteer | Upcoming duties, shifts they could cover, ballots waiting, hours served, their teams |
+| My teams | any account linked to a volunteer with at least one membership | Their teams, with their role in each |
+| My service | any account linked to a volunteer | Upcoming duties, shifts they could cover, ballots waiting, hours served |
 
 Two consequences worth stating outright. A core team member sees the reach
 of their ministries but neither the coverage gaps nor the workload bands —

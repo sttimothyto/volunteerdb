@@ -99,9 +99,10 @@ Both the backups and the roster-sheet decoration reuse one OAuth client, so
 this is set up once.
 
 1. Create a Google Cloud project owned by the parish account.
-2. Enable the **Google Drive API** and the **Google Sheets API**. (rclone uses
-   Drive; the nightly sheet decoration uses Sheets. Missing the second one
-   surfaces later as a `SERVICE_DISABLED` error with an activation link.)
+2. Enable the **Google Drive API**, the **Google Sheets API** and the
+   **Google Calendar API**. (rclone uses Drive; the roster-sheet sync uses
+   Sheets; the parish calendar uses Calendar. A missing one surfaces later as
+   a `SERVICE_DISABLED` error with an activation link.)
 3. Create an **OAuth client ID** of type *Desktop*. Keep the client ID and
    secret for step 7.
 4. Set the OAuth consent screen to **In production** (or *Internal*, on a
@@ -187,7 +188,9 @@ VDB_TEMPLATE_SHEET_URL='https://docs.google.com/…' \
 ```
 
 Like the mail key, they are read back from the server on later runs, so you
-pass them once.
+pass them once. The same token drives the
+[parish Google Calendar](google-calendar-sync.md), which needs no setting of
+its own: the sync creates the calendar on its first run.
 
 ## 10. Deploy from CI (optional)
 

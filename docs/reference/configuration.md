@@ -106,9 +106,11 @@ ignored. Copy `.env.example` as a starting point.
   `VDB_TEMPLATE_SHEET_URL`.
 
 `VDB_SCHEDULER_ENABLED`
-: The in-app scheduler that runs the nightly jobs (`fetch_pages`,
-  `roster_sync`, `proposal_digest`, `event_reminders`) inside the server
-  process. Default:
+: The in-app scheduler that runs the nightly jobs (`roster_sync`,
+  `fetch_pages`, `proposal_digest`, `event_reminders`) and the interval jobs
+  (`calendar_sync` every 30 minutes, `task_force_cleanup` hourly) inside the
+  server process. Off, none of them run — the Google Calendar stops syncing
+  too. Default:
   `true`. Always off under `VDB_RELOAD=true` regardless — dev reload
   restarts the process on every save, which would re-fire startup hooks.
   See [CLI and jobs](cli.md).

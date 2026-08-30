@@ -66,7 +66,8 @@ from_name = "VolunteerDB"
 # The administrator account the deploy bootstraps, and the only way into a
 # fresh instance — pass VDB_ADMIN_PASSWORD on the first deploy.
 admin_email = "admin@example.org"
-# Where a failed backup, a failed Drive sync, or a failed nightly job reports.
+# Where a failed backup or a failed scheduled job (roster or calendar sync,
+# digests, reminders) reports.
 # Point it at a mailbox a human actually reads; "" disables the emails.
 alert_email = "admin@example.org"
 # Shown in the footer of the built manual ("report it to ..."). Baked in at

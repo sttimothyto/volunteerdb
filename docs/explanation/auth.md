@@ -178,8 +178,8 @@ else, so a leaked link costs the address, not the account.
 Confirmation moves **both** addresses together — the login identifier and the
 volunteer record behind it. That is what carries the change to every team the
 volunteer serves on: memberships hold no address of their own, so rosters,
-event notices, substitution calls, the exported spreadsheet and the Drive share
-ACLs all read the volunteer record live and pick up the new address on the next
+event notices, substitution calls and the exported spreadsheet all read the
+volunteer record live and pick up the new address on the next
 send. A one-time code still in flight is discarded at the same moment: it was
 mailed to the old mailbox to prove control of an identifier that no longer
 exists, and must not be spendable against the new one.
