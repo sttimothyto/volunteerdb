@@ -224,7 +224,8 @@ def address_edited_email(
         "Your VolunteerDB address was changed",
         f"Somebody who helps run one of your ministries changed the address on "
         f"your VolunteerDB record to {new_address}. That is now the address "
-        "used for rosters, event notices, and signing in.\n\n"
+        "used for rosters and event notices. It does not change the address "
+        "you sign in with.\n\n"
         "This is the last message we will send to this address.\n\n"
         "If you asked for that, or you knew about it, there is nothing to "
         f"do{sign_in}.\n\n"
