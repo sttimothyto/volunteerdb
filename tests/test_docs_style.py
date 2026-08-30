@@ -88,7 +88,7 @@ _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)|\[([^\]]*)\]\[[^\]]*\]")
 _EMPHASIS = re.compile(r"[*_]{1,3}")
 _HTML_TAG = re.compile(r"<[^>]+>")
-_SENTENCE_END = re.compile(r"(?<=[.!?])[\"'’)\]]*\s+(?=[\"'“(\[]*[A-Z0-9])")
+_SENTENCE_END = re.compile(r"(?<=[.!?])[\"'’)\]]*\s+(?=[\"'“(\[§]*[A-Z0-9])")
 
 
 @dataclass(frozen=True)
@@ -245,115 +245,7 @@ def current() -> dict[str, dict[str, int]]:
 
 # What the tree carried when the sweep was written: page -> rule -> count.
 # Shrinks page by page; a stale entry fails test_the_baseline_has_no_stale_entries.
-BASELINE: dict[str, dict[str, int]] = {
-    "explanation/accessibility.md": {"allow": 1, "sentence>25": 10},
-    "explanation/architecture.md": {"allow": 1, "perform": 2, "sentence>25": 27},
-    "explanation/auth.md": {"allow": 2, "may": 5, "sentence>25": 48, "via": 1},
-    "explanation/deployment.md": {"sentence>25": 20, "should": 1, "via": 1},
-    "explanation/elections.md": {
-        "may": 2,
-        "paragraph>6": 1,
-        "sentence>25": 19,
-        "should": 2,
-        "step>20": 1,
-    },
-    "explanation/events.md": {
-        "allow": 1,
-        "may": 7,
-        "paragraph>6": 1,
-        "sentence>25": 30,
-    },
-    "explanation/history.md": {"contraction": 1, "sentence>25": 9},
-    "explanation/permissions.md": {
-        "allow": 1,
-        "contraction": 1,
-        "may": 3,
-        "sentence>25": 11,
-    },
-    "explanation/workload.md": {
-        "contraction": 1,
-        "may": 1,
-        "sentence>25": 6,
-        "should": 1,
-    },
-    "how-to/api-recipes.md": {"may": 1, "obtain": 1, "sentence>25": 1},
-    "how-to/audit-logs.md": {"may": 1, "sentence>25": 5},
-    "how-to/backup-restore.md": {
-        "sentence>25": 15,
-        "should": 1,
-        "step>20": 2,
-        "via": 2,
-    },
-    "how-to/custom-fields-and-workload.md": {
-        "e.g.": 1,
-        "sentence>25": 2,
-        "should": 1,
-        "step>20": 3,
-    },
-    "how-to/deploy.md": {"perform": 1, "sentence>25": 18, "step>20": 4},
-    "how-to/google-calendar-sync.md": {"may": 2, "sentence>25": 17},
-    "how-to/manage-users.md": {"may": 1, "sentence>25": 17, "step>20": 7},
-    "how-to/new-instance.md": {
-        "allow": 1,
-        "obtain": 2,
-        "sentence>25": 17,
-        "should": 1,
-        "step>20": 1,
-    },
-    "how-to/roster-spreadsheets.md": {
-        "may": 3,
-        "obtain": 1,
-        "sentence>25": 17,
-        "step>20": 6,
-        "via": 1,
-    },
-    "how-to/rotate-secrets.md": {"sentence>25": 9},
-    "how-to/run-tests.md": {
-        "contraction": 1,
-        "sentence>25": 10,
-        "step>20": 1,
-        "via": 2,
-    },
-    "how-to/site-logo.md": {"sentence>25": 3, "step>20": 1},
-    "how-to/team-home-pages.md": {"may": 1, "sentence>25": 6, "step>20": 1, "via": 1},
-    "how-to/write-a-migration.md": {"contraction": 1, "sentence>25": 7},
-    "index.md": {"sentence>25": 2},
-    "reference/cli.md": {
-        "e.g.": 1,
-        "paragraph>6": 1,
-        "sentence>25": 19,
-        "should": 1,
-        "via": 1,
-    },
-    "reference/configuration.md": {"e.g.": 2, "sentence>25": 14, "via": 3},
-    "reference/glossary.md": {"e.g.": 3, "may": 6, "perform": 1, "sentence>25": 23},
-    "reference/http-api.md": {"obtain": 1, "sentence>25": 6},
-    "reference/permissions.md": {"may": 15, "paragraph>6": 1, "sentence>25": 27},
-    "reference/query-language.md": {"may": 2, "sentence>25": 6},
-    "reference/schema.md": {"sentence>25": 31},
-    "reference/site-config.md": {"e.g.": 1, "sentence>25": 9, "should": 1},
-    "reference/spreadsheets.md": {
-        "e.g.": 1,
-        "may": 2,
-        "sentence>25": 13,
-        "step>20": 1,
-        "via": 2,
-    },
-    "tutorials/coordinator-tour.md": {
-        "contraction": 2,
-        "e.g.": 1,
-        "may": 2,
-        "sentence>25": 14,
-        "should": 1,
-        "step>20": 1,
-    },
-    "tutorials/install-and-run.md": {
-        "contraction": 2,
-        "may": 1,
-        "perform": 1,
-        "sentence>25": 9,
-    },
-}
+BASELINE: dict[str, dict[str, int]] = {}
 
 
 SAMPLE = """\
