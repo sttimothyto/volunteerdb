@@ -50,6 +50,7 @@ import http.server
 import json
 import secrets
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -126,10 +127,19 @@ def main() -> int:
             "redirect_uri": redirect,
         }
     ).encode()
-    with urllib.request.urlopen(  # noqa: S310 - fixed https endpoint
-        urllib.request.Request(TOKEN_URL, data=data)
-    ) as resp:
-        tokens = json.load(resp)
+    try:
+        with urllib.request.urlopen(  # noqa: S310 - fixed https endpoint
+            urllib.request.Request(TOKEN_URL, data=data)
+        ) as resp:
+            tokens = json.load(resp)
+    except urllib.error.HTTPError as err:
+        # The body names the actual problem (invalid_grant, invalid_client,
+        # redirect_uri_mismatch ...); a bare traceback hides it.
+        print(f"Token exchange failed: HTTP {err.code}")
+        print(err.read().decode(errors="replace"))
+        print("invalid_grant usually means a stale or reused code: close any")
+        print("old consent tabs and run this again for a fresh one.")
+        return 1
 
     refresh = tokens.get("refresh_token")
     if not refresh:
