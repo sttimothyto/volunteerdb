@@ -111,6 +111,12 @@ class Settings(BaseSettings):
     # resolve against the cwd (repo root in dev); the container bakes the
     # docs in and sets VDB_DOCS_DIR=/app/docs-html.
     docs_dir: str = "docs/_build/html"
+    # The manual's search model (model2vec potion-base-8M, pinned in
+    # manual_model.py): `make model` fetches it here, the container bakes it
+    # in and sets /app/models/potion-base-8M. Missing: the search box answers
+    # on keywords alone, and the log says so once. Empty: keyword-only on
+    # purpose, and silent about it.
+    manual_model_dir: str = ".models/potion-base-8M"
 
     # The validators below exist so a typo fails at startup, naming the
     # variable, rather than surviving into the first request or the first

@@ -191,6 +191,15 @@ ignored. Copy `.env.example` as a starting point.
   image bakes the manual in and sets `/app/docs-html`. If the directory is
   missing, `/manual` returns a hint instead.
 
+`VDB_MANUAL_MODEL_DIR`
+: Directory of the manual's search model. Default: `.models/potion-base-8M`,
+  resolved against the working directory. `make model` fetches the model
+  (`minishlab/potion-base-8M`, 30 MB); `src/volunteerdb/manual_model.py`
+  pins its revision and checksums. The container image bakes the model in
+  and sets `/app/models/potion-base-8M`. If the directory is missing or
+  incomplete, the search box answers on keywords alone and the log says so
+  once. Set it empty to choose keyword-only search on purpose.
+
 ## Variables read by scripts (not the app)
 
 `VDB_ADMIN_EMAIL`, `VDB_ADMIN_PASSWORD`

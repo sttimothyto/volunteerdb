@@ -6,11 +6,14 @@ simulated app), so a page's mail lands in SIM_MAILER.sent whichever way it
 was sent -- through the effect interpreter or, during the transition, the
 mail.send_email shim -- and a test reads it back from the one place."""
 
-from collections.abc import Callable
+import re
+import zlib
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import httpx
+import numpy as np
 
 
 class FakeClock:
@@ -95,3 +98,30 @@ class FakeHttp:
 # main file per simulation, and a fixture needs a list whose identity survives
 # that, so it can hand the test the very list the next page action fills.
 SIM_MAILER = RecordingMailer()
+
+
+class FakeEmbedder:
+    """manual_search.Embedder without a model: a hashed bag of words, rows
+    normalised, so two texts that share words are close and two that share
+    none are not. `synonyms` folds words together ({"spreadsheet": "sheet"}):
+    the one thing a real embedding does that keywords cannot, in a form a
+    test can predict. crc32 rather than hash(): the same buckets in every
+    process, so a test that passes once passes always."""
+
+    _WORD = re.compile(r"\w+")
+
+    def __init__(self, dim: int = 32, synonyms: dict[str, str] | None = None):
+        self.dim = dim
+        self.synonyms = synonyms or {}
+        self.calls: list[list[str]] = []
+
+    def encode(self, texts: Sequence[str]) -> np.ndarray:
+        self.calls.append(list(texts))
+        out = np.zeros((len(texts), self.dim), dtype=np.float32)
+        for row, text in enumerate(texts):
+            for word in self._WORD.findall(text.lower()):
+                word = self.synonyms.get(word, word)
+                out[row, zlib.crc32(word.encode()) % self.dim] += 1.0
+        norms = np.linalg.norm(out, axis=1, keepdims=True)
+        norms[norms == 0.0] = 1.0
+        return out / norms

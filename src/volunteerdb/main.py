@@ -16,7 +16,8 @@ from .api import api_router
 from .api.deps import install_exception_handlers
 from .config import settings
 from .log import init_logging
-from .ui import register_pages
+from .manual_search import ManualIndexCell
+from .ui import manual_routes, register_pages
 from .ui.assets import static_url
 from .ui.context import session_user_id
 
@@ -208,6 +209,7 @@ def create_app(env: env_mod.Env | None = None) -> None:
     # The app object is the carrier: a @ui.page function has no dependency
     # injection, so env.current() reads it back from here.
     app.state.env = env if env is not None else env_mod.build()
+    s = app.state.env.settings
     install_exception_handlers(app)
     app.include_router(api_router)
     # 30 days, safe because mutable assets are referenced via assets.static_url
@@ -223,7 +225,22 @@ def create_app(env: env_mod.Env | None = None) -> None:
     # ordinary pages cross-link into 403s. The ops pages (secret rotation,
     # backups, deploy) therefore reach every signed-in reader. That is
     # accepted: they describe procedure, never credentials.
-    docs_dir = Path(settings().docs_dir)
+    docs_dir = Path(s.docs_dir)
+    # The manual's search (manual_search.py): the index is built on first
+    # use, off the event loop, from the same directory -- or at startup, in
+    # run(). A fresh cell on EVERY create_app(): NiceGUI's test reset removes
+    # the routes but keeps app.state, and a cell left over from an earlier
+    # simulation would answer for the wrong manual.
+    app.state.manual_index = ManualIndexCell(s.docs_dir, s.manual_model_dir)
+    # The search route goes on before the mount, and here rather than in
+    # register_pages(): Starlette dispatches to the first route that matches
+    # in registration order, and the Mount below matches everything under
+    # /manual. That same test reset removes Routes but not Mounts, so a
+    # mount left by an earlier simulation would sit in front of the route
+    # (and point at a directory that is gone): drop it first. Production
+    # assembles the app once, and this is a no-op.
+    app.remove_route("/manual")
+    manual_routes.register()
     if docs_dir.is_dir():
         app.mount("/manual", StaticFiles(directory=docs_dir, html=True), name="manual")
     else:
@@ -279,6 +296,10 @@ def run() -> None:
         logger.warning(
             "VDB_STORAGE_SECRET unset — using an ephemeral secret; sessions reset on restart"
         )
+    # Warm the manual's search index now, off the loop, so the first search
+    # never pays for it. Here, not in create_app(): the test harness assembles
+    # the app some hundred and fifty times per run and must not index each time.
+    app.on_startup(app.state.manual_index.warm)
     # Registered here, not in create_app(): tests boot create_app() and must
     # never start real job loops against the test database.
     if s.scheduler_enabled and not s.reload:
