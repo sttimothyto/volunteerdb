@@ -1,0 +1,10 @@
+{#- The switch between the two halves of the manual. Its state lives in the
+    reader's browser (localStorage "vdb-audience"); the technical groups in the
+    sidebar carry the class vdb-dev-only and CSS hides them until the switch is
+    on. See conf.py (_mark_developer_groups) and _static/vdb-manual.js. -#}
+<div class="vdb-audience">
+  <label class="vdb-audience-label">
+    <input type="checkbox" id="vdb-audience-toggle">
+    <span>Are you a developer? Show the technical manual.</span>
+  </label>
+</div>

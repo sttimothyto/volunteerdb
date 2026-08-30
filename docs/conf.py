@@ -5,6 +5,7 @@ Links:  uv run --group docs sphinx-build -b linkcheck docs docs/_build/linkcheck
 """
 
 import os
+import posixpath
 import re
 import tomllib
 from datetime import date
@@ -39,8 +40,26 @@ html_theme = "furo"
 html_title = "VolunteerDB"
 html_static_path = ["_static"]
 html_css_files = ["vdb-theme.css"]
-# _templates/page.html appends the report-it footer to Furo's own.
+# The audience switch and the live search box (sidebar/*.html below).
+html_js_files = ["vdb-manual.js"]
+# _templates/page.html appends the report-it footer to Furo's own, sets the
+# audience attribute before first paint, and puts the "technical page" notice
+# on every page outside the user guide.
 templates_path = ["_templates"]
+# Furo's own list (its theme.conf), plus the audience switch under the search
+# box. html_sidebars replaces the theme's list rather than extending it.
+html_sidebars = {
+    "**": [
+        "sidebar/brand.html",
+        "sidebar/search.html",
+        "sidebar/audience.html",
+        "sidebar/scroll-start.html",
+        "sidebar/navigation.html",
+        "sidebar/ethical-ads.html",
+        "sidebar/scroll-end.html",
+        "sidebar/variant-selector.html",
+    ]
+}
 # Read at build time, not runtime: the container bakes this HTML into the
 # image, so VDB_CONTACT_EMAIL must be set for the docs build to change it.
 html_context = {
@@ -170,3 +189,63 @@ linkcheck_ignore = [
 # A running instance is auth-walled, so linkcheck cannot follow links to it.
 if _base_url := os.environ.get("VDB_PUBLIC_BASE_URL"):
     linkcheck_ignore.append(re.escape(_base_url) + ".*")
+
+
+# ---- the two audiences ------------------------------------------------------
+#
+# The manual has two halves in one build: the user guide (docs/guide/) and the
+# technical pages (everything else). The sidebar shows the guide by default and
+# the technical groups only once the reader has said they are a developer
+# (localStorage, see _static/vdb-manual.js). Which groups those are is decided
+# here, at build time, by where their links point -- one source of truth, the
+# guide/ prefix -- so a caption can say whatever reads best.
+
+_CAPTION = '<p class="caption"'
+_HREF = re.compile(r'href="([^"#]*)')
+_FIRST_UL = re.compile(r"<ul\b[^>]*>")
+
+
+def _targets_the_guide(group: str, pagename: str) -> bool:
+    base = posixpath.dirname(pagename)
+    for href in _HREF.findall(group):
+        target = (
+            pagename if href == "" else posixpath.normpath(posixpath.join(base, href))
+        )
+        if target.startswith("guide/"):
+            return True
+    return False
+
+
+def _hide_from_users(group: str) -> str:
+    """Class the caption and the list that follows it, merging with a class
+    Sphinx already put there (`current` on the group of the open page)."""
+
+    def mark(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        if 'class="' in tag:
+            return tag.replace('class="', 'class="vdb-dev-only ', 1)
+        return tag[:-1] + ' class="vdb-dev-only">'
+
+    return '<p class="caption vdb-dev-only"' + _FIRST_UL.sub(mark, group, count=1)
+
+
+def _mark_developer_groups(app, pagename, templatename, context, doctree):
+    """Runs after Furo's own html-page-context handler (priority 500), which
+    is what puts furo_navigation_tree in the context. A group with no link
+    into the guide is a technical group. If the key is ever gone, nothing is
+    hidden -- a visible failure, never a build warning."""
+    tree = context.get("furo_navigation_tree")
+    if not tree or _CAPTION not in tree:
+        return
+    head, *groups = tree.split(_CAPTION)
+    marked = [
+        _CAPTION + group
+        if _targets_the_guide(group, pagename)
+        else _hide_from_users(group)
+        for group in groups
+    ]
+    context["furo_navigation_tree"] = head + "".join(marked)
+
+
+def setup(app):
+    app.connect("html-page-context", _mark_developer_groups, priority=600)

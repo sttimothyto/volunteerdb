@@ -1,0 +1,15 @@
+{#- Furo's search form, kept as the fallback (it posts to Sphinx's own
+    search.html), with a live results list under it that _static/vdb-manual.js
+    fills from the app's /manual/_search endpoint. Opened from disk, or with
+    the session expired, the form simply submits as before. -#}
+<div class="vdb-search">
+<form class="sidebar-search-container" method="get" action="{{ pathto('search') }}" role="search" id="vdb-search-form">
+  <input class="sidebar-search" placeholder="{{ _("Search") }}" name="q" aria-label="{{ _("Search") }}"
+         autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false"
+         aria-controls="vdb-search-results" aria-haspopup="listbox">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<ul id="vdb-search-results" class="vdb-search-results" role="listbox" aria-label="Search results" hidden></ul>
+</div>
+<div id="searchbox"></div>

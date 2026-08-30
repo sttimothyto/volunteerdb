@@ -1,6 +1,24 @@
-{# Append the report-it line to Furo's own footer (related pages, copyright).
-   The address comes from html_context in conf.py, baked in at build time. #}
+{# Three additions to Furo's page: the audience attribute set before first
+   paint, the "technical page" notice outside the user guide, and the report-it
+   line under Furo's own footer. The address comes from html_context in
+   conf.py, baked in at build time. #}
 {% extends "!page.html" %}
+
+{% block extrahead %}{{ super() }}
+<script>(function(){try{var h=document.documentElement;if(localStorage.getItem("vdb-audience")==="dev"||/[?&]dev=1(&|$)/.test(location.search)){h.dataset.audience="dev";}}catch(e){}})();</script>
+{% endblock extrahead %}
+
+{% block content %}
+{%- if pagename not in ("index", "search", "genindex") and not pagename.startswith("guide/") %}
+<div class="admonition note vdb-dev-notice">
+<p class="admonition-title">Technical page</p>
+<p>This page is for the people who run or develop this site.
+<a href="{{ pathto(master_doc) }}">Go to the user guide</a>, or
+<button type="button" class="vdb-audience-button" data-vdb-audience="dev">show the technical manual</button>.</p>
+</div>
+{%- endif %}
+{{ super() }}
+{% endblock content %}
 
 {% block footer %}
 {{ super() }}

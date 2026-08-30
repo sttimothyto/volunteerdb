@@ -94,3 +94,100 @@ body[data-theme="dark"] .highlight {
   font-size: 0.85rem;
   text-align: center;
 }
+
+/* ---------- the two audiences (conf.py, _templates/sidebar/audience.html) ---------- */
+
+/* technical sidebar groups, and the notice on technical pages, trade places
+ * on the switch; the attribute is set in <head> so neither flashes */
+html:not([data-audience="dev"]) .vdb-dev-only {
+  display: none;
+}
+
+html[data-audience="dev"] .vdb-dev-notice {
+  display: none;
+}
+
+.vdb-audience {
+  padding: var(--sidebar-item-spacing-vertical) var(--sidebar-item-spacing-horizontal);
+  font-size: var(--font-size--small);
+  color: var(--color-sidebar-caption-text);
+}
+
+.vdb-audience-label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.vdb-audience-label input {
+  margin-top: 0.2em;
+  accent-color: var(--color-brand-primary);
+}
+
+.vdb-audience-button {
+  font: inherit;
+  color: var(--color-brand-content);
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---------- live search results (_templates/sidebar/search.html, vdb-manual.js) ---------- */
+
+.vdb-search {
+  position: relative;
+}
+
+.vdb-search-results {
+  position: absolute;
+  left: var(--sidebar-item-spacing-horizontal);
+  right: var(--sidebar-item-spacing-horizontal);
+  top: 100%;
+  z-index: 20;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--color-background-primary);
+  border: 1px solid var(--color-background-border);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.15);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.vdb-search-results li a {
+  display: block;
+  padding: 0.4rem var(--sidebar-item-spacing-horizontal);
+  color: inherit;
+  text-decoration: none;
+}
+
+.vdb-search-results li[aria-selected="true"] a,
+.vdb-search-results li a:hover {
+  background: var(--color-sidebar-item-background--hover);
+}
+
+.vdb-hit-title {
+  display: block;
+  font-weight: 600;
+}
+
+.vdb-hit-section {
+  display: block;
+  font-size: var(--font-size--small--2);
+  color: var(--color-foreground-muted);
+}
+
+.vdb-hit-snippet {
+  display: block;
+  font-size: var(--font-size--small);
+  color: var(--color-foreground-secondary);
+}
+
+.vdb-hit-empty {
+  padding: 0.4rem var(--sidebar-item-spacing-horizontal);
+  font-size: var(--font-size--small);
+  color: var(--color-foreground-muted);
+}
