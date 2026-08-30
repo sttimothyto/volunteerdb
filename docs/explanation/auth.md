@@ -1,272 +1,289 @@
 # Authentication design
 
-The login system is shaped by its population: a few hundred parishioners of
-every age and technical comfort level, no help desk, and one part-time
-administrator. Every choice below trades a little orthodoxy for a lot less
-support burden — without giving up the security properties that matter for
-a database of names, phone numbers, and children's-ministry rosters.
+The population shapes the login system. The users are a few hundred
+parishioners of every age and every level of technical comfort. There is no
+help desk, and there is one part-time administrator. Every choice below trades
+a little orthodoxy for a lot less support work. None of them gives up a
+security property that matters for a database of names, phone numbers and
+children's-ministry rosters.
 
 ## Passwords are optional
 
-One login form, two paths behind it:
+One login form has two paths behind it:
 
-- **Email + password** — verified with argon2. Available to anyone who set a
-  password, whether when redeeming their invite or later from **/account**.
-- **Email alone (OTP)** — leave the password blank and a 6-digit code is
-  emailed; typing it in completes sign-in. Codes live 10 minutes, allow 5
-  attempts, and can be re-sent after 60 seconds; only an argon2 hash of the
-  code is stored.
+- **Email + password**. The app checks the password with argon2. This path is
+  open to anyone who set a password, either when they redeemed their invite or
+  later on **/account**.
+- **Email alone (OTP)**. Leave the password blank, and the app emails a 6-digit
+  code. Type the code to complete the sign-in. A code lives 10 minutes and
+  stops after 5 wrong attempts. The app can send a new code after 60 seconds.
+  It stores only an argon2 hash of the code.
 
-The OTP path exists because "I forgot my password" is the dominant failure
-mode for occasional users. A volunteer who signs in twice a year can stay
-*permanently password-less*; their security rests on their mailbox — which
-is exactly where a password reset would rest anyway, so the OTP path gives
-up nothing while removing the reset dance. The one real restriction:
-OTP-only accounts cannot use the JSON API (tokens are issued against a
-password), which in practice affects only the administrator.
+The OTP path exists because "I forgot my password" is the most common failure
+for an occasional user. A volunteer who signs in twice a year can stay
+*permanently password-less*. Their security then rests on their mailbox. A
+password reset would rest on the same mailbox, so the OTP path gives up
+nothing and removes the reset dance. The one real restriction: an OTP-only
+account cannot use the JSON API, because the API issues a token against a
+password. In practice that affects only the administrator.
 
 ## What a password has to be
 
-The rules live in one module, `volunteerdb/passwords.py`, and are enforced in
-the service layer — so the GUI, the JSON API, the seed script and the deploy's
-admin bootstrap all get the same answer. They come from [NIST SP 800-63B
+The rules live in one module, `volunteerdb/passwords.py`. The service layer
+enforces them, so the GUI, the JSON API, the seed script and the deploy's
+admin bootstrap all get the same answer. The rules come from [NIST SP 800-63B
 rev. 4 §3.1.1.2](https://pages.nist.gov/800-63-4/sp800-63b.html), *Password
 Verifiers*:
 
-- **At least 15 characters**, because a password here is single-factor: it
-  opens the session by itself. (The spec's eight-character floor applies only
-  to passwords used *as part of* multi-factor authentication.) Fifteen sounds
-  harsh until you notice nobody has to type one at all — the emailed-code path
-  is always there, and the guidance on every form asks for a phrase of four or
-  five words rather than a mangled word.
-- **At most 128**, well past the "at least 64" the spec asks verifiers to
-  permit; the cap only bounds the argon2 work a single request can demand.
-  Concurrency is bounded separately: each pass holds 64 MiB while it runs, so
-  at most six run at once (`auth._PASSWORD_LIMITER`) and the rest queue —
-  otherwise a burst of sign-ins could ask for more memory than the box has.
-- **No composition rules.** No required capital, digit or symbol — the spec
-  forbids them ("SHALL NOT impose other composition rules"), and they push
-  people towards `Parish2026!` and away from four random words.
-- **Everything is a legal character**: printing ASCII, spaces, Unicode,
-  counted by code point. Passwords are NFC-normalized before hashing so a
-  phrase typed on a Mac and on a phone hash the same.
-- **A blocklist, compared against the whole password.** Deliberately a small
-  one: the spec says large lists add little because online guessing is already
-  rate-limited, and the 15-character floor already excludes nearly everything
-  in the usual breach corpora. What is listed are the *bases* — folding undoes
-  padding, doubling and leetspeak, so `P@ssw0rd12345678`, `passwordpassword`
-  and `MyPassword-2026!` all land on `password`. Alongside them sit
-  context-specific terms the spec names: the service's own names and the
-  account's email address.
+- **At least 15 characters**, because a password here is a single factor: it
+  opens the session by itself. The spec's 8-character floor applies only to a
+  password used *as part of* multi-factor authentication. A floor of 15 sounds
+  harsh until you notice that nobody has to type one at all. The emailed-code
+  path is always there. The guidance on every form asks for a phrase of 4 or 5
+  words rather than a mangled word.
+- **At most 128**. That is well past the "at least 64" the spec asks a
+  verifier to permit. The cap only bounds the argon2 work that a single request
+  can demand. Concurrency has its own bound. Each pass holds 64 MiB while it
+  runs, so at most 6 run at once (`auth._PASSWORD_LIMITER`) and the rest queue.
+  Without that bound, a burst of sign-ins could ask for more memory than the
+  box has.
+- **No composition rules.** The app requires no capital, digit or symbol. The
+  spec forbids such rules ("SHALL NOT impose other composition rules"). They
+  push people towards `Parish2026!` and away from 4 random words.
+- **Everything is a legal character**: printable ASCII, spaces and Unicode,
+  counted by code point. The app normalizes a password to NFC before it hashes
+  it. A phrase typed on a Mac and on a phone then hashes the same.
+- **A blocklist, compared against the whole password.** The list is small on
+  purpose. The spec says a large list adds little, because the rate limit
+  already slows online guesses. The 15-character floor already excludes nearly
+  everything in the usual breach corpora. The list holds the *bases*: a fold
+  strips extra characters, repeats and leetspeak, so `P@ssw0rd12345678`,
+  `passwordpassword` and `MyPassword-2026!` all land on `password`. Next to
+  them sit the context-specific terms the spec names: the service's own names
+  and the account's email address.
 - **Never expires.** "SHALL NOT require subscribers to change passwords
-  periodically." A change is forced only on evidence of compromise, which is
-  what an admin's *re-invite* does.
-- **No hints, no security questions.** Both are prohibited outright, and
+  periodically." The app forces a change only on evidence of compromise, which
+  is what an admin's *re-invite* does.
+- **No hints, no security questions.** The spec prohibits both outright, and
   neither exists here.
 
-Rejections say which rule was hit and what to do instead, because the spec
-requires the reason *and* guidance towards a strong choice. Existing passwords
-are not re-checked at sign-in: the rules apply when a password is set, and
-nobody is locked out of an account whose password predates them.
+A rejection says which rule the password hit and what to do instead, because
+the spec requires the reason *and* guidance towards a strong choice. The app
+does not re-check a current password at sign-in. The rules apply when someone
+sets a password, so an account whose password predates them stays open.
 
-Storage is argon2id at RFC 9106's 64 MiB / t=3 / p=4, salted per password, with
-the cost factors written into the stored hash — raise them and every password
-re-stretches on its owner's next sign-in. The one recommendation not followed
-is the extra keyed hash ("pepper"): its key "SHALL be stored separately from
-the hashed passwords", and on a single VM with no HSM it would live in
-`/etc/volunteerdb/env` beside the database credentials, which buys the appearance
-of separation rather than separation.
+The app stores a password as argon2id at RFC 9106's 64 MiB / t=3 / p=4, with a
+salt for each password. The stored hash carries the cost factors, so a raise
+re-stretches every password on its owner's next sign-in. The one
+recommendation the app does not follow is the extra keyed hash (the "pepper").
+Its key "SHALL be stored separately from the hashed passwords". On a single VM
+with no HSM the key would live in `/etc/volunteerdb/env` beside the database
+credentials. That buys the appearance of separation, not separation.
 
 ## No self-signup, invites instead
 
-Accounts are [provisioned by an admin](../how-to/manage-users.md) and
-activated through single-use, time-limited invite links. An account is created *for*
-somebody, so it adopts the volunteer record at the same email address
-unless the admin picks one explicitly — an unlinked account signs in
-successfully and then sees an empty app, which reads as a broken login
-rather than as missing configuration. The match is refused when it is not
-unambiguous: a family-shared address holds two volunteers, and a volunteer
-may hold only one account. In a parish the population is
-*known* — an open registration form would only add spam handling and
-identity doubt.
+An admin [provisions each account](../how-to/manage-users.md), and a
+single-use, time-limited invite link activates it. The admin creates an
+account *for* somebody, so it adopts the volunteer record at the same email
+address unless the admin picks one explicitly. An unlinked account signs in
+and then sees an empty app, which reads as a broken login rather than as a
+setup problem. The app refuses the match when it is not unambiguous: a
+family-shared address holds 2 volunteers, and a volunteer can hold only one
+account. In a parish the population is *known*. An open registration form
+would only add spam and identity doubt.
 
 ## Resets: two ways, both short-lived
 
-The invite link doubles as the password-reset link (re-invite = fresh link, old
-password invalidated), which keeps the admin's side to a single button. Because
-it *is* a reset credential sitting in a mailbox, it expires: 7 days by
-default (`VDB_INVITE_TTL_HOURS`). That is a deliberate deviation from the
-24-hour ceiling SP 800-63B §4.2.1.2 puts on an emailed recovery code — many
-parishioners read email weekly, and what the link grants (a fresh account, or
-a reset on an account whose fallback sign-in is an emailed code anyway) is
-modest. Token and expiry are set and cleared as
-a pair, so a link that has run out is refused exactly like one that never
-existed — same message, no hint which.
+The invite link doubles as the password-reset link. A re-invite sends a fresh
+link and invalidates the old password, which keeps the admin's side to a
+single button. Because the link *is* a reset credential that sits in a mailbox,
+it expires: 7 days by default (`VDB_INVITE_TTL_HOURS`). That is a deliberate
+deviation from the 24-hour ceiling that SP 800-63B §4.2.1.2 puts on an emailed
+recovery code. Many parishioners read email weekly. And what the link grants
+is modest: a fresh account, or a reset on an account whose fallback sign-in is
+an emailed code anyway.
 
-That doubling is precisely why a ministry leader's invite button
-([who may](permissions.md#accounts-enter-the-model-at-the-edge)) is *not*
-allowed to reuse the re-invite path: re-inviting invalidates a password, and
-that hammer stays with admins. A leader's button refuses any account carrying
-a password or a recorded login, so it can only ever arm a link on an account
-nobody has used — where there is no credential to invalidate. A link that
-expired unused may therefore be replaced by a leader; a password may not.
+The app sets and clears the token and the expiry as a pair. It therefore
+refuses an expired link exactly like one that never existed: the same message,
+and no hint which.
+
+That double duty is precisely why a team leader's invite button
+([who can](permissions.md#accounts-enter-the-model-at-the-edge)) cannot reuse
+the re-invite path. A re-invite invalidates a password, and that hammer stays
+with admins. A leader's button refuses any account that carries a password or
+a recorded login. It can therefore only arm a link on an account nobody has
+used, where there is no credential to invalidate. A leader can replace a link
+that expired unused; a leader cannot replace a password.
 
 The everyday reset needs no admin at all. Anyone can sign in with an emailed
-code and set a password from **/account** (header gear → *Password &
-sign-in*). §4.1.2.1 is explicit that this is not account recovery:
-"Replacement of a forgotten password where the subscriber can authenticate with
-one or more other authenticators is considered to be the binding of a new
-authenticator." Every account here has that second authenticator. So:
+code and set a password on **/account** (header gear → *Password &
+sign-in*). SP 800-63B §4.1.2.1 is explicit that this is not account recovery.
+When the subscriber can authenticate with another authenticator, the
+replacement of a forgotten password "is considered to be the binding of a new
+authenticator". Every account here has that second authenticator. So:
 
-- a session that signed in **with the password** must re-type it to change it —
-  otherwise an unattended browser could lock its owner out;
-- a session that signed in **with an emailed code** is not asked for it, having
-  already proved the one thing a reset link proves;
-- either way the account's own address is emailed a "your password changed"
-  notice, through a channel the browser making the change does not control
-  (§4.1.2 requires exactly that independence).
+- A session that signed in **with the password** must type it again to change
+  it. Without that check, an unattended browser could lock its owner out.
+- The app does not ask a session that signed in **with an emailed code** for
+  the password. That session has already proved the one thing a reset link
+  proves.
+- Either way, the app emails the account's own address a *Your VolunteerDB
+  password changed* notice. That notice travels through a channel that the
+  browser which makes the change does not control. SP 800-63B §4.1.2 requires
+  exactly that independence.
 
 Expiry is therefore never a lockout, which is what lets the window be short.
 
 ## Changing the address
 
 For an account holder the email address is not contact data. It is the login
-identifier, and on the passwordless path it *is* the credential: anyone who
-reads that mailbox can sign in with a code. Repointing it is therefore closer
-to binding a new authenticator than to correcting a phone number, and until
-now the app had it both ways — the sign-in address could not be changed at
-all, while the address on the volunteer record was an ordinary edit that any
-leader, or the volunteer themself, could make to an address nobody had
-checked. A typo cost a volunteer every notice the app sends and the sign-in
-code with it, and handed the account to whoever owned the typo.
+identifier, and on the password-less path it *is* the credential: anyone who
+reads that mailbox can sign in with a code. A change of that address therefore
+binds a new authenticator; it does not merely correct a phone number.
 
-So **your own** address moves only after the new one proves itself. Typing it —
-on **/account**, or in the edit dialog on your own profile — stages it and
-mails a single-use link to the address being claimed. Nothing on file changes
-until that link is opened; the account keeps working at the old address for the
-whole window, which is what makes expiry harmless. Asking again replaces the
-pending address and kills the previous link, so a typo is fixed by retyping
-rather than by waiting.
+Until now the app had it both ways. The sign-in address could not change at
+all. The address on the volunteer record was an ordinary edit. Any leader, or
+the volunteer themself, could point it at an address nobody had checked. A
+typo cost a volunteer every notice the app sends and the sign-in code with it.
+It also handed the account to whoever owned the typo.
 
-The address being *replaced* hears about it too, twice, and this is the part
-that matters most. §4.1.2 requires notification "via a mechanism independent of
-the transaction", and here that independence is the entire defence: a session
-someone else is driving can type a new address, but it cannot suppress what
-lands in the mailbox the account is currently reachable at. The first message
-goes out **at request time**, while it is still actionable — the old address
-still signs in, and the change can be called off from /account before the link
-is ever opened. The second is the receipt at confirmation, the moment the
-binding really changes (the same shape as the "your password changed" notice),
-and it says plainly that it is the last message that mailbox will get. Without
-the first, a hijacked session takes an account silently; without the second, a
-volunteer who missed the warning never learns why the app went quiet.
+So **your own** address moves only after the new one proves itself. You type
+it on **/account** or in the edit dialog on your own profile. The app stages
+it and mails a single-use link to the address you claimed. Nothing on file
+changes until someone opens that link. The account still works at the old
+address for the whole window, which is what makes expiry harmless. A second
+request replaces the staged address and kills the previous link, so a retype
+fixes a typo and nobody has to wait.
 
-The link lasts **24 hours** — the ceiling SP 800-63B §4.2.1.2 puts on a code
-sent to an email address, taken straight this time rather than stretched the
-way the invite link is. The invite's week-long deviation buys reachability for
-someone who would otherwise be locked out; here nothing is lost by missing the
-window, so there is nothing to trade the spec's number against. Hence a
-constant in `services/users.py`, not a setting: it is not a parish preference.
+The address that the change *replaces* hears about it too, twice, and this is
+the part that matters most. SP 800-63B §4.1.2 requires a notice through "a
+mechanism independent of the transaction", and here that independence is the
+entire defence. A session someone else drives can type a new address, but it cannot
+suppress what lands in the mailbox the account currently uses.
 
-Opening the link only *offers* the change; a button applies it. Mail scanners
-and corporate link-checkers follow URLs on their own, and a single-use token
-that acts on a GET is a token spent by the recipient's antivirus before they
-ever see it — the same reason the invite page asks for a press. And unlike the
-invite link, this one signs nobody in: it grants one address swap and nothing
+The first message goes out **at request time**, while the change is still
+open. The old address still signs in, and its owner can cancel the change from
+/account before anyone opens the link. The second is the receipt at
+confirmation, the moment the address really changes. It looks like the *Your
+VolunteerDB password changed* notice, and it says plainly that this is the
+last message that mailbox will get. Without the first, a hijacked session
+takes an account silently. Without the second, a volunteer who missed the
+warning never learns why the app went quiet.
+
+The link lasts **24 hours**, the ceiling SP 800-63B §4.2.1.2 puts on a code
+sent to an email address. This time the app takes the number straight, rather
+than stretched the way the invite link is. The invite's week-long deviation
+buys reachability for someone who would otherwise stay locked out. Here a
+missed window loses nothing, so there is nothing to trade the spec's number
+against. Hence a constant in `services/users.py`, not a setting: it is not a
+parish preference.
+
+To open the link only *offers* the change; a button applies it. Mail scanners
+and corporate link-checkers follow URLs on their own. A single-use token that
+acts on a GET is a token the recipient's antivirus spends before they ever see
+it. That is the same reason the invite page asks for a click. And unlike the
+invite link, this one signs nobody in. It grants one address swap and nothing
 else, so a leaked link costs the address, not the account.
 
-Confirmation moves **both** addresses together — the login identifier and the
+Confirmation moves **both** addresses together: the login identifier and the
 volunteer record behind it. That is what carries the change to every team the
-volunteer serves on: memberships hold no address of their own, so rosters,
+volunteer serves on. A membership holds no address of its own, so rosters,
 event notices, substitution calls and the exported spreadsheet all read the
-volunteer record live and pick up the new address on the next
-send. A one-time code still in flight is discarded at the same moment: it was
-mailed to the old mailbox to prove control of an identifier that no longer
-exists, and must not be spendable against the new one.
+volunteer record live. They pick up the new address on the next send.
 
-Two addresses may be *claimed* at once — `pending_email` is deliberately not
-unique, because uniqueness there would let anyone park an address and lock its
-real owner out. Only the first to confirm gets it; the second confirmation
-finds the address taken, is refused, and clears its own dead link.
+The app discards a one-time code still in flight at the same moment. That code
+went to the old mailbox to prove control of an identifier that no longer
+exists. It must not be spendable against the new one.
 
-**Somebody else's** address stays an ordinary edit. A leader correcting a
-bounced address is usually doing it *because* the volunteer cannot read their
-mail, so waiting on them to confirm would make the correction impossible; the
-same goes for the roster spreadsheet import, where a staged change would leave
-the sheet and the database disagreeing and the next nightly sync "correcting"
-it back. Those edits touch the volunteer record only — never the login address
-— and every one of them is in `volunteer_history` with the actor who made it.
-The residual risk is honest and worth stating: a leader can still point a
-teammate's contact address somewhere else. What that does *not* do is move
-their sign-in address, and `invite_volunteer` refuses to mint an account at an
-address another account already holds.
+Two people can *claim* the same address at once. `pending_email` is
+deliberately not unique, because a unique constraint there would let anyone
+park an address and lock its real owner out. Only the first to confirm gets
+it. The app refuses the second confirmation: it finds the address taken and
+clears its own dead link. The app also throttles address-change requests to 5
+per account per 15 minutes. It charges that throttle before it learns whether
+the address is taken.
 
-The JSON API declines to change your own address rather than half-doing it: it
-sends no email by design (see `api/events.py`), so it cannot run the exchange,
-and a `PATCH /api/volunteers/{id}` that quietly dropped the field would look
-like success. `GET /api/auth/me` reports `pending_email` and its expiry, never
-the token.
+**Somebody else's** address stays an ordinary edit. A leader who corrects a
+bounced address usually does so *because* the volunteer cannot read their
+mail. To wait for the volunteer to confirm would make the correction
+impossible. The same goes for the roster spreadsheet import. A staged change
+there would leave the sheet and the database in disagreement, and the next
+nightly sync would "correct" it back. Those edits touch the volunteer record
+only, never the login address, and every one of them is in `volunteer_history`
+with the actor who made it.
+
+The residual risk is honest and worth a plain statement: a leader can still
+point a teammate's contact address somewhere else. What that does *not* do is
+move their sign-in address. And `invite_volunteer` refuses to mint an account
+at an address that another account already holds.
+
+The JSON API declines to change your own address rather than half-do it. The
+API sends no email by design (see `api/events.py`), so it cannot run the
+exchange. A `PATCH /api/volunteers/{id}` that quietly dropped the field would
+look like success. `GET /api/auth/me` reports `pending_email` and its expiry,
+never the token.
 
 ## Anti-enumeration throughout
 
-The login form will not confirm whether an email has an account: unknown
-emails burn a dummy argon2 check so timing looks identical, and the OTP
-step responds "code sent" either way. Combined with throttling — 5 failures
-per email and 30 per IP per 15 minutes, 10 OTP requests per IP per hour —
-this keeps the volunteer directory from leaking through the front door. That
-limit is also what SP 800-63B §3.2.2 requires of any password verifier, so a
-mistyped *current* password on /account spends from the same per-email budget:
-it is one more guess at the same secret. Throttling is in-process (a sliding
-window), which is exactly right for a single-process deployment and would be
-the first thing to revisit if the app ever scaled out.
+The login form will not confirm whether an email has an account. An unknown
+email burns a dummy argon2 check, so the timing looks identical. The OTP step
+gives every address the same answer: *If that address has an account, a
+sign-in code is on its way.* Throttles add to that: 5 failures per email and
+30 per IP per 15 minutes, and 10 OTP requests per IP per hour. Together they
+keep the volunteer directory from a leak through the front door.
 
-Code *entry* is deliberately not throttled on its own. A code dies after five
-wrong guesses, and requesting a fresh one is capped at 10 per IP per hour, so
-the ceiling is roughly 50 guesses an hour against a six-digit space — about
-one in twenty thousand odds of a hit in a year of sustained attack. Adding a
-third limiter to the verify step would buy nothing and would give a wrong-code
-typo the power to lock a volunteer out.
+That limit is also what SP 800-63B §3.2.2 requires of any password verifier.
+So a mistyped *current* password on /account spends from the same per-email
+budget: it is one more guess at the same secret. The throttle is in-process, a
+sliding window. That is exactly right for a single-process deployment, and it
+would be the first thing to revisit if the app ever scaled out.
+
+The app deliberately does not throttle code *entry* on its own. A code dies
+after 5 wrong guesses, and the app caps requests for a fresh one at 10 per IP
+per hour. The ceiling is therefore roughly 50 guesses an hour against a
+6-digit space. That is about 1 in 20,000 odds of a hit in each hour of
+sustained attack. A third limiter on the verify step would buy nothing, and it
+would give a wrong-code typo the power to lock a volunteer out.
 
 ## Sessions: remember-me with an app-side clock
 
-"Keep me signed in" issues a 90-day session, otherwise 1 day. The expiry
-that counts is stored **server-side** and checked on every action —
-including websocket events, which server-rendered NiceGUI makes the actual
-carrier of user activity; the cookie's own `max_age` (92 days) is just an
-outer bound. Sign-out clears the session; rotating the storage secret
-[signs everyone out at once](../how-to/rotate-secrets.md). Production adds
-`Secure` to the cookie since Caddy terminates TLS.
+*Keep me signed in* issues a 90-day session; otherwise a session lasts 1 day.
+The app stores the expiry that counts **server-side** and checks it on every
+action. That includes websocket events, which server-rendered NiceGUI makes
+the actual carrier of user activity. The cookie's own `max_age` (92 days) is
+just an outer bound. Sign-out clears the session, and a rotation of the
+storage secret [signs everyone out at once](../how-to/rotate-secrets.md).
+Production adds `Secure` to the cookie, because Caddy terminates TLS.
 
-Loading `/login`, an invite link or an address-confirmation link while signed
-out also **mints a fresh session id**. NiceGUI assigns that id on a browser's
-first request and never changes it, and the server's per-user storage is keyed
-by it — so an id planted on somebody's browser (a shared kiosk, an XSS on a
-sibling subdomain) would otherwise become the *authenticated* id the moment they
-signed in. It is rotated on the way in rather than at sign-in itself because
-sign-in happens over the websocket, where no response is left to carry a
-`Set-Cookie`. A signed-in browser is never rotated: that would read as a random
-logout.
+When a signed-out browser opens `/login`, an invite link or an
+address-confirmation link, the app also **mints a fresh session id**. NiceGUI
+assigns that id on a browser's first request and never changes it, and the
+server keys its per-user storage by it. An id planted on somebody's browser (a
+shared kiosk, an XSS on a sibling subdomain) would otherwise become the
+*authenticated* id at sign-in. The app rotates the id on the way in rather
+than at sign-in itself. Sign-in happens over the websocket, where no response
+is left to carry a `Set-Cookie`. The app never rotates a signed-in browser:
+that would read as a random logout.
 
 ## Every emailed link is hashed like a password
 
-`POST /api/auth/login` returns a personal Bearer token whose SHA-256 digest
-is all the server keeps — a leaked database does not leak usable tokens
-(the migration that introduced hashing invalidated every pre-hashing token on
-this principle).
-Each login rotates the token, so revocation is "log in again" or
-deactivate the account. Forcing a reset (*re-invite*) revokes it too: it was
-issued against the password being invalidated, and that route is what an admin
-reaches for on an account they think is compromised.
-See [Use the JSON API](../how-to/api-recipes.md).
+`POST /api/auth/login` returns a personal Bearer token, and the server keeps
+only its SHA-256 digest, so a leaked database does not leak a usable token.
+The migration that introduced the hash invalidated every earlier token on this
+principle. Each login rotates the token, so to revoke one you log in again or
+deactivate the account. A forced reset (*re-invite*) revokes it too, because
+the app issued the token against the password that the reset invalidates.
+That route is what an admin reaches for on an account they think is
+compromised. See [Use the JSON API](../how-to/api-recipes.md).
 
-The **invite link** and the **address-change link** are held the same way, for
-the same reason: each one signs its holder in (or moves the address the account
-signs in with), so a read of the database — or of a backup — must not hand out
-working ones. Only the digest is stored, which has a consequence worth stating
-plainly: a link that has been sent cannot be shown again by anybody, admin
-included. Handing one over means issuing a **fresh** link, and the previous one
-stops working. That is the trade every password-reset flow makes, and it is why
-the *invite sent* badge offers "send again" rather than "show me the link".
+The app holds the **invite link** and the **address-change link** the same
+way, for the same reason. Each one signs its holder in, or moves the address
+the account signs in with. A read of the database, or of a backup, must
+therefore not hand out a live one. The app stores only the digest, which has a
+plain consequence: nobody, admin included, can show a link again after it is
+sent. To hand one over means to issue a **fresh** link, and the previous one
+goes dead. That is the trade every password-reset flow makes, and it is
+why the *invite sent* badge offers *Send again* rather than "show me the link".
 
-One-time codes go further and are argon2-hashed, like passwords — six digits is
-a small space, so a digest would be worth grinding.
+A one-time code goes further: the app hashes it with argon2, like a password.
+6 digits is a small space, so a plain digest would be worth a grind.
