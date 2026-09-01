@@ -3,6 +3,8 @@
 import csv
 from io import StringIO
 
+import pytest
+
 from volunteerdb.models import FieldType, TeamRole
 from volunteerdb.services import custom_fields, memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
@@ -218,30 +220,20 @@ async def test_volunteer_only_row_needs_no_team(database, env):
     assert report.memberships_created == 0
 
 
-async def test_xlsx_upload_rejected_with_pointer_to_csv(database, env):
-    report = ok(
-        await importer.run_import(
-            env, b"PK\x03\x04 pretend workbook", dry_run=False, user_id=None
-        )
-    )
+@pytest.mark.parametrize(
+    ("content", "complaint"),
+    [
+        pytest.param(b"PK\x03\x04 pretend workbook", "no longer supported", id="xlsx"),
+        pytest.param(b"foo,bar\n1,2\n", "cannot identify CSV", id="unknown header"),
+        pytest.param(b"\xc3\x28\xa0\xa1", "cannot read file", id="not utf-8"),
+    ],
+)
+async def test_a_file_that_is_not_a_roster_csv_is_refused_whole(
+    database, env, content, complaint
+):
+    report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
     assert report.has_errors and not report.applied
-    assert "no longer supported" in report.errors[0].message
-
-
-async def test_unrecognized_header_rejected(database, env):
-    report = ok(
-        await importer.run_import(env, b"foo,bar\n1,2\n", dry_run=False, user_id=None)
-    )
-    assert report.has_errors and not report.applied
-    assert "cannot identify CSV" in report.errors[0].message
-
-
-async def test_non_utf8_rejected(database, env):
-    report = ok(
-        await importer.run_import(env, b"\xc3\x28\xa0\xa1", dry_run=False, user_id=None)
-    )
-    assert report.has_errors and not report.applied
-    assert "cannot read file" in report.errors[0].message
+    assert complaint in report.errors[0].message
 
 
 async def test_export_includes_custom_columns_and_reimport_ignores_them(database, env):

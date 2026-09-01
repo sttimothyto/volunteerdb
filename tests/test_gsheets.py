@@ -402,19 +402,19 @@ async def test_backoff_grows_and_is_capped(monkeypatch):
     assert all(s <= gsheets.RETRY_MAX_DELAY for s in slept)
 
 
-async def test_google_s_own_retry_after_wins_over_our_backoff(monkeypatch):
+@pytest.mark.parametrize(
+    ("header", "waited"),
+    [
+        pytest.param("7", 7.0, id="google's own delay wins over our backoff"),
+        # a header we misread must not park the nightly job for an hour
+        pytest.param("3600", gsheets.RETRY_MAX_DELAY, id="an absurd delay is capped"),
+    ],
+)
+async def test_retry_after_is_honoured_up_to_the_cap(monkeypatch, header, waited):
     slept = _no_sleep(monkeypatch)
-    client, _ = _client(_statuses(429, headers={"Retry-After": "7"}))
+    client, _ = _client(_statuses(429, headers={"Retry-After": header}))
     ok(await gsheets.read_csv(client, "s"))
-    assert slept == [7.0]
-
-
-async def test_an_absurd_retry_after_is_capped(monkeypatch):
-    """A header we misread must not park the nightly job for an hour."""
-    slept = _no_sleep(monkeypatch)
-    client, _ = _client(_statuses(429, headers={"Retry-After": "3600"}))
-    ok(await gsheets.read_csv(client, "s"))
-    assert slept == [gsheets.RETRY_MAX_DELAY]
+    assert slept == [waited]
 
 
 async def test_giving_up_reports_the_ordinary_message(monkeypatch):

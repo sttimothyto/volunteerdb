@@ -92,8 +92,7 @@ def _remap(cls: str, dark: bool = False) -> str:
     ],
 )
 def test_light_tokens(fg, bg, floor, what):
-    ratio = contrast(LIGHT[fg], LIGHT[bg])
-    assert ratio >= floor, f"{what}: {fg} on {bg} is {ratio:.2f}:1, needs {floor}:1"
+    _token_pair(LIGHT, fg, bg, floor, what)
 
 
 @pytest.mark.parametrize(
@@ -112,7 +111,11 @@ def test_light_tokens(fg, bg, floor, what):
     ],
 )
 def test_dark_tokens(fg, bg, floor, what):
-    ratio = contrast(DARK[fg], DARK[bg])
+    _token_pair(DARK, fg, bg, floor, what)
+
+
+def _token_pair(palette: dict[str, str], fg: str, bg: str, floor: float, what: str):
+    ratio = contrast(palette[fg], palette[bg])
     assert ratio >= floor, f"{what}: {fg} on {bg} is {ratio:.2f}:1, needs {floor}:1"
 
 
@@ -124,28 +127,38 @@ def test_the_header_reads():
     )
 
 
-@pytest.mark.parametrize(
-    "name", ["primary", "secondary", "positive", "negative", "warning", "info", "muted"]
-)
-def test_light_brand_colours_work_as_fill_and_as_text(name):
-    """A brand colour is painted two ways: as a button or badge with white
-    text on it, and as text on the page (text-negative, a flat button)."""
-    colour = BRAND[name]
-    assert contrast("#ffffff", colour) >= TEXT, f"white on {name} {colour}"
-    assert contrast(colour, LIGHT["--vdb-bg"]) >= TEXT, f"{name} as text on the page"
-    assert contrast(colour, LIGHT["--vdb-surface"]) >= TEXT, f"{name} as text on a card"
+BRAND_NAMES = [
+    "primary",
+    "secondary",
+    "positive",
+    "negative",
+    "warning",
+    "info",
+    "muted",
+]
 
 
+@pytest.mark.parametrize("name", BRAND_NAMES)
 @pytest.mark.parametrize(
-    "name", ["primary", "secondary", "positive", "negative", "warning", "info", "muted"]
+    ("mode", "label_on_fill"),
+    [
+        # light: a button or badge carries white text on the colour
+        pytest.param("light", "#ffffff", id="light"),
+        # dark: theme.css gives dark-mode fills an ink label instead
+        pytest.param("dark", INK_ON_DARK_FILLS, id="dark"),
+    ],
 )
-def test_dark_brand_colours_work_as_fill_and_as_text(name):
-    """In dark mode the same colour must read as text on the dark page AND
-    carry an ink label as a fill (theme.css gives dark fills ink text)."""
-    colour = DARK[f"--q-{name}"]
-    assert contrast(INK_ON_DARK_FILLS, colour) >= TEXT, f"ink on {name} {colour}"
-    assert contrast(colour, DARK["--vdb-bg"]) >= TEXT, f"{name} as text on the page"
-    assert contrast(colour, DARK["--vdb-surface"]) >= TEXT, f"{name} as text on a card"
+def test_brand_colours_work_as_fill_and_as_text(mode, label_on_fill, name):
+    """A brand colour is painted two ways in each mode: as a fill under its
+    label, and as text on the page and on a card (text-negative, a flat
+    button)."""
+    palette = LIGHT if mode == "light" else DARK
+    colour = BRAND[name] if mode == "light" else DARK[f"--q-{name}"]
+    assert contrast(label_on_fill, colour) >= TEXT, f"label on {name} {colour}"
+    assert contrast(colour, palette["--vdb-bg"]) >= TEXT, f"{name} as text on the page"
+    assert contrast(colour, palette["--vdb-surface"]) >= TEXT, (
+        f"{name} as text on a card"
+    )
 
 
 @pytest.mark.parametrize("cls", ["text-gray-400", "text-gray-500"])

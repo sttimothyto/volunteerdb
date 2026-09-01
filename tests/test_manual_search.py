@@ -177,11 +177,13 @@ def test_chunk_directory_walks_the_pages_and_skips_sphinxs_own(tmp_path):
 
 
 def test_folding_lands_the_forms_of_a_word_together():
-    assert fold("settings") == fold("setting")
-    assert fold("passwords") == fold("password") == "password"
-    assert fold("policies") == fold("policy")
-    assert fold("deployed") == fold("deploying") == fold("deploy")
-    assert fold("changes") == fold("changed") == fold("changing")
+    # each family lands on one stem -- pinned, so that a fold returning "" for
+    # everything cannot pass by making every family trivially equal
+    assert [fold(w) for w in ("settings", "setting")] == ["sett"] * 2
+    assert [fold(w) for w in ("passwords", "password")] == ["password"] * 2
+    assert [fold(w) for w in ("policies", "policy")] == ["policy"] * 2
+    assert [fold(w) for w in ("deployed", "deploying", "deploy")] == ["deploy"] * 3
+    assert [fold(w) for w in ("changes", "changed", "changing")] == ["chang"] * 3
     assert fold("class") == "class", "a double s is not a plural"
     assert tokenize("A bit of the Manual's search!") == [
         "bit",

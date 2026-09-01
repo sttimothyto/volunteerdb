@@ -77,23 +77,33 @@ async def test_send_email_posts_to_smtp2go():
     assert payload["text_body"] == "Body text"
 
 
-async def test_send_email_api_error_returns_false():
-    mailer = _mailer(lambda request: httpx.Response(500, json={"error": "boom"}))
-    assert await mailer.send("to@example.org", "s", "b") is False
+def _refused(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(500, json={"error": "boom"})
 
 
-async def test_send_email_transport_error_returns_false():
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("no route", request=request)
-
-    assert await _mailer(handler).send("to@example.org", "s", "b") is False
+def _unreachable(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("no route", request=request)
 
 
-async def test_send_email_rejects_a_zero_succeeded_reply():
-    mailer = _mailer(
-        lambda request: httpx.Response(200, json={"data": {"succeeded": 0}})
-    )
-    assert await mailer.send("to@example.org", "s", "b") is False
+def _nobody_succeeded(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json={"data": {"succeeded": 0}})
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        pytest.param(_refused, id="the API refused it"),
+        pytest.param(_unreachable, id="the API was unreachable"),
+        pytest.param(_nobody_succeeded, id="200, but nobody succeeded"),
+    ],
+)
+async def test_a_send_that_did_not_go_through_is_false_and_uncounted(handler):
+    """Three ways a message fails to leave; one answer, and no allowance spent.
+    A ledger that counted attempts would shout loudest exactly when nothing
+    was getting through."""
+    quota = _Quota()
+    assert await _mailer(handler, quota).send("to@example.org", "s", "b") is False
+    assert quota.counted == []
 
 
 async def test_every_message_that_leaves_is_counted():
@@ -105,15 +115,6 @@ async def test_every_message_that_leaves_is_counted():
     )
     assert await mailer.send("to@example.org", "s", "b") is True
     assert len(quota.counted) == 1
-
-
-async def test_a_rejected_message_is_not_counted():
-    """It consumed no allowance. A ledger that counted attempts would shout
-    loudest exactly when nothing was getting through."""
-    quota = _Quota()
-    mailer = _mailer(lambda request: httpx.Response(500, json={"error": "boom"}), quota)
-    assert await mailer.send("to@example.org", "s", "b") is False
-    assert quota.counted == []
 
 
 async def test_an_unconfigured_instance_counts_nothing(capsys):
