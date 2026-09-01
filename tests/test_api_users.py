@@ -5,10 +5,10 @@ covered at the bottom: it is scoped to one volunteer on the caller's own teams.
 """
 
 import hashlib
-from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from volunteerdb.config import settings
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, users, volunteers
 
@@ -22,10 +22,14 @@ async def test_users_endpoints_admin_only(client, seeded):
     assert (await client.get("/api/users", headers=member)).status_code == 403
     r = await client.post("/api/users", json={"email": "x@example.org"}, headers=member)
     assert r.status_code == 403
-    r = await client.patch("/api/users/1", json={"is_admin": True}, headers=member)
+    async with db_session() as session:
+        admin_id = (await users.get_by_email(session, "admin@example.org")).id
+    r = await client.patch(
+        f"/api/users/{admin_id}", json={"is_admin": True}, headers=member
+    )
     assert r.status_code == 403
     assert (
-        await client.post("/api/users/1/reinvite", headers=member)
+        await client.post(f"/api/users/{admin_id}/reinvite", headers=member)
     ).status_code == 403
     assert (
         await client.post("/api/users/provision", headers=member)
@@ -248,7 +252,7 @@ async def rostered(seeded):
 
 
 async def test_volunteer_invite_is_open_to_leaders_and_core(
-    client, seeded, rostered, token_leader, token_core
+    client, seeded, rostered, token_leader, token_core, clock
 ):
     r = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_leader)
     assert r.status_code == 200, r.text
@@ -265,9 +269,9 @@ async def test_volunteer_invite_is_open_to_leaders_and_core(
         assert first_token, "the invite really is armed (as a digest)"
         # core members hold the same right; the account exists now, so this
         # exercises the re-arm path rather than creation
-        # a lapsed invite is a PAST expiry, not a missing one: the pair is
-        # set and cleared together, and ck_app_user_invite_pair now says so
-        account.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    # a lapsed invite is a PAST expiry, not a missing one: the pair is set and
+    # cleared together (ck_app_user_invite_pair), so time is what lapses it
+    clock.advance(hours=settings().invite_ttl_hours + 1)
     again = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_core)
     assert again.status_code == 200, again.text
     async with db_session() as session:
@@ -312,7 +316,7 @@ def sent_api(env) -> list[tuple[str, str, str]]:
 
 
 async def test_only_an_admin_is_handed_the_invite_link(
-    client, seeded, rostered, token_leader, token_admin, sent_api
+    client, seeded, rostered, token_leader, token_admin, sent_api, clock
 ):
     """The link signs you in as that volunteer, and a leader may add anybody to
     their own team and then edit their address — so handing them the token made
@@ -339,9 +343,7 @@ async def test_only_an_admin_is_handed_the_invite_link(
         assert account.invite_token != mailed
 
     # a second, admin-issued invite: token back, and still no mail from the API
-    async with db_session() as session:
-        lapsed = await users.account_for_volunteer(session, rostered)
-        lapsed.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    clock.advance(hours=settings().invite_ttl_hours + 1)
     sent_api.clear()
     r = await client.post(f"/api/volunteers/{rostered}/invite", headers=token_admin)
     assert r.status_code == 200, r.text

@@ -12,23 +12,17 @@ profile — and the asymmetry there: your address waits, everyone else's does
 not.
 """
 
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
-
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb import errors
 from volunteerdb.models import TeamRole
-from volunteerdb.services import mail, memberships, teams, users, volunteers
+from volunteerdb.services import memberships, teams, users, volunteers
 
-from .conftest import SLOW, mail_to
+from .conftest import SIM_MAIN, SLOW, mail_to
 from tests import mint
 from tests.conftest import db_session
-from tests.fakes import SIM_MAILER
 from tests.fp_helpers import done, ok, otp_started, refused
-
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def _volunteer_with_account(session, first="Maria", addr="maria@example.org"):
@@ -140,22 +134,25 @@ async def test_a_link_works_once(database):
         ).is_err()
 
 
-async def test_an_expired_link_is_refused_exactly_like_an_unknown_one(database):
+async def test_an_expired_link_is_refused_exactly_like_an_unknown_one(database, clock):
     async with db_session() as session:
         _v, account = await _volunteer_with_account(session)
         user_id = account.id
     async with db_session() as session:
         _user, token = done(
             await users.start_email_change(
-                session, user_id, "late@example.org", now=mint.now(), token=mint.token()
+                session,
+                user_id,
+                "late@example.org",
+                now=clock.now(),
+                token=mint.token(),
             )
         ).value
-        account = await users.get(session, user_id)
-        account.email_change_expires_at = datetime.now(UTC) - timedelta(minutes=1)
 
+    clock.advance(seconds=users.EMAIL_CHANGE_TTL.total_seconds() + 1)
     async with db_session() as session:
         assert (
-            await users.confirm_email_change(session, token, now=mint.now())
+            await users.confirm_email_change(session, token, now=clock.now())
         ).is_err()
         assert (
             await users.confirm_email_change(session, "no-such-token", now=mint.now())
@@ -423,10 +420,9 @@ async def test_an_account_with_no_volunteer_record_still_changes_its_login(datab
 
 
 async def test_editing_your_own_profile_defers_the_address_but_saves_the_rest(
-    database, monkeypatch
+    database, sim_sent
 ):
-    SIM_MAILER.sent.clear()
-    sent = SIM_MAILER.sent
+    sent = sim_sent
 
     async with db_session() as session:
         volunteer, account = await _volunteer_with_account(session)
@@ -462,14 +458,10 @@ async def test_editing_your_own_profile_defers_the_address_but_saves_the_rest(
         ).pending_email == "maria.moved@example.org"
 
 
-async def test_a_leader_correcting_someone_elses_address_applies_at_once(
-    database, monkeypatch
-):
+async def test_a_leader_correcting_someone_elses_address_applies_at_once(database):
     """The deliberate asymmetry: a leader fixes a bounced address precisely
     because the volunteer cannot read their mail, so waiting on them to
     confirm would make the correction impossible."""
-    monkeypatch.setattr(mail, "send_email", fake_ok)
-
     async with db_session() as session:
         team = ok(await teams.create(session, None, "Liturgy"))
         member = ok(
@@ -505,7 +497,3 @@ async def test_a_leader_correcting_someone_elses_address_applies_at_once(
 
     async with db_session() as session:
         assert (await volunteers.get(session, member_id)).email == "felix@example.org"
-
-
-async def fake_ok(*_args, **_kwargs) -> bool:
-    return True

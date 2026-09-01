@@ -19,6 +19,9 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 DEPLOY = REPO / "deploy"
+# deploy/ is a script directory, not a package: put it on the path for the
+# import below and take it off again once this module's tests are done, so
+# nothing else in the process resolves names through it by accident.
 sys.path.insert(0, str(DEPLOY))
 
 import siteconf  # noqa: E402  (needs the sys.path line above)
@@ -43,11 +46,19 @@ def test_site_file_loads_completely(name):
     assert site.site_name == name
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _deploy_off_the_path_afterwards():
+    yield
+    while str(DEPLOY) in sys.path:
+        sys.path.remove(str(DEPLOY))
+
+
 @pytest.mark.parametrize("name", SITE_NAMES)
 def test_timezone_is_a_real_zone(name):
     from zoneinfo import ZoneInfo
 
-    ZoneInfo(siteconf.load(name).site_timezone)
+    tz = siteconf.load(name).site_timezone
+    assert ZoneInfo(tz).key == tz
 
 
 @pytest.mark.parametrize("name", SITE_NAMES)

@@ -3,7 +3,7 @@ highest-role rule, event repointing, sign-up by collaborator members, the
 teardown ordering that must not cascade the event away, as-of history
 visibility, and the teams.delete guard."""
 
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from volunteerdb import errors
@@ -22,7 +22,7 @@ TZ = ZoneInfo("America/Toronto")
 
 
 def _at(days_ahead: int, hour: int) -> datetime:
-    return datetime.combine(date.today() + timedelta(days=days_ahead), time(hour), TZ)
+    return datetime.combine(mint.today() + timedelta(days=days_ahead), time(hour), TZ)
 
 
 async def _parish() -> dict:

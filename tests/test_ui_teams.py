@@ -6,9 +6,7 @@ managers, and a manager's rows outside their own subtree must carry no
 headcounts at all — hiding the column client-side would still ship them.
 """
 
-from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
@@ -17,11 +15,8 @@ from volunteerdb.models import TeamPage, TeamRole, TeamSheet
 from volunteerdb.services import memberships, pages, teams, users, volunteers
 
 from tests import mint
-from tests.conftest import db_session
+from tests.conftest import SIM_MAIN, SLOW, db_session, only
 from tests.fp_helpers import ok
-
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
-SLOW = 30  # conftest.SLOW: argon2 makes the dev-login round trip slow
 
 COUNT_FIELDS = ("leader", "second", "core", "member", "total")
 SEARCH_BOX = "Search teams…"
@@ -78,7 +73,7 @@ async def _parish(session) -> dict[str, int]:
 
 
 def _table(user):
-    return user.find(kind=ui.table).elements.pop()
+    return only(user.find(kind=ui.table))
 
 
 async def test_teams_table_nests_and_blanks_counts_by_permission(database):
@@ -322,7 +317,7 @@ async def test_published_page_link_and_qr_use_the_path_slug(database):
         await user.open(f"/teams/{ids['music']}")
         await user.should_see("Public page")
         await user.should_see("Download QR Code to Public page")
-        link = user.find(content="Public page", kind=ui.link).elements.pop()
+        link = only(user.find(content="Public page", kind=ui.link))
         assert link.props["href"] == "/ministries/liturgy-music.html", (
             "path slug, not the bare team name"
         )
@@ -341,7 +336,7 @@ async def test_asof_snapshot_announces_itself_and_offers_a_way_back(database):
         await user.should_not_see("Back to now")
 
         # end of today is still "after now", so the live rows are in the snapshot
-        today = date.today().isoformat()
+        today = mint.today().isoformat()
         await user.open(f"/teams/{ids['liturgy']}?as_of={today}")
         await user.should_see("Read-only snapshot as of")
         await user.should_see("Back to now")
@@ -525,7 +520,7 @@ async def test_new_team_dialog_starts_at_weight_one(database):
         await user.open("/teams")
         user.find("New team", kind=ui.button).click()
         await user.should_see("Workload weight")
-        weight = user.find(kind=ui.number).elements.pop()
+        weight = only(user.find(kind=ui.number))
         assert weight.value == 1.0, "the box opens at 1, not empty"
 
         user.find("Name").type("Sacristans")

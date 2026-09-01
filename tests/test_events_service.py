@@ -54,7 +54,7 @@ async def _team_with_members(n: int = 2) -> tuple[int, list[int]]:
 async def _one_event(
     team_id: int, *, start: datetime | None = None, hours: int = 2, **kwargs
 ) -> int:
-    start = start or _at(date.today() + timedelta(days=7), 10)
+    start = start or _at(mint.today() + timedelta(days=7), 10)
     async with db_session() as session:
         created = ok(
             await event_service.create_event(
@@ -82,7 +82,7 @@ async def _first_slot(event_id: int) -> int:
 async def _past_event(team_id: int, vid: int | None = None) -> tuple[int, int | None]:
     """A finished two-hour event; optionally with vid signed up (backdating
     via update_event, since the roster freezes once ends_at passes)."""
-    start = _at(date.today() + timedelta(days=3), 9)
+    start = _at(mint.today() + timedelta(days=3), 9)
     event_id = await _one_event(team_id, start=start)
     assignment_id = None
     if vid is not None:
@@ -97,7 +97,7 @@ async def _past_event(team_id: int, vid: int | None = None) -> tuple[int, int | 
                 )
             )
             assignment_id = a.id
-    past = _at(date.today() - timedelta(days=3), 9)
+    past = _at(mint.today() - timedelta(days=3), 9)
     async with db_session() as session:
         ok(
             await event_service.update_event(
@@ -153,8 +153,8 @@ async def test_create_with_explicit_slots_and_validation(database):
                     None,
                     team_id=team_id,
                     title="X",
-                    starts_at=_at(date.today() + timedelta(days=1), 10),
-                    ends_at=_at(date.today() + timedelta(days=1), 11),
+                    starts_at=_at(mint.today() + timedelta(days=1), 10),
+                    ends_at=_at(mint.today() + timedelta(days=1), 11),
                     slots=bad,
                     created_by=None,
                     tz=mint.tz(),
@@ -168,8 +168,8 @@ async def test_create_with_explicit_slots_and_validation(database):
                 None,
                 team_id=team_id,
                 title="X",
-                starts_at=_at(date.today() + timedelta(days=1), 11),
-                ends_at=_at(date.today() + timedelta(days=1), 10),
+                starts_at=_at(mint.today() + timedelta(days=1), 11),
+                ends_at=_at(mint.today() + timedelta(days=1), 10),
                 created_by=None,
                 tz=mint.tz(),
                 series_id=mint.uuid(),
@@ -243,7 +243,7 @@ async def test_slot_descriptions_are_added_edited_and_cleared(database):
 
 async def test_repeat_weekly_is_inclusive_and_copies_slots(database):
     team_id, _ = await _team_with_members()
-    start = _at(date.today() + timedelta(days=7), 10)
+    start = _at(mint.today() + timedelta(days=7), 10)
     async with db_session() as session:
         created = ok(
             await event_service.create_event(
@@ -308,7 +308,7 @@ async def test_repeat_keeps_wall_clock_time_across_dst(database):
 
 async def test_repeat_is_capped_at_a_year(database):
     team_id, _ = await _team_with_members()
-    start = _at(date.today() + timedelta(days=1), 10)
+    start = _at(mint.today() + timedelta(days=1), 10)
     async with db_session() as session:
         refused(
             await event_service.create_event(
@@ -889,7 +889,7 @@ async def test_list_events_scopes_to_the_actors_teams(database):
             )
         )
     await _one_event(team_a)
-    b_start = _at(date.today() + timedelta(days=7), 18)
+    b_start = _at(mint.today() + timedelta(days=7), 18)
     async with db_session() as session:
         ok(
             await event_service.create_event(
@@ -973,7 +973,7 @@ async def _admin_actor(session):
 
 async def test_similar_events_matches_fuzzy_same_day_locations(database):
     team_id, _ = await _team_with_members()
-    day = date.today() + timedelta(days=7)
+    day = mint.today() + timedelta(days=7)
     await _one_event(team_id, location="Parish Hall")
     async with db_session() as session:
         actor = await _admin_actor(session)
@@ -1029,7 +1029,7 @@ async def test_similar_events_matches_fuzzy_same_day_locations(database):
 
 async def test_similar_events_masks_titles_outside_the_actors_scope(database):
     team_id, vids = await _team_with_members()
-    day = date.today() + timedelta(days=7)
+    day = mint.today() + timedelta(days=7)
     async with db_session() as session:
         other = ok(await teams.create(session, None, "Garden Guild"))
         ok(
@@ -1073,9 +1073,9 @@ async def test_similar_events_masks_titles_outside_the_actors_scope(database):
 
 async def test_similar_events_checks_every_repeat_occurrence(database):
     team_id, _ = await _team_with_members()
-    clash_day = date.today() + timedelta(days=21)
+    clash_day = mint.today() + timedelta(days=21)
     await _one_event(team_id, start=_at(clash_day, 10), location="Parish Hall")
-    first = date.today() + timedelta(days=7)
+    first = mint.today() + timedelta(days=7)
     async with db_session() as session:
         actor = await _admin_actor(session)
         hits = ok(
@@ -1276,7 +1276,7 @@ async def test_substitute_refuses_once_the_event_ended(database):
 
 async def test_weekly_repeats_share_a_series_id_and_singles_do_not(database):
     team_id, _ = await _team_with_members()
-    start = _at(date.today() + timedelta(days=7), 10)
+    start = _at(mint.today() + timedelta(days=7), 10)
     async with db_session() as session:
         series = ok(
             await event_service.create_event(
@@ -1312,7 +1312,7 @@ async def test_weekly_repeats_share_a_series_id_and_singles_do_not(database):
 
 async def test_sign_up_series_copies_forward_and_skips_gracefully(database):
     team_id, vids = await _team_with_members(3)
-    start = _at(date.today() + timedelta(days=7), 10)
+    start = _at(mint.today() + timedelta(days=7), 10)
     async with db_session() as session:
         weeks = ok(
             await event_service.create_event(
@@ -1402,7 +1402,7 @@ async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
     team_id, vids = await _team_with_members(2)
     async with db_session() as session:
         other_team = (ok(await teams.create(session, None, "Choir"))).id
-    start = _at(date.today() + timedelta(days=7), 10)
+    start = _at(mint.today() + timedelta(days=7), 10)
     mine = await _one_event(team_id, start=start)
     theirs = await _one_event(team_id, start=start + timedelta(days=1))
     elsewhere = await _one_event(other_team, start=start + timedelta(days=2))

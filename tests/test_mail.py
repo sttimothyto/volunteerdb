@@ -7,11 +7,14 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import httpx
+import pytest
 
 from volunteerdb.env import LoggingMailer, Smtp2goMailer
 from volunteerdb.services import mail
 
 from tests import mint
+
+pytestmark = pytest.mark.pure
 
 SETTINGS = SimpleNamespace(
     smtp2go_api_key="test-key",

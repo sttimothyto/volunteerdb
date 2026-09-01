@@ -503,7 +503,7 @@ async def verify_otp(
     user = await get_by_email(session, email)
     if user is None or not user.is_active or user.otp_hash is None:
         return Err(BadCredentials("no code outstanding"))
-    if user.otp_expires_at is None or user.otp_expires_at < now:
+    if user.otp_expires_at is None or user.otp_expires_at <= now:
         return Err(BadCredentials("code expired"))
     if user.otp_attempts >= OTP_MAX_ATTEMPTS:
         return Err(BadCredentials("too many attempts"))

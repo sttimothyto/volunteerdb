@@ -7,8 +7,6 @@ is absent here was never computed by services.stats; see tests/test_stats.py
 for that half.
 """
 
-from pathlib import Path
-
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
@@ -17,17 +15,14 @@ from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
 from tests import mint
-from tests.conftest import db_session
+from tests.conftest import SIM_MAIN, SLOW, db_session, only
 from tests.fp_helpers import ok
-
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 # distinctive tile captions, not the section headings: "Parish" also appears
 # in the graph filter's "— whole parish —" option
 PARISH_TILE = "Active volunteers"
 LEADERSHIP_TILE = "Teams I help run"
 PERSONAL_TILE = "Hours served"
-SLOW = 30
 
 
 async def _parish(session):
@@ -144,14 +139,14 @@ async def test_plain_member_sees_only_their_own_service(database):
         # My teams, then My service, then the graph. NiceGUI hands out element
         # ids in creation order, which is render order down the page — the only
         # handle a headless run has on "above".
-        teams_head = user.find("My teams", kind=ui.label).elements.pop()
-        service_head = user.find("My service", kind=ui.label).elements.pop()
-        graph = user.find(kind=CytoscapeGraph).elements.pop()
+        teams_head = only(user.find("My teams", kind=ui.label))
+        service_head = only(user.find("My service", kind=ui.label))
+        graph = only(user.find(kind=CytoscapeGraph))
         assert teams_head.id < service_head.id < graph.id
 
         # the guides are the tail of the page, after the graph, and a plain
         # member gets the two groups anybody with a volunteer record gets
         await user.should_see("For team members")
         await user.should_not_see("For core members")
-        guides_head = user.find("Guides", kind=ui.label).elements.pop()
+        guides_head = only(user.find("Guides", kind=ui.label))
         assert graph.id < guides_head.id

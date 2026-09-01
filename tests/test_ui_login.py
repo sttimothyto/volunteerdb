@@ -2,15 +2,13 @@
 from — this instance's sender, not another parish's — and offers the user
 guide under a help icon to the reader who cannot get past it."""
 
-from pathlib import Path
-
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.config import settings
 from volunteerdb.ui.help_links import SIGNING_IN
 
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
+from tests.conftest import SIM_MAIN
 
 
 async def test_the_login_page_names_this_instances_sender(database):
@@ -26,7 +24,7 @@ def _help_hrefs(user) -> set[str]:
     return {
         props.get("href")
         for button in user.find(kind=ui.button).elements
-        if (props := button._props).get("href")
+        if (props := button.props).get("href")
     }
 
 

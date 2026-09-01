@@ -7,7 +7,6 @@ viewer here is Mia, who sees names and nothing else.
 """
 
 from datetime import UTC, datetime
-from pathlib import Path
 
 from nicegui.testing.user_simulation import user_simulation
 
@@ -15,10 +14,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
-from tests.conftest import db_session
+from tests.conftest import SIM_MAIN, db_session
 from tests.fp_helpers import ok
-
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 # late morning in Toronto, so the rendered date is the same day in any
 # plausible display timezone

@@ -243,8 +243,10 @@ async def test_insert_targets_the_given_calendar():
 
 
 async def test_delete_treats_gone_as_done():
-    client, _ = _client(lambda r: httpx.Response(410, json={}))
+    client, seen = _client(lambda r: httpx.Response(410, json={}))
     ok(await gcal.delete(client, "tok", CID, "g1"))
+    assert [r.method for r in seen] == ["DELETE"], "asked once, not retried"
+    assert str(seen[0].url).endswith("/events/g1")
 
 
 async def test_a_throttled_insert_is_retried(monkeypatch):

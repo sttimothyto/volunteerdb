@@ -8,6 +8,7 @@ removes anybody.
 """
 
 import csv
+from datetime import timedelta
 from io import StringIO
 
 import pytest
@@ -17,13 +18,21 @@ from volunteerdb.errors import External
 from volunteerdb.fp import Err, Ok
 from volunteerdb.jobs import roster_sync
 from volunteerdb.models import SyncStatus, TeamRole, TeamSheet
-from volunteerdb.services import gsheets, memberships, teams, users, volunteers
+from volunteerdb.services import events as event_service
+from volunteerdb.services import (
+    gsheets,
+    memberships,
+    task_force,
+    teams,
+    users,
+    volunteers,
+)
 from volunteerdb.services import roster_sheets as service
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
 from tests import mint
 from tests.conftest import db_session
-from tests.fp_helpers import ok, refused
+from tests.fp_helpers import done, ok, refused
 
 
 def _csv_bytes(rows: list[list]) -> bytes:
@@ -80,10 +89,12 @@ class FakeSheets:
 
 @pytest.fixture
 def fake(monkeypatch):
-    """Patch the client onto both modules that reach for it."""
+    """The Google Sheets adapter, faked, on both modules that reach for it.
+    `raising` left at its default: a module that stopped importing gsheets
+    under that name must fail this fixture, not quietly keep the real one."""
     stub = FakeSheets()
     for target in (service, roster_sync):
-        monkeypatch.setattr(target, "gsheets", stub, raising=False)
+        monkeypatch.setattr(target, "gsheets", stub)
     return stub
 
 
@@ -289,30 +300,57 @@ async def test_the_job_creates_a_sheet_for_a_team_that_has_none(database, fake, 
     assert sheet.file_id == "new-file-id"
 
 
-async def test_the_job_never_gives_a_task_force_a_sheet(
-    database, fake, monkeypatch, env
-):
+async def test_the_job_never_gives_a_task_force_a_sheet(database, fake, env):
     """A meta team holds a borrowed roster; a link-shared sheet of it would
-    publish the collaborating teams' contact details."""
+    publish the collaborating teams' contact details. The task force is a
+    real one -- built by the service that builds them -- so the rule that
+    keeps it off the sheets is the real rule, not a stand-in."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
-        meta = ok(await teams.create(session, None, "Task force"))
-        meta_id = meta.id
-        team_id = team.id
+        choir = ok(await teams.create(session, None, "Choir"))
+        ushers = ok(await teams.create(session, None, "Ushers"))
+        start = mint.now() + timedelta(days=7)
+        (event,) = ok(
+            await event_service.create_event(
+                session,
+                None,
+                team_id=choir.id,
+                title="Parish Picnic",
+                starts_at=start,
+                ends_at=start + timedelta(hours=2),
+                created_by=None,
+                tz=mint.tz(),
+                series_id=mint.uuid(),
+            )
+        )
+        meta = done(
+            await task_force.add_collaborating_team(
+                session,
+                None,
+                event_id=event.id,
+                source_team_id=ushers.id,
+                created_by=None,
+                now=mint.now(),
+                tz=mint.tz(),
+            )
+        ).value
+        meta_id, choir_id, ushers_id = meta.id, choir.id, ushers.id
 
-    async def only_meta(session):
-        return {meta_id}
-
-    monkeypatch.setattr(roster_sync.team_service, "meta_team_ids", only_meta)
     assert await roster_sync.main(env) == 0
     async with db_session() as session:
         assert await session.get(TeamSheet, meta_id) is None
-        assert (await session.get(TeamSheet, team_id)) is not None
+        assert await session.get(TeamSheet, choir_id) is not None
+        assert await session.get(TeamSheet, ushers_id) is not None
 
 
-async def test_the_job_is_a_noop_when_unconfigured(database, monkeypatch, env):
-    monkeypatch.setattr(gsheets, "enabled", lambda cfg: False)
-    assert await roster_sync.main(env) == 0
+async def test_the_job_is_a_noop_when_unconfigured(database, env):
+    unconfigured = env.settings.model_copy(
+        update={
+            "sheets_client_id": "",
+            "sheets_client_secret": "",
+            "sheets_refresh_token": "",
+        }
+    )
+    assert await roster_sync.main(env.with_(settings=unconfigured)) == 0
 
 
 async def test_one_broken_sheet_does_not_stop_the_others(database, fake, env):

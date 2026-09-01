@@ -19,8 +19,8 @@ from volunteerdb.services import custom_fields as custom_field_service
 from volunteerdb.ui import column_order
 from volunteerdb.ui.context import clear_session
 
-from .test_ui_teams import SIM_MAIN, _parish, _table
-from tests.conftest import db_session
+from .test_ui_teams import _parish
+from tests.conftest import SIM_MAIN, db_session, only
 from tests.fp_helpers import ok
 
 TEAMS_DEFAULT = ["team", "leader", "second", "core", "member", "total", "gaps"]
@@ -159,10 +159,12 @@ async def test_a_drop_reorders_the_table_and_the_order_survives(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['admin_u']}")
         await user.open("/teams")
-        assert [c["name"] for c in _table(user).columns] == TEAMS_DEFAULT
+        assert [
+            c["name"] for c in only(user.find(kind=ui.table)).columns
+        ] == TEAMS_DEFAULT
 
         _drag(user, "gaps", "leader")
-        assert [c["name"] for c in _table(user).columns] == [
+        assert [c["name"] for c in only(user.find(kind=ui.table)).columns] == [
             "team",
             "gaps",
             "leader",
@@ -173,7 +175,7 @@ async def test_a_drop_reorders_the_table_and_the_order_survives(database):
         ], "the drop moves the column there and then, without a reload"
 
         await user.open("/teams")
-        assert [c["name"] for c in _table(user).columns][:3] == [
+        assert [c["name"] for c in only(user.find(kind=ui.table)).columns][:3] == [
             "team",
             "gaps",
             "leader",
@@ -181,7 +183,7 @@ async def test_a_drop_reorders_the_table_and_the_order_survives(database):
 
         await user.open("/volunteers")
         await user.open("/teams")
-        assert [c["name"] for c in _table(user).columns][:3] == [
+        assert [c["name"] for c in only(user.find(kind=ui.table)).columns][:3] == [
             "team",
             "gaps",
             "leader",
@@ -197,7 +199,9 @@ async def test_the_pinned_team_column_cannot_be_dragged_away(database):
         await user.open("/teams")
         # the wire is untrusted: the pin has to hold server-side, not only in CSS
         _drag(user, "team", "total")
-        assert [c["name"] for c in _table(user).columns] == TEAMS_DEFAULT
+        assert [
+            c["name"] for c in only(user.find(kind=ui.table)).columns
+        ] == TEAMS_DEFAULT
 
 
 async def test_a_junk_payload_is_ignored(database):
@@ -209,7 +213,9 @@ async def test_a_junk_payload_is_ignored(database):
         await user.open("/teams")
         for payload in ({}, {"moved": "gaps"}, {"moved": 1, "target": 2}):
             user.find(kind=ui.table).trigger("vdbColMove", payload)
-        assert [c["name"] for c in _table(user).columns] == TEAMS_DEFAULT
+        assert [
+            c["name"] for c in only(user.find(kind=ui.table)).columns
+        ] == TEAMS_DEFAULT
 
 
 async def test_a_custom_field_added_since_the_drag_still_appears(database):
@@ -220,7 +226,9 @@ async def test_a_custom_field_added_since_the_drag_still_appears(database):
         await user.open(f"/login-dev/{ids['admin_u']}")
         await user.open("/volunteers")
         _drag(user, "status", "name")
-        assert [c["name"] for c in _table(user).columns][0] == "status"
+        assert [c["name"] for c in only(user.find(kind=ui.table)).columns][
+            0
+        ] == "status"
 
         async with db_session() as session:
             ok(
@@ -230,7 +238,7 @@ async def test_a_custom_field_added_since_the_drag_still_appears(database):
             )
 
         await user.open("/volunteers")
-        names = [c["name"] for c in _table(user).columns]
+        names = [c["name"] for c in only(user.find(kind=ui.table)).columns]
         assert names[0] == "status", "the saved order still leads"
         assert "cf_diocese" in names, (
             "a column added since the drag must still appear — a saved order is "
@@ -245,10 +253,10 @@ async def test_a_plain_member_sees_the_one_column_listing(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open("/teams")
-        assert [c["name"] for c in _table(user).columns] == ["team"]
+        assert [c["name"] for c in only(user.find(kind=ui.table)).columns] == ["team"]
         # nothing movable at all: the only column is the pinned one
         _drag(user, "team", "team")
-        assert [c["name"] for c in _table(user).columns] == ["team"]
+        assert [c["name"] for c in only(user.find(kind=ui.table)).columns] == ["team"]
 
 
 async def test_signing_out_forgets_the_order_but_keeps_dark_mode(database):
@@ -280,6 +288,6 @@ async def test_the_header_cell_slot_is_wired_on_both_listings(database):
         await user.open(f"/login-dev/{ids['admin_u']}")
         for path in ("/teams", "/volunteers"):
             await user.open(path)
-            table = user.find(kind=ui.table).elements.pop()
+            table = only(user.find(kind=ui.table))
             assert "header-cell" in table.slots, f"{path} has no draggable header"
             assert "data-vdb-col" in table.slots["header-cell"].template

@@ -11,10 +11,11 @@ from volunteerdb.main import create_app
 from volunteerdb.ui.context import establish_session
 
 from tests import conftest
-from tests.fakes import SIM_MAILER
+from tests.fakes import SIM_CLOCK, SIM_MAILER
 
-# the real Env over the test engine, except that its mail is recorded
-create_app(env_mod.build(engine=conftest.ENGINE, mailer=SIM_MAILER))
+# the real Env over the test engine, except that its mail is recorded and its
+# clock is one a test can move
+create_app(env_mod.build(engine=conftest.ENGINE, mailer=SIM_MAILER, clock=SIM_CLOCK))
 
 
 @ui.page("/login-dev/{user_id}")

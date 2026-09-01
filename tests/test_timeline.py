@@ -5,13 +5,14 @@ joined_on): a spell starts when its membership record was created and ends
 when it was deleted.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 from volunteerdb.config import settings
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, volunteers
 
+from tests import mint
 from tests.conftest import db_session
 from tests.fp_helpers import ok
 
@@ -37,7 +38,7 @@ async def test_ongoing_membership_is_one_open_spell(database):
         spell.team_id == tid and spell.team_name == "Choir" and not spell.team_deleted
     )
     assert spell.role == TeamRole.member
-    assert spell.start == date.today()
+    assert spell.start == mint.today()
     assert spell.end is None
     assert len(spell.segments) == 1
     assert spell.segments[0].role == TeamRole.member and spell.segments[0].end is None
@@ -74,7 +75,7 @@ async def test_leave_then_rejoin_splits_spells(database):
     assert len(spells) == 2
     first, second = spells
     assert first.team_id == second.team_id == tid
-    assert first.end == date.today() and first.role == TeamRole.member
+    assert first.end == mint.today() and first.role == TeamRole.member
     assert second.end is None and second.role == TeamRole.core
 
 
@@ -95,8 +96,8 @@ async def test_spells_on_two_teams_stay_independent_and_sort_by_start(database):
 
     # same start date (both created today) → the name breaks the sorting tie
     assert [(s.team_name, s.start) for s in spells] == [
-        ("Choir", date.today()),
-        ("Ushers", date.today()),
+        ("Choir", mint.today()),
+        ("Ushers", mint.today()),
     ], "one spell per team"
     choir_spell, ushers_spell = spells
     assert choir_spell.role == TeamRole.leader
@@ -118,17 +119,10 @@ async def test_deleted_team_uses_last_historical_name(database):
         (spell,) = await volunteers.timeline(session, vid)
     assert spell.team_name == "Choir"
     assert spell.team_deleted
-    assert spell.end == date.today()
+    assert spell.end == mint.today()
 
 
 # --- team_anniversaries ----------------------------------------------------
-
-
-def _today() -> date:
-    """Today in the app timezone. team_anniversaries() converts DB transaction
-    times to settings().timezone, so on a UTC runner date.today() runs a day
-    ahead of the computed spell dates for a few hours every evening."""
-    return datetime.now(ZoneInfo(settings().timezone)).date()
 
 
 def _anniv_of(since: date, years: int) -> date:
@@ -143,7 +137,7 @@ async def test_team_anniversaries_window_and_years(database):
         vid, tid = await _fixtures(session)
         ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
 
-    since = _today()
+    since = mint.today()
     first = _anniv_of(since, 1)
     async with db_session() as session:
         (hit,) = await volunteers.team_anniversaries(
@@ -189,7 +183,7 @@ async def test_team_anniversaries_role_change_keeps_one_entry(database):
     async with db_session(user_id=1) as session:
         ok(await memberships.assign(session, None, vid, tid, TeamRole.leader))
 
-    probe = _anniv_of(_today(), 1) - timedelta(days=1)
+    probe = _anniv_of(mint.today(), 1) - timedelta(days=1)
     async with db_session() as session:
         (hit,) = await volunteers.team_anniversaries(session, tid, probe, tz=TZ)
         assert hit.years == 1, "a role change is the same continuous spell"
@@ -205,7 +199,7 @@ async def test_team_anniversaries_skip_departed_members_and_other_teams(database
     async with db_session(user_id=1) as session:
         ok(await memberships.remove(session, None, mid))
 
-    probe = _anniv_of(_today(), 1)
+    probe = _anniv_of(mint.today(), 1)
     async with db_session() as session:
         assert await volunteers.team_anniversaries(session, tid, probe, tz=TZ) == [], (
             "departed members never appear"

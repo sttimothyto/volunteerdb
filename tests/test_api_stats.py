@@ -5,7 +5,9 @@ these tests are what pins the promise that each tier carries its own. A null
 section means the service declined to compute it for this caller.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
+
+from tests import mint
 
 
 async def test_dashboard_admin_sees_parish_and_leadership(client, token_admin):
@@ -64,7 +66,7 @@ async def test_dashboard_member_sees_only_their_own_service(client, token_member
 
 
 async def test_dashboard_as_of_omits_the_live_only_figures(client, token_admin):
-    tomorrow = date.today() + timedelta(days=1)
+    tomorrow = mint.today() + timedelta(days=1)
 
     r = await client.get(
         f"/api/reports/dashboard?as_of={tomorrow.isoformat()}", headers=token_admin

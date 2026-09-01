@@ -2,8 +2,7 @@
 substitution flow with its emails, event creation via the dialog, and the
 attendance section on past events."""
 
-from datetime import date, datetime, time, timedelta
-from pathlib import Path
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -16,22 +15,19 @@ from volunteerdb.models import EventSubRequest, SubRequestStatus, TeamRole
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
-from .conftest import SLOW
+from .conftest import SIM_MAIN, SLOW, only
 from tests import mint
 from tests.conftest import db_session
-from tests.fakes import SIM_MAILER
 from tests.fp_helpers import ok
 
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 TZ = ZoneInfo("America/Toronto")
 
 
 @pytest.fixture
-def sent_mail() -> list[tuple[str, str, str]]:
-    """What the simulated app mailed: its Env's recording mailer (tests/fakes.py),
-    emptied for this test."""
-    SIM_MAILER.sent.clear()
-    return SIM_MAILER.sent
+def sent_mail(sim_sent) -> list[tuple[str, str, str]]:
+    """What the simulated app mailed: conftest's sim_sent, under this module's
+    older name."""
+    return sim_sent
 
 
 async def _parish(session):
@@ -92,7 +88,7 @@ async def _parish(session):
 
 
 def _next_week(hour: int) -> datetime:
-    return datetime.combine(date.today() + timedelta(days=7), time(hour), TZ)
+    return datetime.combine(mint.today() + timedelta(days=7), time(hour), TZ)
 
 
 async def _seed_event(team_id: int, *, slots=None, title="Sunday Mass") -> int:
@@ -126,7 +122,7 @@ async def test_member_scoping_and_rsvp(database):
         await user.open("/events")
         await user.should_see("Events")  # navbar + page title
         # table contents live in the rows prop, not element text
-        table = user.find(kind=ui.table).elements.pop()
+        table = only(user.find(kind=ui.table))
         assert [r["title"] for r in table.rows] == ["Sunday Mass"], (
             "only own-team events; Choir practice stays hidden"
         )
@@ -137,7 +133,7 @@ async def test_member_scoping_and_rsvp(database):
         await user.open(f"/events/{event_id}")
         await user.should_see("Can you serve at this event?")
         user.find("Available", kind=ui.button).click()
-        await user.should_see("you said: available", retries=30)
+        await user.should_see("you said: available", retries=SLOW)
 
 
 async def test_signup_withdraw_and_leader_assign(database):
@@ -152,24 +148,24 @@ async def test_signup_withdraw_and_leader_assign(database):
         await user.open(f"/events/{event_id}")
         user.find("Sign up", kind=ui.button).click()  # opens the dialog
         user.find(marker="signup-confirm").click()
-        await user.should_see("Mia Member", retries=30)
-        await user.should_see("1/2", retries=30)
+        await user.should_see("Mia Member", retries=SLOW)
+        await user.should_see("1/2", retries=SLOW)
         # withdrawing asks for a reason (mailed to the leaders) since Phase 4
         user.find("Withdraw", kind=ui.button).click()
         await user.should_see("Why can you no longer serve?")
-        box = user.find(kind=ui.textarea).elements.pop()
+        box = only(user.find(kind=ui.textarea))
         box.value = "schedule conflict"
         user.find("Take me off", kind=ui.button).click()
-        await user.should_see("0/2", retries=30)
+        await user.should_see("0/2", retries=SLOW)
 
         # the leader schedules Noor from the picker
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/events/{event_id}")
-        pick = user.find(kind=ui.select, content="Schedule someone").elements.pop()
+        pick = only(user.find(kind=ui.select, content="Schedule someone"))
         pick.value = ids["noor"]
         user.find("Assign", kind=ui.button).click()
-        await user.should_see("Noor Member", retries=30)
-        await user.should_see("1/2", retries=30)
+        await user.should_see("Noor Member", retries=SLOW)
+        await user.should_see("1/2", retries=SLOW)
 
 
 async def test_sub_request_claim_flow_with_mail(database, sent_mail):
@@ -195,10 +191,10 @@ async def test_sub_request_claim_flow_with_mail(database, sent_mail):
         await user.should_see("Your upcoming duties")
         user.find("Need a sub", kind=ui.button).click()
         await user.should_see("Ask for a substitute")
-        note = user.find(kind=ui.input, content="Note to the team").elements.pop()
+        note = only(user.find(kind=ui.input, content="Note to the team"))
         note.value = "out of town"
         user.find("Ask the team", kind=ui.button).click()
-        await user.should_see("sub wanted", retries=30)
+        await user.should_see("sub wanted", retries=SLOW)
 
         # the mail went to teammates who are not already serving: Lena + Noor
         assert {m[0] for m in sent_mail} == {"lena@example.org", "noor@example.org"}
@@ -212,7 +208,7 @@ async def test_sub_request_claim_flow_with_mail(database, sent_mail):
         await user.should_see("Teammates need a substitute")
         await user.should_see("out of town")
         user.find("Take this slot", kind=ui.button).click()
-        await user.should_see("The slot is yours", retries=30)
+        await user.should_see("The slot is yours", retries=SLOW)
 
         # the asker alone is told — the leaders were copied once and had
         # nothing to do with it, at three messages a claim on this roster
@@ -234,16 +230,16 @@ async def test_leader_creates_event_via_dialog(database):
         await user.open("/events")
         user.find("New event", kind=ui.button).click()
         await user.should_see("Repeat weekly until")
-        team = user.find(kind=ui.select, content="Team").elements.pop()
+        team = only(user.find(kind=ui.select, content="Team"))
         team.value = ids["liturgy"]
-        title = user.find(kind=ui.input, content="Title").elements.pop()
+        title = only(user.find(kind=ui.input, content="Title"))
         title.value = "Parish picnic"
-        repeat = user.find(kind=ui.input, content="Repeat weekly until").elements.pop()
-        repeat.value = str(date.today() + timedelta(days=8))
+        repeat = only(user.find(kind=ui.input, content="Repeat weekly until"))
+        repeat.value = str(mint.today() + timedelta(days=8))
         # NB: waiting on "Parish picnic" would match the dialog's own title
         # input instantly; the 0/∞ badge exists only on the detail page
         user.find("Create event", kind=ui.button).click()
-        await user.should_see("0/∞", retries=50)
+        await user.should_see("0/∞", retries=SLOW)
 
     async with db_session() as session:
         admin, _ = ok(
@@ -285,7 +281,7 @@ async def test_calendar_views_default_to_my_duties(database):
     month = f"month={_next_week(10):%Y-%m}"
 
     def grid(user) -> str:
-        return user.find(marker="calendar-grid").elements.pop().content
+        return only(user.find(marker="calendar-grid")).content
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['mia_u']}")
@@ -295,7 +291,7 @@ async def test_calendar_views_default_to_my_duties(database):
         assert "Sunday Mass" in mine and "Choir practice" not in mine
         assert f'href="/events/{liturgy_event}"' in mine
         assert "Volunteers" in mine, "the slot held rides under the title"
-        switch = user.find(marker="calendar-views").elements.pop().content
+        switch = only(user.find(marker="calendar-views")).content
         assert 'aria-current="page">My duties' in switch
         assert f"view=parish&amp;{month}" in switch or f"view=parish&{month}" in switch
         await user.should_see(marker="subscribe-mine")
@@ -319,15 +315,15 @@ async def test_calendar_month_links_and_bad_input(database):
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open("/events?month=2026-03&view=parish")
         await user.should_see(marker="calendar-grid")
-        html = user.find(marker="calendar-grid").elements.pop().content
+        html = only(user.find(marker="calendar-grid")).content
         assert "March 2026" in html
         assert 'href="/events?view=parish&amp;month=2026-02"' in html
         assert 'href="/events?view=parish&amp;month=2026-04"' in html
         assert "No events this month." in html
         await user.open("/events?month=garbage")
         await user.should_see(marker="calendar-grid")
-        assert f"{date.today():%B %Y}" in (
-            user.find(marker="calendar-grid").elements.pop().content
+        assert f"{mint.today():%B %Y}" in (
+            only(user.find(marker="calendar-grid")).content
         ), "a bad month falls back to the current one"
 
 
@@ -340,12 +336,12 @@ async def test_events_table_search_sort_and_column_drag(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open("/events")
-        table = user.find(kind=ui.table).elements.pop()
+        table = only(user.find(kind=ui.table))
         assert {r["title"] for r in table.rows} == {"Sunday Mass", "Bake sale"}
         assert all(c.get("sortable") for c in table.columns)
         await user.should_see("2 events")
 
-        search = user.find(kind=ui.input, content="Search events").elements.pop()
+        search = only(user.find(kind=ui.input, content="Search events"))
         search.value = "bake"
         assert [r["title"] for r in table.rows] == ["Bake sale"]
         await user.should_see("1 of 2 events")
@@ -364,7 +360,7 @@ async def test_events_table_search_sort_and_column_drag(database):
         user.find(kind=ui.table).trigger(
             "vdbColMove", {"moved": "team", "target": "title"}
         )
-        table = user.find(kind=ui.table).elements.pop()
+        table = only(user.find(kind=ui.table))
         assert [c["name"] for c in table.columns][:3] == ["when", "team", "title"]
 
 
@@ -378,10 +374,10 @@ async def test_share_button_and_date_pickers(database):
         # the page rather than opened by a handler) carries the accounts caveat
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open(f"/events/{event_id}")
-        share = user.find(marker="share-event").elements.pop()
+        share = only(user.find(marker="share-event"))
         assert share.props.get("popovertarget"), "the button opens the panel natively"
         await user.should_see("make sure every")
-        url_box = user.find(marker="share-url").elements.pop()
+        url_box = only(user.find(marker="share-url"))
         assert url_box.value.endswith(f"/events/{event_id}"), (
             "the link is shown for hand-copying"
         )
@@ -409,22 +405,20 @@ async def test_collaboration_card_lets_another_team_staff_the_event(database):
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/events/{event_id}")
         await user.should_see("Collaboration")
-        pick = user.find(
-            kind=ui.select, content="Add collaborating team"
-        ).elements.pop()
+        pick = only(user.find(kind=ui.select, content="Add collaborating team"))
         pick.value = ids["choir"]
         user.find(marker="add-collaborator").click()
-        await user.should_see(marker="confirm-collaborator", retries=30)
+        await user.should_see(marker="confirm-collaborator", retries=SLOW)
         await user.should_see("co-manage the event")
         user.find(marker="confirm-collaborator").click()
-        await user.should_see("their roster can sign up now", retries=30)
+        await user.should_see("their roster can sign up now", retries=SLOW)
 
         # Oda now sees the event and can take a slot
         await user.open(f"/login-dev/{ids['oda_u']}")
         await user.open(f"/events/{event_id}")
         user.find("Sign up", kind=ui.button).click()
         user.find(marker="signup-confirm").click()
-        await user.should_see("Oda Chorister", retries=30)
+        await user.should_see("Oda Chorister", retries=SLOW)
 
 
 async def test_signup_notification_prefs_persist(database):
@@ -437,14 +431,14 @@ async def test_signup_notification_prefs_persist(database):
         await user.open(f"/events/{event_id}")
         user.find("Sign up", kind=ui.button).click()
         await user.should_see("Email me a reminder")
-        week = user.find(kind=ui.checkbox, content="7 days").elements.pop()
-        day = user.find(kind=ui.checkbox, content="24 hours").elements.pop()
+        week = only(user.find(kind=ui.checkbox, content="7 days"))
+        day = only(user.find(kind=ui.checkbox, content="24 hours"))
         assert not week.value, "the 7-day stage is opt-in, not pre-checked"
         assert day.value, "the 24-hour stage is the one that ships on"
         week.value = True
         day.value = False
         user.find(marker="signup-confirm").click()
-        await user.should_see("You're on the list", retries=30)
+        await user.should_see("You're on the list", retries=SLOW)
 
     async with db_session() as session:
         view = ok(await event_service.detail(session, None, event_id))
@@ -479,10 +473,10 @@ async def test_series_signup_repeats_across_weeks(database):
         await user.open(f"/events/{week_ids[0]}")
         user.find("Sign up", kind=ui.button).click()
         await user.should_see("later weeks of this series")
-        box = user.find(kind=ui.checkbox, content="later weeks").elements.pop()
+        box = only(user.find(kind=ui.checkbox, content="later weeks"))
         box.value = True
         user.find(marker="signup-confirm").click()
-        await user.should_see("this week plus 2 more", retries=30)
+        await user.should_see("this week plus 2 more", retries=SLOW)
 
     async with db_session() as session:
         for week_id in week_ids:
@@ -527,7 +521,7 @@ async def test_a_teams_substitute_calls_are_capped_for_the_day(database, sent_ma
         user.find("Need a sub", kind=ui.button).click()
         await user.should_see("Ask for a substitute")
         user.find("Ask the team", kind=ui.button).click()
-        await user.should_see("nobody was mailed", retries=30)
+        await user.should_see("nobody was mailed", retries=SLOW)
 
         assert sent_mail == [], "the blast is what the cap withholds"
 
@@ -568,10 +562,10 @@ async def test_handoff_and_self_removal_flows_with_mail(database, sent_mail):
         user.find("Hand off", kind=ui.button).click()
         await user.should_see("Hand this slot to a teammate")
         await user.should_see("goes into the log")
-        pick = user.find(kind=ui.select, content="Who takes it?").elements.pop()
+        pick = only(user.find(kind=ui.select, content="Who takes it?"))
         pick.value = ids["noor"]
         user.find("Hand it over", kind=ui.button).click()
-        await user.should_see("Noor Member now holds the slot", retries=30)
+        await user.should_see("Noor Member now holds the slot", retries=SLOW)
         assert [m[0] for m in sent_mail] == ["noor@example.org"]
         assert "You're now serving" in sent_mail[0][1]
         assert "Mia Member" in sent_mail[0][2]
@@ -582,10 +576,10 @@ async def test_handoff_and_self_removal_flows_with_mail(database, sent_mail):
         await user.open(f"/events/{event_id}")
         user.find("Withdraw", kind=ui.button).click()
         await user.should_see("your reason is emailed")
-        box = user.find(kind=ui.textarea).elements.pop()
+        box = only(user.find(kind=ui.textarea))
         box.value = "travelling that weekend"
         user.find("Take me off", kind=ui.button).click()
-        await user.should_see("the leaders have been told", retries=30)
+        await user.should_see("the leaders have been told", retries=SLOW)
         assert {m[0] for m in sent_mail} == {"lena@example.org"}
         assert "Off the roster" in sent_mail[0][1]
         assert "travelling that weekend" in sent_mail[0][2]
@@ -615,24 +609,24 @@ async def test_duplicate_location_warning_on_create(database):
         await user.open("/events")
         user.find("New event", kind=ui.button).click()
         await user.should_see("Repeat weekly until")
-        team = user.find(kind=ui.select, content="Team").elements.pop()
+        team = only(user.find(kind=ui.select, content="Team"))
         team.value = ids["liturgy"]
-        title = user.find(kind=ui.input, content="Title").elements.pop()
+        title = only(user.find(kind=ui.input, content="Title"))
         title.value = "Bake sale"
-        day = user.find(kind=ui.input, content="Date (YYYY-MM-DD)").elements.pop()
-        day.value = str(date.today() + timedelta(days=7))
-        loc = user.find(kind=ui.input, content="Location").elements.pop()
+        day = only(user.find(kind=ui.input, content="Date (YYYY-MM-DD)"))
+        day.value = str(mint.today() + timedelta(days=7))
+        loc = only(user.find(kind=ui.input, content="Location"))
         loc.value = "parish hall"
         user.find("Create event", kind=ui.button).click()
-        await user.should_see("Possible double booking", retries=30)
+        await user.should_see("Possible double booking", retries=SLOW)
         await user.should_see("Sunday Mass")
         user.find("Go back", kind=ui.button).click()
 
         # the form is still open; forcing it through this time works
         user.find("Create event", kind=ui.button).click()
-        await user.should_see("Possible double booking", retries=30)
+        await user.should_see("Possible double booking", retries=SLOW)
         user.find("Create anyway", kind=ui.button).click()
-        await user.should_see("0/∞", retries=50)
+        await user.should_see("0/∞", retries=SLOW)
 
 
 async def test_attendance_section_on_past_event(database):
@@ -650,7 +644,7 @@ async def test_attendance_section_on_past_event(database):
                 now=mint.now(),
             )
         )
-        past = datetime.combine(date.today() - timedelta(days=2), time(9), TZ)
+        past = datetime.combine(mint.today() - timedelta(days=2), time(9), TZ)
         ok(
             await event_service.update_event(
                 session,
@@ -671,11 +665,11 @@ async def test_attendance_section_on_past_event(database):
         await user.open(f"/events/{event_id}")
         await user.should_see("Attendance")
         await user.should_see("Mia Member")
-        box = user.find(kind=ui.checkbox, content="attended").elements.pop()
+        box = only(user.find(kind=ui.checkbox, content="attended"))
         box.value = False
         user.find("Save", kind=ui.button).click()
         # the notification proves the save task finished before teardown
-        await user.should_see("Attendance saved", retries=50)
+        await user.should_see("Attendance saved", retries=SLOW)
 
     async with db_session() as session:
         summary = ok(
@@ -708,7 +702,7 @@ async def test_cancel_event_mails_assignees(database, sent_mail):
         user.find("Cancel event", kind=ui.button).click()
         await user.should_see("Cancel this event?")
         user.find("Yes, cancel it", kind=ui.button).click()
-        await user.should_see("Cancelled", retries=30)
+        await user.should_see("Cancelled", retries=SLOW)
 
     assert [m[0] for m in sent_mail] == ["mia@example.org"]
     assert "Cancelled: Sunday Mass" == sent_mail[0][1]
@@ -736,9 +730,9 @@ async def test_a_leader_can_rename_a_slot_and_change_its_capacity(database):
         await user.should_see("Edit slot", retries=SLOW)
         # by marker, not by kind: ui.number is a ui.input subclass, so
         # find(kind=ui.input).pop() returns the capacity box
-        user.find(marker="slot-edit-name").elements.pop().value = "Lector"
-        user.find(marker="slot-edit-capacity").elements.pop().value = 3
-        user.find(marker="slot-edit-description").elements.pop().value = "Ambo, first"
+        only(user.find(marker="slot-edit-name")).value = "Lector"
+        only(user.find(marker="slot-edit-capacity")).value = 3
+        only(user.find(marker="slot-edit-description")).value = "Ambo, first"
         user.find(marker="slot-edit-save").click()
         await user.should_see("Lector", retries=SLOW)
         await user.should_see("0/3", retries=SLOW)
@@ -765,10 +759,8 @@ async def test_a_leader_adds_a_slot_with_a_description(database):
         await user.open(f"/events/{event_id}")
         user.find("Add slot").click()
         await user.should_see("Add a slot", retries=SLOW)
-        user.find(kind=ui.input, content="Slot name").elements.pop().value = "Greeter"
-        user.find(
-            marker="slot-add-description"
-        ).elements.pop().value = "Main door, from 10:00"
+        only(user.find(kind=ui.input, content="Slot name")).value = "Greeter"
+        only(user.find(marker="slot-add-description")).value = "Main door, from 10:00"
         user.find(marker="slot-add-save").click()
         # wait on the reloaded page, not on the dialog: both strings above are
         # already visible as the values just typed, so should_see on them
@@ -819,12 +811,12 @@ async def test_the_listing_can_be_narrowed_to_one_team(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open("/events")
-        table = user.find(kind=ui.table).elements.pop()
+        table = only(user.find(kind=ui.table))
         assert {r["title"] for r in table.rows} == {"Sunday Mass", "Choir practice"}
         await user.should_see(marker="events-team-filter")
 
         await user.open(f"/events?team={ids['choir']}")
-        table = user.find(kind=ui.table).elements.pop()
+        table = only(user.find(kind=ui.table))
         assert [r["title"] for r in table.rows] == ["Choir practice"]
 
         # the two controls are independent: flipping to past keeps the team

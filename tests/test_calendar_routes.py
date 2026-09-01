@@ -2,7 +2,7 @@
 what, what each carries, the headers a calendar client relies on, and that
 the personal token stays out of the request log."""
 
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from volunteerdb.main import redact_path
@@ -18,7 +18,7 @@ TZ = ZoneInfo("America/Toronto")
 
 
 def _at(days: int, hour: int) -> datetime:
-    return datetime.combine(date.today() + timedelta(days=days), time(hour), TZ)
+    return datetime.combine(mint.today() + timedelta(days=days), time(hour), TZ)
 
 
 async def _seed() -> dict:

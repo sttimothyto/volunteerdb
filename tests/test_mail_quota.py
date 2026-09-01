@@ -16,6 +16,7 @@ from volunteerdb.models import MailQuota
 from volunteerdb.services import mail_quota
 
 from tests.conftest import db_session
+from tests.fakes import RaisingSessions
 
 MAY = date(2026, 5, 15)  # a 31-day month, halfway through
 
@@ -168,7 +169,7 @@ async def test_projection_is_memoised_and_droppable(env):
     assert (await cell.projection(env.sessions, today, now)).today == 2
 
 
-async def test_the_cell_records_and_never_raises(env, monkeypatch):
+async def test_the_cell_records_and_never_raises(env):
     day = date(2026, 3, 4)
     await env.quota.record(env.sessions, day)
     await env.quota.record(env.sessions, day)
@@ -177,8 +178,9 @@ async def test_the_cell_records_and_never_raises(env, monkeypatch):
             (await session.execute(sa.select(MailQuota.day, MailQuota.sent))).all()
         ) == {day: 2}
 
-    def explode(*a, **k):
-        raise RuntimeError("db is gone")
-
-    monkeypatch.setattr(mail_quota, "record", explode)
-    await env.quota.record(env.sessions, day)  # no exception escapes
+    # the database boundary gone: the counter exists to protect the mail,
+    # not the other way round, so nothing escapes
+    await env.quota.record(RaisingSessions(), day)
+    assert (
+        await env.quota.projection(RaisingSessions(), day, env.clock.now())
+    ).level == "", "a gauge that cannot be computed is simply not shown"

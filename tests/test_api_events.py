@@ -6,7 +6,7 @@ Unlike the GUI these routes send no mail — asserted nowhere here because
 nothing patches mail: a send attempt in dev mode would only print.
 """
 
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
@@ -18,7 +18,7 @@ from tests.fp_helpers import ok
 
 
 def _iso(day_offset: int, hour: int) -> str:
-    day = date.today() + timedelta(days=day_offset)
+    day = mint.today() + timedelta(days=day_offset)
     return datetime.combine(day, time(hour), UTC).isoformat()
 
 
@@ -59,7 +59,7 @@ async def _second_member(client, seeded) -> tuple[int, dict]:
 
 async def test_leader_creates_repeating_event(client, seeded, token_leader):
     body = _payload(seeded["team_id"])
-    body["repeat_weekly_until"] = (date.today() + timedelta(days=21)).isoformat()
+    body["repeat_weekly_until"] = (mint.today() + timedelta(days=21)).isoformat()
     r = await client.post("/api/events", json=body, headers=token_leader)
     assert r.status_code == 201, r.text
     assert len(r.json()) == 3
@@ -383,7 +383,7 @@ async def test_slot_crud_guards(client, seeded, token_leader, token_member):
 
 async def test_repeat_series_signup_via_api(client, seeded, token_leader, token_member):
     body = _payload(seeded["team_id"])
-    body["repeat_weekly_until"] = (date.today() + timedelta(days=21)).isoformat()
+    body["repeat_weekly_until"] = (mint.today() + timedelta(days=21)).isoformat()
     r = await client.post("/api/events", json=body, headers=token_leader)
     assert r.status_code == 201
     weeks = r.json()

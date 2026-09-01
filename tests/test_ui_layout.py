@@ -4,7 +4,6 @@ way to your own record, and the headshot beside it is how you change it."""
 
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
-from pathlib import Path
 
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
@@ -14,12 +13,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from volunteerdb.models import MailQuota
 from volunteerdb.services import mail_quota, photos, teams, users, volunteers
 
-from .conftest import SLOW
+from .conftest import SIM_MAIN, SLOW, only
 from tests import mint
 from tests.conftest import db_session
 from tests.fp_helpers import ok
-
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 PICKER = "View as of (YYYY-MM-DD)"
 
@@ -76,7 +73,7 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{account_id}")
         await user.open("/volunteers")
-        avatar = user.find(marker="header-avatar").elements.pop()
+        avatar = only(user.find(marker="header-avatar"))
         assert avatar.source.startswith(f"/photos/{maria_id}?v="), (
             "the header shows their own headshot, cache-busted by upload time"
         )
@@ -126,7 +123,7 @@ async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(databas
         await user.should_see("Volunteers")
         await user.should_not_see(marker="header-avatar")
         # find() raises rather than returning empty, so name what it is
-        address = user.find(marker="header-email").elements.pop()
+        address = only(user.find(marker="header-email"))
         assert isinstance(address, ui.label), (
             "an unlinked account's address is a label, not a link"
         )
@@ -149,7 +146,7 @@ async def test_the_header_address_opens_your_own_record(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{account_id}")
         await user.open("/volunteers")
-        link = user.find(marker="header-email", kind=ui.link).elements.pop()
+        link = only(user.find(marker="header-email", kind=ui.link))
         assert link.props["href"] == f"/volunteers/{maria_id}"
 
         await user.open(f"/volunteers/{maria_id}")

@@ -23,7 +23,7 @@ from volunteerdb.services import (
     volunteers,
 )
 
-from .conftest import TEAM_TREE_SQL, _now, count_sql
+from .conftest import TEAM_TREE_SQL, before_latest_write, count_sql
 from tests import conftest, mint
 from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
@@ -184,12 +184,12 @@ async def test_a_rolled_back_team_does_not_survive_in_the_memo(parish):
 async def test_a_snapshot_is_never_served_for_a_live_read(parish):
     async with db_session() as session:
         ok(await teams.update(session, None, parish["liturgy"], name="Worship"))
-    t_renamed = await _now()
 
     async with db_session() as session:
         ok(await teams.update(session, None, parish["liturgy"], name="Divine Worship"))
 
     async with db_session() as session:
+        t_renamed = await before_latest_write(session, Team, parish["liturgy"])
         # both keys live in one session; neither may answer for the other
         snapshot = await teams.tree(session, at=t_renamed)
         live = await teams.tree(session)

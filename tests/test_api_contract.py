@@ -1,5 +1,7 @@
 """API plumbing: Bearer auth, token lifecycle, throttling, error mapping, deletes."""
 
+from volunteerdb import throttle
+
 from tests.conftest import _token
 
 
@@ -25,7 +27,7 @@ async def test_relogin_revokes_previous_token(client, seeded):
 
 
 async def test_login_throttle_429(client, seeded):
-    for _ in range(5):
+    for _ in range(throttle.LIMITS["pw"].hits):
         r = await client.post(
             "/api/auth/login", json={"email": "admin@example.org", "password": "wrong"}
         )

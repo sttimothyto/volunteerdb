@@ -27,10 +27,49 @@ async def header_order(page) -> list[str]:
     )
 
 
+EVENT_LOG = """
+() => {
+    window.__vdbEvents = [];
+    for (const type of ["dragstart", "dragenter", "dragover", "drop", "dragend"]) {
+        document.addEventListener(type, (e) => {
+            const cell = e.target instanceof Element ? e.target.closest("th") : null;
+            window.__vdbEvents.push(type + ":" + (cell ? cell.dataset.vdbCol : "-"));
+        }, true);
+    }
+}
+"""
+
+
+async def drag_header(page, moved: str, target: str) -> None:
+    """Drag one header cell onto another, the way Playwright's own guide says
+    a page that relies on dragover must be driven: press on the source, move
+    onto the target twice, release. A single move (what the one-call drag
+    does) reaches a drag session that started late only some of the time;
+    when it does not, nothing permitted the drop and the drop is lost."""
+    await page.evaluate(EVENT_LOG)
+    await page.locator(f"th[data-vdb-col='{moved}']").hover()
+    await page.mouse.down()
+    dst = page.locator(f"th[data-vdb-col='{target}']")
+    await dst.hover()
+    await dst.hover()
+    await page.mouse.up()
+
+
+async def drag_events(page) -> list[str]:
+    return await page.evaluate("() => window.__vdbEvents || []")
+
+
 async def open_volunteers(page) -> None:
     await page.goto("/volunteers")
     await ready(page)
     await expect(page.locator("th[data-vdb-col]").first).to_be_visible()
+    # And the drag script itself. It is a separate file the page loads after
+    # the handshake NiceGUI reports, and a drag that starts before it has run
+    # has no listeners to reach: the drop lands nowhere, and nothing on the
+    # page says so. Seen in about a quarter of runs, clustered at a cold
+    # start. The flag is the one the script sets to make itself idempotent.
+    await page.wait_for_function("window.__vdbColumnDrag === true")
+    await expect(page.locator("td").first).to_be_visible()
 
 
 async def test_dragging_a_header_moves_the_column_and_the_order_sticks(seeded, page):
@@ -40,10 +79,13 @@ async def test_dragging_a_header_moves_the_column_and_the_order_sticks(seeded, p
 
     # Phone dropped on Name takes Name's slot, and everything in between
     # shuffles along — an insert, not a swap (ui/column_order.py: reorder)
-    await page.drag_and_drop("th[data-vdb-col='phone']", "th[data-vdb-col='name']")
-    await expect(page.locator("th[data-vdb-col]").first).to_have_attribute(
-        "data-vdb-col", "phone"
-    )
+    await drag_header(page, "phone", "name")
+    try:
+        await expect(page.locator("th[data-vdb-col]").first).to_have_attribute(
+            "data-vdb-col", "phone"
+        )
+    except AssertionError as exc:
+        raise AssertionError(f"drag events: {await drag_events(page)}") from exc
     assert await header_order(page) == ["phone", "name", "email", "workload", "status"]
 
     # the drag markers the stylesheet hangs off are cleaned up after the drop,
@@ -69,5 +111,5 @@ async def test_a_column_dropped_on_itself_changes_nothing(seeded, page):
     await sign_in(page, "admin@example.org", "secret-pass-phrase")
     await open_volunteers(page)
 
-    await page.drag_and_drop("th[data-vdb-col='email']", "th[data-vdb-col='email']")
+    await drag_header(page, "email", "email")
     assert await header_order(page) == DEFAULT_ORDER

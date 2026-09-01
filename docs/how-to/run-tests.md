@@ -30,8 +30,14 @@ make test ARGS="-k roster"          # extra pytest arguments
 uv run pytest                       # or drive pytest directly
 uv run pytest tests/test_api.py     # one module
 uv run pytest -k roster             # by keyword
-uv run pytest --cov                 # with coverage (skip_covered configured)
+uv run pytest --cov                 # with coverage (line + branch)
+uv run pytest -p randomly --randomly-seed=1234   # repeat one shuffled order
 ```
+
+Every run shuffles the order tests execute in (pytest-randomly) and prints
+the seed it used; pass that seed back to repeat an order that failed. Every
+test has a wall limit of three minutes (pytest-timeout), so a hang fails its
+own test rather than the whole run.
 
 Tests marked `pure` (`pytestmark = pytest.mark.pure`) never touch the
 database, and they run with the container down. They cover the toolkit, the
@@ -73,15 +79,28 @@ uv run playwright show-trace test-results/*/trace.zip
   engine.
 - `conftest.db_session()` is the suite's own unit of work over that engine,
   for fixtures and setup.
-- The `env` fixture builds an `Env` on the engine with a `RecordingMailer`.
-  Read `env.mailer.sent` for what a service or job mailed.
-- `env.with_(clock=FakeClock(...))`, `FakeRng`, `FakeHttp` and
-  `FailingMailer` live in `tests/fakes.py`.
+- The `clock` fixture is a `FakeClock` frozen at the moment the test starts.
+  Move it with `clock.advance(days=7)` and pass `clock.now()` on. That is
+  how an invite lapses or a code expires in a test. Never edit a row for it.
+- The `env` fixture builds an `Env` on the engine with a `RecordingMailer`
+  and the test's `clock`. Read `env_sent` for what a service or job mailed.
+- `env.with_(...)`, `FakeRng`, `FakeHttp`, `FailingMailer`,
+  `RaisingSessions` and `FakeGoogleCalendar` live in `tests/fakes.py`.
+- `before_latest_write(session, Model, id)` is the instant just before a
+  row's current version began, read from its `sys_period`: the exact
+  as-of timestamp, with no sleeps.
 - API tests drive the FastAPI app in-process over `httpx.ASGITransport`. No
   server or browser starts.
 - UI tests use NiceGUI's user simulation through `tests/ui_sim_main.py`.
   That module builds the simulated app's `Env` over the same engine, with
-  `tests.fakes.SIM_MAILER` as its mailer. A UI test reads `SIM_MAILER.sent`.
+  `tests.fakes.SIM_MAILER` as its mailer and `SIM_CLOCK` as its clock. The
+  `sim_sent` fixture is what the simulated app mailed during this test. It
+  is emptied before every test. `SIM_CLOCK.advance(...)` moves the app's
+  time, and the clock is reset between tests.
+- `only(user.find(...))` is the one element a `find` matched. Prefer it to
+  `.elements.pop()`, which picks arbitrarily from a set.
+- `mint.today()` is the parish day, `mint.now()` the instant; build dates
+  from those, never from `date.today()`, which is the machine's.
 - The `real_app_client` fixture reuses that harness to reach the fully
   assembled `create_app()` over HTTP.
 

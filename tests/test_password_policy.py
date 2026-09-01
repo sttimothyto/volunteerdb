@@ -40,13 +40,19 @@ def test_long_passwords_are_accepted_up_to_the_cap():
     )
 
 
-def test_no_composition_rules():
+@pytest.mark.parametrize(
+    "password",
+    [
+        "brindle ferry oxide",  # no capitals, digits or symbols
+        "8391746205518372",  # all digits, not a sequence
+        "   spaces  are  characters   ",
+    ],
+)
+def test_no_composition_rules(password):
     """ "SHALL NOT impose other composition rules (e.g., requiring mixtures of
     different character types)" — all-lowercase, all-digit and space-carrying
     passwords are all fine as long as they are not otherwise weak."""
-    check("brindle ferry oxide")  # no capitals, digits or symbols
-    check("8391746205518372")  # all digits, not a sequence
-    check("   spaces  are  characters   ")
+    assert check(password) is None
 
 
 def test_unicode_is_accepted_and_counted_by_code_point():
@@ -100,17 +106,15 @@ def test_context_specific_words_are_rejected():
     check("maria bakes rhubarb pies", email="maria.alvarez@example.org")
 
 
-def test_the_organisations_own_names_are_context_words(monkeypatch):
+def test_the_organisations_own_names_are_context_words():
     """Half of "the name of the service" depends on who is running the
     instance, so it is derived from the configured identity rather than
     listed. For "St. Timothy's" at sttimothyto.org this must reproduce
     exactly the four terms that used to be hardcoded — plus the mail domain,
     which was not.
     """
-    from volunteerdb.config import settings
     from volunteerdb.passwords import _org_terms
 
-    settings.cache_clear()
     terms = _org_terms(
         "St. Timothy's", "no-reply@sttimothyto.org", "https://vdb.sttimothyto.org"
     )

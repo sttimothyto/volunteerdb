@@ -23,8 +23,15 @@ def code() -> str:
     return new_otp_code()
 
 
-def fresh_invite(hours: int = 168) -> Invite:
-    return Invite(token=new_token(), now=now(), ttl=timedelta(hours=hours))
+def fresh_invite(hours: int = 168, *, now: datetime | None = None) -> Invite:
+    """An armed invite: minted at `now` (the test's clock, when it has one)
+    with `hours` to live -- a short life lets one invite lapse while the
+    others on the same page stay live."""
+    return Invite(
+        token=new_token(),
+        now=now if now is not None else datetime.now(UTC),
+        ttl=timedelta(hours=hours),
+    )
 
 
 def tz() -> ZoneInfo:

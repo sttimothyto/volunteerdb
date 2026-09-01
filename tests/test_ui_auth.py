@@ -1,20 +1,15 @@
 """Headless UI tests: AuthMiddleware redirect, login guards, invite redemption."""
 
-from pathlib import Path
-
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.services import users
 from volunteerdb.ui.context import clear_session
 
-from .conftest import SLOW, mail_to
+from .conftest import SIM_MAIN, SLOW, mail_to, only
 from tests import mint
 from tests.conftest import db_session
-from tests.fakes import SIM_MAILER
 from tests.fp_helpers import ok
-
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def test_anonymous_redirect_and_login_guards(database):
@@ -35,7 +30,7 @@ async def test_anonymous_redirect_and_login_guards(database):
         await user.should_see("Volunteer Database (VDB)")
 
         # the way out for somebody who has no account and wants none
-        public = user.find("Browse ministry home pages", kind=ui.button).elements.pop()
+        public = only(user.find("Browse ministry home pages", kind=ui.button))
         assert public.props["href"] == "/ministries/"
 
         # wrong password: notified, still on the login card
@@ -104,9 +99,8 @@ async def test_a_signed_in_browser_is_sent_on_from_the_login_page(real_app_clien
     )
 
 
-async def test_invite_redemption_flow(database, monkeypatch):
-    SIM_MAILER.sent.clear()
-    sent = SIM_MAILER.sent
+async def test_invite_redemption_flow(database, sim_sent):
+    sent = sim_sent
 
     async with db_session() as session:
         invitee, token = ok(

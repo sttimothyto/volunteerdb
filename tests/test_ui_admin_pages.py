@@ -1,7 +1,6 @@
 """Render smoke tests for the admin pages (previously zero UI coverage)."""
 
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from datetime import timedelta
 
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
@@ -10,10 +9,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
-from tests.conftest import db_session
+from tests.conftest import SIM_MAIN, SLOW, db_session, only
 from tests.fp_helpers import ok
-
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def test_admin_pages_render(database):
@@ -127,10 +124,10 @@ async def test_admin_users_provision_button(database, monkeypatch):
         user.find(
             "Create accounts for all volunteers with email", kind=ui.button
         ).click()
-        await user.should_see("send each of them an invite email?", retries=30)
+        await user.should_see("send each of them an invite email?", retries=SLOW)
         user.find("Create and email invites", kind=ui.button).click()
-        await user.should_see("vera@example.org", retries=30)
-        await user.should_see("2 accounts", retries=30)
+        await user.should_see("vera@example.org", retries=SLOW)
+        await user.should_see("2 accounts", retries=SLOW)
 
 
 async def test_admin_users_relink_dialog(database):
@@ -165,10 +162,10 @@ async def test_admin_users_relink_dialog(database):
         await user.should_see("not linked to a volunteer")
 
         user.find(marker=f"relink-{orphan_id}").click()
-        await user.should_see("Linked volunteer for orphan@example.org", retries=30)
-        user.find(marker=f"relink-pick-{orphan_id}").elements.pop().set_value(vera_id)
+        await user.should_see("Linked volunteer for orphan@example.org", retries=SLOW)
+        only(user.find(marker=f"relink-pick-{orphan_id}")).set_value(vera_id)
         user.find("Save", kind=ui.button).click()
-        await user.should_see("orphan@example.org → Vera Volunteer", retries=30)
+        await user.should_see("orphan@example.org → Vera Volunteer", retries=SLOW)
 
     async with db_session() as session:
         assert (await users.get(session, orphan_id)).volunteer_id == vera_id
@@ -193,10 +190,13 @@ async def test_admin_users_shows_invite_state(database):
             )
         )
         stale, _ = ok(
-            await users.create(session, "stale@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session,
+                "stale@example.org",
+                # issued two hours ago with an hour to live
+                invite=mint.fresh_invite(hours=1, now=mint.now() - timedelta(hours=2)),
+            )
         )
-        stale.invite_expires_at = datetime.now(UTC) - timedelta(hours=1)
-        await session.flush()
         admin_id = admin.id
         assert users.invite_live(pending, now=mint.now()) and not users.invite_live(
             stale, now=mint.now()

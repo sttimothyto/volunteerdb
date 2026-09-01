@@ -2,6 +2,8 @@
 
 import re
 
+import pytest
+
 from volunteerdb.auth import (
     async_hash_password,
     async_verify_password,
@@ -12,6 +14,8 @@ from volunteerdb.auth import (
     verify_password,
 )
 from volunteerdb.services.users import _token_digest
+
+pytestmark = pytest.mark.pure
 
 
 def test_password_hash_roundtrip():

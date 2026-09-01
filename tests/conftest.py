@@ -10,7 +10,7 @@ import re
 import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -37,6 +37,8 @@ from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
 from tests.fakes import (  # noqa: F401 -- re-exported for the tests that import them from here
+    SIM_CLOCK,
+    SIM_MAILER,
     FakeClock,
     FakeRng,
     RecordingMailer,
@@ -79,24 +81,29 @@ async def db_session(user_id: int | None = None) -> AsyncIterator[AsyncSession]:
 # change is therefore racing argon2 on the default budget, and loses often
 # enough to matter — test_volunteer_panel failed 2 runs in 10 that way, on a
 # different line each time, which is what made it look like a mystery instead of
-# a stopwatch. 3 s is nowhere near the real cost; the extra is only ever spent
-# on a genuine failure.
+# a stopwatch. 30 retries x 0.1 s = 3 s is nowhere near the real cost; the extra
+# is only ever spent on a genuine failure. Every test module takes this name
+# from here: a literal 30 at a call site is a budget nobody can tune.
 SLOW = 30
 
 
-async def _now() -> datetime:
-    """A timestamp that sits strictly between the write before it and the write
-    after it, for as-of assertions.
+async def before_latest_write(session: AsyncSession, model: type, pk: int) -> datetime:
+    """The instant just before the live row's current version began: an as-of
+    timestamp that sees the previous version and nothing later.
 
-    The sleeps are a clock_timestamp() granularity margin: without them a
-    snapshot taken right after a write can land on the same tick as the write,
-    and the union read picks up a row the test means to be looking past. Shared
-    by test_history.py and test_team_cache.py, which must not drift apart on it.
+    Every versioned table carries `sys_period`, whose lower bound is the
+    `clock_timestamp()` of the write that produced the current row. One
+    microsecond before it is inside the previous version's period, which
+    ended at that same instant -- so this is exact, where a timestamp taken
+    between two writes needed a sleep on either side to be sure it did not
+    land on a write's own tick. Shared by test_history.py and
+    test_team_cache.py, which must not drift apart on it.
     """
-    await asyncio.sleep(0.02)
-    now = datetime.now(UTC)
-    await asyncio.sleep(0.02)
-    return now
+    started = await session.scalar(
+        sa.select(sa.func.lower(model.sys_period)).where(model.id == pk)
+    )
+    assert started is not None, f"{model.__name__} {pk} has no live row"
+    return started - timedelta(microseconds=1)
 
 
 # The compiled SQL of a live team-tree read (services.teams.tree). Unique to it:
@@ -138,11 +145,14 @@ async def mail_to(sent: list[tuple[str, str, str]], address: str, timeout_s=3.0)
     A page reveals its next step after awaiting the send, so a visible hint
     ought to mean the mail is already in — but the two are separated by an
     argon2 pass, and asserting on the captured list with no wait is the same
-    race as a bare should_see.
+    race as a bare should_see. The whole list is searched, newest first: a
+    leader's copy or a digest sent after the message under test must not
+    hide it.
     """
     for _ in range(int(timeout_s * 10)):
-        if sent and sent[-1][0] == address:
-            return sent[-1]
+        for message in reversed(sent):
+            if message[0] == address:
+                return message
         await asyncio.sleep(0.1)
     raise AssertionError(f"no email to {address} within {timeout_s}s; sent={sent}")
 
@@ -198,6 +208,7 @@ async def all_tables(database) -> tuple[str, ...]:
             sa.text(
                 "SELECT tablename FROM pg_tables"
                 " WHERE schemaname = 'public' AND tablename <> 'alembic_version'"
+                " ORDER BY tablename"
             )
         )
         return tuple(r[0] for r in rows)
@@ -250,13 +261,67 @@ def log_records():
 # The app's impure parts as one value (volunteerdb/env.py). A test that goes
 # through the real app (user_simulation) gets the real Env create_app() builds;
 # the bare router app below is handed this one, whose mailer records instead
-# of sending. The clock is the real one unless a test installs a FakeClock,
-# which is how "now" becomes an input rather than a race.
+# of sending and whose clock is the test's own (`clock`), which is how "now"
+# becomes an input rather than a race.
 
 
 @pytest.fixture
-async def env(database) -> env_mod.Env:
-    return env_mod.build(engine=database, mailer=RecordingMailer())
+def clock() -> FakeClock:
+    """The test's clock: frozen at the moment the test starts, moved by hand.
+
+    One wall-clock read, here at the boundary, and none in the test body: a
+    test that needs "a week later" calls `clock.advance(days=7)` and passes
+    `clock.now()` on, instead of editing an expiry column or sleeping. The
+    Env below runs on this clock, so the API and the jobs see the same
+    instant the test does. History and as-of tests are the exception: their
+    instants come from the database's own clock (before_latest_write)."""
+    return FakeClock()
+
+
+@pytest.fixture(autouse=True)
+def _sim_clock_at_now():
+    """The simulated app's clock (tests/fakes.py SIM_CLOCK) starts every test
+    at the real time; a test that moved it does not move the next one."""
+    SIM_CLOCK.reset()
+    yield
+    SIM_CLOCK.reset()
+
+
+@pytest.fixture(autouse=True)
+def sim_sent() -> list[tuple[str, str, str]]:
+    """What the simulated app mailed during this test.
+
+    SIM_MAILER is one list per process (tests/fakes.py says why), so it is
+    emptied here before every test rather than by whichever test remembers
+    to. A test reads it back by asking for this fixture by name."""
+    SIM_MAILER.sent.clear()
+    return SIM_MAILER.sent
+
+
+@pytest.fixture
+async def env(database, clock) -> env_mod.Env:
+    return env_mod.build(engine=database, mailer=RecordingMailer(), clock=clock)
+
+
+@pytest.fixture
+def env_sent(env) -> list[tuple[str, str, str]]:
+    """What the Env's mailer (the API's, a job's) sent: fresh per test, since
+    the Env is."""
+    return env.mailer.sent
+
+
+def only[T](found) -> T:
+    """The one element a `user.find(...)` matched.
+
+    `UserInteraction.elements` is a set, and `set.pop()` on a set of two is
+    whichever the hash order offers -- a test that pops from an unconstrained
+    `find(kind=ui.table)` on a page with two tables passes or fails by
+    accident. This says which one it meant, by insisting there is only one."""
+    elements = list(found.elements)
+    assert len(elements) == 1, (
+        f"expected exactly one element, found {len(elements)}: {elements}"
+    )
+    return elements[0]
 
 
 @pytest.fixture

@@ -42,10 +42,9 @@ def _alerting(sched: Scheduler) -> None:
 
 
 @pytest.fixture
-def sent_mail(env) -> list[tuple[str, str, str]]:
-    """What the scheduler mailed: the Env's recording mailer."""
-    env.mailer.sent.clear()
-    return env.mailer.sent
+def sent_mail(env_sent) -> list[tuple[str, str, str]]:
+    """What the scheduler mailed: the Env's recording mailer (conftest.env_sent)."""
+    return env_sent
 
 
 def _patch_jobs(sched: Scheduler, behaviors: dict[str, int | Exception]) -> list[str]:

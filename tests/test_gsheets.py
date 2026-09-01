@@ -180,7 +180,10 @@ def test_build_requests_golden():
         "updateDimensionProperties",
         "addProtectedRange",
     ]
-    validation = requests[0]["setDataValidation"]
+    by_kind = {}
+    for r in requests:
+        by_kind.setdefault(next(iter(r)), []).append(next(iter(r.values())))
+    validation, team = by_kind["setDataValidation"]
     assert validation["range"] == {
         "sheetId": 5,
         "startRowIndex": 1,  # open-ended: no endRowIndex, all data rows
@@ -191,13 +194,12 @@ def test_build_requests_golden():
         v["userEnteredValue"] for v in validation["rule"]["condition"]["values"]
     ] == gsheets.ROLE_VALUES
     assert validation["rule"]["strict"] is True
-    team = requests[1]["setDataValidation"]
     assert team["range"]["startColumnIndex"] == 6
     assert team["range"]["endColumnIndex"] == 7
     assert [v["userEnteredValue"] for v in team["rule"]["condition"]["values"]] == [
         "Choir"
     ]
-    notes = requests[2]["updateCells"]
+    (notes,) = by_kind["updateCells"]
     assert notes["rows"] == [
         {
             "values": [
@@ -206,7 +208,7 @@ def test_build_requests_golden():
             ]
         }
     ]
-    protection = requests[5]["addProtectedRange"]["protectedRange"]
+    protection = by_kind["addProtectedRange"][0]["protectedRange"]
     assert protection["warningOnly"] is True
     assert protection["description"] == gsheets.PROTECTION_MARKER
 
@@ -393,7 +395,10 @@ async def test_backoff_grows_and_is_capped(monkeypatch):
     slept = _no_sleep(monkeypatch)
     client, _ = _client(_statuses(*([429] * (gsheets.RETRY_ATTEMPTS - 1))))
     ok(await gsheets.read_csv(client, "s"))
-    assert slept == [2.0, 8.0, 32.0]
+    assert slept == [
+        gsheets.RETRY_BASE_DELAY * gsheets.RETRY_FACTOR**n
+        for n in range(gsheets.RETRY_ATTEMPTS - 1)
+    ]
     assert all(s <= gsheets.RETRY_MAX_DELAY for s in slept)
 
 

@@ -6,7 +6,6 @@ local_today().
 """
 
 from datetime import timedelta
-from pathlib import Path
 
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
@@ -15,10 +14,8 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
-from tests.conftest import db_session
+from tests.conftest import SIM_MAIN, SLOW, db_session, only
 from tests.fp_helpers import ok
-
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 async def _parish(session):
@@ -121,12 +118,12 @@ async def test_leader_creates_proposal_from_vacancy(database):
         await user.should_see("no second-in-command")
         user.find("Start proposal", kind=ui.button).click()
         await user.should_see("First candidate")
-        who = user.find(kind=ui.select, content="First candidate").elements.pop()
+        who = only(user.find(kind=ui.select, content="First candidate"))
         who.value = ids["vera"]
         user.find("Create proposal", kind=ui.button).click()
 
         # lands on the detail page: Ignatian reminder, candidate, roll, flags
-        await user.should_see("Ignatian election", retries=30)
+        await user.should_see("Ignatian election", retries=SLOW)
         await user.should_see("Nominating until")
         await user.should_see("Vera Volunteer")
         await user.should_see("Current commitments:")
@@ -156,10 +153,10 @@ async def test_voter_access_and_nomination(database):
         await user.should_see("Liturgy: Second-in-command")
         await user.open(f"/elections/{pid}")
         await user.should_see("Ignatian election")
-        who = user.find(kind=ui.select, content="New candidate").elements.pop()
+        who = only(user.find(kind=ui.select, content="New candidate"))
         who.value = victor_id
         user.find("Nominate", kind=ui.button).click()
-        await user.should_see("nominated by cora@example.org", retries=30)
+        await user.should_see("nominated by cora@example.org", retries=SLOW)
 
 
 async def test_voting_phase_ballot(database):
@@ -181,11 +178,11 @@ async def test_voting_phase_ballot(database):
         await user.open(f"/elections/{pid}")
         await user.should_see("Your ballot")
         await user.should_see("spoiler effect")
-        toggle = user.find(kind=ui.toggle).elements.pop()
+        toggle = only(user.find(kind=ui.toggle))
         toggle.value = 5
         user.find("Submit ballot", kind=ui.button).click()
-        await user.should_see("Ballot recorded", retries=30)
-        await user.should_see("1 of 3 ballots cast", retries=30)
+        await user.should_see("Ballot recorded", retries=SLOW)
+        await user.should_see("1 of 3 ballots cast", retries=SLOW)
 
 
 async def test_concluded_tally_and_appointment(database):
@@ -210,7 +207,7 @@ async def test_concluded_tally_and_appointment(database):
         user.find("Appoint", kind=ui.button).click()
         await user.should_see("This assigns the role immediately")
         user.find("Yes, appoint", kind=ui.button).click()
-        await user.should_see("Appointed", retries=30)
+        await user.should_see("Appointed", retries=SLOW)
 
         await user.open(f"/teams/{ids['liturgy']}")
         await user.should_see("Vera Volunteer")

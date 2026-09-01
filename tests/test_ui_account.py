@@ -8,26 +8,21 @@ authenticator, not account recovery).
 """
 
 import re
-from pathlib import Path
 
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
-from volunteerdb.services import mail, memberships, teams, users, volunteers
+from volunteerdb.services import memberships, teams, users, volunteers
 
-from .conftest import SLOW, mail_to
+from .conftest import SIM_MAIN, SLOW, mail_to
 from tests import mint
 from tests.conftest import db_session
-from tests.fakes import SIM_MAILER
 from tests.fp_helpers import ok
 
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
-
-async def test_otp_session_sets_a_password_without_the_old_one(database, monkeypatch):
-    SIM_MAILER.sent.clear()
-    sent = SIM_MAILER.sent
+async def test_otp_session_sets_a_password_without_the_old_one(database, sim_sent):
+    sent = sim_sent
 
     async with db_session() as session:
         user, _ = ok(
@@ -79,9 +74,7 @@ async def test_otp_session_sets_a_password_without_the_old_one(database, monkeyp
     assert subject == "Your VolunteerDB password changed"
 
 
-async def test_password_session_must_retype_the_current_password(database, monkeypatch):
-    monkeypatch.setattr(mail, "send_email", lambda *a, **k: _ok())
-
+async def test_password_session_must_retype_the_current_password(database):
     async with db_session() as session:
         user, _ = ok(
             await users.create(
@@ -120,17 +113,12 @@ async def test_password_session_must_retype_the_current_password(database, monke
         ).is_ok()
 
 
-async def _ok() -> bool:
-    return True
-
-
 async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
-    database, monkeypatch
+    database, sim_sent
 ):
     """The whole flow at the surface: ask on /account, nothing moves, open the
     link that lands in the new mailbox, and both addresses move together."""
-    SIM_MAILER.sent.clear()
-    sent = SIM_MAILER.sent
+    sent = sim_sent
 
     async with db_session() as session:
         maria = ok(
@@ -217,9 +205,7 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
         ).email == "maria.new@example.org"
 
 
-async def test_a_pending_address_change_can_be_called_off(database, monkeypatch):
-    monkeypatch.setattr(mail, "send_email", lambda *a, **k: _ok())
-
+async def test_a_pending_address_change_can_be_called_off(database):
     async with db_session() as session:
         user, _ = ok(
             await users.create(
@@ -243,11 +229,7 @@ async def test_a_pending_address_change_can_be_called_off(database, monkeypatch)
         assert (await users.get(session, user_id)).pending_email is None
 
 
-async def test_the_address_change_form_refuses_a_typo_and_a_taken_address(
-    database, monkeypatch
-):
-    monkeypatch.setattr(mail, "send_email", lambda *a, **k: _ok())
-
+async def test_the_address_change_form_refuses_a_typo_and_a_taken_address(database):
     async with db_session() as session:
         user, _ = ok(
             await users.create(

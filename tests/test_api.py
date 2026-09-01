@@ -1,16 +1,13 @@
 """JSON API smoke tests over ASGI: auth, CRUD, permissions, as-of."""
 
-import asyncio
-from datetime import UTC, date, datetime
-
 from volunteerdb.api.deps import as_of_param
-from volunteerdb.models import TeamRole
+from volunteerdb.models import TeamRole, Volunteer
 from volunteerdb.services import custom_fields as custom_fields_service
 from volunteerdb.services import memberships, users, volunteers
 from volunteerdb.ui.context import parse_as_of
 
 from tests import mint
-from tests.conftest import _token, db_session
+from tests.conftest import _token, before_latest_write, db_session
 from tests.fp_helpers import done, ok
 
 
@@ -101,16 +98,16 @@ async def test_member_permissions_enforced(client, seeded):
 async def test_as_of_time_travel(client, seeded):
     headers = await _token(client, "admin@example.org", "secret-pass-phrase")
 
-    await asyncio.sleep(0.02)
-    before = datetime.now(UTC).isoformat()
-    await asyncio.sleep(0.02)
-
     r = await client.patch(
         f"/api/volunteers/{seeded['volunteer_id']}",
         json={"first_name": "Renamed"},
         headers=headers,
     )
     assert r.status_code == 200
+    async with db_session() as session:
+        before = (
+            await before_latest_write(session, Volunteer, seeded["volunteer_id"])
+        ).isoformat()
 
     r = await client.get(f"/api/volunteers/{seeded['volunteer_id']}", headers=headers)
     assert r.json()["first_name"] == "Renamed"
@@ -165,7 +162,7 @@ async def test_a_bare_as_of_date_covers_that_whole_day(client, seeded):
     while the GUI bumped it to 23:59:59 — the same query string returning
     snapshots a day apart."""
     headers = await _token(client, "admin@example.org", "secret-pass-phrase")
-    today = date.today().isoformat()
+    today = mint.today().isoformat()
 
     r = await client.get("/api/volunteers", params={"as_of": today}, headers=headers)
     assert r.status_code == 200, r.text

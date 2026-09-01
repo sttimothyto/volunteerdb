@@ -1,10 +1,12 @@
 """System-versioning: updates/deletes archive old rows; as-of queries see them."""
 
+from datetime import timedelta
 from decimal import Decimal
 
 import sqlalchemy as sa
 
 from volunteerdb.models import (
+    Team,
     TeamRole,
     Volunteer,
     membership_history,
@@ -13,8 +15,7 @@ from volunteerdb.models import (
 )
 from volunteerdb.services import memberships, teams, volunteers
 
-from .conftest import _now
-from tests.conftest import db_session
+from tests.conftest import before_latest_write, db_session
 from tests.fp_helpers import done, ok
 
 
@@ -22,13 +23,14 @@ async def test_update_archives_old_version(database):
     async with db_session(user_id=42) as session:
         v = ok(await volunteers.create(session, None, "Old", "Name", "old@example.org"))
         vid = v.id
-    t_created = await _now()
 
     async with db_session(user_id=42) as session:
         done(await volunteers.update(session, None, vid, first_name="New"))
-    t_updated = await _now()
 
     async with db_session() as session:
+        # the instant before the rename, and the instant of it
+        t_created = await before_latest_write(session, Volunteer, vid)
+        t_updated = t_created + timedelta(microseconds=1)
         # live row has the new name
         live = await volunteers.get(session, vid)
         assert live.first_name == "New"
@@ -49,7 +51,12 @@ async def test_delete_is_visible_in_the_past(database):
     async with db_session(user_id=7) as session:
         v = ok(await volunteers.create(session, None, "Gone", "Tomorrow"))
         vid = v.id
-    t_alive = await _now()
+
+    async with db_session() as session:
+        # the row's own start: it has been alive since the instant it was made
+        t_alive = (await before_latest_write(session, Volunteer, vid)) + timedelta(
+            microseconds=1
+        )
 
     async with db_session(user_id=7) as session:
         ok(await volunteers.delete(session, None, vid))
@@ -112,13 +119,13 @@ async def test_custom_values_are_versioned(database):
         v = ok(await volunteers.create(session, None, "Custom", "Carrier"))
         vid = v.id
         v.custom = {"shirt_size": "M"}
-    t_medium = await _now()
 
     async with db_session(user_id=42) as session:
         v = await session.get(Volunteer, vid)
         v.custom = {"shirt_size": "L"}
 
     async with db_session() as session:
+        t_medium = await before_latest_write(session, Volunteer, vid)
         assert (await volunteers.get(session, vid)).custom == {"shirt_size": "L"}
         old = await volunteers.get(session, vid, at=t_medium)
         assert old.custom == {"shirt_size": "M"}
@@ -147,13 +154,13 @@ async def test_workload_weight_is_versioned(database):
         t = ok(await teams.create(session, None, "Liturgy"))
         tid = t.id
         assert t.workload_weight == Decimal(0), "unweighted is 0, not NULL"
-    t_unweighted = await _now()
 
     async with db_session(user_id=9) as session:
         team = await teams.get(session, tid)
         team.workload_weight = Decimal("2.50")
 
     async with db_session() as session:
+        t_unweighted = await before_latest_write(session, Team, tid)
         assert (await teams.get(session, tid)).workload_weight == Decimal("2.50")
         old = await teams.get(session, tid, at=t_unweighted)
         assert old.workload_weight == Decimal(0)

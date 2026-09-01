@@ -9,7 +9,6 @@ or the test modules themselves would be popped too.
 """
 
 import re
-from pathlib import Path
 
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
@@ -18,18 +17,14 @@ from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
-from .conftest import SLOW, mail_to
+from .conftest import SIM_MAIN, SLOW, mail_to, only
 from tests import mint
 from tests.conftest import db_session
-from tests.fakes import SIM_MAILER
 from tests.fp_helpers import ok
 
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
-
-async def test_panel_opens_from_team_roster_table_and_graph(database, monkeypatch):
-    SIM_MAILER.sent.clear()
-    sent = SIM_MAILER.sent
+async def test_panel_opens_from_team_roster_table_and_graph(database, sim_sent):
+    sent = sim_sent
 
     async with db_session() as session:
         liturgy = ok(await teams.create(session, None, "Liturgy"))
@@ -161,10 +156,10 @@ async def test_photo_dialog_disclaimer_gates_upload(database):
         user.find(marker="photo-avatar").trigger("click")
         await user.should_see("reported to the authorities")
 
-        upload_button = user.find("Upload", kind=ui.button).elements.pop()
+        upload_button = only(user.find("Upload", kind=ui.button))
         assert not upload_button.enabled, (
             "Upload stays disabled until the declaration is checked"
         )
-        checkbox = user.find(kind=ui.checkbox).elements.pop()
+        checkbox = only(user.find(kind=ui.checkbox))
         checkbox.value = True
         assert upload_button.enabled, "checking the declaration enables Upload"

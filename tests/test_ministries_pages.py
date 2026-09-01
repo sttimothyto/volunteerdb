@@ -7,6 +7,7 @@ never serve unsanitized doc HTML.
 
 import base64
 import hashlib
+import re
 from io import BytesIO
 
 import httpx
@@ -15,7 +16,7 @@ import sqlalchemy as sa
 from PIL import Image
 
 from volunteerdb import errors
-from volunteerdb.models import TeamPage, TeamPageImage
+from volunteerdb.models import Team, TeamPage, TeamPageImage
 from volunteerdb.services import pages, teams
 
 from tests import mint
@@ -98,19 +99,32 @@ def test_sanitize_doc_html_strips_active_content():
     assert "onclick" not in clean
 
 
-def test_scope_css_confines_doc_styles_to_the_doc_card():
+def _styled(css: str) -> str:
+    """The <style> block an exported doc's sanitized body carries, given the
+    CSS Google put in its head -- the one way that CSS reaches a page."""
+    html = pages.sanitize_doc_html(
+        f"<html><head><style>{css}</style></head><body><p>x</p></body></html>"
+    )
+    match = re.search(r"<style>(.*?)</style>", html, re.S)
+    return match.group(1) if match else ""
+
+
+@pytest.mark.parametrize(
+    ("css", "scoped"),
+    [
+        ("body{background:#fff}", ".doc{background:#fff}"),
+        ("p,h1{margin:0}", ".doc p,.doc h1{margin:0}"),
+        ("body p{margin:0}", ".doc p{margin:0}"),
+        # @import is stripped, the rest survives
+        ("@import url(https://evil.test/x.css);.c1{a:b}", ".doc .c1{a:b}"),
+        # any other @-rule drops the block whole
+        ("@media print{.c1{a:b}}", ""),
+    ],
+)
+def test_doc_styles_are_confined_to_the_doc_card(css, scoped):
     """Google exports element rules (body{}, p{}, h1{}…) that would otherwise
     restyle the themed shell around the doc."""
-    assert pages._scope_css("body{background:#fff}") == ".doc{background:#fff}"
-    assert pages._scope_css("p,h1{margin:0}") == ".doc p,.doc h1{margin:0}"
-    assert pages._scope_css("body p{margin:0}") == ".doc p{margin:0}"
-    assert (
-        pages._scope_css("@import url(https://evil.test/x.css);.c1{a:b}")
-        == ".doc .c1{a:b}"
-    ), "@import is stripped, the rest survives"
-    assert pages._scope_css("@media print{.c1{a:b}}") == "", (
-        "any other @-rule drops the block whole"
-    )
+    assert _styled(css) == scoped
 
 
 def test_qr_png_is_a_print_usable_png():
@@ -714,6 +728,12 @@ async def test_core_member_may_set_home_doc(client, seeded, token_member):
         headers=token_member,
     )
     assert r.status_code == 200, "core team members may manage the home page"
+    assert r.json()["home_doc_url"] == "https://docs.google.com/document/d/core1"
+    async with db_session() as session:
+        team = await session.get(Team, seeded["team_id"])
+        assert team.home_doc_url == "https://docs.google.com/document/d/core1", (
+            "and it stuck"
+        )
 
 
 async def test_page_rows_cascade_with_their_team(database):

@@ -27,6 +27,7 @@ from volunteerdb.models import (
     Volunteer,
 )
 
+from tests import mint
 from tests.conftest import db_session
 
 
@@ -52,7 +53,7 @@ async def test_a_ballot_cannot_score_another_proposals_candidate(database):
             .values(first_name="Ann", last_name="Able")
             .returning(Volunteer.id)
         )
-        today = datetime.now(UTC).date()
+        today = mint.today()
         ids = []
         for role in ("leader", "second"):
             ids.append(

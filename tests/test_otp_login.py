@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from volunteerdb.config import Settings
 from volunteerdb.env import LoggingMailer
 from volunteerdb.services import mail, users
@@ -110,18 +112,17 @@ async def test_otp_lockout_then_fresh_code(database):
         ).is_ok()
 
 
-async def test_otp_expired_code_rejected(database):
+async def test_otp_expired_code_rejected(database, clock):
     async with db_session() as session:
         ok(await users.create(session, "exp@example.org", invite=mint.fresh_invite()))
         user, code = otp_started(
             await users.start_otp_login(
-                session, "exp@example.org", now=mint.now(), code=mint.code()
+                session, "exp@example.org", now=clock.now(), code=mint.code()
             )
         )
-        user.otp_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-        await session.flush()
+        clock.advance(seconds=users.OTP_TTL.total_seconds() + 1)
         assert (
-            await users.verify_otp(session, "exp@example.org", code, now=mint.now())
+            await users.verify_otp(session, "exp@example.org", code, now=clock.now())
         ).is_err()
 
 
@@ -200,8 +201,23 @@ async def test_mail_dev_mode_and_builders(capsys):
 
 
 def test_session_expired():
-    assert session_expired(None)
-    assert session_expired("")
-    assert session_expired("not-a-timestamp")
-    assert session_expired((datetime.now(UTC) - timedelta(seconds=1)).isoformat())
-    assert not session_expired((datetime.now(UTC) + timedelta(days=1)).isoformat())
+    now = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+    assert session_expired(None, now)
+    assert session_expired("", now)
+    assert session_expired("not-a-timestamp", now)
+    assert session_expired((now - timedelta(seconds=1)).isoformat(), now)
+    assert not session_expired((now + timedelta(days=1)).isoformat(), now)
+
+
+@pytest.mark.parametrize(
+    ("delta", "expired"),
+    [
+        (timedelta(microseconds=-1), True),
+        (timedelta(0), True),
+        (timedelta(microseconds=1), False),
+    ],
+    ids=["just past", "at the instant", "just ahead"],
+)
+def test_a_session_is_dead_at_the_instant_it_names(delta, expired):
+    now = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+    assert session_expired((now + delta).isoformat(), now) is expired

@@ -11,8 +11,7 @@ drawer, so asserting on labels alone would pass on things no human can reach.
 """
 
 import hashlib
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from datetime import timedelta
 
 import pytest
 from nicegui import ui
@@ -21,21 +20,17 @@ from nicegui.testing.user_simulation import user_simulation
 from volunteerdb.models import TeamRole
 from volunteerdb.services import memberships, teams, users, volunteers
 
-from .conftest import SLOW, mail_to
+from .conftest import SIM_MAIN, SLOW, mail_to
 from tests import mint
 from tests.conftest import db_session
-from tests.fakes import SIM_MAILER
 from tests.fp_helpers import done, ok
-
-SIM_MAIN = Path(__file__).parent / "ui_sim_main.py"
 
 
 @pytest.fixture
-def sent() -> list[tuple[str, str, str]]:
-    """What the simulated app mailed: its Env's recording mailer (tests/fakes.py),
-    emptied for this test."""
-    SIM_MAILER.sent.clear()
-    return SIM_MAILER.sent
+def sent(sim_sent) -> list[tuple[str, str, str]]:
+    """What the simulated app mailed: conftest's sim_sent, under this module's
+    older name."""
+    return sim_sent
 
 
 async def _parish(session) -> dict[str, int]:
@@ -68,10 +63,14 @@ async def _parish(session) -> dict[str, int]:
     for v in (nils, stale, livev, void, mia):
         ok(await memberships.assign(session, None, v.id, music.id, TeamRole.member))
 
-    stale_u, _ = done(
-        await users.invite_volunteer(session, stale.id, invite=mint.fresh_invite())
-    ).value
-    stale_u.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    done(
+        await users.invite_volunteer(
+            session,
+            stale.id,
+            # issued two hours ago with an hour to live: lapsed
+            invite=mint.fresh_invite(hours=1, now=mint.now() - timedelta(hours=2)),
+        )
+    )
     done(await users.invite_volunteer(session, livev.id, invite=mint.fresh_invite()))
 
     # actor accounts: password written straight in, so no argon2 pass is spent
@@ -210,7 +209,7 @@ async def test_a_snapshot_reports_but_never_invites(database, sent):
     the as-of gate a leader could invite somebody who left years ago."""
     async with db_session() as session:
         ids = await _parish(session)
-    today = datetime.now(UTC).date().isoformat()
+    today = mint.today().isoformat()
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")

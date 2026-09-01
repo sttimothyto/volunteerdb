@@ -346,24 +346,22 @@ async def test_set_password_clears_invite_and_missing_raises(database):
         )
 
 
-async def test_invite_links_expire(database):
+async def test_invite_links_expire(database, clock):
     """The invite link is also the reset link, so it is a recovery credential
     sitting in a mailbox: NIST SP 800-63B §4.2.1.2 caps one emailed to an
     address at 24 hours."""
     async with db_session() as session:
         # the plaintext comes back from create(); only its digest is stored
-        user, token = ok(
-            await users.create(session, "slow@example.org", invite=mint.fresh_invite())
-        )
-        assert user.invite_expires_at is not None
-        assert users.invite_live(user, now=mint.now())
+        invite = mint.fresh_invite(now=clock.now())
+        user, token = ok(await users.create(session, "slow@example.org", invite=invite))
+        assert user.invite_expires_at == invite.now + invite.ttl
+        assert users.invite_live(user, now=clock.now())
 
-        user.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-        await session.flush()
-        assert not users.invite_live(user, now=mint.now())
+        clock.advance(seconds=invite.ttl.total_seconds() + 1)
+        assert not users.invite_live(user, now=clock.now())
         assert (
             await users.redeem_invite(
-                session, token, None, agreed_to_confidentiality=True, now=mint.now()
+                session, token, None, agreed_to_confidentiality=True, now=clock.now()
             )
         ).is_err(), "an expired link is refused exactly like an unknown one"
         assert user.invite_token is not None, "and is not silently consumed"
@@ -406,13 +404,12 @@ async def test_invite_volunteer_rearms_a_link_nobody_used(database):
         nils = ok(
             await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
         )
+        # issued two hours ago with an hour to live: lapsed unredeemed, as an
+        # invite does after a week of nobody reading email
+        lapsed = mint.fresh_invite(hours=1, now=mint.now() - timedelta(hours=2))
         account, first = done(
-            await users.invite_volunteer(session, nils.id, invite=mint.fresh_invite())
+            await users.invite_volunteer(session, nils.id, invite=lapsed)
         ).value
-
-        # let it lapse unredeemed, as it does after a week of nobody reading email
-        account.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-        await session.flush()
         assert not users.invite_live(account, now=mint.now())
 
         again, second = done(
@@ -568,12 +565,13 @@ async def test_invitable_agrees_with_what_invite_volunteer_does(database):
         lapsed_v = ok(
             await volunteers.create(session, None, "Lap", "Sed", "lap@example.org")
         )
-        lapsed_a, _ = done(
+        done(
             await users.invite_volunteer(
-                session, lapsed_v.id, invite=mint.fresh_invite()
+                session,
+                lapsed_v.id,
+                invite=mint.fresh_invite(hours=1, now=mint.now() - timedelta(hours=2)),
             )
-        ).value
-        lapsed_a.invite_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        )
 
         settled_v = ok(
             await volunteers.create(session, None, "Set", "Tled", "set@example.org")
@@ -629,10 +627,12 @@ async def test_reissue_invite_arms_a_fresh_window(database):
         )
         assert user.invite_token is None and user.invite_expires_at is None
 
-        done(await users.reissue_invite(session, user.id, invite=mint.fresh_invite()))
-        assert users.invite_live(user, now=mint.now())
-        expected = datetime.now(UTC) + timedelta(hours=settings().invite_ttl_hours)
-        assert abs((user.invite_expires_at - expected).total_seconds()) < 60
+        invite = mint.fresh_invite(hours=settings().invite_ttl_hours)
+        done(await users.reissue_invite(session, user.id, invite=invite))
+        assert users.invite_live(user, now=invite.now)
+        assert user.invite_expires_at == invite.now + invite.ttl, (
+            "exactly the configured lifetime from the moment it was armed"
+        )
 
 
 async def test_weak_passwords_are_refused_on_every_path(database):

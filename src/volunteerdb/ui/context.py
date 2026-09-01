@@ -4,7 +4,7 @@ import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
@@ -50,7 +50,7 @@ def establish_session(
     app.storage.user["user_id"] = user_id
     app.storage.user["auth_method"] = method
     app.storage.user["session_expires_at"] = (
-        datetime.now(UTC) + (SESSION_REMEMBER if remember else SESSION_SHORT)
+        current().clock.now() + (SESSION_REMEMBER if remember else SESSION_SHORT)
     ).isoformat()
 
 
@@ -70,11 +70,13 @@ def session_auth_method() -> str:
     return app.storage.user.get("auth_method") or "password"
 
 
-def session_expired(raw: str | None) -> bool:
+def session_expired(raw: str | None, now: datetime) -> bool:
+    """A stored expiry that has passed -- or is passing: like every other
+    expiry here, a session is dead at the instant it names."""
     if not raw:
         return True
     try:
-        return datetime.fromisoformat(raw) < datetime.now(UTC)
+        return datetime.fromisoformat(raw) <= now
     except ValueError:
         return True
 
@@ -87,7 +89,9 @@ def session_user_id() -> int | None:
     user_id = app.storage.user.get("user_id")
     if user_id is None:
         return None
-    if session_expired(app.storage.user.get("session_expires_at")):
+    if session_expired(
+        app.storage.user.get("session_expires_at"), current().clock.now()
+    ):
         clear_session()
         return None
     return user_id
