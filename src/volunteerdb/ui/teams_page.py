@@ -969,6 +969,14 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         if can_full and at is None:
             _home_page_section(team, team_page, team_id, slug, base_url)
 
+        if children:
+            ui.label("Sub-teams").classes("text-lg font-medium")
+            with ui.row().classes("gap-2"):
+                for child in children:
+                    ui.button(child.name).props(
+                        f'outline dense href="/teams/{child.id}"'
+                    )
+
         if can_manage:
             ui.label("Add member").classes("text-lg font-medium")
             with ui.row().classes("items-center gap-2"):
@@ -1057,14 +1065,6 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
 
         if can_manage:
             _sheet_section(team_sheet, team_id, actor.is_admin)
-
-        if children:
-            ui.label("Sub-teams").classes("text-lg font-medium")
-            with ui.row().classes("gap-2"):
-                for child in children:
-                    ui.button(child.name).props(
-                        f'outline dense href="/teams/{child.id}"'
-                    )
 
         if upcoming_events:
             ui.label("Upcoming events").classes("text-lg font-medium")
