@@ -34,6 +34,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "axe-playwright-python>=0.1.8",
+    "hypothesis>=6.167.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=6.0",
@@ -41,6 +42,8 @@ dev = [
     # the sync one: this suite runs under asyncio_mode=auto, and Playwright's
     # sync API refuses to be driven from inside a running event loop.
     "pytest-playwright-asyncio>=0.9",
+    "pytest-randomly>=4.1.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.15",
 ]
 docs = [
@@ -57,6 +60,13 @@ asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 # `pure` tests need no database: `uv run pytest -m pure` runs with Postgres down.
 markers = ["pure: needs no database"]
+# A misspelt marker is an error, not a silently unmarked test.
+addopts = "--strict-markers"
+# Per-test wall limit (pytest-timeout), fixtures included. Generous on purpose:
+# the browser session fixture allows the app 60 s to start, and a test that
+# takes longer than three minutes is hung, not slow -- a deadlock on the slot
+# sign-up lock, say. Without this, a hang runs until CI's 20-minute job limit.
+timeout = 180
 
 [tool.ruff]
 # Ruff's default width, stated explicitly so it cannot drift under us. The
@@ -79,6 +89,8 @@ known-local-folder = ["tests"]
 
 [tool.coverage.run]
 source = ["volunteerdb"]
+# Branch coverage: a line that is reached is not a decision that is tested.
+branch = true
 
 [tool.coverage.report]
 skip_covered = true
