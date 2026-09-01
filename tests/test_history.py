@@ -167,3 +167,23 @@ async def test_workload_weight_is_versioned(database):
         row = (await session.execute(sa.select(team_history))).mappings().one()
         assert row["workload_weight"] == Decimal(0)
         assert row["changed_by"] == 9 and row["op"] == "U"
+
+
+async def test_a_snapshot_row_never_enters_the_live_session(database):
+    """fetch() runs an as-of query in a sibling session and expunges the rows:
+    a historical version must never sit in the caller's identity map, where a
+    later flush would write the past over the present."""
+    async with db_session(user_id=1) as session:
+        v = ok(await volunteers.create(session, None, "Then", "Now"))
+        vid = v.id
+    async with db_session(user_id=1) as session:
+        done(await volunteers.update(session, None, vid, first_name="Since"))
+    async with db_session() as session:
+        before = await before_latest_write(session, Volunteer, vid)
+        old = await volunteers.get(session, vid, at=before)
+        assert old.first_name == "Then"
+        assert old not in session, "detached: a snapshot, not a live row"
+        old.first_name = "Tampered"  # a write to a snapshot must go nowhere
+        await session.flush()
+    async with db_session() as session:
+        assert (await volunteers.get(session, vid)).first_name == "Since"

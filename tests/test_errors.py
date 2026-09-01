@@ -3,6 +3,7 @@
 import pytest
 
 from volunteerdb import errors
+from volunteerdb.api.deps import status_of, to_http
 from volunteerdb.errors import (
     BadCredentials,
     Conflict,
@@ -52,3 +53,31 @@ def test_variants_are_values():
     assert hash(Invalid("a")) == hash(Invalid("a"))
     with pytest.raises(AttributeError):
         Invalid("a").message = "b"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("err", "status"),
+    [
+        (Forbidden("edit"), 403),
+        (NotFound("team", 1), 404),
+        (Invalid("bad"), 422),
+        (WeakPassword("short"), 422),
+        (QueryError("unknown field"), 422),
+        (Conflict(), 409),
+        (Throttled(30, "sign in"), 429),
+        (External("google docs", "500"), 502),
+        (BadCredentials("wrong password"), 401),
+    ],
+)
+def test_every_refusal_has_one_status(err, status):
+    """The closed sum, mapped once. A new variant fails here before it can
+    surface as a 500 somewhere in the API."""
+    assert status_of(err) == status
+    http = to_http(err)
+    assert http.status_code == status and http.detail == message(err)
+
+
+def test_the_headers_that_ride_with_a_refusal():
+    assert to_http(BadCredentials("x")).headers == {"WWW-Authenticate": "Bearer"}
+    assert to_http(Throttled(30)).headers == {"Retry-After": "30"}
+    assert to_http(NotFound("team")).headers is None

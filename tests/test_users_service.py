@@ -2,8 +2,11 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from volunteerdb import errors
 from volunteerdb.config import settings
+from volunteerdb.fp import Ok
 from volunteerdb.services import users, volunteers
 from volunteerdb.services.users import _token_digest
 
@@ -284,10 +287,14 @@ async def test_reissue_invite_invalidates_password(database):
             await users.reissue_invite(session, user.id, invite=mint.fresh_invite())
         ).value
         assert (
-            await users.authenticate(
-                session, "reset@example.org", "old-pass-phrase-1", now=mint.now()
-            )
-        ).is_err()
+            refused(
+                await users.authenticate(
+                    session, "reset@example.org", "old-pass-phrase-1", now=mint.now()
+                ),
+                errors.BadCredentials,
+            ).reason
+            == "no password-bearing account at that address"
+        ), "the reissue cleared the password, not merely rotated it"
 
         redeemed = done(
             await users.redeem_invite(
@@ -736,10 +743,14 @@ async def test_clear_password_drops_api_access_too(database):
             "tokens are issued against a password; removing it revokes them"
         )
         assert (
-            await users.authenticate(
-                session, "quits@example.org", "cedar lamp figs", now=mint.now()
-            )
-        ).is_err()
+            refused(
+                await users.authenticate(
+                    session, "quits@example.org", "cedar lamp figs", now=mint.now()
+                ),
+                errors.BadCredentials,
+            ).reason
+            == "no password-bearing account at that address"
+        )
 
 
 async def test_accounts_by_volunteer_maps_only_the_linked_ones(database):
@@ -774,3 +785,51 @@ async def test_accounts_by_volunteer_maps_only_the_linked_ones(database):
 
         assert await users.account_for_volunteer(session, linked.id) is account
         assert await users.account_for_volunteer(session, bare.id) is None
+
+
+EDGE = [
+    (timedelta(microseconds=-1), True),
+    (timedelta(0), False),
+    (timedelta(microseconds=1), False),
+]
+EDGE_IDS = ["just before", "at the instant", "just after"]
+
+
+@pytest.mark.parametrize(("delta", "live"), EDGE, ids=EDGE_IDS)
+async def test_an_invite_is_dead_at_the_instant_it_names(database, clock, delta, live):
+    """`expires_at` is the first moment the link no longer works: live means
+    strictly before it. The same rule holds for every expiry in the app."""
+    async with db_session() as session:
+        invite = mint.fresh_invite(now=clock.now())
+        user, token = ok(await users.create(session, "edge@example.org", invite=invite))
+        at = invite.now + invite.ttl + delta
+        assert users.invite_live(user, now=at) is live
+        redeemed = await users.redeem_invite(
+            session, token, None, agreed_to_confidentiality=True, now=at
+        )
+        assert isinstance(redeemed, Ok) is live
+
+
+@pytest.mark.parametrize(("delta", "live"), EDGE, ids=EDGE_IDS)
+async def test_an_address_change_link_is_dead_at_the_instant_it_names(
+    database, clock, delta, live
+):
+    async with db_session() as session:
+        account, _ = ok(
+            await users.create(session, "mover@example.org", invite=mint.fresh_invite())
+        )
+        _user, token = done(
+            await users.start_email_change(
+                session,
+                account.id,
+                "late@example.org",
+                now=clock.now(),
+                token=mint.token(),
+            )
+        ).value
+        at = clock.now() + users.EMAIL_CHANGE_TTL + delta
+        assert users.email_change_live(account, now=at) is live
+        assert (
+            isinstance(await users.confirm_email_change(session, token, now=at), Ok)
+            is live
+        )

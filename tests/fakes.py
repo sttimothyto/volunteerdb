@@ -99,7 +99,25 @@ class FakeHttp:
 # One instance for the whole test process: user_simulation re-executes the
 # main file per simulation, and a fixture needs a list whose identity survives
 # that, so it can hand the test the very list the next page action fills.
-SIM_MAILER = RecordingMailer()
+class SwitchableMailer(RecordingMailer):
+    """Records, and reports each send as the test says: `failing` makes every
+    send fail until switched back. The simulated app's mailer is one of these
+    so a page's "created, not emailed" path can be reached without a
+    different app."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.failing = False
+
+    async def send(self, to: str, subject: str, body: str) -> bool:
+        await super().send(to, subject, body)
+        return not self.failing
+
+
+# One instance for the whole test process: user_simulation re-executes the
+# main file per simulation, and a fixture needs a list whose identity survives
+# that, so it can hand the test the very list the next page action fills.
+SIM_MAILER = SwitchableMailer()
 
 
 class FakeEmbedder:

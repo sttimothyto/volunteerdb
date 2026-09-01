@@ -261,3 +261,23 @@ async def test_profile_lists_proposals_involving_the_volunteer(database):
         await user.open(f"/volunteers/{ids['vera']}")
         await user.should_see("Vera Volunteer")
         await user.should_not_see("Proposals involving them")
+
+
+async def test_nominating_the_same_person_twice_is_a_conflict_toast(database):
+    """The second nomination trips uq_proposal_candidate at commit. The page
+    turns that into the one Conflict toast rather than a stack trace."""
+    async with db_session() as session:
+        ids = await _parish(session)
+        victor = ok(await volunteers.create(session, None, "Victor", "Volunteer"))
+        victor_id = victor.id
+    pid = await _seed_proposal(ids, d1_offset=5, d2_offset=15)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['cora_u']}")
+        await user.open(f"/elections/{pid}")
+        await user.should_see("Ignatian election")
+        for _ in range(2):
+            who = only(user.find(kind=ui.select, content="New candidate"))
+            who.value = victor_id
+            user.find("Nominate", kind=ui.button).click()
+        await user.should_see("conflicts with existing data", retries=SLOW)

@@ -2,7 +2,7 @@
 contract -- and the parish copy the templates build."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -292,3 +292,66 @@ def test_the_old_address_gets_the_receipt_and_the_last_word():
     assert "new@example.org" in body
     assert "last message" in body, "this mailbox hears nothing from us again"
     assert "https://vdb.example.org/login" in body
+
+
+def test_a_leaders_correction_warns_the_old_address_and_names_the_new_one():
+    subject, body = mail.address_edited_email("new@example.org", "https://x/login")
+    assert subject == "Your VolunteerDB address was changed"
+    assert "new@example.org" in body
+    assert "sign in at https://x/login" in body
+    assert "tell the parish office" in body
+    assert "last message we will send to this address" in body
+    _s, without = mail.address_edited_email("new@example.org")
+    assert "sign in at" not in without, "no public URL, no link"
+
+
+def test_the_digest_groups_by_what_changed_and_never_links():
+    items = [
+        mail.DigestItem(
+            "added", "Second — Liturgy", date(2026, 9, 10), date(2026, 9, 17)
+        ),
+        mail.DigestItem("voting", "Leader — Choir", date(2026, 9, 1), date(2026, 9, 8)),
+        mail.DigestItem("both", "Second — Ushers", date(2026, 9, 2), date(2026, 9, 9)),
+    ]
+    subject, body = mail.proposal_digest_email(items)
+    assert "You have been added to the voting roll for:" in body
+    assert "Voting is now open for:" in body
+    assert "already open" in body
+    assert body.index("Liturgy") < body.index("Choir") < body.index("Ushers"), (
+        "sections in the fixed order: added, voting, both"
+    )
+    assert "http" not in body, "the job has no request to derive a link from"
+
+
+def test_the_asker_hears_who_took_their_slot():
+    subject, body = mail.sub_claimed_email("Mass", "Lector", "Sun 10:00", "Noor", "Mia")
+    assert subject == "Substitute found: Mass"
+    assert "Noor has taken over Mia's Lector slot" in body
+    assert "Sun 10:00" in body
+
+
+def test_the_incoming_volunteer_is_told_and_given_a_way_out():
+    subject, body = mail.substituted_in_email(
+        "Mass", "Lector", "Sun 10:00", "Mia", "https://x/events"
+    )
+    assert subject == "You're now serving: Mass"
+    assert "Mia has handed you their Lector slot" in body
+    assert body.rstrip().endswith("https://x/events")
+
+
+def test_leaders_hear_a_self_removal_with_the_reason_verbatim():
+    subject, body = mail.self_removal_email(
+        "Mass", "Liturgy / Music", "Lector", "Sun 10:00", "Mia", "Away at a <wedding>"
+    )
+    assert subject == "Off the roster: Mass"
+    assert "Their reason: Away at a <wedding>" in body, (
+        "quoted as typed; it is plain text"
+    )
+    assert "Liturgy / Music" in body and "Sun 10:00" in body
+
+
+def test_a_cancellation_tells_the_assignee_nothing_is_needed():
+    subject, body = mail.event_cancelled_email("Mass", "Liturgy", "Sun 10:00")
+    assert subject == "Cancelled: Mass"
+    assert "Mass (Liturgy)" in body and "Sun 10:00" in body
+    assert "no action is needed" in body

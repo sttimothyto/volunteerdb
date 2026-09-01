@@ -202,3 +202,36 @@ async def test_there_is_no_emailed_code_path_to_an_api_token(client, seeded):
     for path in ("/api/auth/otp", "/api/auth/otp/request", "/api/auth/otp/verify"):
         r = await client.post(path, json={"email": "member@example.org"})
         assert r.status_code == 404, f"{path} should not exist"
+
+
+async def test_calling_off_a_change_twice_is_still_a_204(client, seeded):
+    """The docstring on the route says idempotent; this is the test that
+    makes it so. Nothing pending, nothing to cancel, nothing to complain of."""
+    member = await _token(client, "member@example.org", "member-pass-phrase")
+    await client.post(
+        "/api/auth/email-change", json={"new_email": "x@example.org"}, headers=member
+    )
+    first = await client.delete("/api/auth/email-change", headers=member)
+    second = await client.delete("/api/auth/email-change", headers=member)
+    assert (first.status_code, second.status_code) == (204, 204)
+
+
+async def test_a_spent_invite_stays_spent_however_often_it_is_tried(
+    client, seeded, token_admin
+):
+    r = await client.post(
+        "/api/users", json={"email": "twice@example.org"}, headers=token_admin
+    )
+    token = r.json()["invite_token"]
+    body = {
+        "token": token,
+        "password": "cedar lamp figs",
+        "agreed_to_confidentiality": True,
+    }
+    assert (await client.post("/api/auth/redeem-invite", json=body)).status_code == 200
+    for _ in range(2):
+        r = await client.post("/api/auth/redeem-invite", json=body)
+        assert r.status_code == 404
+    assert await _token(client, "twice@example.org", "cedar lamp figs"), (
+        "the account works, and the second attempts changed nothing"
+    )

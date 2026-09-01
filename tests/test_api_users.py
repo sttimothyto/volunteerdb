@@ -349,3 +349,30 @@ async def test_only_an_admin_is_handed_the_invite_link(
     assert r.status_code == 200, r.text
     assert r.json()["invite_token"], "an admin hands the link over in person"
     assert sent_api == [], "and no mail from the API, as everywhere else"
+
+
+async def test_reinviting_twice_arms_a_fresh_link_each_time(
+    client, seeded, token_admin
+):
+    """Every reinvite is a new token and the old one is dead: the link in the
+    older email cannot be redeemed once a newer one exists."""
+    r = await client.post(
+        "/api/users", json={"email": "slow@example.org"}, headers=token_admin
+    )
+    uid, first = r.json()["id"], r.json()["invite_token"]
+    r = await client.post(f"/api/users/{uid}/reinvite", headers=token_admin)
+    assert r.status_code == 200, r.text
+    second = r.json()["invite_token"]
+    r = await client.post(f"/api/users/{uid}/reinvite", headers=token_admin)
+    third = r.json()["invite_token"]
+    assert len({first, second, third}) == 3
+    r = await client.post(
+        "/api/auth/redeem-invite",
+        json={"token": first, "agreed_to_confidentiality": True},
+    )
+    assert r.status_code == 404, "the first link died when the second was issued"
+    r = await client.post(
+        "/api/auth/redeem-invite",
+        json={"token": third, "agreed_to_confidentiality": True},
+    )
+    assert r.status_code == 200, r.text

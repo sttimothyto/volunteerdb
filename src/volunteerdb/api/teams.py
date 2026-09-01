@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-import httpx
 from fastapi import APIRouter, HTTPException
 
 from ..services import pages as page_service
@@ -210,7 +209,9 @@ async def fetch_team_page(ctx: CtxDep, team_id: int) -> TeamPageOut:
         raise HTTPException(404, f"team {team_id} not found")
     if not team.home_doc_url:
         raise HTTPException(422, "this team has no home page doc")
-    async with httpx.AsyncClient() as http:
+    # the Env's client, as the nightly job uses: what lets a test route the
+    # fetch through a fake and reach the 502 this route can answer with
+    async with ctx.env.http.client() as http:
         page = raise_http(
             await page_service.fetch_and_store(
                 ctx.session, team, http, force=True, actor=ctx.actor, now=ctx.now

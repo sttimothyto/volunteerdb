@@ -416,3 +416,19 @@ async def test_repeat_series_signup_via_api(client, seeded, token_leader, token_
         headers=token_leader,
     )
     assert r.status_code == 422
+
+
+async def test_cancelling_twice_is_refused_the_second_time(
+    client, seeded, token_leader
+):
+    """Not idempotent, on purpose: the second cancel would mail every assignee
+    again about an event they already heard was off."""
+    r = await client.post(
+        "/api/events", json=_payload(seeded["team_id"]), headers=token_leader
+    )
+    event_id = r.json()[0]["id"]
+    first = await client.post(f"/api/events/{event_id}/cancel", headers=token_leader)
+    second = await client.post(f"/api/events/{event_id}/cancel", headers=token_leader)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 422, second.text
+    assert "cancel" in second.json()["detail"]

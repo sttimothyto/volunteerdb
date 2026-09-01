@@ -1,8 +1,15 @@
 """API plumbing: Bearer auth, token lifecycle, throttling, error mapping, deletes."""
 
-from volunteerdb import throttle
+import httpx
+import pytest
 
-from tests.conftest import _token
+from volunteerdb import throttle
+from volunteerdb.models import TeamRole
+from volunteerdb.services import memberships, volunteers
+
+from tests.conftest import _token, api_client_for, db_session
+from tests.fakes import FailingMailer, FakeHttp
+from tests.fp_helpers import ok
 
 
 async def test_missing_and_malformed_bearer_401(client, seeded):
@@ -179,3 +186,121 @@ async def test_delete_endpoints_admin_only_then_404(client, seeded):
     assert r.status_code == 204
     r = await client.get(f"/api/teams/{tid}", headers=admin)
     assert r.status_code == 404
+
+
+def _google_down(env):
+    """An Env whose parish Google grant is set and whose every request to
+    Google fails with a 500: what the sync and the refetch meet on a bad day."""
+    configured = env.settings.model_copy(
+        update={
+            "sheets_client_id": "cid",
+            "sheets_client_secret": "secret",
+            "sheets_refresh_token": "refresh",
+            "sheets_folder_id": "folder",
+        }
+    )
+    return env.with_(
+        settings=configured,
+        http=FakeHttp(lambda r: httpx.Response(500, json={"error": "down"})),
+    )
+
+
+async def test_a_failing_google_is_recorded_against_the_sheet_not_a_502(seeded, env):
+    """The sync route folds the External into the team's sync record: a 422
+    carrying the leg that failed, and the sheet row marked, which is what the
+    team page shows a leader. A 502 would be true and useless."""
+    async with api_client_for(_google_down(env)) as client:
+        admin = await _token(client, "admin@example.org", "secret-pass-phrase")
+        team_id = seeded["team_id"]
+        r = await client.patch(
+            f"/api/teams/{team_id}/roster-sheet",
+            json={"url": "https://docs.google.com/spreadsheets/d/abc123/edit"},
+            headers=admin,
+        )
+        assert r.status_code == 200, r.text
+        r = await client.post(
+            f"/api/teams/{team_id}/roster-sheet/sync",
+            json={"direction": "export"},
+            headers=admin,
+        )
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"] == "token mint failed: HTTP 500"
+        r = await client.get(f"/api/teams/{team_id}/roster-sheet", headers=admin)
+        assert r.json()["last_status"] == "error"
+        assert r.json()["last_error"] == "token mint failed: HTTP 500"
+
+
+async def test_a_failing_google_keeps_the_last_page_and_says_so(seeded, env):
+    """A refetch that fails reports itself in the page's status rather than
+    blanking what the world can see -- and rather than a 502."""
+    async with api_client_for(_google_down(env)) as client:
+        admin = await _token(client, "admin@example.org", "secret-pass-phrase")
+        team_id = seeded["team_id"]
+        r = await client.patch(
+            f"/api/teams/{team_id}/home-doc",
+            json={"url": "https://docs.google.com/document/d/doc1"},
+            headers=admin,
+        )
+        assert r.status_code == 200, r.text
+        r = await client.post(f"/api/teams/{team_id}/page/fetch", headers=admin)
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "error"
+        assert "500" in r.json()["error"]
+
+
+@pytest.mark.parametrize(
+    ("who", "method", "path", "body", "status"),
+    [
+        # a leader's invite is mailed (an admin's is handed over in person)
+        (
+            "lena@example.org",
+            "POST",
+            "/api/volunteers/{volunteer_id}/invite",
+            None,
+            200,
+        ),
+        (
+            "admin@example.org",
+            "POST",
+            "/api/auth/email-change",
+            {"new_email": "moved@example.org"},
+            202,
+        ),
+        (
+            "admin@example.org",
+            "PUT",
+            "/api/auth/password",
+            {
+                "current_password": "secret-pass-phrase",
+                "new_password": "cedar lamp figs",
+            },
+            204,
+        ),
+    ],
+)
+async def test_a_mailer_that_fails_never_fails_the_request(
+    seeded, token_leader, env, who, method, path, body, status
+):
+    """Mail never rides a transaction: the account, the address change or the
+    new password committed, and a message that could not be sent is a count
+    in the effect report, not an error to the caller."""
+    async with db_session() as session:  # somebody with no account yet
+        fresh = ok(
+            await volunteers.create(session, None, "Fresh", "Face", "fresh@example.org")
+        )
+        ok(
+            await memberships.assign(
+                session, None, fresh.id, seeded["team_id"], TeamRole.member
+            )
+        )
+    passwords = {
+        "lena@example.org": "leader-pass-phrase",
+        "admin@example.org": "secret-pass-phrase",
+    }
+    failing = FailingMailer()
+    async with api_client_for(env.with_(mailer=failing)) as client:
+        headers = await _token(client, who, passwords[who])
+        url = path.format(volunteer_id=fresh.id)
+        r = await client.request(method, url, json=body, headers=headers)
+        assert r.status_code == status, r.text
+    assert failing.sent, "the send was attempted, and reported failed"

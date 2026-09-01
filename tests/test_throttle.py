@@ -84,3 +84,15 @@ def test_the_cell_holds_one_ledger_and_sweeps_on_its_own_cadence():
     assert set(cell.snapshot().hits) == {"otp-ip:1.1.1.1"}
     cell.reset()
     assert cell.snapshot().hits == {}
+
+
+@pytest.mark.parametrize("family", sorted(throttle.LIMITS))
+def test_the_window_closes_at_exactly_its_length(family):
+    """A hit taken at T0 counts until, but not at, T0 + window: `_live` keeps
+    hits strictly after the cutoff, so at the instant the window ends the key
+    is free again."""
+    key = f"{family}:edge"
+    limit = throttle.LIMITS[family]
+    ledger = _hits(throttle.Ledger(), key, limit.hits, T0)
+    assert throttle.blocked(ledger, key, T0 + limit.window - timedelta(microseconds=1))
+    assert not throttle.blocked(ledger, key, T0 + limit.window)

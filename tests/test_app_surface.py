@@ -12,9 +12,11 @@ from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 import volunteerdb.ui.logo_route
+from volunteerdb import main
 from volunteerdb.services import branding
 
 from tests import mint
@@ -328,3 +330,29 @@ async def test_every_page_opens_with_nothing_but_its_path(real_app_client):
         ) or route.endpoint.__name__ in {"_manual_not_built"}, (
             f"{route.path} is served by {route.endpoint.__name__} — a helper, not a page"
         )
+
+
+@pytest.mark.parametrize(
+    ("path", "public"),
+    [
+        ("/manual", True),
+        ("/manual/", True),
+        ("/manual/index.html", True),
+        ("/manual/_search", True),
+        ("/manual/guide/how-to/rsvp.html", True),
+        ("/manual/_static/theme.css", True),
+        ("/manual/_images/x.png", True),
+        ("/manual/_sources/guide/x.md.txt", True),
+        ("/manual/how-to/deploy.html", False),
+        ("/manual/search.html", False),
+        ("/manual/searchindex.js", False),
+        ("/manual/genindex.html", False),
+        ("/manual/_sources/how-to/deploy.md.txt", False),
+        ("/manual/guide", False),  # the directory, not a page under it
+        ("/manualx", False),
+        ("/login", True),
+        ("/volunteers", False),
+    ],
+)
+def test_the_manuals_public_half_is_an_allowlist(path, public):
+    assert main.is_public(path) is public

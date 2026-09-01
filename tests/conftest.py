@@ -295,6 +295,7 @@ def sim_sent() -> list[tuple[str, str, str]]:
     emptied here before every test rather than by whichever test remembers
     to. A test reads it back by asking for this fixture by name."""
     SIM_MAILER.sent.clear()
+    SIM_MAILER.failing = False
     return SIM_MAILER.sent
 
 
@@ -338,6 +339,20 @@ def api_app(database, env) -> FastAPI:
 @pytest.fixture
 async def client(api_app):
     transport = httpx.ASGITransport(app=api_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+@asynccontextmanager
+async def api_client_for(env: env_mod.Env) -> AsyncIterator[httpx.AsyncClient]:
+    """The bare router app over a particular Env -- one whose HTTP goes to a
+    fake Google, say -- for a test that needs the API to meet a boundary the
+    default `client` never reaches."""
+    app = FastAPI()
+    app.state.env = env
+    install_exception_handlers(app)
+    app.include_router(api_router)
+    transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 

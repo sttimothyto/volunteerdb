@@ -23,6 +23,7 @@ from volunteerdb.services import memberships, teams, users, volunteers
 from .conftest import SIM_MAIN, SLOW, mail_to
 from tests import mint
 from tests.conftest import db_session
+from tests.fakes import SIM_MAILER
 from tests.fp_helpers import done, ok
 
 
@@ -293,3 +294,24 @@ async def test_only_an_admin_is_shown_the_link_itself(database, sent):
         await user.should_see(
             fresh[-1].split("/invite/", 1)[1].split()[0].rstrip(".,)"), retries=SLOW
         )
+
+
+async def test_an_invite_the_mail_could_not_carry_is_still_created(database, sim_sent):
+    """A failed send does not roll the account back -- the link is
+    re-sendable, and for an admin still on screen -- and the page says which
+    of the two happened."""
+    async with db_session() as session:
+        ids = await _parish(session)
+    SIM_MAILER.failing = True
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['lena_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        await user.should_see("Send an invite to Nils Nobody?", retries=SLOW)
+        user.find(marker="invite-confirm").click()
+        await user.should_see("Invite created for", retries=SLOW)
+        await user.should_not_see("Invite emailed to")
+    assert len(sim_sent) == 1, "the send was attempted"
+    async with db_session() as session:
+        account = await users.account_for_volunteer(session, ids["nils"])
+        assert account is not None and account.invite_token, "created all the same"
