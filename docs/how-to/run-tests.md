@@ -30,7 +30,8 @@ make test ARGS="-k roster"          # extra pytest arguments
 uv run pytest                       # or drive pytest directly
 uv run pytest tests/test_api.py     # one module
 uv run pytest -k roster             # by keyword
-uv run pytest --cov                 # with coverage (line + branch)
+make coverage                       # with coverage, held to the floor
+uv run pytest --cov                 # the same, by hand
 uv run pytest -p randomly --randomly-seed=1234   # repeat one shuffled order
 ```
 

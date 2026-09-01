@@ -80,8 +80,11 @@ jobs:
       # is named as one.
       - name: pytest (pure)
         run: uv run pytest -q -m pure
+      # With coverage, and the floor in pyproject (tool.coverage.report
+      # fail_under): a run that passes every test but leaves new code
+      # untested fails here, and the missing lines are in the log.
       - name: pytest
-        run: uv run pytest -q
+        run: uv run pytest -q --cov --cov-report=term-missing:skip-covered
 
   docs:
     runs-on: ubuntu-latest

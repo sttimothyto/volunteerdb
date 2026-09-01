@@ -95,3 +95,8 @@ branch = true
 [tool.coverage.report]
 skip_covered = true
 show_missing = true
+# The floor the full suite must clear (line + branch, over src/volunteerdb),
+# enforced by CI's `pytest --cov` step. Set two points under the figure
+# measured on 2026-09-01 so ordinary churn does not trip it; raise it when
+# the measured figure moves up, never lower it to get a build green.
+fail_under = 85

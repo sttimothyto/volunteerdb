@@ -22,8 +22,8 @@ PYINFRA ?= uvx pyinfra==3.10.0
 # Which deploy/sites/<name>.toml to deploy: make deploy SITE=<name>
 SITE ?=
 
-.PHONY: help db down clean migrate seed dev serve test lint format docs model \
-        fresh deploy-dry deploy
+.PHONY: help db down clean migrate seed dev serve test coverage lint format docs \
+        model fresh deploy-dry deploy
 
 help: ## list these targets
 	@echo "VolunteerDB developer tasks"
@@ -71,6 +71,9 @@ serve: db ## serve http://localhost:8080 without auto-reload
 
 test: db ## run the test suite (scratch volunteerdb_test database)
 	$(UV) run pytest $(ARGS)
+
+coverage: db ## the test suite with coverage, held to the floor in pyproject.toml
+	$(UV) run pytest --cov --cov-report=term-missing:skip-covered $(ARGS)
 
 lint: ## check the source with ruff (no writes)
 	$(UV) run ruff check .
