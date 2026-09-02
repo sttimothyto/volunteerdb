@@ -18,26 +18,15 @@ was made, and `tests/test_schema_invariants.py` keeps them honest from here -- i
 compares the migrated database against the models on every run.
 
 **Upgrading an existing database.** This revision creates a schema; it cannot
-migrate one. A database carrying one of the last two pre-squash revisions is
-brought forward in SQL instead: `deploy/catchup-0022.sql` restates 0023 for a
-database that never received it (the live deployment had not), and
-`deploy/catchup-0023.sql` applies 0024-0028. Then it is stamped:
-
-    pg_dump ... > backup-before-catchup.sql
-    psql "$VDB_DATABASE_URL" -f deploy/catchup-0023.sql
-    alembic stamp 0001
-
-That script and this file were verified against each other by building both
-paths on scratch databases and diffing `pg_dump --schema-only` to nothing. Column
+migrate one. The hand-run SQL that once carried a pre-squash database up to
+0001 was retired after the last such database had been upgraded. Column
 declaration order in models.py is kept in the order live databases physically
-have -- see the note on AppUser.otp_hash -- because that is what makes the diff
-meaningful.
+have -- see the note on AppUser.otp_hash -- because positional history
+archiving depends on it.
 
 **pg_trgm is not installed here.** Revision 0005 added it for two GIN indexes on
 volunteer, and 0025 dropped those indexes: the access-control rewrite of
-`services/volunteers.search` had put them behind an OR no index could serve. The
-catch-up script drops the extension too, so a fresh database and a migrated one
-are the same database.
+`services/volunteers.search` had put them behind an OR no index could serve.
 """
 
 import sqlalchemy as sa

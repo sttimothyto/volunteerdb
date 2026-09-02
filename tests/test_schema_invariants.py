@@ -112,9 +112,7 @@ async def test_the_migration_builds_the_schema_the_models_describe(database):
 
     It matters more now. Revisions 0001-0028 were squashed into one file whose
     statements are a frozen snapshot rather than generated from the metadata, so
-    this is what stops the snapshot and the models parting company. It is also
-    what makes `deploy/catchup-0023.sql` verifiable: the migration is the
-    yardstick both a fresh database and an upgraded one are measured against.
+    this is what stops the snapshot and the models parting company.
     """
     async with database.connect() as conn:
         for table in Base.metadata.sorted_tables:

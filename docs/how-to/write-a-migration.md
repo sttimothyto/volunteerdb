@@ -72,8 +72,6 @@ To **drop** a live column, follow the same recipe with the drops first:
   values go with it.
 - `migrations/versions/0002_drop_application_form_and_interest.py` is that
   shape in Python.
-- `deploy/catchup-0023.sql` has the same thing in SQL: the
-  `volunteer.updated_at` drop, its twin rebuild and the index recreation.
 
 You need no trigger changes: `versioning()` resolves `<table>_history` by
 name at runtime.
@@ -95,9 +93,8 @@ Tables that are *not* versioned (`app_user`, `custom_field_def`,
 
 ## Verifying a migration you cannot check by reading
 
-Build both paths and diff them. This is the check that
-`deploy/catchup-0023.sql` passed against `0001`. Repeat it for any migration
-whose correctness is not obvious on the page:
+Build both paths and diff them. This is the check the squash passed.
+Repeat it for any migration whose correctness is not obvious on the page:
 
 ```sh
 createdb check_fresh && createdb check_upgraded

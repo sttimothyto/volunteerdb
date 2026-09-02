@@ -568,9 +568,6 @@ table's columns **in live order** (without PK/FK/defaults) followed by:
 - `team` is system-versioned and `versioning()` archives positionally. So
   the column drop meant a rebuild of `team_history` to the post-drop order,
   and the historical values went with it.
-- The two catch-up scripts in `deploy/` still create `interest`, and
-  correctly so. They bring a pre-squash database up to `0001`, and `0002`
-  drops it from there.
 
 The revisions since, in order:
 
@@ -612,42 +609,3 @@ reasons:
 - A diff of `pg_dump --schema-only` between a fresh database and an upgraded
   one verified the squash. That diff only means something if the two agree.
 :::
-
-### Upgrading a database that predates the squash
-
-`0001` creates a schema. It cannot migrate one. A database that carries one
-of the last two pre-squash revisions moves forward with SQL instead:
-
-```sh
-pg_dump "$VDB_DATABASE_URL" > backup-before-catchup.sql   # first, always
-psql "$VDB_DATABASE_URL" -f deploy/catchup-0022.sql   # only from 0022
-psql "$VDB_DATABASE_URL" -f deploy/catchup-0023.sql
-uv run alembic stamp 0001
-```
-
-- `catchup-0022.sql` is revision `0023` restated as SQL, for a database that
-  never received it. The live deployment had not, so this is the path it
-  took.
-- `catchup-0023.sql` applies `0024`–`0028`.
-- Each runs in one transaction and refuses to start against any revision but
-  its own.
-- The check against `0001` built both paths on scratch databases and diffed
-  their schema dumps to nothing. So an upgraded database and a fresh one are
-  the same database. That includes the two constraint names and the
-  now-unused `pg_trgm` extension, which the script normalises.
-
-What `0024`–`0028` changed, for anyone who reads a database that has been
-through them:
-
-| Was | Now |
-|---|---|
-| `volunteer.updated_at` | gone — `lower(sys_period)` is the last-modified time, and the column was ORM-only, so any Core write left it stale |
-| `team.workload_weight` nullable, "NULL counts as 0" | `NOT NULL DEFAULT 0`; the third state had no distinct behaviour |
-| `event_task_force_source.id` | dropped for the `(event_id, team_id)` primary key that was already unique |
-| lowercase emails by convention | `CHECK (email = lower(email))` on `app_user` and `volunteer` |
-| `proposal_ballot.proposal_id` and `event_assignment.event_id` kept in step by the service | composite foreign keys — a ballot's voter and candidate must belong to the proposal it claims, and an assignment's slot to its event |
-| no CHECK on `app_user` at all | the invite pair, the email-change triple and the OTP pair are enforced; likewise `event`'s cancellation and `event_sub_request`'s |
-| six indexes with no possible consumer | dropped, and ten added for predicates that had none (see the notes in `models.py`) |
-| varchar + CHECK for five status columns, nothing for two more | native enum types throughout, and `Mapped[EventStatus]` rather than `Mapped[str]` |
-| `event_task_force` table | `event.task_force_team_id` and `event.owner_team_id`, both `ON DELETE SET NULL` — deleting a meta team can no longer take its event's attendance record with it |
-| five notification stamp columns across two tables | the `notification` table, keyed by `(subject, stage)` |
