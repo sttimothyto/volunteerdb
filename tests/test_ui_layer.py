@@ -1,6 +1,6 @@
 """The GUI holds no Python-side state and renders nothing inside a session.
 
-Rule 5 of FUNCTIONAL_REFACTORING.md, as an AST sweep over ui/: a page loads
+The GUI rule of docs/explanation/architecture.md, as an AST sweep over ui/: a page loads
 inside a `page_ctx()` block and renders after it, so nothing under `ui.*`
 sits inside one; a nested handler captures values, never a cell -- no
 `nonlocal`, no `some_dict[...] = ...` on a name the handler did not bind;

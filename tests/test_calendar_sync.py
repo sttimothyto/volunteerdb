@@ -303,4 +303,3 @@ def test_the_calendars_public_faces_carry_the_id():
     assert gcal.public_url(cid) == (
         "https://calendar.google.com/calendar/r?cid=parish%40group.calendar.google.com"
     )
-    assert gcal.google_ics_url(cid).endswith("/public/basic.ics")

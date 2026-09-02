@@ -527,7 +527,7 @@
 | `sent` | integer | NOT NULL DEFAULT 0; messages that actually left that day |
 
 - A counter, not a log: no address, no subject. An upsert from the one
-  success path in `services.mail.send_email` bumps it.
+  success path in `env.Smtp2goMailer` bumps it.
 - `services.mail_quota` reads it into the admin-only header banner. That
   banner warns before the mail provider's allowance (200 messages a day,
   1,000 a month) runs out. Otherwise the app discovers that only when a

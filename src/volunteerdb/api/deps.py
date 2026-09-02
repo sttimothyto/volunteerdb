@@ -259,7 +259,8 @@ def install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(IntegrityError)
     async def _conflict(request: Request, exc: IntegrityError):
         # a constraint violation at commit: the transaction is dead, and this
-        # is the boundary that says Conflict (Rule 6, FUNCTIONAL_REFACTORING.md)
+        # is the boundary that says Conflict (docs/explanation/architecture.md,
+        # "Errors are values")
         from fastapi.responses import JSONResponse
 
         return JSONResponse(

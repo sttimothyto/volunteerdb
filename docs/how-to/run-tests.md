@@ -56,7 +56,7 @@ fails on the first regression and names the line at fault:
 |---|---|
 | `test_purity_layer.py` | a `raise`, a clock read, `settings()`, a random draw or session-making under `services/`, `sheets/` and the pure leaves |
 | `test_authorization_layer.py` | a service that takes an `Actor` and never checks it; a gate whose `Err` is dropped; a `require()`/`gate()` at a front door that is not on the allowlist |
-| `test_effects_layer.py` | a `send_email(`, `audit_log(` or throttle charge under `api/`, `ui/` or `services/` — effects go through the interpreter |
+| `test_effects_layer.py` | an `audit_log(` or throttle charge under `api/`, `ui/` or `services/` — effects go through the interpreter |
 | `test_ui_layer.py` | a `ui.*` call inside a session block, a `nonlocal`, a nested handler that writes into its parent's container |
 
 The browser tests take the same arguments plus Playwright's own:

@@ -9,7 +9,7 @@ attendance record with manager-recorded exceptions.
 
 Every action handler opens its own action_session and lets the service it calls
 decide whether the actor may do it; mail goes out only AFTER the transaction
-committed (send_email never raises), with links derived from the live request.
+committed (the mailer never raises), with links derived from the live request.
 
 The detail page reads as an outline: it loads its data, computes what the page
 needs, then draws the header and the slot list and calls one function per

@@ -64,7 +64,6 @@ class SyncOutcome:
     status: str
     message: str
     report: importer.ImportReport | None = None
-    wrote_sheet: bool = False
 
     @property
     def failed(self) -> bool:
@@ -345,4 +344,4 @@ async def sync_team(
     )
     await record_status(env, team_id, status, None, synced_at=now)
     audit_log("roster_sheet.synced", team_id=team_id, direction=direction)
-    return Ok(SyncOutcome(status, text, report, wrote_sheet=wrote))
+    return Ok(SyncOutcome(status, text, report))

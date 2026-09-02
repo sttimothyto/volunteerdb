@@ -5,10 +5,12 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from volunteerdb.auth import new_otp_code, new_token
 from volunteerdb.config import settings
+from volunteerdb.env import SecretsRng
 from volunteerdb.services.mail import MailContext
 from volunteerdb.services.users import Invite
+
+_rng = SecretsRng()
 
 
 def now() -> datetime:
@@ -16,11 +18,11 @@ def now() -> datetime:
 
 
 def token() -> str:
-    return new_token()
+    return _rng.token()
 
 
 def code() -> str:
-    return new_otp_code()
+    return _rng.otp_code()
 
 
 def fresh_invite(hours: int = 168, *, now: datetime | None = None) -> Invite:
@@ -28,7 +30,7 @@ def fresh_invite(hours: int = 168, *, now: datetime | None = None) -> Invite:
     with `hours` to live -- a short life lets one invite lapse while the
     others on the same page stay live."""
     return Invite(
-        token=new_token(),
+        token=_rng.token(),
         now=now if now is not None else datetime.now(UTC),
         ttl=timedelta(hours=hours),
     )

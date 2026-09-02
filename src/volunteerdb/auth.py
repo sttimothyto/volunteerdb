@@ -89,11 +89,3 @@ async def async_burn_password_check(password: str) -> None:
     await anyio.to_thread.run_sync(
         burn_password_check, password, limiter=_PASSWORD_LIMITER
     )
-
-
-def new_token() -> str:
-    return secrets.token_urlsafe(32)
-
-
-def new_otp_code() -> str:
-    return f"{secrets.randbelow(1_000_000):06d}"

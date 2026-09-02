@@ -4,8 +4,6 @@ Every builder returns (subject, body) for the values it is handed; the
 parish's name and zone arrive in a MailContext. The transport lives at the
 edge (env.Smtp2goMailer; env.LoggingMailer without an API key, which prints
 messages instead so OTP codes and invite links stay readable in dev).
-Callers still invoke ``mail.send_email`` as a module attribute so tests can
-monkeypatch it.
 
 Every message that actually leaves is counted into `mail_quota` (see
 services/mail_quota.py): the free tier allows 200 a day and 1,000 a month, and
@@ -31,18 +29,6 @@ class MailContext:
     org: str
     invite_ttl_hours: int
     tz: ZoneInfo
-
-
-async def send_email(to: str, subject: str, text_body: str) -> bool:
-    """Send one message; True on success. Never raises.
-
-    Transition: the transport is the running Env's Mailer (env.Smtp2goMailer,
-    or env.LoggingMailer without an API key); this name stays so the edges and
-    the tests' monkeypatches keep working until the edges hand SendMail
-    effects to the interpreter (FUNCTIONAL_REFACTORING.md, Phase 4)."""
-    from ..env import current
-
-    return await current().mailer.send(to, subject, text_body)
 
 
 def ttl_window(hours: int) -> str:

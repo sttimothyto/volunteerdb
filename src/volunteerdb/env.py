@@ -48,7 +48,6 @@ class Rng(Protocol):
     def token(self) -> str: ...
     def otp_code(self) -> str: ...
     def uuid(self) -> UUID: ...
-    def hex(self, n: int) -> str: ...
 
 
 class Mailer(Protocol):
@@ -75,9 +74,6 @@ class SecretsRng:
 
     def uuid(self) -> UUID:
         return uuid4()
-
-    def hex(self, n: int) -> str:
-        return secrets.token_hex(n)
 
 
 class HttpxClients:

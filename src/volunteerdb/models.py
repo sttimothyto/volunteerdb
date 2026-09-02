@@ -84,7 +84,7 @@ class PageStatus(enum.StrEnum):
 
 
 class SyncStatus(enum.StrEnum):
-    """Outcome of a team's last Drive roster sync (jobs/drive_sync.py)."""
+    """Outcome of a team's last roster-sheet sync (jobs/roster_sync.py)."""
 
     applied = "applied"
     unchanged = "unchanged"  # the sheet was not newer than the last mark
@@ -1068,7 +1068,7 @@ class MailQuota(Base):
 
     A counter, not a log: no address, no subject, nothing that would turn the
     ledger into a second copy of who was mailed what. `sent` is bumped by a
-    Core ON CONFLICT upsert from the one success path in `mail.send_email`.
+    Core ON CONFLICT upsert from the one success path in `env.Smtp2goMailer`.
 
     Not system-versioned: infrastructure bookkeeping, not parish data —
     the same call `JobRun` above makes.

@@ -80,22 +80,6 @@ type DomainError = (
     | BadCredentials
 )
 
-DOMAIN_ERRORS: tuple[type, ...] = (
-    Forbidden,
-    NotFound,
-    Invalid,
-    Conflict,
-    Throttled,
-    External,
-    WeakPassword,
-    QueryError,
-    BadCredentials,
-)
-
-
-def is_domain_error(x: object) -> bool:
-    return isinstance(x, DOMAIN_ERRORS)
-
 
 def message(err: DomainError) -> str:
     """The one user-facing phrasing of a refusal."""

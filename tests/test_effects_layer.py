@@ -22,9 +22,9 @@ pytestmark = pytest.mark.pure
 SRC = pathlib.Path(__file__).resolve().parent.parent / "src" / "volunteerdb"
 EDGES = ("api", "ui", "services")
 
-# Call names that perform an effect in place: the mail transport (and its
-# shim), the audit line, and the throttle cell's methods.
-FORBIDDEN_CALLS = frozenset({"send_email", "audit_log"})
+# Call names that perform an effect in place: the audit line, and the
+# throttle cell's methods.
+FORBIDDEN_CALLS = frozenset({"audit_log"})
 # `<something>.throttle.<method>(...)`: the mutable cell reached directly.
 # snapshot() is the read that feeds the policy and is not counted.
 THROTTLE_ATTR = "throttle"

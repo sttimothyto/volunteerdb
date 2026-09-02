@@ -20,8 +20,7 @@ from tests.conftest import _token, db_session
 
 @pytest.fixture
 def sent(env) -> list[tuple[str, str, str]]:
-    """What the API mailed: the Env's recording mailer (the routes send
-    through ctx.env.mailer, not the mail.send_email shim)."""
+    """What the API mailed: the Env's recording mailer."""
     return env.mailer.sent
 
 

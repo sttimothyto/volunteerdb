@@ -39,7 +39,6 @@ pytestmark = pytest.mark.pure
 )
 def test_every_variant_has_one_phrasing(err, text):
     assert message(err) == text
-    assert errors.is_domain_error(err)
 
 
 def test_constructors_return_err_values():

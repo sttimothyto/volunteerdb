@@ -106,8 +106,8 @@ transaction, and a send that fails never turns work that committed into an
 error. The two doors run the same rules over the same events. The JSON
 API's `Ctx` carries `NotifyMode.digest`, and that one value is the whole of
 "the API sends no roster mail". `tests/test_policy.py` pins every rule with
-values alone; `tests/test_effects_layer.py` fails on a `send_email(`,
-`audit_log(` or throttle charge under `api/`, `ui/` or `services/`.
+values alone; `tests/test_effects_layer.py` fails on an `audit_log(` or
+throttle charge under `api/`, `ui/` or `services/`.
 
 ### Env and composition roots
 

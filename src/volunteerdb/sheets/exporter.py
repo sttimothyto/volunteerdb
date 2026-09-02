@@ -89,7 +89,7 @@ async def build_roster_rows(
         # the meta team that sits under the owner, and stops a parish export from
         # duplicating people under the transient task-force team. The explicit
         # subtree=False mode (the Drive sheet) names its teams exactly and is
-        # trusted to; drive_sync never hands it a meta team.
+        # trusted to; roster_sheets never hands it a meta team.
         include_ids -= await team_service.meta_team_ids(session, include_ids)
 
     M, V = entity(Membership, at), entity(Volunteer, at)

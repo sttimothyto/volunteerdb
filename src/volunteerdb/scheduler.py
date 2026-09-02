@@ -334,10 +334,6 @@ class Scheduler:
                 self._loop(), name="vdb-scheduler"
             )
 
-    @property
-    def running(self) -> bool:
-        return self._task is not None
-
     async def stop(self) -> None:
         if self._task is not None:
             self._task.cancel()

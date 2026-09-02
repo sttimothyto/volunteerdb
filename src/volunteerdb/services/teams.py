@@ -263,7 +263,7 @@ async def _check_no_cycle(
 
 async def _sheet_row(session: AsyncSession, team_id: int) -> TeamSheet:
     """The team's team_sheet row, created if the sync has not made one yet.
-    Same upsert shape as jobs.drive_sync._set_sheet_status."""
+    Same upsert shape as roster_sheets.record_status."""
     sheet = await session.get(TeamSheet, team_id)
     if sheet is None:
         sheet = TeamSheet(team_id=team_id)

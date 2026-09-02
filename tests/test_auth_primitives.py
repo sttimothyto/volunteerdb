@@ -9,10 +9,9 @@ from volunteerdb.auth import (
     async_verify_password,
     burn_password_check,
     hash_password,
-    new_otp_code,
-    new_token,
     verify_password,
 )
+from volunteerdb.env import SecretsRng
 from volunteerdb.services.users import _token_digest
 
 pytestmark = pytest.mark.pure
@@ -43,13 +42,14 @@ def test_burn_password_check_never_raises():
     assert burn_password_check("whatever") is None
 
 
-def test_new_otp_code_format():
+def test_otp_code_format():
+    rng = SecretsRng()
     for _ in range(50):
-        assert re.fullmatch(r"\d{6}", new_otp_code()), "always six digits, zero-padded"
+        assert re.fullmatch(r"\d{6}", rng.otp_code()), "always six digits, zero-padded"
 
 
 def test_token_digest_deterministic():
-    token = new_token()
+    token = SecretsRng().token()
     digest = _token_digest(token)
     assert re.fullmatch(r"[0-9a-f]{64}", digest), "SHA-256 hex"
     assert digest == _token_digest(token)

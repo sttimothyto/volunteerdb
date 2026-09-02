@@ -96,15 +96,6 @@ def public_url(calendar_id: str) -> str:
     return f"https://calendar.google.com/calendar/r?cid={quote(calendar_id, safe='')}"
 
 
-def google_ics_url(calendar_id: str) -> str:
-    """The .ics feed Google publishes for a public calendar. Lags the app's
-    own feed by up to a sync interval; offered for completeness."""
-    return (
-        "https://calendar.google.com/calendar/ical/"
-        f"{quote(calendar_id, safe='')}/public/basic.ics"
-    )
-
-
 # --- what this system remembers about its calendar -------------------------
 
 

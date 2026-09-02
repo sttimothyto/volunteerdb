@@ -335,10 +335,6 @@ def invite_page(token: str, request: Request):
             ui.button("Finish setup and sign in", on_click=redeem).classes("w-full")
 
 
-def confirm_email_url(base_url: str, token: str) -> str:
-    return f"{base_url}/confirm-email/{token}"
-
-
 @ui.page("/confirm-email/{token}")
 async def confirm_email_page(token: str, request: Request):
     """The other end of a requested address change.

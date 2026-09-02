@@ -94,7 +94,8 @@ EDGE_ALLOWLIST = {
 
 
 # Gate calls whose result is thrown away, per module, when gates began returning
-# `Err | None` instead of raising (FUNCTIONAL_REFACTORING.md, Phase 2). A raising
+# `Err | None` instead of raising (docs/explanation/architecture.md, "Errors
+# are values"). A raising
 # gate as a bare statement was correct; a value-returning one is a check that
 # never refuses. The count may only fall; an entry at zero must be deleted.
 DISCARDED_GATE_BASELINE: dict[str, int] = {}

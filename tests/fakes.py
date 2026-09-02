@@ -2,9 +2,8 @@
 tokens, and a mailer that records instead of sending.
 
 Shared by tests/conftest.py (the `env` fixture) and tests/ui_sim_main.py (the
-simulated app), so a page's mail lands in SIM_MAILER.sent whichever way it
-was sent -- through the effect interpreter or, during the transition, the
-mail.send_email shim -- and a test reads it back from the one place."""
+simulated app), so a page's mail lands in SIM_MAILER.sent and a test reads
+it back from the one place."""
 
 import json
 import re
@@ -49,9 +48,6 @@ class FakeRng:
 
     def uuid(self) -> UUID:
         return UUID(int=self._next())
-
-    def hex(self, n: int) -> str:
-        return f"{self._next():0{2 * n}x}"[-2 * n :]
 
 
 class RecordingMailer:

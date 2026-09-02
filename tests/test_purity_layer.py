@@ -1,6 +1,6 @@
 """Where side effects live, enforced structurally.
 
-FUNCTIONAL_REFACTORING.md states the rules these tests defend: under the core
+docs/explanation/architecture.md states the rules these tests defend: under the core
 paths -- services/, sheets/, and the pure leaves beside them -- nothing reads
 the clock, the settings or a random source, opens its own transaction, builds
 an HTTP client or prints, and nothing raises: time, identifiers and
@@ -54,8 +54,6 @@ FORBIDDEN_CALLS = frozenset(
         "token_hex",
         "randbelow",
         "uuid4",
-        "new_token",  # auth.py's random draws are the edge's
-        "new_otp_code",
         "db_session",  # the unit of work belongs to the edge
         "sessionmaker",
         "AsyncClient",  # transports are injected
@@ -157,7 +155,7 @@ def test_core_impurity_never_grows():
     assert not grown, (
         "new side effects or raises inside the core. Time, config and identifiers "
         "are parameters; a refusal is a returned Err; the unit of work belongs to "
-        f"the edge (FUNCTIONAL_REFACTORING.md, Rules 1-3): {grown}"
+        f"the edge (docs/explanation/architecture.md): {grown}"
     )
 
 
