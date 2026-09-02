@@ -31,8 +31,10 @@ def stat_section(title: str, subtitle: str | None = None) -> Iterator[None]:
 @contextmanager
 def tile_row() -> Iterator[None]:
     """Tiles side by side, wrapping on a narrow window. items-stretch so a
-    tile with a sub-line does not make its neighbours short."""
-    with ui.row().classes("items-stretch gap-3 flex-wrap w-full"):
+    tile with a sub-line does not make its neighbours short. On a phone the
+    row is a two-column grid instead (theme.css .vdb-tiles): as a wrapping row
+    the captions' spaced capitals made each tile too wide to pair up."""
+    with ui.row().classes("items-stretch gap-3 flex-wrap w-full vdb-tiles"):
         yield
 
 

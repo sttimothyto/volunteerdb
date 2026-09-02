@@ -124,7 +124,13 @@ def timeline_chart(spells, paths: dict[int, str], dark: bool) -> None:
         "grid": {"left": 8, "right": 16, "top": 40, "bottom": 8, "containLabel": True},
         "xAxis": {
             "type": "time",
-            "axisLabel": {"color": chrome["muted"], "fontFamily": _SERIF},
+            # hideOverlap: on a phone-wide chart the year labels ran into one
+            # another; ECharts drops every other one instead
+            "axisLabel": {
+                "color": chrome["muted"],
+                "fontFamily": _SERIF,
+                "hideOverlap": True,
+            },
             "axisLine": axis_line,
             "splitLine": {
                 "show": True,

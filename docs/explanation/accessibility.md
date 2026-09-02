@@ -62,6 +62,32 @@ finding.
   managers work (`autocomplete` on every field), an emailed code as the
   fallback.
 
+## Reflow, at a phone's width
+
+**1.4.10** asks that a page at 320 CSS pixels wide needs no sideways
+scrolling. The frame gives every page the whole window, so the question is
+what the pieces do when the window is a phone. Below Quasar's `md` line
+(1024px) the header's row of links becomes a menu button, and the header
+stops wrapping. With NiceGUI's default `wrap`, the gear and sign-out fell to
+a second row on every phone. Below 40rem (`ui/static/theme.css`, the
+narrow-screens block):
+
+- the dashboard tiles go two abreast, as a grid;
+- the month name sits on its own line above the calendar's arrows;
+- a roster row stacks under the member's name;
+- the page gutter narrows to 12px;
+- field text is 16px, because iOS Safari zooms into any field set smaller
+  and stays zoomed.
+
+The volunteer side panel is capped at the window's width. At 380px it hung
+20px off the left edge of a 360px screen. The service timeline hides an axis
+label that would overlap its neighbour.
+
+Tables keep their columns and scroll sideways inside their own frame, which
+1.4.10 permits. `tests/e2e/test_browser_layout.py` holds the frame to this.
+No page scrolls sideways at 390px, the header stays one row, the tiles pair
+up, and the panel starts on the screen.
+
 ## Native HTML over script
 
 Where the browser now does the job, it does it here. The month calendar on

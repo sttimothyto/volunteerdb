@@ -1018,11 +1018,17 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             ui.label("Nobody on this team yet.").classes("text-gray-500")
         else:
             for membership, volunteer in roster:
+                # the column widths live in theme.css (.vdb-roster-name,
+                # .vdb-roster-email), which lets a phone drop them and stack
+                # the row as a block under the name
                 with ui.row().classes(
                     "w-full items-center gap-3 p-2 rounded hover:bg-gray-100"
                 ):
                     volunteer_link(
-                        volunteer.full_name, volunteer.id, panel, classes="w-48"
+                        volunteer.full_name,
+                        volunteer.id,
+                        panel,
+                        classes="vdb-roster-name",
                     )
                     if can_manage:
                         role_select = ui.select(
@@ -1035,7 +1041,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                         ui.badge(ROLE_LABELS[membership.role])
                     if can_full:
                         ui.label(volunteer.email or "").classes(
-                            "text-sm text-gray-600 w-56"
+                            "text-sm text-gray-600 vdb-roster-email"
                         )
                         ui.label(volunteer.phone or "").classes("text-sm text-gray-600")
                     ui.space()

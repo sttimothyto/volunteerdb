@@ -843,3 +843,116 @@ body.body--dark .q-badge.bg-muted {
   color: #1c1917;
   text-shadow: none;
 }
+
+/* ---------- team roster rows (ui/teams_page.py) ----------
+   Fixed column widths so the rows read as a table on a wide screen; the
+   phone block below releases them. */
+
+.vdb-roster-name {
+  width: 12rem;
+}
+
+.vdb-roster-email {
+  width: 14rem;
+}
+
+/* ---------- narrow screens ----------
+   Two breakpoints, both already in use above: Quasar's md (1024px), under
+   which the header trades its row of links for a menu button (ui/layout.py),
+   and the 40rem line where the calendar turns into a list. */
+
+/* Tighter gaps below lg: at md — a 1024px tablet on its side — an admin's
+   header carries the full row of links and the address, and with NiceGUI's
+   1rem gaps that ran to a second row with the gear and sign-out on it. */
+@media (max-width: 1439.98px) {
+  .vdb-header {
+    gap: 0.5rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .vdb-nav-rule {
+    margin: 0 0.4rem;
+  }
+}
+
+/* Below md the header holds seven things at most — mark, brand, rule, menu,
+   avatar, gear, sign-out — and they fit on one line at 320px. With NiceGUI's
+   default `wrap` the gear and sign-out still folded onto a second row,
+   doubling the header's height on every phone. */
+@media (max-width: 1023.98px) {
+  .vdb-header {
+    flex-wrap: nowrap;
+  }
+}
+
+@media (max-width: 40rem) {
+  /* the page gutter, matching the header's: 12px a side leaves a 336px
+     column on the commonest 360px screen */
+  .vdb-page {
+    padding: 0.75rem;
+  }
+
+  /* the dashboard's statistics two abreast. As a wrapping row each tile is
+     as wide as its caption's spaced capitals (~180px), so the row fell to
+     one tile per line down the whole page; as a grid the column sets the
+     width and the caption wraps inside it. */
+  .vdb-tiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vdb-tiles > * {
+    min-width: 0;
+  }
+
+  .vdb-tiles .vdb-stat {
+    min-width: 0;
+    width: 100%;
+  }
+
+  /* iOS Safari zooms the page into any field whose text is under 16px and
+     leaves it zoomed when the field loses focus; Quasar's is 14px. 16px is
+     the body size already. */
+  .q-field__native,
+  .q-field__input {
+    font-size: 16px;
+  }
+
+  /* the month's name first on its own line, the two arrows under it; side
+     by side, the three wrapped the arrows away from their words */
+  .vdb-cal-nav {
+    flex-wrap: wrap;
+  }
+
+  .vdb-cal-month {
+    order: -1;
+    flex-basis: 100%;
+  }
+
+  .vdb-cal-nav a {
+    white-space: nowrap;
+  }
+
+  /* a touch screen never hovers, so nothing reflows and the width reserved
+     for the hover face only pushed the badge onto a line of its own */
+  .vdb-invite-swap {
+    min-width: 0;
+  }
+
+  /* a roster row becomes a block headed by the name */
+  .vdb-roster-name {
+    width: 100%;
+  }
+
+  .vdb-roster-email {
+    width: auto;
+    max-width: 100%;
+  }
+}
+
+/* the volunteer side panel is 380px wide (ui/volunteer_panel.py), which on a
+   360px phone hung its first 20px off the left edge of the screen */
+.q-drawer {
+  max-width: 100vw;
+}

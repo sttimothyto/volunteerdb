@@ -66,3 +66,54 @@ async def test_the_page_never_scrolls_sideways_on_a_phone(seeded, page):
             "document.documentElement.clientWidth"
         )
         assert overflow <= 0, f"{path} scrolls {overflow}px sideways at 390px wide"
+
+
+PHONE = {"width": 360, "height": 780}  # the commonest Android width
+
+
+async def test_a_phone_gets_one_header_row_paired_tiles_and_a_panel_that_fits(
+    seeded, page
+):
+    """Three more decisions the cascade makes at a phone width (theme.css,
+    the narrow-screens block), each of which rendered a correct element tree
+    while looking wrong:
+
+    * the header — NiceGUI's `wrap` folded the gear and sign-out onto a
+      second row, so every page started under a header twice its height;
+    * the dashboard tiles — a wrapping row put one tile per line down the
+      whole page when two fit side by side;
+    * the volunteer side panel — a 380px drawer on a 360px screen hung its
+      first 20px off the left edge, badge and all.
+    """
+    await page.set_viewport_size(PHONE)
+    await sign_in(page, "admin@example.org", "secret-pass-phrase")
+    await ready(page)
+
+    # one row: the sign-out button sits level with the brand, not under it
+    brand = await page.locator("header").get_by_text("Dash").bounding_box()
+    sign_out = await icon_button(page, "logout").bounding_box()
+    assert brand and sign_out
+    assert abs(brand["y"] - sign_out["y"]) < brand["height"], (
+        f"the header wrapped: brand at y={brand['y']:.0f}, sign out at "
+        f"y={sign_out['y']:.0f}"
+    )
+
+    # two abreast: the first two tiles share a row and neither leaves the screen
+    tiles = page.locator(".vdb-stat")
+    first, second = (
+        await tiles.nth(0).bounding_box(),
+        await tiles.nth(1).bounding_box(),
+    )
+    assert first and second
+    assert abs(first["y"] - second["y"]) < 1, "the dashboard tiles stacked one per row"
+    assert second["x"] + second["width"] <= PHONE["width"], "the second tile is cut off"
+
+    # the panel fits: its left edge is on the screen, so is its close button
+    await page.goto(f"/teams/{seeded['team_id']}")
+    await ready(page)
+    await page.get_by_text("Maria Alvarez", exact=True).first.click()
+    drawer = page.locator(".q-drawer")
+    await expect(drawer).to_be_visible()
+    box = await drawer.bounding_box()
+    assert box and box["x"] >= 0, f"the side panel starts {-box['x']:.0f}px off-screen"
+    await expect(icon_button(page, "close")).to_be_in_viewport()

@@ -83,12 +83,13 @@ def frame(
             "flat color=white dense"
         )
     # p-4 keeps a gutter and lines the content up with the header's own px-4
-    # instead of running into the window edge
+    # instead of running into the window edge; on a phone theme.css narrows
+    # both (.vdb-page, .vdb-header) so a 360px screen keeps a 336px column.
     # the skip link's target. Not a <main>: NiceGUI's page container already
     # is one, and a second main landmark is a finding of its own
     with (
         ui.element("div").props('id="main" tabindex="-1"').classes("w-full"),
-        ui.column().classes("w-full p-4 gap-4"),
+        ui.column().classes("w-full p-4 gap-4 vdb-page"),
     ):
         heading(title).classes("vdb-page-title")
         if as_of is not None and asof_path is not None:
