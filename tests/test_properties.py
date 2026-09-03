@@ -3,6 +3,7 @@ must hold for every ledger, every month of counts, every duration, every
 ballot -- not just the examples a person thought of."""
 
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from hypothesis import given
@@ -181,7 +182,7 @@ def test_a_well_formed_condition_always_parses_as_one(field, op, value):
 
 @given(day=st.dates(min_value=date(1970, 1, 2), max_value=date(2100, 1, 1)))
 def test_a_bare_date_means_the_last_microsecond_of_that_day(day):
-    parsed = parse_as_of(day.isoformat())
+    parsed = parse_as_of(day.isoformat(), ZoneInfo("America/Toronto"))
     assert parsed.date() == day
     assert parsed.time() == datetime.max.time()
     assert parsed.tzinfo is not None
@@ -195,4 +196,4 @@ def test_a_bare_date_means_the_last_microsecond_of_that_day(day):
     )
 )
 def test_an_explicit_instant_is_taken_literally(moment):
-    assert parse_as_of(moment.isoformat()) == moment
+    assert parse_as_of(moment.isoformat(), UTC) == moment

@@ -85,6 +85,11 @@ configuration arrive as parameters, which the edge supplies from its `Ctx`.
 Those parameters are `now`, `today`, `tz`, `token`, `series_id` and
 `site_terms`.
 
+The same file sweeps the whole tree, edges included, for the
+host's zone: a bare `.astimezone()`, `date.today()` or `datetime.now()`.
+`tz` is the parish's (`Env.tz`); the production container's clock is UTC,
+where the parish's day ends at 8 pm.
+
 ### Events, policy, effects
 
 A service that writes returns `Outcome(value, events)`. The events are the

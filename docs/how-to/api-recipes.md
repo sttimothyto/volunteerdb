@@ -42,7 +42,8 @@ GUI.
 
 ## Time travel
 
-Most GETs accept `as_of` (ISO 8601; a naive value is server-local):
+Most GETs accept `as_of` (ISO 8601; a naive value is parish-local, see
+`VDB_TIMEZONE`):
 
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" \

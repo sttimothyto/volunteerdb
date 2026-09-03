@@ -156,7 +156,7 @@ async def test_include_inactive_requires_admin(client, seeded):
     )
 
 
-async def test_a_bare_as_of_date_covers_that_whole_day(client, seeded):
+async def test_a_bare_as_of_date_covers_that_whole_day(client, seeded, env):
     """A bare date means the END of that day, on both surfaces. The API used to
     annotate as_of as a datetime, so FastAPI parsed '2026-07-30' to midnight
     while the GUI bumped it to 23:59:59 — the same query string returning
@@ -171,7 +171,7 @@ async def test_a_bare_as_of_date_covers_that_whole_day(client, seeded):
         "midnight would hide the whole day's history"
     )
 
-    assert as_of_param(today) == parse_as_of(today), (
+    assert as_of_param(env, today) == parse_as_of(today, env.tz), (
         "the GUI and the API must resolve the same query string to the same instant"
     )
 

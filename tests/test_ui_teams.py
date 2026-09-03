@@ -342,6 +342,21 @@ async def test_asof_snapshot_announces_itself_and_offers_a_way_back(database):
         await user.should_see("Back to now")
 
 
+async def test_a_snapshot_from_before_the_team_existed_says_so(database):
+    """/teams/{id}?as_of=<a date before it was created> is a page that says
+    the team was not there yet, in the snapshot's own frame. It was a 500: the
+    not-found branch rolled the transaction back, which expired the actor's
+    user row, and then rendered the frame after the session had closed."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open(f"/teams/{ids['liturgy']}?as_of=2000-01-01")
+        await user.should_see(f"No team with id {ids['liturgy']} at this time.")
+        await user.should_see("Read-only snapshot as of")
+
+
 async def test_search_box_runs_where_filters_over_the_rows(database):
     async with db_session() as session:
         ids = await _parish(session)

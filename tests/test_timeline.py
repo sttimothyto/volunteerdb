@@ -31,7 +31,7 @@ async def test_ongoing_membership_is_one_open_spell(database):
         ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
 
     async with db_session() as session:
-        spells = await volunteers.timeline(session, vid)
+        spells = await volunteers.timeline(session, vid, tz=TZ)
     assert len(spells) == 1
     spell = spells[0]
     assert (
@@ -52,7 +52,7 @@ async def test_role_change_merges_into_one_spell(database):
         ok(await memberships.assign(session, None, vid, tid, TeamRole.leader))
 
     async with db_session() as session:
-        (spell,) = await volunteers.timeline(session, vid)
+        (spell,) = await volunteers.timeline(session, vid, tz=TZ)
     assert spell.role == TeamRole.leader
     assert spell.end is None
     assert [s.role for s in spell.segments] == [TeamRole.member, TeamRole.leader]
@@ -71,7 +71,7 @@ async def test_leave_then_rejoin_splits_spells(database):
         ok(await memberships.assign(session, None, vid, tid, TeamRole.core))
 
     async with db_session() as session:
-        spells = await volunteers.timeline(session, vid)
+        spells = await volunteers.timeline(session, vid, tz=TZ)
     assert len(spells) == 2
     first, second = spells
     assert first.team_id == second.team_id == tid
@@ -92,7 +92,7 @@ async def test_spells_on_two_teams_stay_independent_and_sort_by_start(database):
         ok(await memberships.assign(session, None, vid, choir, TeamRole.leader))
 
     async with db_session() as session:
-        spells = await volunteers.timeline(session, vid)
+        spells = await volunteers.timeline(session, vid, tz=TZ)
 
     # same start date (both created today) → the name breaks the sorting tie
     assert [(s.team_name, s.start) for s in spells] == [
@@ -116,7 +116,7 @@ async def test_deleted_team_uses_last_historical_name(database):
         ok(await teams.delete(session, None, tid))
 
     async with db_session() as session:
-        (spell,) = await volunteers.timeline(session, vid)
+        (spell,) = await volunteers.timeline(session, vid, tz=TZ)
     assert spell.team_name == "Choir"
     assert spell.team_deleted
     assert spell.end == mint.today()

@@ -134,13 +134,15 @@ CtxDep = Annotated[Ctx, Depends(api_ctx)]
 
 
 def as_of_param(
+    env: Annotated[Env, Depends(env_of)],
     as_of: Annotated[
         str | None,
         Query(
             description=(
                 "view data as of this ISO date or timestamp; a bare date means the END "
                 "of that day, so as_of=2026-07-30 includes everything that happened on "
-                "the 30th. Naive timestamps are read in the server's local timezone."
+                "the 30th. Naive timestamps are read in the parish's timezone "
+                "(VDB_TIMEZONE), never the server's."
             ),
             examples=["2026-07-30", "2026-07-30T14:00:00"],
         ),
@@ -151,7 +153,7 @@ def as_of_param(
     if as_of is None or not as_of.strip():
         return None
     try:
-        return parse_as_of(as_of)
+        return parse_as_of(as_of, env.tz)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
 

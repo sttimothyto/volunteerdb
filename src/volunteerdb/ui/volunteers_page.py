@@ -288,7 +288,7 @@ async def volunteer_detail(request: Request, volunteer_id: int):
             if can_view
             else None
         )
-        spells = await volunteer_service.timeline(session, volunteer_id)
+        spells = await volunteer_service.timeline(session, volunteer_id, tz=ctx.env.tz)
         account = await user_service.account_for_volunteer(session, volunteer_id)
         tree = await team_service.tree(session)
         paths = tree.paths
@@ -442,7 +442,13 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                 ui.button("Add", icon="group_add", on_click=add).props("dense")
 
         ui.label("Service timeline").classes("text-lg font-medium")
-        timeline_chart(spells, paths, dark=app.storage.user.get("dark_mode", False))
+        timeline_chart(
+            spells,
+            paths,
+            dark=app.storage.user.get("dark_mode", False),
+            now=ctx.now,
+            tz=ctx.env.tz,
+        )
 
         if can_view:
             ui.label("If they leave, what vacancies appear?").classes(

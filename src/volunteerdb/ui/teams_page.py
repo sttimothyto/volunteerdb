@@ -155,7 +155,7 @@ def _wire_search(
 
 @ui.page("/teams")
 async def teams_page(as_of: str = ""):
-    at = parse_as_of(as_of)
+    at = parse_as_of(as_of, current_env().tz)
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
         tree = await team_service.tree(session, at)
@@ -828,7 +828,7 @@ async def _fetch_home_page(team_id: int) -> None:
 
 @ui.page("/teams/{team_id}")
 async def team_detail(request: Request, team_id: int, as_of: str = ""):
-    at = parse_as_of(as_of)
+    at = parse_as_of(as_of, current_env().tz)
     base_url = str(request.base_url).rstrip("/")
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
@@ -836,8 +836,10 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         # table either way, and get() is a second round trip for a row in hand
         tree = await team_service.tree(session, at=at)
         team = tree.by_id.get(team_id)
-        if team is None:
-            await session.rollback()  # nothing to read; the frame says so below
+        # No rollback when it is missing: a rollback expires every loaded row,
+        # the actor's user among them, and the frame below reads that row after
+        # the session has closed -- a snapshot from before the team existed
+        # was a 500, not a page. Committing a read is nothing.
     if team is None:
         with frame("Team not found", actor, as_of=at, asof_path=f"/teams/{team_id}"):
             ui.label(f"No team with id {team_id} at this time.")

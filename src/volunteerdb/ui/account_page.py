@@ -231,7 +231,7 @@ async def account_page(request: Request):
                         f"Waiting for {pending} to confirm"
                         + (
                             f" — the link stops working "
-                            f"{pending_until.astimezone().strftime('%a %d %b, %H:%M')}"
+                            f"{pending_until.astimezone(current_env().tz).strftime('%a %d %b, %H:%M')}"
                             if pending_until is not None
                             else ""
                         )

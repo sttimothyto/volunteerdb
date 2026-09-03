@@ -58,7 +58,7 @@ async def teams_export(request: Request) -> Response:
 
 async def roster_export(team_id: int, request: Request, as_of: str = "") -> Response:
     """One team's roster, at the moment `?as_of=` names or now."""
-    at = parse_as_of(as_of)
+    at = parse_as_of(as_of, current_env().tz)
     async with transaction(current_env(), None) as session:
         actor = await get_actor(session)
         if actor is None:

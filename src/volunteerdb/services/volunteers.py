@@ -381,8 +381,14 @@ class MembershipSpell:
     segments: list[RoleSegment]  # consecutive role stretches within the spell
 
 
-async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipSpell]:
+async def timeline(
+    session: AsyncSession, volunteer_id: int, *, tz: ZoneInfo
+) -> list[MembershipSpell]:
     """Membership spells over all time, stitched from the audit trail.
+
+    Spell dates are parish days (`tz`, the Env's), as team_anniversaries()'s
+    are: a membership made at 9 pm Toronto time starts that day, whatever the
+    host's clock says.
 
     A spell is one continuous stretch on a team. Row versions of a single
     membership abut exactly (the trigger closes and reopens sys_period at the
@@ -436,7 +442,7 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
     for run in runs:
         first, last = run[0], run[-1]
         ended = last.op == "D"
-        start = first.sys_period.lower.astimezone().date()
+        start = first.sys_period.lower.astimezone(tz).date()
         segments: list[RoleSegment] = []
         for row in run:
             if segments and segments[-1].role == row.role:
@@ -454,7 +460,7 @@ async def timeline(session: AsyncSession, volunteer_id: int) -> list[MembershipS
                 team_deleted=first.team_id in gone,
                 role=last.role,
                 start=start,
-                end=last.sys_period.upper.astimezone().date() if ended else None,
+                end=last.sys_period.upper.astimezone(tz).date() if ended else None,
                 segments=segments,
             )
         )

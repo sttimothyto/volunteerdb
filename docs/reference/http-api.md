@@ -32,7 +32,8 @@ Authorization: Bearer <token>
 `as_of` (ISO 8601 date or timestamp)
 : Most GET endpoints on versioned entities accept it. The endpoint returns
   the state as of that moment.
-  - The server interprets a naive timestamp in server-local time.
+  - A naive timestamp is read in the parish's timezone (`VDB_TIMEZONE`),
+    not the server's.
   - A **bare date means the end of that day**. So `as_of=2026-07-30`
     includes everything that happened on the 30th.
   - Write `as_of=2026-07-30T00:00:00` for the first instant of that day.

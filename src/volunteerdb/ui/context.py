@@ -4,7 +4,7 @@ import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 
 from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
@@ -268,12 +268,12 @@ def toast(err: DomainError) -> None:
     ui.notify(message(err), color="warning" if soft else "negative")
 
 
-def parse_as_of(raw: str) -> datetime | None:
-    """Query-param 'as of': a date means end of that day, local time. Shared with
-    the API (see asof_param.py); a page ignores garbage and renders live data
-    than erroring at the reader."""
+def parse_as_of(raw: str, tz: tzinfo) -> datetime | None:
+    """Query-param 'as of': a date means end of that day, parish time (`tz` is
+    the Env's). Shared with the API (see asof_param.py); a page ignores garbage
+    and renders live data rather than erroring at the reader."""
     try:
-        return asof_param.parse_as_of(raw)
+        return asof_param.parse_as_of(raw, tz)
     except ValueError:
         return None
 
@@ -286,7 +286,7 @@ def asof_banner(as_of: datetime, base_path: str) -> None:
     with ui.row().classes("w-full bg-amber-100 rounded p-2 items-center gap-2"):
         ui.icon("history")
         ui.label(
-            f"Read-only snapshot as of {as_of.astimezone().strftime('%Y-%m-%d %H:%M %Z')}"
+            f"Read-only snapshot as of {as_of.astimezone(current().tz).strftime('%Y-%m-%d %H:%M %Z')}"
         ).classes("text-amber-900 font-medium")
         ui.space()
         ui.button("Back to now").props(f'dense color=warning href="{base_path}"')

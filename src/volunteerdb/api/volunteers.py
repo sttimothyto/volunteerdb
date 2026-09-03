@@ -202,7 +202,7 @@ async def volunteer_timeline(ctx: CtxDep, volunteer_id: int) -> list[TimelineSpe
     Inherently all-time, so no as_of param. Visible to all signed-in users,
     like /assignments.
     """
-    spells = await service.timeline(ctx.session, volunteer_id)
+    spells = await service.timeline(ctx.session, volunteer_id, tz=ctx.env.tz)
     return [
         TimelineSpellOut(
             team_id=s.team_id,

@@ -44,7 +44,7 @@ async def dashboard(request: Request, as_of: str = "", q: str = ""):
     ui.add_head_html(
         f'<link rel="modulepreload" href="{static_url("cytoscape.esm.min.js")}">'
     )
-    at = parse_as_of(as_of)
+    at = parse_as_of(as_of, current_env().tz)
     # ?q= is a WHERE filter narrowing the graph in place (plain text goes to
     # the volunteers list instead, see submit); an unparsable one is ignored
     query = q.strip() if query_lang.parse(q.strip()) is not None else ""
@@ -319,7 +319,9 @@ def _my_service_section(mine: stats_service.PersonalStats) -> None:
             stat_tile(
                 mine.upcoming_duties,
                 "Upcoming duties",
-                sub=mine.next_duty_at.astimezone().strftime("next %-d %b, %H:%M")
+                sub=mine.next_duty_at.astimezone(current_env().tz).strftime(
+                    "next %-d %b, %H:%M"
+                )
                 if mine.next_duty_at
                 else None,
                 hint=f"{mine.next_duty_title} · {mine.next_duty_slot}"

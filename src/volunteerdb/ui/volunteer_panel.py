@@ -7,6 +7,7 @@ entering ``frame`` and call ``panel.open(volunteer_id)`` from click handlers.
 
 from nicegui import ui
 
+from ..env import current as current_env
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType
 from ..permissions import volunteer_team_ids
 from ..services import custom_fields as custom_field_service
@@ -53,7 +54,7 @@ def volunteer_link(
 
 class VolunteerPanel:
     def __init__(self, as_of: str = "", base_url: str = "") -> None:
-        self.at = parse_as_of(as_of)
+        self.at = parse_as_of(as_of, current_env().tz)
         self._asof_query = f"?as_of={as_of}" if as_of else ""
         # only needed to build an invite link; without it the panel simply
         # reports sign-in status without offering to fix it

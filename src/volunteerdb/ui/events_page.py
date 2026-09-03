@@ -404,7 +404,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
             .classes("w-full")
         )
         title = ui.input("Title").props("outlined dense").classes("w-full")
-        tomorrow = date.today() + timedelta(days=1)
+        tomorrow = current_env().today() + timedelta(days=1)
         with ui.row().classes("w-full gap-2"):
             day = date_input("Date (YYYY-MM-DD)", value=str(tomorrow)).classes("grow")
             start = time_input("Starts (HH:MM)", value="10:00").classes("w-36")

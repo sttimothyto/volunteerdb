@@ -9,6 +9,7 @@ dark-mode toggle.
 
 import html
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from nicegui import ui
 
@@ -54,8 +55,8 @@ function (params, api) {
 """
 
 
-def _duration_text(start: date, end: date | None) -> str:
-    days = ((end or date.today()) - start).days
+def _duration_text(start: date, end: date | None, today: date) -> str:
+    days = ((end or today) - start).days
     if days < 60:
         days = max(days, 1)
         return f"{days} day{'s' if days != 1 else ''}"
@@ -65,17 +66,24 @@ def _duration_text(start: date, end: date | None) -> str:
     return f"{years} yr {months} mo" if months else f"{years} yr"
 
 
-def _tip(row_label: str, role: TeamRole, start: date, end: date | None) -> str:
+def _tip(
+    row_label: str, role: TeamRole, start: date, end: date | None, today: date
+) -> str:
     when = f"{start.isoformat()} → {end.isoformat() if end else 'ongoing'}"
     return (
         f"<b>{html.escape(row_label)}</b><br>"
         f"{ROLE_LABELS[role]}<br>"
-        f"{when} · {_duration_text(start, end)}"
+        f"{when} · {_duration_text(start, end, today)}"
     )
 
 
-def timeline_chart(spells, paths: dict[int, str], dark: bool) -> None:
-    """One bar per membership spell, segmented by role, teams on the y-axis."""
+def timeline_chart(
+    spells, paths: dict[int, str], dark: bool, *, now: datetime, tz: ZoneInfo
+) -> None:
+    """One bar per membership spell, segmented by role, teams on the y-axis.
+
+    `now` is the Env's clock and `tz` the parish's zone: an open spell runs to
+    now, and the tooltip's dates are parish days like the spells' own."""
     if not spells:
         ui.label("No membership history recorded yet.").classes("text-gray-500")
         return
@@ -91,13 +99,14 @@ def timeline_chart(spells, paths: dict[int, str], dark: bool) -> None:
             label = paths.get(spell.team_id, f"{spell.team_name} (deleted)")
             row_labels.append(label)
 
-    now_ms = int(datetime.now().astimezone().timestamp() * 1000)
+    today = now.astimezone(tz).date()
+    now_ms = int(now.timestamp() * 1000)
     data: dict[TeamRole, list[dict]] = {role: [] for role in TeamRole}
     for spell in spells:
         label = row_labels[row_of[spell.team_id]]
         for seg in spell.segments:
-            seg_start = seg.start.astimezone().date()
-            seg_end = seg.end.astimezone().date() if seg.end else None
+            seg_start = seg.start.astimezone(tz).date()
+            seg_end = seg.end.astimezone(tz).date() if seg.end else None
             data[seg.role].append(
                 {
                     "value": [
@@ -105,7 +114,7 @@ def timeline_chart(spells, paths: dict[int, str], dark: bool) -> None:
                         int(seg.start.timestamp() * 1000),
                         int(seg.end.timestamp() * 1000) if seg.end else now_ms,
                     ],
-                    "tip": _tip(label, seg.role, seg_start, seg_end),
+                    "tip": _tip(label, seg.role, seg_start, seg_end, today),
                 }
             )
 

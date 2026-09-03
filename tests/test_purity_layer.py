@@ -174,6 +174,41 @@ def test_the_baseline_has_no_stale_entries():
     )
 
 
+# --- the zone ----------------------------------------------------------------
+#
+# The zone is the parish's (Env.tz), never the host's. The production
+# container's clock is UTC, where the parish's day ends at 8 pm; a bare
+# .astimezone() or date.today() there once hid an evening's work from every
+# "as of today" and moved the membership timeline's dates by a day. Whole
+# tree, edges included: the edges are exactly where these calls lived.
+
+
+def _reads_the_host_zone(node: ast.Call) -> bool:
+    func = node.func
+    if not isinstance(func, ast.Attribute):
+        return False
+    bare = not node.args and not node.keywords
+    if func.attr == "astimezone":
+        return bare
+    owner = func.value
+    name = owner.id if isinstance(owner, ast.Name) else getattr(owner, "attr", None)
+    if name not in {"date", "datetime"}:
+        return False
+    return func.attr in {"today", "utcnow"} or (func.attr == "now" and bare)
+
+
+def test_nothing_reads_the_host_timezone():
+    hits = [
+        f"{path.relative_to(SRC)}:{node.lineno}: {ast.unparse(node)}"
+        for path in sorted(SRC.rglob("*.py"))
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.Call) and _reads_the_host_zone(node)
+    ]
+    assert not hits, "the host's zone is not the parish's; pass Env.tz:\n" + "\n".join(
+        hits
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover - baseline printer
     import pprint
 
