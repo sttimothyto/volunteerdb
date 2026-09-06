@@ -22,7 +22,8 @@ from ..models import Team
 from ..services import pages as page_service
 from ..services import teams as team_service
 from ..sheets import exporter
-from .context import get_actor, parse_as_of
+from .asof import parse_as_of
+from .context import get_actor
 
 CSV = "text/csv; charset=utf-8"
 

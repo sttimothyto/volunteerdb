@@ -7,7 +7,8 @@ from ..env import current as current_env
 from ..permissions import Actor
 from ..services import mail_quota
 from .a11y import heading, icon_button
-from .context import asof_banner, asof_picker, clear_session
+from .asof import asof_banner, asof_picker
+from .context import clear_session
 from .logo_dialog import site_logo
 from .photo_dialog import photo_avatar
 from .theme import apply_theme

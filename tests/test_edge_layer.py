@@ -48,6 +48,7 @@ BASELINE: dict[str, dict[str, int]] = {
     "api/events.py": {"orm_reach": 4},
     "ui/account_page.py": {"env_read": 4},
     "ui/account_status.py": {"env_read": 2},
+    "ui/asof.py": {"env_read": 1},
     "ui/calendar_panel.py": {"env_read": 1},
     "ui/calendar_routes.py": {"env_read": 1},
     "ui/dashboard.py": {"env_read": 2},

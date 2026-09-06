@@ -158,7 +158,3 @@ async def team_ids_map(
 
 async def volunteer_team_ids(session: AsyncSession, volunteer_id: int) -> set[int]:
     return (await team_ids_map(session, [volunteer_id]))[volunteer_id]
-
-
-class Forbidden(PermissionError):
-    """Raised by services/API when the actor lacks the required permission."""

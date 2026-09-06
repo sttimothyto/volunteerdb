@@ -88,7 +88,7 @@ commit.
   `throttle.retry_after`. The seven hand-rolled sites become gate, then
   charge, then call, and 429s flow through `to_http` and `toast`.
 
-- [ ] **4. Untangle `ui/context.py` by concern.** The "not signed in" signal
+- [x] **4. Untangle `ui/context.py` by concern.** The "not signed in" signal
   becomes `NotSignedIn` in `ui/context`; `permissions.Forbidden` goes, and
   with it the `ForbiddenValue` renames. The as-of banner, picker and parser
   move to `ui/asof.py` (re-exported from `context`).

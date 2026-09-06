@@ -12,13 +12,13 @@ import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timedelta
 
 from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import asof_param, effects, policy
+from .. import effects, policy
 from ..actors import load_actor
 from ..api import deps
 from ..api.deps import Ctx, RequestFacts, split_outcome
@@ -29,18 +29,23 @@ from ..env import Env, current
 from ..errors import (
     Conflict,
     DomainError,
+    Forbidden,
     Invalid,
     QueryError,
     Throttled,
     WeakPassword,
     message,
 )
-from ..errors import Forbidden as ForbiddenValue
 from ..fp import Err, Ok, Result, as_result
 from ..log import bind_actor
-from ..permissions import Actor, Forbidden
+from ..permissions import Actor
 from ..services import users as user_service
 from . import column_order
+
+# The as-of feature moved to ui/asof.py; the names stay reachable from here.
+from .asof import asof_banner as asof_banner
+from .asof import asof_picker as asof_picker
+from .asof import parse_as_of as parse_as_of
 
 SESSION_REMEMBER = timedelta(days=90)
 SESSION_SHORT = timedelta(days=1)
@@ -147,10 +152,16 @@ class PageCtx(Ctx):
     time-travelling page was opened at."""
 
 
+class NotSignedIn(Exception):
+    """Raised by page_ctx() when the session has no live account behind it,
+    after it has already sent the browser to /login: the page builder stops
+    here, and run_command turns it into the refusal it stands for."""
+
+
 @asynccontextmanager
 async def page_ctx(as_of: datetime | None = None) -> AsyncIterator[PageCtx]:
     """For page builders and action handlers: the unit of work with the actor
-    loaded, or a redirect to /login and a raise."""
+    loaded, or a redirect to /login and a NotSignedIn."""
     env = current()
     now = env.clock.now()
     # ExitStack outlives the transaction, so the actor identity is still bound
@@ -161,7 +172,7 @@ async def page_ctx(as_of: datetime | None = None) -> AsyncIterator[PageCtx]:
             if actor is None:
                 clear_session()
                 ui.navigate.to("/login")
-                raise Forbidden("not signed in")
+                raise NotSignedIn()
             ip = _client_ip()
             stack.enter_context(
                 bind_actor(f"{actor.user.id}:{actor.user.email}", ip=ip, via="gui")
@@ -209,8 +220,8 @@ async def run_command[T](
         conflict = Conflict()
         toast(conflict)
         return Err(conflict)
-    except Forbidden as exc:  # page_ctx: not signed in; it already redirected
-        return Err(ForbiddenValue(str(exc)))
+    except NotSignedIn:  # page_ctx already sent the browser to /login
+        return Err(Forbidden("not signed in"))
     report = await effects.run(planned, env)
     if on_ok is not None:
         outcome = on_ok(value, planned, report)
@@ -255,45 +266,3 @@ def toast(err: DomainError) -> None:
     anything else is a refusal in red."""
     soft = isinstance(err, (Invalid, WeakPassword, QueryError, Throttled))
     ui.notify(message(err), color="warning" if soft else "negative")
-
-
-def parse_as_of(raw: str, tz: tzinfo) -> datetime | None:
-    """Query-param 'as of': a date means end of that day, parish time (`tz` is
-    the Env's). Shared with the API (see asof_param.py); a page ignores garbage
-    and renders live data rather than erroring at the reader."""
-    try:
-        return asof_param.parse_as_of(raw, tz)
-    except ValueError:
-        return None
-
-
-def asof_banner(as_of: datetime, base_path: str) -> None:
-    """The 'you are reading history' strip, carrying its own way back.
-
-    Rendered by frame() in the page body: the picker hides in the header's
-    settings menu, but a snapshot must never be silent."""
-    with ui.row().classes("w-full bg-amber-100 rounded p-2 items-center gap-2"):
-        ui.icon("history")
-        ui.label(
-            f"Read-only snapshot as of {as_of.astimezone(current().tz).strftime('%Y-%m-%d %H:%M %Z')}"
-        ).classes("text-amber-900 font-medium")
-        ui.space()
-        ui.button("Back to now").props(f'dense color=warning href="{base_path}"')
-
-
-def asof_picker(as_of: datetime | None, base_path: str) -> None:
-    """Date picker for the header settings menu; clearing it returns to now."""
-    from .date_input import date_input  # date_input imports a11y, which is ui-only
-
-    field = date_input(
-        "View as of (YYYY-MM-DD)",
-        value=as_of.date().isoformat() if as_of is not None else "",
-        clearable=True,
-    ).classes("w-full")
-
-    def go() -> None:
-        value = (field.value or "").strip()
-        ui.navigate.to(f"{base_path}?as_of={value}" if value else base_path)
-
-    field.on("keydown.enter", go)
-    ui.button("View", on_click=go).props("dense outline")
