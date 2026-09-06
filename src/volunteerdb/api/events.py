@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
-from ..models import Event, EventSlot, EventStatus, EventSubRequest, Volunteer
+from ..models import Event, EventStatus
 from ..services import events as event_service
 from ..services import task_force as task_force_service
 from ..services import teams as team_service
@@ -336,8 +336,8 @@ async def delete_slot(ctx: CtxDep, event_id: int, slot_id: int) -> None:
 
 
 async def _slot_of(ctx: CtxDep, event_id: int, slot_id: int) -> None:
-    slot = await ctx.session.get(EventSlot, slot_id)
-    if slot is None or slot.event_id != event_id:
+    """404 unless the slot named in the URL belongs to the event named in it."""
+    if await event_service.slot_of_event(ctx.session, event_id, slot_id) is None:
         raise HTTPException(404, f"slot {slot_id} not found")
 
 
@@ -480,9 +480,6 @@ async def claim_sub(
 
 @router.post("/sub-requests/{sub_request_id}/cancel")
 async def cancel_sub(ctx: CtxDep, sub_request_id: int) -> SubRequestOut:
-    sub = await ctx.session.get(EventSubRequest, sub_request_id)
-    if sub is None:
-        raise HTTPException(404, f"substitute request {sub_request_id} not found")
     sub = raise_http(
         await event_service.cancel_sub(
             ctx.session, ctx.actor, sub_request_id, now=ctx.now
@@ -510,15 +507,15 @@ async def set_attendance(
             now=ctx.now,
         )
     )
-    event = await _get_or_404(ctx, assignment.event_id)
+    slot, volunteer, event = await event_service.attendance_entry(
+        ctx.session, assignment
+    )
     attended, hours = event_service.effective(assignment, event)
-    slot = await ctx.session.get(EventSlot, assignment.slot_id)
-    volunteer = await ctx.session.get(Volunteer, assignment.volunteer_id)
     return AttendanceRowOut(
         assignment_id=assignment.id,
         volunteer_id=assignment.volunteer_id,
-        volunteer_name=volunteer.full_name if volunteer else "",
-        slot_name=slot.name if slot else "",
+        volunteer_name=volunteer.full_name,
+        slot_name=slot.name,
         attended=attended,
         hours=float(hours),
         overridden=assignment.attended_override is not None

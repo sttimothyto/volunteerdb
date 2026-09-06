@@ -8,13 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import team_cache
 from ..errors import DomainError, Invalid, invalid, not_found, require
-from ..fp import Err, Ok, Result
+from ..fp import UNSET, Err, Ok, Result
 from ..history import entity, fetch
 from ..models import Event, Membership, Team, TeamRole, TeamSheet, Volunteer
 from ..permissions import Actor
 from ..sheets.common import extract_spreadsheet_id
-
-_UNSET: object = object()
 
 
 async def get(
@@ -214,10 +212,10 @@ async def update(
     team_id: int,
     *,
     name: str | None = None,
-    parent_team_id: int | None | object = _UNSET,
-    description: str | None | object = _UNSET,
+    parent_team_id: int | None | object = UNSET,
+    description: str | None | object = UNSET,
     is_active: bool | None = None,
-    workload_weight: Decimal | None | object = _UNSET,
+    workload_weight: Decimal | None | object = UNSET,
 ) -> Result[Team, DomainError]:
     if denied := require(actor is None or actor.is_admin, "only admins edit teams"):
         return denied
@@ -226,15 +224,15 @@ async def update(
         return not_found("team", team_id)
     if name is not None:
         team.name = name.strip()
-    if parent_team_id is not _UNSET:
+    if parent_team_id is not UNSET:
         if cycle := await _check_no_cycle(session, team_id, parent_team_id):  # type: ignore[arg-type]
             return cycle
         team.parent_team_id = parent_team_id  # type: ignore[assignment]
-    if description is not _UNSET:
+    if description is not UNSET:
         team.description = description  # type: ignore[assignment]
     if is_active is not None:
         team.is_active = is_active
-    if workload_weight is not _UNSET:
+    if workload_weight is not UNSET:
         if bad := _check_workload_weight(workload_weight):  # type: ignore[arg-type]
             return bad
         # None from a caller means "no weight", which is 0 — the column has no

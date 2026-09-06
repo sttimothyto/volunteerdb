@@ -16,11 +16,9 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..errors import DomainError, Forbidden, not_found, require
-from ..fp import Err, Ok, Result
+from ..fp import UNSET, Err, Ok, Result
 from ..models import Membership, TeamRole
 from ..permissions import Actor
-
-_UNSET: object = object()
 
 
 def _may_manage(actor: Actor | None, team_id: int) -> Err[Forbidden] | None:
@@ -68,7 +66,7 @@ async def assign(
     team_id: int,
     role: TeamRole,
     *,
-    existing: Membership | None | object = _UNSET,
+    existing: Membership | None | object = UNSET,
 ) -> Result[Membership, DomainError]:
     """Add the volunteer to the team, or update their role if already on it.
 
@@ -77,7 +75,7 @@ async def assign(
     if denied := _may_manage(actor, team_id):
         return denied
     membership = (
-        await find(session, volunteer_id, team_id) if existing is _UNSET else existing
+        await find(session, volunteer_id, team_id) if existing is UNSET else existing
     )
     if membership is None:
         membership = Membership(

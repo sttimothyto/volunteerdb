@@ -13,12 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import fieldcodec
 from ..errors import DomainError, Invalid, invalid, not_found, require
-from ..fp import Err, Ok, Result
+from ..fp import UNSET, Err, Ok, Result
 from ..models import CustomFieldDef, FieldType, Volunteer
 from ..permissions import Actor, volunteer_team_ids
 from . import volunteers as volunteer_service
-
-_UNSET: object = object()
 
 
 def _slugify(label: str) -> Result[str, Invalid]:
@@ -95,7 +93,7 @@ async def update_def(
     field_id: int,
     *,
     label: str | None = None,
-    options: list | None | object = _UNSET,
+    options: list | None | object = UNSET,
     show_in_list: bool | None = None,
     position: int | None = None,
     is_active: bool | None = None,
@@ -111,7 +109,7 @@ async def update_def(
         if not label:
             return invalid("label is required")
         defn.label = label
-    if options is not _UNSET:
+    if options is not UNSET:
         if defn.field_type != FieldType.select.value:
             return invalid("only choice fields have options")
         opts = _clean_options(options)  # type: ignore[arg-type]

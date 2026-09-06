@@ -53,6 +53,7 @@ SCOPING_ONLY = {
     "stats._leadership",
     "stats._personal",
     "volunteers.search",  # public fields for all, private ones scoped
+    "volunteers.address_change",  # the actor decides WHICH answer, never whether
     "volunteers.search_or_query",
     "workload.visible_scores",  # only volunteers whose workload you may see
     "importer.apply_rows",  # licences each row against the actor, one by one

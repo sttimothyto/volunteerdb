@@ -34,7 +34,24 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
+
+
+class _Unset:
+    """The type of UNSET: one value, its own repr, never equal to anything."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+# "This argument was not given", for an update whose every field is optional:
+# ``None`` is a value there (clear the field) and UNSET is its absence. A
+# service spells ``notes: str | None | object = UNSET`` and tests
+# ``notes is not UNSET``. One sentinel for the tree, so the idiom reads the
+# same in every service.
+UNSET: Final = _Unset()
 
 
 @dataclass(frozen=True, slots=True)

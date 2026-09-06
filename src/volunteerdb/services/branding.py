@@ -297,6 +297,15 @@ async def get(session: AsyncSession) -> SiteLogo | None:
     return await session.get(SiteLogo, ROW_ID)
 
 
+async def stamp(session: AsyncSession) -> datetime | None:
+    """When the logo was last uploaded, without the image bytes: enough for
+    the /logo route to answer a browser's revalidation, which is nearly every
+    request it gets. None means the shipped placeholder is showing."""
+    return await session.scalar(
+        sa.select(SiteLogo.uploaded_at).where(SiteLogo.id == ROW_ID)
+    )
+
+
 async def set_logo(
     session: AsyncSession,
     actor: Actor | None,

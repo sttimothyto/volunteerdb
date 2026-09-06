@@ -8,7 +8,7 @@ from .. import query_lang
 from ..env import current as current_env
 from ..errors import not_found
 from ..fp import Err, Ok, expect
-from ..models import ROLE_LABELS, TeamPage, TeamRole, TeamSheet
+from ..models import ROLE_LABELS, TeamRole, TeamSheet
 from ..services import events as event_service
 from ..services import mail, roster_sheets
 from ..services import memberships as membership_service
@@ -862,14 +862,20 @@ async def team_detail(team_id: int, as_of: str = ""):
             await volunteer_service.name_map(session) if can_manage else {}
         )
         team_page = (
-            await session.get(TeamPage, team_id) if can_full and at is None else None
+            expect(await page_service.page_status(session, actor, team_id))
+            if can_full and at is None
+            else None
         )
         # whose roster you are on has nothing to do with a page the world can
         # read; the check never pulls the html the way team_page does
         has_public_page = slug is not None and await page_service.is_published(
             session, team_id
         )
-        team_sheet = await session.get(TeamSheet, team_id) if can_manage else None
+        team_sheet = (
+            expect(await team_service.roster_sheet(session, actor, team_id))
+            if can_manage
+            else None
+        )
         anniversaries = (
             await volunteer_service.team_anniversaries(
                 session, team_id, ctx.env.today(), tz=ctx.env.tz

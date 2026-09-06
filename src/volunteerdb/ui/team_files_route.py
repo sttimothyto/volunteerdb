@@ -18,7 +18,6 @@ from starlette.responses import Response
 from ..api.deps import RequestFacts, gate, raise_http
 from ..db import transaction
 from ..env import current as current_env
-from ..models import Team
 from ..services import pages as page_service
 from ..services import teams as team_service
 from ..sheets import exporter
@@ -64,7 +63,7 @@ async def roster_export(team_id: int, request: Request, as_of: str = "") -> Resp
         actor = await get_actor(session)
         if actor is None:
             raise HTTPException(401, "sign in to export")
-        team = await session.get(Team, team_id)
+        team = await team_service.get(session, team_id)
         if team is None:
             raise HTTPException(404, "no such team")
         content = raise_http(

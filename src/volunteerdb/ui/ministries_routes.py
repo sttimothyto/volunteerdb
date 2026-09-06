@@ -9,14 +9,13 @@ the session or expose anything beyond team_page content and team names.
 
 from html import escape
 
-import sqlalchemy as sa
 from fastapi import HTTPException
 from nicegui import app
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from ..db import transaction
 from ..env import current as current_env
-from ..models import Team, TeamPageImage
+from ..models import Team
 from ..services import pages as page_service
 from ..services import teams as team_service
 from .assets import static_url
@@ -156,27 +155,14 @@ async def ministry_page(slug: str) -> HTMLResponse:
 
 
 async def ministry_image(team_id: int, seq: int, v: str | None = None) -> Response:
-    """An image cached from the team's doc (services.pages._localize_images).
-    Joined to the team's published state so that unpublishing or deactivating
-    a team takes its images offline with it.
+    """An image cached from the team's doc (services.pages.published_image).
 
     `v` is the content hash _localize_images bakes into the page html: a
     hashed URL names exact bytes, so it is served immutable (the photos-route
     pattern). Bare URLs — html cached before hashing shipped — keep the short
     lifetime."""
     async with transaction(current_env(), None) as session:
-        row = (
-            await session.execute(
-                sa.select(TeamPageImage)
-                .join(Team, Team.id == TeamPageImage.team_id)
-                .where(
-                    TeamPageImage.team_id == team_id,
-                    TeamPageImage.seq == seq,
-                    Team.is_active,
-                    Team.home_doc_url.is_not(None),
-                )
-            )
-        ).scalar_one_or_none()
+        row = await page_service.published_image(session, team_id, seq)
     if row is None:
         raise HTTPException(404, "no such image")
     headers = (

@@ -21,14 +21,12 @@ ETag comes from uploaded_at, which is a far smaller read than the blob.
 import hashlib
 from functools import lru_cache
 
-import sqlalchemy as sa
 from fastapi import Request
 from nicegui import app
 from starlette.responses import Response
 
 from ..db import transaction
 from ..env import current as current_env
-from ..models import SiteLogo
 from ..services import branding
 from .assets import STATIC_DIR
 
@@ -61,11 +59,7 @@ async def logo(request: Request) -> Response:
     async with transaction(current_env(), None) as session:
         # just the timestamp: enough to answer a revalidation without ever
         # reading the blob, which is the common case on every page load
-        stamp = (
-            await session.execute(
-                sa.select(SiteLogo.uploaded_at).where(SiteLogo.id == branding.ROW_ID)
-            )
-        ).scalar_one_or_none()
+        stamp = await branding.stamp(session)
 
     etag = _placeholder_etag() if stamp is None else f'"l{stamp.timestamp():.6f}"'
     headers = {**CACHE_HEADERS, "ETag": etag}

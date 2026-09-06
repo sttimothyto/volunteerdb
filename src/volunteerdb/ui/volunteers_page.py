@@ -7,7 +7,7 @@ from ..domain import EmailChangeAttempted
 from ..env import current as current_env
 from ..fp import Err, expect
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
-from ..permissions import team_ids_map, volunteer_team_ids
+from ..permissions import Actor, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
 from ..services import events as event_service
@@ -17,6 +17,7 @@ from ..services import teams as team_service
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
+from ..services.volunteers import AddressChange
 from . import column_order, invites
 from .account_status import invitable, last_login_text
 from .context import PageCtx, page_ctx, perform, rate_limit, run_command, toast
@@ -322,13 +323,7 @@ async def volunteer_detail(volunteer_id: int):
                         "Edit",
                         icon="edit",
                         on_click=lambda: _edit_dialog(
-                            volunteer,
-                            actor.is_admin,
-                            field_defs,
-                            is_self=volunteer_id == actor.volunteer_id,
-                            base_url=ctx.base_url,
-                            own_login=actor.user.email,
-                            own_user_id=actor.user.id,
+                            volunteer, actor, field_defs, base_url=ctx.base_url
                         ),
                     ).props("dense outline")
                 if actor.is_admin:
@@ -566,23 +561,17 @@ def _custom_widget(defn: CustomFieldDef, value):
 
 def _edit_dialog(
     volunteer,
-    is_admin: bool,
+    actor: Actor,
     field_defs: list[CustomFieldDef] = (),
     *,
-    is_self: bool = False,
     base_url: str = "",
-    own_login: str | None = None,
-    own_user_id: int | None = None,
 ) -> None:
-    """The contact-detail editor. `is_self` changes exactly one field's
-    behaviour: your own address is not written here but staged and mailed a
-    confirmation link, because it is also what you sign in with. Everything
-    else in the form saves immediately either way.
-
-    The one exception: typing the address you ALREADY sign in with just syncs
-    the volunteer row onto it — no confirmation, because there is nothing to
-    confirm — which is the only way to fill a linked record whose email is
-    blank (own_login / own_user_id name that signed-in account)."""
+    """The contact-detail editor. One field behaves differently for one
+    person: your own address is not written here but staged and mailed a
+    confirmation link, because it is also what you sign in with. The rule
+    that decides when is the service's (volunteers.address_change); this
+    dialog only acts on its answer. Everything else saves immediately."""
+    is_self = actor.volunteer_id == volunteer.id
     with ui.dialog() as dialog, ui.card().classes("w-[34rem] gap-3"):
         ui.label(f"Edit {volunteer.full_name}").classes("text-lg font-medium")
         first = (
@@ -620,7 +609,9 @@ def _edit_dialog(
             defn.key: _custom_widget(defn, (volunteer.custom or {}).get(defn.key))
             for defn in field_defs
         }
-        active = ui.switch("Active", value=volunteer.is_active) if is_admin else None
+        active = (
+            ui.switch("Active", value=volunteer.is_active) if actor.is_admin else None
+        )
 
         async def save() -> None:
             values = {}
@@ -629,36 +620,29 @@ def _edit_dialog(
                 if isinstance(raw, str):
                     raw = raw.strip() or None  # blank clears the field
                 values[key] = raw
-            typed = (email.value or "").strip().lower()
-            on_file = (volunteer.email or "").strip().lower()
-            login = (own_login or "").strip().lower()
-            # your own address goes the long way round — UNLESS you are only
-            # syncing your record onto the address you already sign in with,
-            # which is already confirmed and so needs no round-trip (and is the
-            # one way to fill a linked record whose email is blank). Everyone
-            # else's is a plain edit, as it has to be — a leader correcting a
-            # bounced address cannot wait on the person who cannot read their mail.
-            staged = typed if is_self and typed != on_file and typed != login else None
-            if is_self and not typed:
+            change = volunteer_service.address_change(actor, volunteer, email.value)
+            if change is AddressChange.blank_own:
                 ui.notify(
                     "Your own address cannot be blank — it is how you sign in.",
                     color="warning",
                 )
                 return
-            if staged and own_user_id is not None:
-                # F1: charge the send budget the /account and API doors charge,
-                # on every attempt (before the service reveals whether the
-                # address is taken), so this door is not the loose one.
+            staged = None
+            if change is AddressChange.needs_confirmation:
+                staged = (email.value or "").strip().lower()
+                # charge the send budget the /account and API doors charge, on
+                # every attempt (before the service reveals whether the address
+                # is taken), so this door is not the loose one
                 now = current_env().clock.now()
                 if denied := rate_limit(
-                    f"email-change:{own_user_id}",
+                    f"email-change:{actor.user.id}",
                     now=now,
                     what="change your email address",
                 ):
                     toast(denied.error)
                     return
                 await perform(
-                    [EmailChangeAttempted(own_user_id)], base_url=base_url, now=now
+                    [EmailChangeAttempted(actor.user.id)], base_url=base_url, now=now
                 )
             fields = {} if staged else {"email": email.value or None}
 

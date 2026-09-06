@@ -438,6 +438,24 @@ async def is_published(session: AsyncSession, team_id: int) -> bool:
     ) is not None
 
 
+async def published_image(
+    session: AsyncSession, team_id: int, seq: int
+) -> TeamPageImage | None:
+    """One image cached from the team's doc (_localize_images), or None.
+    Joined to the team's published state, so unpublishing or deactivating a
+    team takes its images offline with it."""
+    return await session.scalar(
+        sa.select(TeamPageImage)
+        .join(Team, Team.id == TeamPageImage.team_id)
+        .where(
+            TeamPageImage.team_id == team_id,
+            TeamPageImage.seq == seq,
+            Team.is_active,
+            Team.home_doc_url.is_not(None),
+        )
+    )
+
+
 async def published_page(session: AsyncSession, team_id: int) -> TeamPage | None:
     """The one published page for team_id, or None — same predicate as
     published_teams, so an unpublished/inactive team reads as absent."""

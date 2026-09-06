@@ -29,7 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..errors import DomainError, Invalid, NotFound, invalid, not_found, require
-from ..fp import Err, Ok, Result
+from ..fp import UNSET, Err, Ok, Result
 from ..models import (
     AppUser,
     Membership,
@@ -48,8 +48,6 @@ from . import memberships as membership_service
 from . import reports as report_service
 from . import teams as team_service
 from .reports import CoverageRow
-
-_UNSET: object = object()
 
 
 async def vacancies(session: AsyncSession, actor: Actor) -> list[CoverageRow]:
@@ -583,7 +581,7 @@ async def update_proposal(
     *,
     nomination_deadline: date | None = None,
     voting_deadline: date | None = None,
-    notes: str | None = _UNSET,  # type: ignore[assignment]
+    notes: str | None = UNSET,  # type: ignore[assignment]
     today: date,
 ) -> Result[Proposal, DomainError]:
     """Adjust deadlines/notes while open. Deadlines may move either way —
@@ -604,7 +602,7 @@ async def update_proposal(
         return invalid("nominations cannot reopen once ballots are cast")
     proposal.nomination_deadline = new_d1
     proposal.voting_deadline = new_d2
-    if notes is not _UNSET:
+    if notes is not UNSET:
         proposal.notes = (notes or "").strip() or None
     await session.flush()
     return Ok(proposal)

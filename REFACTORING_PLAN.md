@@ -93,7 +93,7 @@ commit.
   with it the `ForbiddenValue` renames. The as-of banner, picker and parser
   move to `ui/asof.py` (re-exported from `context`).
 
-- [ ] **5. Edges stop querying the ORM; the split rule is reunited.** Missing
+- [x] **5. Edges stop querying the ORM; the split rule is reunited.** Missing
   readers go into services (`branding.stamp`, `pages.published_image`,
   `events.slot_of_event`, `events.attendance_row`; the team page uses the
   gated `page_status` and `roster_sheet` readers that already exist). A pure

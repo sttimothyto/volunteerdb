@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from enum import StrEnum
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import query_lang
 from ..domain import AddressReplaced, Outcome
 from ..errors import DomainError, QueryError, not_found, require
-from ..fp import Err, Ok, Result
+from ..fp import UNSET, Err, Ok, Result
 from ..history import entity, fetch
 from ..models import (
     CustomFieldDef,
@@ -20,8 +21,6 @@ from ..models import (
     team_history,
 )
 from ..permissions import Actor, volunteer_team_ids
-
-_UNSET: object = object()
 
 
 async def get(
@@ -216,6 +215,48 @@ async def create(
     return Ok(volunteer)
 
 
+class AddressChange(StrEnum):
+    """What writing an address onto a volunteer's record means, decided from
+    who is writing it -- the one rule both doors consult (address_change)."""
+
+    unchanged = "unchanged"  # the address already on file, retyped
+    plain = "plain"  # somebody else's record: an ordinary edit, applied at once
+    sync_login = "sync_login"  # your own record, set to the address you sign in with
+    blank_own = "blank_own"  # your own record, emptied: refused, it is how you sign in
+    needs_confirmation = "needs_confirmation"  # your own record, a new address
+
+
+def address_change(
+    actor: Actor | None, volunteer: Volunteer, typed: str | None
+) -> AddressChange:
+    """Whether `typed` may simply be written as `volunteer`'s email, and if
+    not, why.
+
+    Somebody else's address is a plain edit, applied at once: a leader fixing
+    a bounced address cannot wait on the person who cannot read their mail
+    (the service mails the old address afterwards, AddressReplaced). Your
+    OWN address is also what you sign in with, so a new one is only a claim
+    until somebody reads mail there -- it is staged and mailed a confirmation
+    link (users.start_email_change) rather than written. Two of your own
+    writes need no round-trip: retyping what is on file, and syncing the
+    record onto the address you already sign in with, which is the one way
+    to fill a linked record whose email is blank. A blank is refused: it is
+    how you sign in. `actor` None is a trusted internal caller, and plain.
+
+    The JSON API refuses what it cannot stage (it sends no mail); the GUI
+    stages it. Both read the same answer, which is the point."""
+    if actor is None or actor.volunteer_id != volunteer.id:
+        return AddressChange.plain
+    wanted = (typed or "").strip().lower()
+    if not wanted:
+        return AddressChange.blank_own
+    if wanted == (volunteer.email or "").strip().lower():
+        return AddressChange.unchanged
+    if wanted == (actor.user.email or "").strip().lower():
+        return AddressChange.sync_login
+    return AddressChange.needs_confirmation
+
+
 async def update(
     session: AsyncSession,
     actor: Actor | None,
@@ -223,9 +264,9 @@ async def update(
     *,
     first_name: str | None = None,
     last_name: str | None = None,
-    email: str | None | object = _UNSET,
-    phone: str | None | object = _UNSET,
-    notes: str | None | object = _UNSET,
+    email: str | None | object = UNSET,
+    phone: str | None | object = UNSET,
+    notes: str | None | object = UNSET,
     is_active: bool | None = None,
 ) -> Result[Outcome[Volunteer], DomainError]:
     """Somebody ELSE's address moving is worth a word to the address it moved
@@ -256,15 +297,15 @@ async def update(
     if last_name is not None:
         volunteer.last_name = last_name.strip()
     events: tuple[AddressReplaced, ...] = ()
-    if email is not _UNSET:
+    if email is not UNSET:
         settled = email.strip().lower() if email else None  # type: ignore[union-attr]
         volunteer.email = settled
         by_other = actor is None or actor.volunteer_id != volunteer_id
         if by_other and previous and previous != (settled or ""):
             events = (AddressReplaced(volunteer_id, was=previous, now=settled),)
-    if phone is not _UNSET:
+    if phone is not UNSET:
         volunteer.phone = phone  # type: ignore[assignment]
-    if notes is not _UNSET:
+    if notes is not UNSET:
         volunteer.notes = notes  # type: ignore[assignment]
     if is_active is not None:
         volunteer.is_active = is_active

@@ -51,7 +51,7 @@ from ..errors import (
     not_found,
     require,
 )
-from ..fp import Err, Ok, Result
+from ..fp import UNSET, Err, Ok, Result
 from ..models import (
     AssignmentKind,
     Event,
@@ -69,8 +69,6 @@ from ..models import (
 )
 from ..permissions import Actor, volunteer_team_ids
 from . import teams as team_service
-
-_UNSET: object = object()
 
 # copy-forward bound: one year of weekly occurrences is the most a single
 # create should materialize (concrete rows, no recurrence engine)
@@ -324,11 +322,11 @@ async def update_event(
     actor: Actor | None,
     event_id: int,
     *,
-    title: str | object = _UNSET,
-    description: str | None | object = _UNSET,
-    location: str | None | object = _UNSET,
-    starts_at: datetime | object = _UNSET,
-    ends_at: datetime | object = _UNSET,
+    title: str | object = UNSET,
+    description: str | None | object = UNSET,
+    location: str | None | object = UNSET,
+    starts_at: datetime | object = UNSET,
+    ends_at: datetime | object = UNSET,
 ) -> Result[Event, DomainError]:
     """Edit details/times. Allowed on past events (a manager correcting a
     wrong end time legitimately recomputes the auto hours) but not on
@@ -339,17 +337,17 @@ async def update_event(
     event = managed.value
     if event.status != EventStatus.scheduled.value:
         return invalid("cannot edit: event is cancelled")
-    if title is not _UNSET:
+    if title is not UNSET:
         if not str(title).strip():
             return invalid("a title is required")
         event.title = str(title).strip()
-    if description is not _UNSET:
+    if description is not UNSET:
         event.description = description or None  # type: ignore[assignment]
-    if location is not _UNSET:
+    if location is not UNSET:
         event.location = (str(location or "")).strip() or None
-    new_start = event.starts_at if starts_at is _UNSET else starts_at
-    new_end = event.ends_at if ends_at is _UNSET else ends_at
-    if starts_at is not _UNSET or ends_at is not _UNSET:
+    new_start = event.starts_at if starts_at is UNSET else starts_at
+    new_end = event.ends_at if ends_at is UNSET else ends_at
+    if starts_at is not UNSET or ends_at is not UNSET:
         if bad := _check_times(new_start, new_end):  # type: ignore[arg-type]
             return bad
         event.starts_at = new_start  # type: ignore[assignment]
@@ -418,6 +416,15 @@ async def cancel_event(
 
 async def get(session: AsyncSession, event_id: int) -> Event | None:
     return await session.get(Event, event_id)
+
+
+async def slot_of_event(
+    session: AsyncSession, event_id: int, slot_id: int
+) -> EventSlot | None:
+    """The slot, provided it belongs to this event: a route that names a slot
+    under an event id checks the pairing here rather than trusting the URL."""
+    slot = await session.get(EventSlot, slot_id)
+    return slot if slot is not None and slot.event_id == event_id else None
 
 
 async def _get(session: AsyncSession, event_id: int) -> Result[Event, NotFound]:
@@ -529,10 +536,10 @@ async def update_slot(
     actor: Actor | None,
     slot_id: int,
     *,
-    name: str | object = _UNSET,
-    capacity: int | None | object = _UNSET,
-    position: int | object = _UNSET,
-    description: str | None | object = _UNSET,
+    name: str | object = UNSET,
+    capacity: int | None | object = UNSET,
+    position: int | object = UNSET,
+    description: str | None | object = UNSET,
     now: datetime,
 ) -> Result[EventSlot, DomainError]:
     slot = await session.get(EventSlot, slot_id)
@@ -543,11 +550,11 @@ async def update_slot(
         return managed
     if closed := _require_open(managed.value, "edit a slot", now):
         return closed
-    if name is not _UNSET:
+    if name is not UNSET:
         if not str(name).strip():
             return invalid("slot names cannot be empty")
         slot.name = str(name).strip()
-    if capacity is not _UNSET:
+    if capacity is not UNSET:
         if capacity is not None and int(capacity) < 1:  # type: ignore[arg-type]
             return invalid("slot capacity must be at least 1 (or blank for unlimited)")
         if capacity is not None:
@@ -557,9 +564,9 @@ async def update_slot(
             if occupied is not None and occupied > int(capacity):  # type: ignore[arg-type]
                 return invalid(f"{occupied} people already fill this slot")
         slot.capacity = capacity  # type: ignore[assignment]
-    if position is not _UNSET:
+    if position is not UNSET:
         slot.position = int(position)  # type: ignore[arg-type]
-    if description is not _UNSET:
+    if description is not UNSET:
         text = _clean_description(description)  # type: ignore[arg-type]
         if text is not None and len(text) > SLOT_DESCRIPTION_MAX:
             return invalid(
@@ -1776,6 +1783,19 @@ async def set_attendance(
     assignment.hours_override = hours
     await session.flush()
     return Ok(assignment)
+
+
+async def attendance_entry(
+    session: AsyncSession, assignment: EventAssignment
+) -> tuple[EventSlot, Volunteer, Event]:
+    """The slot, the person and the event behind one assignment -- what one
+    line of the attendance sheet shows. The foreign keys guarantee all three
+    rows, so this answers plainly."""
+    slot = await session.get(EventSlot, assignment.slot_id)
+    volunteer = await session.get(Volunteer, assignment.volunteer_id)
+    event = await session.get(Event, assignment.event_id)
+    assert slot is not None and volunteer is not None and event is not None
+    return slot, volunteer, event
 
 
 async def attendance_rows(

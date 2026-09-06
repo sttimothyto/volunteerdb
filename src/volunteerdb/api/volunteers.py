@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFile
 from starlette.responses import Response
 
+from ..errors import Invalid
 from ..models import Volunteer
 from ..permissions import Actor, team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
@@ -9,7 +10,7 @@ from ..services import events as event_service
 from ..services import photos as photo_service
 from ..services import users as user_service
 from ..services import volunteers as service
-from .deps import AsOf, CtxDep, dispatch, gate, raise_http
+from .deps import AsOf, CtxDep, dispatch, gate, raise_http, to_http
 from .elections import proposal_out
 from .schemas import (
     AssignmentOut,
@@ -99,25 +100,29 @@ async def update_volunteer(
 ) -> VolunteerOut:
     team_ids = await volunteer_team_ids(ctx.session, volunteer_id)
     fields = data.model_dump(exclude_unset=True)
-    if "email" in fields and volunteer_id == ctx.actor.volunteer_id:
-        # Your own address is also what you sign in with, so moving it to a NEW
-        # address needs the confirm round-trip — and this API sends no email
-        # (the precedent api/events.py states), so it cannot run that exchange.
-        # Two writes are still fine: no change at all, and syncing your record
-        # onto the address you ALREADY sign in with (already confirmed — the one
-        # way to fill a linked record whose email is blank). Everyone else's
-        # address is a plain edit.
+    if "email" in fields:
+        # The rule is the service's (volunteers.address_change); what this
+        # door adds is that it cannot stage a change -- it sends no mail (the
+        # precedent api/events.py states) -- so a write that needs the
+        # confirmation round-trip is refused and pointed at the page that runs it.
         on_file = await service.get(ctx.session, volunteer_id)
-        typed = (fields["email"] or "").strip().lower()
-        current = (on_file.email or "").strip().lower() if on_file else ""
-        own_login = (ctx.actor.user.email or "").strip().lower()
-        if typed != current and typed != own_login:
-            raise HTTPException(
-                422,
-                "your own address changes only once the new one confirms "
-                "itself; ask for it on the Password & sign-in page (/account) "
-                "and we will mail a confirmation link there",
-            )
+        if on_file is not None:
+            match service.address_change(ctx.actor, on_file, fields["email"]):
+                case service.AddressChange.needs_confirmation:
+                    raise to_http(
+                        Invalid(
+                            "your own address changes only once the new one "
+                            "confirms itself; ask for it on the Password & "
+                            "sign-in page (/account) and we will mail a "
+                            "confirmation link there"
+                        )
+                    )
+                case service.AddressChange.blank_own:
+                    raise to_http(
+                        Invalid(
+                            "your own address cannot be blank: it is how you sign in"
+                        )
+                    )
     # somebody else's address moving is worth a word to the address it moved
     # away from (the service's AddressReplaced event): the notice runs after
     # the commit, so the acting session cannot suppress it
