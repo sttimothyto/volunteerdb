@@ -165,18 +165,13 @@ async def account_page():
         )
 
     async def remove() -> None:
-        with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-            ui.label(
-                "Remove the password from this account? You'll sign in by "
-                "entering your email and typing the code we send you. Any API "
-                "token you hold stops working."
-            )
-            with ui.row().classes("justify-end w-full gap-2"):
-                ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat")
-                ui.button(
-                    "Remove password", on_click=lambda: dialog.submit(True)
-                ).props("color=negative")
-        if not await dialog:
+        if not await confirm(
+            "Remove the password from this account? You'll sign in by "
+            "entering your email and typing the code we send you. Any API "
+            "token you hold stops working.",
+            yes="Remove password",
+            danger=True,
+        ):
             return
 
         async def command(ctx: PageCtx):

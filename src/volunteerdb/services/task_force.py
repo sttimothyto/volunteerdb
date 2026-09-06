@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import timefmt
 from ..domain import CollaboratorAdded, Outcome
 from ..errors import DomainError, Invalid, invalid, not_found, require
 from ..fp import Err, Ok, Result
@@ -39,7 +40,7 @@ from ..models import (
     TeamRole,
 )
 from ..permissions import Actor
-from . import mail, memberships
+from . import memberships
 from . import teams as team_service
 
 # leader outranks second outranks core outranks member — the copy keeps the
@@ -106,7 +107,7 @@ async def _create_meta_team(
     where = f" at {event.location}" if event.location else ""
     description = (
         f"[Auto] Task force for the event “{event.title}” on "
-        f"{mail.event_when(event.starts_at, event.ends_at, tz=tz)}{where}. Managed "
+        f"{timefmt.event_when(event.starts_at, event.ends_at, tz=tz)}{where}. Managed "
         "from the event page; removed automatically after the event ends."
     )
     return await team_service.create(

@@ -21,6 +21,7 @@ from .. import query_lang
 from ..services import teams as team_service
 from ..services import volunteers as volunteer_service
 from .context import page_ctx
+from .widgets import inactive_badge
 
 SUGGEST_MIN_CHARS = 2
 SUGGEST_LIMIT = 6  # per category
@@ -113,7 +114,7 @@ def search_box(
                     ui.item_section(volunteer.full_name)
                     if not volunteer.is_active:
                         with ui.item_section().props("side"):
-                            ui.badge("inactive", color="muted")
+                            inactive_badge()
             if not team_hits and not found:
                 ui.item("Nothing found")
             else:

@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 from nicegui import ui
 
-from .. import query_lang, throttle
+from .. import query_lang, throttle, timefmt
 from ..effects import Effect, SendMail, ThrottleHit
 from ..env import current as current_env
 from ..errors import NotFound, not_found, require
@@ -39,7 +39,7 @@ from ..models import (
     Volunteer,
 )
 from ..services import events as event_service
-from ..services import gcal, mail
+from ..services import gcal
 from ..services import task_force as task_force_service
 from ..services import teams as team_service
 from ..services import users as user_service
@@ -47,7 +47,9 @@ from . import calendar_grid, column_order
 from .calendar_panel import subscribe_panel
 from .context import PageCtx, page_ctx, run_command
 from .date_input import date_input, time_input
+from .forms import actions, confirm, dialog_card
 from .layout import frame
+from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
 
 # Substitute calls a single team may broadcast in a rolling day; the limit and
@@ -79,12 +81,6 @@ def _parse_local(day_s: str, time_s: str, what: str) -> datetime | None:
         return None
 
 
-def _event_count(shown: int, total: int | None = None) -> str:
-    if total is None or shown == total:
-        return f"{shown} event{'s' if shown != 1 else ''}"
-    return f"{shown} of {total} events"
-
-
 def _events_href(
     show_past: bool,
     team_filter: int | None,
@@ -109,37 +105,16 @@ def _events_href(
     return "/events?" + "&".join(parts) if parts else "/events"
 
 
-def _wire_search(
-    search: ui.input, count: ui.label, table: ui.table, rows: list[dict]
-) -> None:
-    """Narrow the table as you type — the teams-page idiom: every listed event
-    is already in `rows`, so the filter swaps what the table shows without a
-    query or a reload."""
-
-    def matches(row: dict, text: str) -> bool:
-        return any(
-            text in (row[key] or "").lower()
+def _matching_events(rows: list[dict], text: str) -> list[dict]:
+    """The rows whose title, team, location or date contains `text`."""
+    return [
+        r
+        for r in rows
+        if any(
+            text in (r[key] or "").lower()
             for key in ("title", "team", "location", "when")
         )
-
-    def apply() -> None:
-        text = (search.value or "").strip()
-        ast = query_lang.parse(text) if text else None
-        if ast is None:
-            shown = rows if not text else [r for r in rows if matches(r, text.lower())]
-        else:
-            compiled = query_lang.compile_events(ast)
-            if isinstance(compiled, Err):
-                # inline, not a toast: this filter runs on every keystroke
-                count.set_text(f"query error: {compiled.error.message}")
-                return
-            pred = compiled.value
-            shown = [r for r in rows if pred(r)]
-        table.rows = shown
-        table.update()
-        count.set_text(_event_count(len(shown), len(rows)))
-
-    search.on_value_change(apply)
+    ]
 
 
 def _share_panel(base_url: str, event_id: int) -> None:
@@ -188,8 +163,7 @@ async def _sub_request_dialog(assignment_id: int) -> None:
     already serving, and the largest roster here is 28 people — so it is the
     one action rate-limited by volume rather than by abuse: see
     SUB_REQUESTS_PER_TEAM_PER_DAY (policy.py decides from the ledger)."""
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("Ask for a substitute").classes("text-lg font-medium")
+    with dialog_card("Ask for a substitute") as dialog:
         ui.label(
             "Your teammates get one email; the first to claim the slot "
             "takes it. You stay on the hook until someone does."
@@ -237,16 +211,13 @@ async def _sub_request_dialog(assignment_id: int) -> None:
 
             await run_command(command, on_ok=done)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Ask the team", icon="campaign", on_click=save)
+        actions(dialog, "Ask the team", save, icon="campaign")
     dialog.open()
 
 
 async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> None:
     """Hand a slot straight to a chosen teammate — no open call, no race."""
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("Hand this slot to a teammate").classes("text-lg font-medium")
+    with dialog_card("Hand this slot to a teammate") as dialog:
         ui.label(
             "Select this ONLY if there is prior agreement with the hand off target. "
             "They take the slot immediately and are emailed about it. The "
@@ -281,16 +252,13 @@ async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> Non
 
             await run_command(command, on_ok=done)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Hand it over", icon="swap_horiz", on_click=save)
+        actions(dialog, "Hand it over", save, icon="swap_horiz")
     dialog.open()
 
 
 async def _self_removal_dialog(assignment_id: int) -> None:
     """Take yourself off a slot, telling the leaders why."""
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("Take yourself off this slot").classes("text-lg font-medium")
+    with dialog_card("Take yourself off this slot") as dialog:
         ui.label(
             "Say why — your reason is emailed to the team leader(s) so they "
             "can fill the gap."
@@ -333,9 +301,7 @@ async def _self_removal_dialog(assignment_id: int) -> None:
 
             await run_command(command, on_ok=done)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Take me off", on_click=save).props("color=negative")
+        actions(dialog, "Take me off", save, danger=True)
     dialog.open()
 
 
@@ -373,8 +339,7 @@ async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
     """The double-booking warning: advisory, never a block. A masked title
     means the colliding event belongs to a team outside the creator's view —
     the when/where is the warning; the details stay theirs."""
-    with ui.dialog() as dialog, ui.card().classes("w-[28rem] gap-3"):
-        ui.label("Possible double booking").classes("text-lg font-medium")
+    with dialog_card("Possible double booking", width="w-[28rem]") as dialog:
         ui.label(
             "Something similar is already on the calendar at that location "
             "on the same day:"
@@ -383,7 +348,7 @@ async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
             with ui.column().classes("w-full gap-0 p-2 rounded bg-amber-50"):
                 ui.label(hit.title or "Another team's event").classes("font-medium")
                 ui.label(
-                    f"{mail.event_when(hit.starts_at, hit.ends_at, tz=_tz())} · "
+                    f"{timefmt.event_when(hit.starts_at, hit.ends_at, tz=_tz())} · "
                     f"{hit.location} · {hit.team_path}"
                 ).classes("text-sm text-gray-600")
         with ui.row().classes("justify-end w-full gap-2"):
@@ -395,8 +360,7 @@ async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
 
 
 def _new_event_dialog(managed_options: dict[int, str]) -> None:
-    with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
-        ui.label("New event").classes("text-lg font-medium")
+    with dialog_card("New event", width="w-[30rem]") as dialog:
         team = (
             ui.select(managed_options, label="Team", with_input=True)
             .props("outlined dense")
@@ -505,9 +469,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
 
             await run_command(command, on_ok=done, reload=False)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Create event", icon="event", on_click=save)
+        actions(dialog, "Create event", save, icon="event")
     dialog.open()
 
 
@@ -587,7 +549,7 @@ async def events_page(past: str = "", team: str = "", view: str = "", month: str
                         )
                         ui.badge(duty.slot.name)
                         ui.label(
-                            mail.event_when(
+                            timefmt.event_when(
                                 duty.event.starts_at, duty.event.ends_at, tz=_tz()
                             )
                         ).classes("text-sm text-gray-600")
@@ -620,7 +582,7 @@ async def events_page(past: str = "", team: str = "", view: str = "", month: str
                         ui.label(f"needs a {c.slot.name} at").classes("text-sm")
                         ui.link(c.event.title, f"/events/{c.event.id}")
                         ui.label(
-                            mail.event_when(
+                            timefmt.event_when(
                                 c.event.starts_at, c.event.ends_at, tz=_tz()
                             )
                         ).classes("text-sm text-gray-600")
@@ -831,9 +793,19 @@ async def events_page(past: str = "", team: str = "", view: str = "", month: str
                 "{{ props.row.filled }}</q-td>",
             )
             table.on("rowClick", lambda e: ui.navigate.to(f"/events/{e.args[1]['id']}"))
-            count = ui.label(_event_count(len(rows))).classes("text-sm text-gray-500")
+            count = ui.label(count_text(len(rows), None, "event")).classes(
+                "text-sm text-gray-500"
+            )
             if search is not None:
-                _wire_search(search, count, table, rows)
+                wire_search(
+                    search,
+                    count,
+                    table,
+                    rows,
+                    noun="event",
+                    compile=query_lang.compile_events,
+                    text_filter=_matching_events,
+                )
         else:
             ui.label(
                 "Nothing scheduled yet."
@@ -848,8 +820,7 @@ async def events_page(past: str = "", team: str = "", view: str = "", month: str
 def _edit_event_dialog(event) -> None:
     local_start = event.starts_at.astimezone(_tz())
     local_end = event.ends_at.astimezone(_tz())
-    with ui.dialog() as dialog, ui.card().classes("w-[28rem] gap-3"):
-        ui.label("Edit event").classes("text-lg font-medium")
+    with dialog_card("Edit event", width="w-[28rem]") as dialog:
         title = (
             ui.input("Title", value=event.title)
             .props("outlined dense")
@@ -897,15 +868,12 @@ def _edit_event_dialog(event) -> None:
 
             await run_command(command, on_ok=done, reload=True)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Save", on_click=save)
+        actions(dialog, "Save", save)
     dialog.open()
 
 
 def _add_slot_dialog(event_id: int) -> None:
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("Add a slot").classes("text-lg font-medium")
+    with dialog_card("Add a slot") as dialog:
         name = ui.input("Slot name").props("outlined dense").classes("w-full")
         capacity = (
             ui.number("Capacity (blank = unlimited)", min=1, precision=0)
@@ -961,8 +929,7 @@ def _edit_slot_dialog(
     description is here for the same reason: a note you can write once and
     never correct is worse than no note. Shrinking below what is already
     filled is refused by the service."""
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("Edit slot").classes("text-lg font-medium")
+    with dialog_card("Edit slot") as dialog:
         name = (
             ui.input("Slot name", value=name_now)
             .props("outlined dense")
@@ -1008,9 +975,7 @@ def _edit_slot_dialog(
 
             await run_command(command, on_ok=done, reload=True)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Save", on_click=save).mark("slot-edit-save")
+        actions(dialog, "Save", save, marker="slot-edit-save")
     dialog.open()
 
 
@@ -1034,20 +999,18 @@ def _collaboration_card(
     Manager-only, upcoming events only — the caller gates that."""
 
     async def _confirm_add_collaborator(team_label: str) -> bool:
-        with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-            ui.label(f"Add {team_label} to this event?").classes("font-medium")
-            ui.label(
+        return await confirm(
+            f"Add {team_label} to this event?",
+            detail=(
                 "A temporary task-force team is created holding both rosters: "
                 "members of the added team can sign up for slots, its leaders "
                 "co-manage the event, and the team is removed automatically "
                 "after the event ends (it stays visible in history)."
-            ).classes("text-sm text-gray-500")
-            with ui.row().classes("justify-end w-full gap-2"):
-                ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat")
-                ui.button(
-                    "Add team", icon="group_add", on_click=lambda: dialog.submit(True)
-                ).mark("confirm-collaborator")
-        return bool(await dialog)
+            ),
+            yes="Add team",
+            icon="group_add",
+            yes_marker="confirm-collaborator",
+        )
 
     async def _add_collaborator(team_id_value) -> None:
         if not team_id_value:
@@ -1318,8 +1281,7 @@ def _attendance_section(
 def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
     """Confirm a sign-up, with the reminder stages to opt out of — and for a
     weekly series, the offer to take the later weeks in one go."""
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label(f"Sign up — {slot_name}").classes("text-lg font-medium")
+    with dialog_card(f"Sign up — {slot_name}") as dialog:
         repeat = None
         if series:
             repeat = ui.checkbox(
@@ -1423,19 +1385,14 @@ async def _delete_slot(slot_id: int) -> None:
 
 async def _cancel_event(event_id: int) -> None:
     """Confirm, then cancel: the mail goes out from `_do_cancel`, after commit."""
-    with ui.dialog() as confirm, ui.card().classes("w-96 gap-3"):
-        ui.label(
-            "Cancel this event? Everyone signed up is emailed, and open "
-            "substitute requests are closed with it."
-        )
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Keep it", on_click=lambda: confirm.submit(False)).props("flat")
-            ui.button("Yes, cancel it", on_click=lambda: confirm.submit(True)).props(
-                "color=negative"
-            )
-    if not await confirm:
-        return
-    await _do_cancel(event_id)
+    if await confirm(
+        "Cancel this event? Everyone signed up is emailed, and open "
+        "substitute requests are closed with it.",
+        yes="Yes, cancel it",
+        no="Keep it",
+        danger=True,
+    ):
+        await _do_cancel(event_id)
 
 
 async def _do_cancel(event_id: int) -> None:
@@ -1560,9 +1517,9 @@ async def event_detail_page(event_id: int):
         with ui.row().classes("w-full items-center gap-2"):
             ui.link(view.path, f"/teams/{event.team_id}").classes("font-medium")
             _status_badge(event)
-            ui.label(mail.event_when(event.starts_at, event.ends_at, tz=_tz())).classes(
-                "text-sm text-gray-600"
-            )
+            ui.label(
+                timefmt.event_when(event.starts_at, event.ends_at, tz=_tz())
+            ).classes("text-sm text-gray-600")
             if event.location:
                 ui.label(f"· {event.location}").classes("text-sm text-gray-600")
             ui.space()

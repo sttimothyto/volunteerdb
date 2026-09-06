@@ -5,7 +5,6 @@ from nicegui import ui
 from .. import query_lang
 from ..env import current as current_env
 from ..fp import Err
-from ..models import ROLE_LABELS
 from ..permissions import Actor
 from ..services import graph as graph_service
 from ..services import stats as stats_service
@@ -22,6 +21,7 @@ from .layout import frame
 from .search_box import search_box
 from .stat_tiles import chip_row, stat_chip, stat_section, stat_tile, tile_row
 from .volunteer_panel import VolunteerPanel
+from .widgets import role_badge
 
 # what a snapshot cannot answer, said once
 AS_OF_NOTE = (
@@ -308,7 +308,7 @@ def _my_teams_section(assignments: list, *, as_of: str) -> None:
                     ),
                 ):
                     ui.label(team.name).classes("font-medium")
-                    ui.badge(ROLE_LABELS[membership.role])
+                    role_badge(membership.role)
 
 
 def _my_service_section(mine: stats_service.PersonalStats) -> None:

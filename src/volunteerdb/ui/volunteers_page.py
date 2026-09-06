@@ -22,14 +22,19 @@ from . import column_order, invites
 from .account_status import invitable, last_login_text
 from .context import PageCtx, page_ctx, perform, rate_limit, run_command, toast
 from .date_input import date_input, time_input
-from .elections_page import phase_badge
+from .forms import actions, confirm, dialog_card
 from .layout import frame
 from .photo_dialog import photo_avatar
 from .search_box import search_box
 from .timeline_chart import timeline_chart
 from .volunteer_panel import VolunteerPanel, format_custom
-
-ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
+from .widgets import (
+    ROLE_OPTIONS,
+    inactive_badge,
+    phase_badge,
+    role_badge,
+    workload_badge,
+)
 
 
 @ui.page("/volunteers")
@@ -215,8 +220,7 @@ async def volunteers_page(q: str = "", band: str = ""):
 
 
 def _new_volunteer_dialog() -> None:
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("New volunteer").classes("text-lg font-medium")
+    with dialog_card("New volunteer") as dialog:
         first = ui.input("First name").props("outlined dense").classes("w-full")
         last = ui.input("Last name").props("outlined dense").classes("w-full")
         email = ui.input("Email").props("outlined dense").classes("w-full")
@@ -243,9 +247,7 @@ def _new_volunteer_dialog() -> None:
 
             await run_command(command, on_ok=done, reload=False)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Create", on_click=save)
+        actions(dialog, "Create", save)
     dialog.open()
 
 
@@ -308,15 +310,9 @@ async def volunteer_detail(volunteer_id: int):
                 )
                 ui.label(volunteer.full_name).classes("text-lg font-medium")
                 if not volunteer.is_active:
-                    ui.badge("inactive", color="muted")
+                    inactive_badge()
                 if volunteer_id in wl:
-                    score, band = wl[volunteer_id]
-                    ui.badge(f"workload: {band.label} · {float(score):g}").style(
-                        f"background-color: {band.color}; "
-                        f"color: {workload_service.text_colour(band.color)}"
-                    ).tooltip(
-                        "Workload score: team weights × role multipliers, all ministries"
-                    )
+                    workload_badge(*wl[volunteer_id], prefix="workload: ")
                 ui.space()
                 if can_edit:
                     ui.button(
@@ -393,7 +389,7 @@ async def volunteer_detail(volunteer_id: int):
                 ui.link(paths.get(team.id, team.name), f"/teams/{team.id}").classes(
                     "font-medium"
                 )
-                ui.badge(ROLE_LABELS[membership.role])
+                role_badge(membership.role)
                 ui.space()
                 if actor.can_manage_team(team.id):
                     ui.button(
@@ -460,7 +456,7 @@ async def volunteer_detail(volunteer_id: int):
                     ui.label(paths.get(row.team.id, row.team.name)).classes(
                         "font-medium"
                     )
-                    ui.badge(ROLE_LABELS[row.role])
+                    role_badge(row.role)
                     ui.space()
                     if critical:
                         ui.badge("team left with NO leadership", color="negative")
@@ -572,8 +568,7 @@ def _edit_dialog(
     that decides when is the service's (volunteers.address_change); this
     dialog only acts on its answer. Everything else saves immediately."""
     is_self = actor.volunteer_id == volunteer.id
-    with ui.dialog() as dialog, ui.card().classes("w-[34rem] gap-3"):
-        ui.label(f"Edit {volunteer.full_name}").classes("text-lg font-medium")
+    with dialog_card(f"Edit {volunteer.full_name}", width="w-[34rem]") as dialog:
         first = (
             ui.input("First name", value=volunteer.first_name)
             .props("outlined dense")
@@ -679,9 +674,7 @@ def _edit_dialog(
             dialog.close()
             ui.navigate.reload()
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Save", on_click=save)
+        actions(dialog, "Save", save)
     dialog.open()
 
 
@@ -719,27 +712,17 @@ async def _unassign(membership_id: int) -> None:
 
 
 async def _delete_volunteer(volunteer_id: int) -> None:
-    with ui.dialog() as dialog, ui.card().classes("gap-3"):
-        ui.label("Delete this volunteer and all their memberships?").classes(
-            "font-medium"
-        )
-        ui.label("History is preserved and visible in as-of views.").classes(
-            "text-sm text-gray-500"
-        )
+    if not await confirm(
+        "Delete this volunteer and all their memberships?",
+        detail="History is preserved and visible in as-of views.",
+        yes="Delete",
+        danger=True,
+    ):
+        return
 
-        async def confirm() -> None:
-            async def command(ctx: PageCtx):
-                return await volunteer_service.delete(
-                    ctx.session, ctx.actor, volunteer_id
-                )
+    async def command(ctx: PageCtx):
+        return await volunteer_service.delete(ctx.session, ctx.actor, volunteer_id)
 
-            def done(_value, _effects, _report) -> None:
-                dialog.close()
-                ui.navigate.to("/volunteers")
-
-            await run_command(command, on_ok=done, reload=False)
-
-        with ui.row().classes("justify-end gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Delete", on_click=confirm).props("color=negative")
-    dialog.open()
+    await run_command(
+        command, on_ok=lambda _v, _e, _r: ui.navigate.to("/volunteers"), reload=False
+    )

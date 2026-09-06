@@ -16,6 +16,11 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+# The formatters live in timefmt (the pages use them too); these names stay
+# reachable here because the copy below is written in terms of them.
+from ..timefmt import event_when as event_when
+from ..timefmt import ttl_window as ttl_window
+
 API_URL = "https://api.smtp2go.com/v3/email/send"
 
 
@@ -29,13 +34,6 @@ class MailContext:
     org: str
     invite_ttl_hours: int
     tz: ZoneInfo
-
-
-def ttl_window(hours: int) -> str:
-    """'24 hours' / '7 days' — whole multiples of a day read as days."""
-    if hours > 24 and hours % 24 == 0:
-        return f"{hours // 24} days"
-    return f"{hours} hours"
 
 
 def org(ctx: MailContext) -> str:
@@ -261,14 +259,6 @@ def proposal_digest_email(items: list[DigestItem]) -> tuple[str, str]:
 
 
 # --- events -------------------------------------------------------------------
-
-
-def event_when(starts_at: datetime, ends_at: datetime, tz: ZoneInfo) -> str:
-    """'Sunday, August 23, 2026, 10:30 AM–12:00 PM' in the parish's clock."""
-    s, e = starts_at.astimezone(tz), ends_at.astimezone(tz)
-    if e.date() == s.date():
-        return f"{s:%A, %B %-d, %Y}, {s:%-I:%M %p}–{e:%-I:%M %p}"
-    return f"{s:%A, %B %-d, %Y}, {s:%-I:%M %p} – {e:%A, %B %-d, %Y}, {e:%-I:%M %p}"
 
 
 @dataclass(frozen=True)

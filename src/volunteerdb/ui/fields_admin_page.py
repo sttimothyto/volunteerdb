@@ -5,7 +5,10 @@ from nicegui import ui
 from ..models import FIELD_TYPE_LABELS, FieldType
 from ..services import custom_fields as custom_field_service
 from .context import PageCtx, page_ctx, run_command
+from .forms import actions, confirm, dialog_card
+from .guards import deny_unless_admin
 from .layout import frame
+from .widgets import inactive_badge
 
 TYPE_OPTIONS = {ft.value: FIELD_TYPE_LABELS[ft] for ft in FieldType}
 
@@ -19,9 +22,7 @@ async def fields_page():
             if actor.is_admin
             else []
         )
-    if not actor.is_admin:
-        with frame("Custom fields", actor):
-            ui.label("Admins only.").classes("text-gray-500")
+    if deny_unless_admin(actor, "Custom fields"):
         return
 
     with frame("Custom fields", actor):
@@ -46,20 +47,19 @@ async def fields_page():
                 if defn.show_in_list:
                     ui.badge("in list", color="info")
                 if not defn.is_active:
-                    ui.badge("inactive", color="muted")
+                    inactive_badge()
                 ui.space()
                 ui.button(
                     icon="edit", on_click=lambda _, d=defn: _field_dialog(d)
                 ).props("dense flat")
                 ui.button(
-                    icon="delete", on_click=lambda _, d=defn: _delete_dialog(d)
+                    icon="delete", on_click=lambda _, d=defn: _delete_field(d)
                 ).props("dense flat color=negative")
 
 
 def _field_dialog(defn=None) -> None:
     """Create (defn=None) or edit a field definition. Type and key are immutable."""
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("Edit field" if defn else "New field").classes("text-lg font-medium")
+    with dialog_card("Edit field" if defn else "New field") as dialog:
         label = (
             ui.input("Label", value=defn.label if defn else "")
             .props("outlined dense")
@@ -131,33 +131,23 @@ def _field_dialog(defn=None) -> None:
 
             await run_command(command, on_ok=lambda _v, _e, _r: dialog.close())
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Save", on_click=save)
+        actions(dialog, "Save", save)
     dialog.open()
 
 
-def _delete_dialog(defn) -> None:
-    with ui.dialog() as dialog, ui.card().classes("gap-3"):
-        ui.label(f"Delete the field “{defn.label}”?").classes("font-medium")
-        ui.label(
+async def _delete_field(defn) -> None:
+    if not await confirm(
+        f"Delete the field “{defn.label}”?",
+        detail=(
             "Stored values stay in volunteer history but will no longer be shown. "
             "Consider deactivating instead if you may want it back."
-        ).classes("text-sm text-gray-500")
+        ),
+        yes="Delete",
+        danger=True,
+    ):
+        return
 
-        async def confirm() -> None:
+    async def command(ctx: PageCtx):
+        return await custom_field_service.delete_def(ctx.session, ctx.actor, defn.id)
 
-            async def command(ctx: PageCtx):
-                return await custom_field_service.delete_def(
-                    ctx.session, ctx.actor, defn.id
-                )
-
-            def done(_value, _effects, _report) -> None:
-                dialog.close()
-
-            await run_command(command, on_ok=done, reload=True)
-
-        with ui.row().classes("justify-end gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Delete", on_click=confirm).props("color=negative")
-    dialog.open()
+    await run_command(command)

@@ -17,6 +17,7 @@ from nicegui import events, ui
 from ..fp import Err
 from ..services import photos as photo_service
 from .context import PageCtx, run_command, toast
+from .forms import dialog_card
 
 DISCLAIMER = (
     "I confirm this is an appropriate professional photo. "
@@ -30,8 +31,7 @@ def open_photo_dialog(
     photo_at: datetime | None,
     on_change: Callable[[], Awaitable[None]],
 ) -> None:
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label(f"Photo — {full_name}").classes("text-lg font-medium")
+    with dialog_card(f"Photo — {full_name}") as dialog:
         # current photo until a file is picked, then the normalized preview
         preview = ui.image().classes("w-40 h-40 rounded-full object-cover self-center")
         if photo_at is not None:

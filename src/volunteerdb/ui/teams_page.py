@@ -4,16 +4,16 @@ from urllib.parse import quote
 
 from nicegui import events, ui
 
-from .. import query_lang
+from .. import query_lang, timefmt
 from ..env import current as current_env
 from ..errors import not_found
 from ..fp import Err, Ok, expect
 from ..models import ROLE_LABELS, TeamRole, TeamSheet
 from ..services import events as event_service
-from ..services import mail, roster_sheets
 from ..services import memberships as membership_service
 from ..services import pages as page_service
 from ..services import reports as report_service
+from ..services import roster_sheets
 from ..services import teams as team_service
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
@@ -23,10 +23,11 @@ from . import column_order, invites
 from .account_status import roster_account
 from .asof import parse_as_of
 from .context import PageCtx, page_ctx, run_command, toast
+from .forms import actions, dialog_card
 from .layout import frame
+from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
-
-ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
+from .widgets import ROLE_OPTIONS, inactive_badge, role_badge
 
 
 def _hierarchy_rows(tree, coverage, actor) -> list[dict]:
@@ -114,37 +115,9 @@ def _matching_rows(rows: list[dict], text: str) -> list[dict]:
     return _with_ancestors(rows, keep)
 
 
-def _team_count(shown: int, total: int | None = None) -> str:
-    if total is None or shown == total:
-        return f"{shown} team{'s' if shown != 1 else ''}"
-    return f"{shown} of {total} teams"
-
-
-def _wire_search(
-    search: ui.input, count: ui.label, table: ui.table, rows: list[dict]
-) -> None:
-    """Narrow the table as you type. The listing has no pagination, so the whole
-    parish is already in `rows` and the filter costs neither a query nor a
-    reload — it only swaps what the table is showing."""
-
-    def apply() -> None:
-        text = (search.value or "").strip()
-        ast = query_lang.parse(text) if text else None
-        if ast is None:
-            shown = rows if not text else _matching_rows(rows, text.lower())
-        else:
-            compiled = query_lang.compile_teams(ast)
-            if isinstance(compiled, Err):
-                # inline, not a toast: this filter runs on every keystroke
-                count.set_text(f"query error: {compiled.error.message}")
-                return
-            pred = compiled.value
-            shown = _with_ancestors(rows, {i for i, r in enumerate(rows) if pred(r)})
-        table.rows = shown
-        table.update()
-        count.set_text(_team_count(len(shown), len(rows)))
-
-    search.on_value_change(apply)
+def _filtered_rows(rows: list[dict], pred) -> list[dict]:
+    """The rows a query predicate keeps, plus each one's ancestors."""
+    return _with_ancestors(rows, {i for i, r in enumerate(rows) if pred(r)})
 
 
 @ui.page("/teams")
@@ -288,9 +261,20 @@ async def teams_page(as_of: str = ""):
         )
         if not tree.teams:
             ui.label("No teams yet.").classes("text-gray-500")
-        count = ui.label(_team_count(len(rows))).classes("text-sm text-gray-500")
+        count = ui.label(count_text(len(rows), None, "team")).classes(
+            "text-sm text-gray-500"
+        )
         if search is not None:
-            _wire_search(search, count, table, rows)
+            wire_search(
+                search,
+                count,
+                table,
+                rows,
+                noun="team",
+                compile=query_lang.compile_teams,
+                text_filter=_matching_rows,
+                query_filter=_filtered_rows,
+            )
 
 
 def _parent_options(tree, exclude_id: int | None = None) -> dict[int, str]:
@@ -309,8 +293,7 @@ def _parent_options(tree, exclude_id: int | None = None) -> dict[int, str]:
 
 def _team_dialog(parent_options: dict[int, str], team=None) -> None:
     """Create (team=None) or edit a team. Admin only — enforced server-side on save."""
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("Edit team" if team else "New team").classes("text-lg font-medium")
+    with dialog_card("Edit team" if team else "New team") as dialog:
         name = (
             ui.input("Name", value=team.name if team else "")
             .props("outlined dense")
@@ -396,9 +379,7 @@ def _team_dialog(parent_options: dict[int, str], team=None) -> None:
 
             await run_command(command, on_ok=done, reload=False)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Save", on_click=save)
+        actions(dialog, "Save", save)
     dialog.open()
 
 
@@ -683,8 +664,7 @@ _OVERWRITE = "Overwrite it from the database"
 def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
     """Link the team to a roster spreadsheet. Leaders/seconds and admins —
     enforced server-side on save."""
-    with ui.dialog() as dialog, ui.card().classes("w-[32rem] gap-3"):
-        ui.label("Roster spreadsheet").classes("text-lg font-medium")
+    with dialog_card("Roster spreadsheet", width="w-[32rem]") as dialog:
         ui.label(
             "Paste the link of a Google Sheet shared as “anyone with the link "
             "can edit” — copy the roster template to make one."
@@ -753,17 +733,14 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
                 ui.notify(outcome.message, color="positive", multi_line=True)
             ui.navigate.to(f"/teams/{team_id}")
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Save", on_click=save)
+        actions(dialog, "Save", save)
     dialog.open()
 
 
 def _home_doc_dialog(team_id: int, current: str | None) -> None:
     """Set or clear the home-page doc. Leader/second/core/admin — enforced
     server-side on save."""
-    with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
-        ui.label("Team home page doc").classes("text-lg font-medium")
+    with dialog_card("Team home page doc", width="w-[30rem]") as dialog:
         ui.label(
             "Paste the link of a Google Doc shared as “anyone with the link can "
             "view”. Its content is published on the public ministries index and "
@@ -897,7 +874,7 @@ async def team_detail(team_id: int, as_of: str = ""):
         if team.description:
             ui.label(team.description).classes("text-gray-600")
         if not team.is_active:
-            ui.badge("inactive", color="muted")
+            inactive_badge()
 
         with ui.row().classes("gap-2 w-full items-center"):
             if actor.is_admin and at is None:
@@ -1039,7 +1016,7 @@ async def team_detail(team_id: int, as_of: str = ""):
                             lambda e, mid=membership.id: _change_role(mid, e.value)
                         )
                     else:
-                        ui.badge(ROLE_LABELS[membership.role])
+                        role_badge(membership.role)
                     if can_full:
                         ui.label(volunteer.email or "").classes(
                             "text-sm text-gray-600 vdb-roster-email"
@@ -1084,7 +1061,7 @@ async def team_detail(team_id: int, as_of: str = ""):
                             "font-medium"
                         )
                         ui.label(
-                            mail.event_when(
+                            timefmt.event_when(
                                 s.event.starts_at, s.event.ends_at, tz=ctx.env.tz
                             )
                         ).classes("text-sm text-gray-600")

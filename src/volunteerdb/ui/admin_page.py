@@ -8,6 +8,8 @@ from ..services import volunteers as volunteer_service
 from . import invites
 from .a11y import icon_button
 from .context import PageCtx, page_ctx, run_command
+from .forms import actions, confirm, dialog_card
+from .guards import deny_unless_admin
 from .layout import frame
 
 
@@ -25,9 +27,7 @@ async def users_page():
             if actor.is_admin
             else {}
         )
-    if not actor.is_admin:
-        with frame("Accounts", actor):
-            ui.label("Admins only.").classes("text-gray-500")
+    if deny_unless_admin(actor, "Accounts"):
         return
 
     def show_invite(token: str, email: str, sent: bool | None = None) -> None:
@@ -37,22 +37,13 @@ async def users_page():
         with ui.row().classes("gap-2"):
 
             async def provision() -> None:
-                with ui.dialog() as confirm_dialog, ui.card().classes("w-96 gap-3"):
-                    ui.label(
-                        "Create accounts for every active volunteer with an email "
-                        "address and send each of them an invite email? Existing "
-                        "accounts that aren't linked to anyone are linked to the "
-                        "volunteer at the same address."
-                    )
-                    with ui.row().classes("justify-end w-full gap-2"):
-                        ui.button(
-                            "Cancel", on_click=lambda: confirm_dialog.submit(False)
-                        ).props("flat")
-                        ui.button(
-                            "Create and email invites",
-                            on_click=lambda: confirm_dialog.submit(True),
-                        )
-                if not await confirm_dialog:
+                if not await confirm(
+                    "Create accounts for every active volunteer with an email "
+                    "address and send each of them an invite email? Existing "
+                    "accounts that aren't linked to anyone are linked to the "
+                    "volunteer at the same address.",
+                    yes="Create and email invites",
+                ):
                     return
 
                 async def command(ctx: PageCtx):
@@ -90,8 +81,7 @@ async def users_page():
             ).props("dense outline")
 
         def new_account_dialog() -> None:
-            with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-                ui.label("New account").classes("text-lg font-medium")
+            with dialog_card("New account") as dialog:
                 email = (
                     ui.input("Email (login)").props("outlined dense").classes("w-full")
                 )
@@ -155,9 +145,7 @@ async def users_page():
 
                     await run_command(command, on_ok=done, reload=False)
 
-                with ui.row().classes("justify-end w-full gap-2"):
-                    ui.button("Cancel", on_click=dialog.close).props("flat")
-                    ui.button("Create", on_click=save)
+                actions(dialog, "Create", save)
             dialog.open()
 
         ui.label(f"{len(accounts)} accounts").classes("text-sm text-gray-500")
@@ -267,9 +255,7 @@ async def users_page():
 
                             await run_command(command, on_ok=done, reload=True)
 
-                        with ui.row().classes("justify-end w-full gap-2"):
-                            ui.button("Cancel", on_click=dialog.close).props("flat")
-                            ui.button("Save", on_click=save_link)
+                        actions(dialog, "Save", save_link)
                     dialog.open()
 
                 async def reinvite(_, uid=account.id, addr=account.email) -> None:

@@ -8,7 +8,7 @@ entering ``frame`` and call ``panel.open(volunteer_id)`` from click handlers.
 from nicegui import ui
 
 from ..env import current as current_env
-from ..models import ROLE_LABELS, CustomFieldDef, FieldType
+from ..models import CustomFieldDef, FieldType
 from ..permissions import volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import photos as photo_service
@@ -22,6 +22,7 @@ from .account_status import invitable, last_login_text
 from .asof import parse_as_of
 from .context import page_ctx
 from .photo_dialog import photo_avatar
+from .widgets import inactive_badge, role_badge, workload_badge
 
 
 def format_custom(defn: CustomFieldDef, value, missing: str = "—") -> str:
@@ -123,15 +124,9 @@ class VolunteerPanel:
             if not volunteer.is_active or volunteer_id in wl:
                 with ui.row().classes("items-center gap-2"):
                     if not volunteer.is_active:
-                        ui.badge("inactive", color="muted")
+                        inactive_badge()
                     if volunteer_id in wl:
-                        score, band = wl[volunteer_id]
-                        ui.badge(f"workload: {band.label} · {float(score):g}").style(
-                            f"background-color: {band.color}; "
-                            f"color: {workload_service.text_colour(band.color)}"
-                        ).tooltip(
-                            "Workload score: team weights × role multipliers, all ministries"
-                        )
+                        workload_badge(*wl[volunteer_id], prefix="workload: ")
             if can_view:
                 ui.label(f"Email: {volunteer.email or '—'}").classes(
                     "text-sm text-gray-700"
@@ -178,7 +173,7 @@ class VolunteerPanel:
                         paths.get(team.id, team.name),
                         f"/teams/{team.id}{self._asof_query}",
                     ).classes("text-sm")
-                    ui.badge(ROLE_LABELS[membership.role])
+                    role_badge(membership.role)
 
             ui.button("Full profile", icon="open_in_new").props(
                 # the detail page is live-only now: no as-of query to carry over

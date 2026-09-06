@@ -107,7 +107,7 @@ commit.
   replacing the post-hoc mutations. The cross-router helpers move there, so
   routers stop importing each other. The contract test guards the wire shape.
 
-- [ ] **7. Shared GUI vocabulary.** `ui/widgets.py` (role options and the
+- [x] **7. Shared GUI vocabulary.** `ui/widgets.py` (role options and the
   phase, workload, role and inactive badges), `ui/forms.py` (dialog card,
   actions row, `confirm()`), `ui/tables.py` (one `wire_search`),
   `ui/guards.py` (the admin-only frame). The date formatter moves from `mail`

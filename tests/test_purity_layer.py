@@ -38,6 +38,7 @@ CORE = (
     "policy.py",
     "domain.py",
     "fp.py",
+    "timefmt.py",
     "errors.py",
 )
 

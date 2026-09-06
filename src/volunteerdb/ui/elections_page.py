@@ -24,9 +24,9 @@ from ..services import workload as workload_service
 from ..star import StarResult
 from .context import PageCtx, page_ctx, run_command
 from .date_input import date_input
+from .forms import actions, confirm, dialog_card
 from .layout import frame
-
-ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
+from .widgets import ROLE_OPTIONS, phase_badge, role_badge, workload_badge
 
 IGNATIAN_NOTE = (
     "Ignatian election: 1. pray separately, 2. vote separately, "
@@ -41,19 +41,6 @@ STAR_NOTE = (
 )
 
 Phase = elections_service.ProposalPhase
-
-
-def phase_badge(proposal, phase: Phase | None) -> None:
-    if phase is Phase.nominating:
-        ui.badge(f"Nominating until {proposal.nomination_deadline}", color="primary")
-    elif phase is Phase.voting:
-        ui.badge(f"Voting until {proposal.voting_deadline}", color="warning")
-    elif phase is Phase.concluded:
-        ui.badge("Awaiting decision", color="purple")
-    elif proposal.status == ProposalStatus.appointed.value:
-        ui.badge("Appointed", color="positive")
-    else:
-        ui.badge("Cancelled", color="muted")
 
 
 def _deadline_inputs(d1_default: date, d2_default: date) -> tuple[ui.input, ui.input]:
@@ -121,8 +108,7 @@ async def elections_page():
             ).classes("text-sm text-gray-600")
 
     def create_dialog(team_id: int, path: str, default_role: TeamRole) -> None:
-        with ui.dialog() as dialog, ui.card().classes("w-[28rem] gap-3"):
-            ui.label(f"Propose for {path}").classes("text-lg font-medium")
+        with dialog_card(f"Propose for {path}", width="w-[28rem]") as dialog:
             role = (
                 ui.select(ROLE_OPTIONS, label="Role", value=default_role.value)
                 .props("outlined dense")
@@ -436,8 +422,7 @@ async def proposal_detail(proposal_id: int):
         await run_command(lambda ctx: action(ctx.session, ctx.actor))
 
     def edit_deadlines_dialog() -> None:
-        with ui.dialog() as dialog, ui.card().classes("w-[30rem] gap-3"):
-            ui.label("Edit proposal").classes("text-lg font-medium")
+        with dialog_card("Edit proposal", width="w-[30rem]") as dialog:
             d1, d2 = _deadline_inputs(p.nomination_deadline, p.voting_deadline)
             notes = (
                 ui.textarea("Notes", value=p.notes or "")
@@ -462,22 +447,16 @@ async def proposal_detail(proposal_id: int):
                     ),
                 )
 
-            with ui.row().classes("justify-end w-full gap-2"):
-                ui.button("Cancel", on_click=dialog.close).props("flat")
-                ui.button("Save", on_click=save)
+            actions(dialog, "Save", save)
         dialog.open()
 
     async def cancel_proposal() -> None:
-        with ui.dialog() as confirm, ui.card().classes("w-96 gap-3"):
-            ui.label("Cancel this proposal? Ballots are discarded with it.")
-            with ui.row().classes("justify-end w-full gap-2"):
-                ui.button("Keep it", on_click=lambda: confirm.submit(False)).props(
-                    "flat"
-                )
-                ui.button(
-                    "Yes, cancel it", on_click=lambda: confirm.submit(True)
-                ).props("color=negative")
-        if not await confirm:
+        if not await confirm(
+            "Cancel this proposal? Ballots are discarded with it.",
+            yes="Yes, cancel it",
+            no="Keep it",
+            danger=True,
+        ):
             return
         await _managed_action(
             "manage proposals for this team",
@@ -491,16 +470,13 @@ async def proposal_detail(proposal_id: int):
         )
 
     async def appoint(candidate_id: int) -> None:
-        with ui.dialog() as confirm, ui.card().classes("w-96 gap-3"):
-            ui.label(
-                f"Appoint {names[candidate_id]} as "
-                f"{ROLE_LABELS[TeamRole(p.role)]}? This assigns the role "
-                "immediately."
-            )
-            with ui.row().classes("justify-end w-full gap-2"):
-                ui.button("Back", on_click=lambda: confirm.submit(False)).props("flat")
-                ui.button("Yes, appoint", on_click=lambda: confirm.submit(True))
-        if not await confirm:
+        if not await confirm(
+            f"Appoint {names[candidate_id]} as "
+            f"{ROLE_LABELS[TeamRole(p.role)]}? This assigns the role "
+            "immediately.",
+            yes="Yes, appoint",
+            no="Back",
+        ):
             return
         await _managed_action(
             "appoint for this team",
@@ -516,8 +492,7 @@ async def proposal_detail(proposal_id: int):
         )
 
     def new_round_dialog() -> None:
-        with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-            ui.label("Start a new round").classes("text-lg font-medium")
+        with dialog_card("Start a new round") as dialog:
             ui.label(
                 "Candidates and the voting roll carry over; ballots do not."
             ).classes("text-sm text-gray-500")
@@ -549,15 +524,13 @@ async def proposal_detail(proposal_id: int):
 
                 await run_command(command, on_ok=done, reload=False)
 
-            with ui.row().classes("justify-end w-full gap-2"):
-                ui.button("Cancel", on_click=dialog.close).props("flat")
-                ui.button("Start round", icon="restart_alt", on_click=save)
+            actions(dialog, "Start round", save, icon="restart_alt")
         dialog.open()
 
     with frame(f"{view.path}: {ROLE_LABELS[TeamRole(p.role)]}", actor):
         with ui.row().classes("w-full items-center gap-2"):
             ui.link(view.path, f"/teams/{p.team_id}").classes("font-medium")
-            ui.badge(ROLE_LABELS[TeamRole(p.role)])
+            role_badge(TeamRole(p.role))
             phase_badge(p, phase)
             ui.space()
             if can_manage and p.status == ProposalStatus.open.value:
@@ -597,11 +570,7 @@ async def proposal_detail(proposal_id: int):
                     if view.tally and view.tally.winner_id == cid:
                         ui.badge("STAR winner", color="primary")
                     if cv.volunteer.id in wl:
-                        score, band = wl[cv.volunteer.id]
-                        ui.badge(f"{band.label} · {float(score):g}").style(
-                            f"background-color: {band.color}; "
-                            f"color: {workload_service.text_colour(band.color)}"
-                        ).tooltip("Current workload")
+                        workload_badge(*wl[cv.volunteer.id], tooltip="Current workload")
                     ui.space()
                     if cv.nominator_email:
                         ui.label(f"nominated by {cv.nominator_email}").classes(

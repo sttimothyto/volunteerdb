@@ -25,14 +25,15 @@ from datetime import datetime
 
 from nicegui import ui
 
+from .. import timefmt
 from ..effects import delivered
 from ..env import current as current_env
 from ..errors import require
 from ..models import AppUser
 from ..permissions import volunteer_team_ids
-from ..services import mail
 from ..services import users as user_service
 from .context import PageCtx, run_command
+from .forms import confirm
 
 
 def invite_url(base_url: str, token: str) -> str:
@@ -68,7 +69,7 @@ def show_invite(
         url = invite_url(base_url, token)
         if reveal:
             ui.input(value=url).props("readonly outlined dense").classes("w-full")
-        window = mail.ttl_window(current_env().settings.invite_ttl_hours)
+        window = timefmt.ttl_window(current_env().settings.invite_ttl_hours)
         ui.label(
             f"Usable once, and only for the next {window}. After that "
             "they sign in with an emailed code and can set a password "
@@ -164,23 +165,20 @@ async def confirm_send(name: str, email: str, *, again: bool = False) -> bool:
     """Ask before mailing a real person. The hover control that opens this is
     easy to hit by accident, and the email cannot be recalled."""
     verb = "Send another invite" if again else "Send an invite"
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label(f"{verb} to {name}?").classes("font-medium")
-        ui.label(
+    return await confirm(
+        f"{verb} to {name}?",
+        detail=(
             f"An account will be created for {email} and a one-time "
             "setup link emailed to that address."
             if not again
             else f"A fresh setup link will be emailed to {email}. "
             "The previous link stops working."
-        ).classes("text-sm text-gray-500")
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=lambda: dialog.submit(False)).props(
-                "flat"
-            ).mark("invite-cancel")
-            ui.button(verb, icon="mail", on_click=lambda: dialog.submit(True)).mark(
-                "invite-confirm"
-            )
-    return bool(await dialog)
+        ),
+        yes=verb,
+        icon="mail",
+        yes_marker="invite-confirm",
+        no_marker="invite-cancel",
+    )
 
 
 async def send_invite(

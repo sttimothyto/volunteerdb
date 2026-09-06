@@ -9,6 +9,7 @@ from ..models import ROLE_LABELS, TeamRole
 from ..services import teams as team_service
 from ..services import workload as workload_service
 from .context import PageCtx, page_ctx, run_command
+from .guards import deny_unless_admin
 from .layout import frame
 
 
@@ -40,9 +41,7 @@ async def workload_page():
         config = await workload_service.read_config(session)
         tree = await team_service.tree(session)
         all_teams, paths = tree.teams, tree.paths
-    if not actor.is_admin:
-        with frame("Workload", actor):
-            ui.label("Admins only.").classes("text-gray-500")
+    if deny_unless_admin(actor, "Workload"):
         return
 
     with frame("Workload", actor):

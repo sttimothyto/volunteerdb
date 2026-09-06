@@ -17,6 +17,7 @@ from ..fp import Err
 from ..permissions import Actor
 from ..services import branding
 from .context import PageCtx, run_command, toast
+from .forms import dialog_card
 
 # /logo serves the uploaded image or the shipped placeholder, so the src never
 # has to be decided at render time (ui/logo_route.py explains why it must not).
@@ -34,8 +35,7 @@ def logo_img(src: str, classes: str) -> ui.element:
 
 
 def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label("Site logo").classes("text-lg font-medium")
+    with dialog_card("Site logo") as dialog:
         ui.label(
             "Shown in this header, above the login box, and on the public "
             "ministries pages. A wide wordmark is fine — the image is scaled "
