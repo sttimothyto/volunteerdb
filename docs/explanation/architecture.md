@@ -21,6 +21,8 @@ src/volunteerdb/
   config.py      settings (env / .env)                        ┐
   env.py         Env: settings, clock, rng, mailer, http,     │
                  engine, sessions, the two mutable cells      │ infrastructure
+  mailers.py     the SMTP2GO transport, the logging stand-in  │
+  cells.py       the throttle ledger and the mail gauge       │
   db.py          engine/session factories; transaction()     │ (the impure rim)
   models.py      SQLAlchemy models + history twins            │
   history.py     as-of query helpers                          ┘
