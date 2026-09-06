@@ -1,0 +1,91 @@
+# The public demo instance: https://vdb.bhw.name, on a shared host that also
+# runs a Matrix homeserver and other sites. Its database holds nothing but the
+# synthetic parish scripts/seed.py generates, and it is wiped and re-seeded
+# nightly by volunteerdb-demo-reset.timer on the host.
+#
+# Deliberately different from a real parish, in three ways:
+#   * [proxy] caddy = false  - the host's Caddy is hand-written and fronts a
+#     live Matrix deployment; the deploy must not take the file over, upgrade
+#     Caddy, or touch the firewall. The vdb.bhw.name block was added by hand
+#     from deploy/examples/Caddyfile, plus security headers and a robots.txt.
+#   * no VDB_SMTP2GO_API_KEY and no VDB_SHEETS_* - mail is logged rather than
+#     sent, and both Google syncs stay off. A public demo must not be able to
+#     mail anybody.
+#   * VDB_ADMIN_PASSWORD is never passed. The admin bootstrap is skipped and
+#     scripts/seed.py owns every account, admin@example.org included.
+#
+# No secrets belong in this file, which is why it is committed.
+
+[site]
+# Must equal this file's name, so that SITE=x always deploys x.
+name = "bhwdemo"
+# Appears in outbound mail: "Your VolunteerDB account at <org_name>". Write it
+# the way you would say it — "St. Peter's", "Holy Family Parish".
+org_name = "VolunteerDB Demo"
+# IANA zone. Election deadlines and event reminders mean "through the end of
+# that day HERE", and the nightly systemd timers fire on this zone too.
+timezone = "America/Toronto"
+
+[host]
+# How pyinfra reaches the server: an ssh_config alias, a hostname, or an IP.
+ssh_host = "oci-a1-flex"
+# The deploy installs packages and writes to /etc, so it needs root.
+ssh_user = "root"
+# The server's public address. With [proxy] caddy = true the deploy refuses to
+# touch Caddy until `domain` resolves to it; nothing else reads it.
+public_ip = "192.18.153.23"
+# Public hostname. Caddy serves TLS for it; the app builds email links from it.
+domain = "vdb.bhw.name"
+# Host loopback port the app publishes on, and that the reverse proxy sends
+# to. NOT the usual 8090: lk-jwt-service already holds that port here.
+listen_port = 8100
+
+[proxy]
+# false: the deploy never touches Caddy or the firewall. This host's Caddy
+# also serves www.bhw.name and matrix.bhw.name from a hand-written file, and
+# port 80 is closed in firewalld (certificates come by TLS-ALPN-01 on 443).
+caddy = false
+# Ignored when caddy = false.
+extra = ""
+
+[mail]
+# MUST be on a domain your mail provider is authorised to send for, or
+# delivery simply fails. Nothing is sent here at all: no API key is set, so
+# every message is written to the journal instead.
+from_address = "no-reply@example.org"
+from_name = "VolunteerDB Demo"
+# The administrator account the deploy bootstraps -- except that this instance
+# never passes VDB_ADMIN_PASSWORD, so the bootstrap is skipped. The address is
+# the one scripts/seed.py creates, so the two agree about who the admin is.
+admin_email = "admin@example.org"
+# Where a failed backup or a failed scheduled job reports; "" disables the
+# emails, which is right for an instance that cannot send any.
+alert_email = ""
+# Shown in the footer of the built manual. "" leaves docs/conf.py's neutral
+# admin@example.invalid, so no real address is published on a public demo.
+contact_email = ""
+
+[backup]
+# "none" keeps the nightly dumps on this server ONLY. Correct here: the whole
+# database is regenerable from scripts/seed.py, and is in fact regenerated
+# every night, so there is nothing an off-site copy would preserve.
+rclone_remote = "none"
+# Plaintext dumps kept on the server; root-only, on the same host as the live
+# database.
+retain_local_days = 7
+# Encrypted copies kept on Drive (ignored with rclone_remote = "none").
+retain_remote_days = 730
+
+[sheets]
+# Drive folder id new roster sheets are created in. Empty, with no OAuth
+# credentials in the remote env file: the roster-sheet sync stays off.
+folder_id = ""
+
+[schedule]
+# Parish-local times, strictly increasing. The host's own
+# volunteerdb-demo-reset.timer fires at 04:30, after all of these.
+backup_at = "02:00"
+roster_sync_at = "02:30"
+fetch_pages_at = "03:00"
+proposal_digest_at = "03:30"
+event_reminders_at = "04:00"
