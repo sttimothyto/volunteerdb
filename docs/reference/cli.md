@@ -41,19 +41,22 @@ uv run python scripts/seed.py
 
 - Seeds a fresh database with a whole demo parish, shaped to exercise every
   feature:
-  - 34 teams, 3 levels deep
-  - ~150 volunteers (some archived, some with no email, one household that
+  - 35 teams, 3 levels deep, one of them archived
+  - 500 volunteers (some archived, some with no email, one household that
     shares an address)
-  - ~290 memberships
+  - ~1,100 memberships
   - ended and rejoined spells, and mid-spell promotions, for the timeline
     chart
-  - 5 custom fields
-  - placeholder headshots
-  - ~55 events either side of today, with rosters, RSVPs, substitutions and
-    attendance overrides
+  - one custom field of every type, and one more that was retired
+  - a parish logo, workload bands of the parish's own, and placeholder
+    headshots
+  - ~55 events either side of today, with rosters, RSVPs, substitutions,
+    attendance overrides and one event staffed by a task force
   - one proposal in every state (nominating, voting, awaiting decision,
     appointed, cancelled, re-opened)
-  - 6 published ministry pages
+  - 7 ministry pages: 5 published, 1 stale, 1 not fetched yet
+  - the bookkeeping the nightly jobs keep: notices sent, job runs, the mail
+    allowance spent, and the roster spreadsheets teams are linked to
 - A team named **Clergy** is filled. That is all it takes to be the
   {term}`clergy team`, so proposals opened on the demo data get a realistic
   voting roll.
@@ -74,12 +77,17 @@ notable ones:
 |---|---|---|
 | `admin@example.org` | `$VDB_SEED_ADMIN_PASSWORD` (default `demo`) | admin |
 | `helen.park@example.org` | `demo` | a second admin, linked to a volunteer |
-| `maria.alvarez@example.org` | `demo` | ministry leader (two teams, red workload) |
+| `maria.alvarez@example.org` | `demo` | ministry leader (two teams, the top workload band) |
 | `felix.garcia@example.org` | `demo` | plain member |
 | `dominic.ferraro@example.org` | `demo` | clergy — sits on every voting roll |
 | `claire.dubois@example.org` | — | invite not yet redeemed |
 | `irene.p@example.org` | — | no password: signs in with an emailed code |
 | `george.ivanov@example.org` | `demo` | deactivated: sign-in is refused |
+| `monica.silva@example.org` | `demo` | an address change waits on the new mailbox |
+
+The seed also prints two addresses that are not sign-ins: the administrator's
+API bearer token, and a personal calendar feed. Both are fixed strings, so a
+reseed does not break a command or a subscription that uses them.
 
 ```{warning}
 `demo` is 4 characters, so it does **not** clear the

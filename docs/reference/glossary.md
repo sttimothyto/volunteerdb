@@ -170,7 +170,7 @@ password policy
 
 seeded data
   The demo dataset that `scripts/seed.py` creates, used by the tutorials.
-  It holds 34 teams (with a filled {term}`clergy team`), ~150 volunteers,
+  It holds 35 teams (with a filled {term}`clergy team`), 500 volunteers,
   history spells, and a schedule either side of today. It also holds a
   proposal in every state and 33 demo logins, all on the password `demo`.
   The tests build their own data.

@@ -59,12 +59,12 @@ uv run python scripts/seed.py
 
 This loads a whole parish:
 
-- 34 teams
-- about 150 volunteers
+- 35 teams
+- 500 volunteers
 - membership history for the timeline features
-- 5 custom fields
+- one custom field of every type
 - some 55 events on both sides of today
-- 6 proposals
+- 7 proposals
 - 6 public ministry pages
 - 33 logins
 
@@ -72,13 +72,13 @@ You see: the script ends with a count of each and the notable accounts:
 
 ```
 Seeded a demo parish:
-     34  teams
-    151  volunteers
-    293  memberships
+     36  teams
+    500  volunteers
+   1091  memberships
     ...
 Every login below uses the password: demo
   admin@example.org                demo           administrator
-  maria.alvarez@example.org        demo           ministry leader (two teams, red workload)
+  maria.alvarez@example.org        demo           ministry leader (two teams, the heaviest workload band)
   felix.garcia@example.org         demo           plain member
   dominic.ferraro@example.org      demo           clergy — sits on every voting roll
 ```
@@ -119,7 +119,7 @@ You land on the *Dashboard*. 5 things confirm that the seed did its job:
   attendance already derived; the future ones have RSVPs and 2 open calls
   for a substitute.
 - Search for `maria` in the quick-search box and open *Maria Alvarez*. She
-  leads 2 ministries, her workload badge is deep in the red, and her
+  leads 2 ministries, her workload badge is in the top band, and her
   timeline chart shows an ended Youth Group spell.
 - Header → *Teams* → *Liturgy*: a team with sub-teams and a roster you can
   manage. Try the *View as of (YYYY-MM-DD)* date picker (header settings

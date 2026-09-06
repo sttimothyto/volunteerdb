@@ -3,9 +3,12 @@
 Run: uv run python scripts/seed.py
 Refuses to run if any volunteers already exist (`make fresh` wipes first).
 
-Everything is deterministic — one fixed RNG seed, dates relative to today — so
-two runs produce the same parish and anything reproduced on seeded data is
-reproducible for whoever reads the report.
+Everything is deterministic — one fixed RNG seed, one clock read, dates
+relative to today — so two runs produce the same parish and anything
+reproduced on seeded data is reproducible for whoever reads the report.
+
+The parish is PARISH_SIZE people: everyone a documented shape below depends on
+is hand-written, and the rest of the number is generated around them.
 
 Deliberate demo shapes
 ----------------------
@@ -14,18 +17,27 @@ People and rosters
   do 'Prayer Chain', 'Children's Liturgy', 'Website & Socials' or
   'Bereavement Ministry'; 'Welcome Desk' and 'Ushers' have a leader but no
   second. Each vacancy is the seat one of the proposals below is filling.
-- Maria Alvarez is sole leader of two teams and lands deep in the red workload
+- Maria Alvarez is sole leader of two teams and lands in the top workload
   band (dramatic impact report + the colour-coding demo)
 - ended/rejoined memberships (their history backdated) and three mid-spell
   promotions feed the service-timeline chart — Maria's ended Youth Group
   spell, Grace's split Music Ministry spells, Peter's promotion to leader
 - a family shares one email address (the account provisioner's "skipped"
-  path), a dozen volunteers have no email at all, and a handful are archived
+  path), a fifth of the parish has no email at all, and a handful are archived
   (is_active false) but keep their memberships
-- five custom fields are pre-defined, two of them filled in for most people
+- the 'Roof Appeal Committee' has wound up: archived rather than deleted, so
+  it is in nobody's listing and the service given to it is still readable
+- one custom field of every FieldType the app offers (FIELDS), filled in for
+  a share of the parish, plus one retired field whose answers survive it
 - 'Clergy' is filled, and the roll builder finds it by that name, so every
   proposal's voting roll is prefilled with it; Fr. Dominic also sits on
   Finance Council, which exercises the roll's dedupe path
+
+Accounts
+- passwords, an unredeemed invite, a code-only account and a deactivated one
+- the administrator carries an API bearer token and two members carry a
+  personal .ics feed address; both are printed at the end
+- one account has an address change staged and waiting on the new mailbox
 
 Schedule
 - six weekly series (Sunday Mass rosters, choir practice, youth nights, food
@@ -34,16 +46,37 @@ Schedule
 - past events carry a filled roster and therefore derived attendance and
   hours; three of them carry manager overrides (a no-show, a long shift)
 - future events carry RSVPs, two open substitution calls, one claimed one and
-  one cancelled event with its assignees still attached
+  one cancelled event with its assignees still attached; one slot is handed
+  over by a manager and one is given up by the person holding it
+- the picnic is staffed by a task force: three ministries' rosters copied into
+  an auto-created meta team the event sits on until the night it is over
+- one sign-up is copied forward onto every later week of its series, and one
+  series opts into the seven-day reminder as well as the next-day one
 
 Elections
 - one proposal in every state: nominating, voting (ballots half in),
   concluded and awaiting a decision, appointed (its membership created),
   cancelled, and a concluded round re-opened as a fresh one (new_round)
+- the nominating one also carries a name put forward late and a voter added
+  to the roll by hand — both of which only that phase allows
 
 Public
-- six ministries publish a home page (their cached HTML is written straight
-  in — dev has no Google to fetch from)
+- ministries publish a home page, one of them with a picture: the cached HTML
+  and image bytes are written straight in, because dev has no Google to fetch
+  them from. One page is stale (its last fetch failed and the last good HTML
+  is still served) and one is linked but not yet fetched.
+
+Bookkeeping
+- the notices the nightly jobs would have sent are recorded as sent, the jobs
+  themselves as having run today, a fortnight of the mail allowance as spent,
+  and five teams as linked to a roster spreadsheet (one of them in error)
+
+Deliberately not seeded
+-----------------------
+Anything whose value is a live credential for somebody else's service: no
+Google calendar id or synced event ids (jobs/calendar_sync.py would then try
+to PATCH events on a calendar that does not exist), and no one-time sign-in
+code (it would expire ten minutes into the demo).
 
 Passwords
 ---------
@@ -57,9 +90,12 @@ this script.
 """
 
 import asyncio
+import hashlib
 import os
 import random
 import sys
+import uuid
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -67,12 +103,18 @@ from io import BytesIO
 
 import sqlalchemy as sa
 from PIL import Image, ImageDraw, ImageFont
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from volunteerdb import env as env_mod
+from volunteerdb import scheduler
 from volunteerdb.auth import async_hash_password
 from volunteerdb.db import transaction
+from volunteerdb.domain import NotifyMode, Outcome
+from volunteerdb.errors import DomainError, message
+from volunteerdb.fp import Err, Result
 from volunteerdb.models import (
+    AppSetting,
     AppUser,
     CustomFieldDef,
     Event,
@@ -80,28 +122,41 @@ from volunteerdb.models import (
     EventRsvp,
     EventSlot,
     EventSubRequest,
+    EventTaskForceSource,
     FieldType,
+    JobRun,
+    MailQuota,
     Membership,
+    Notification,
+    NotificationStage,
     Proposal,
     ProposalBallot,
     ProposalCandidate,
     ProposalVoter,
+    SiteLogo,
+    SyncStatus,
     Team,
     TeamPage,
+    TeamPageImage,
     TeamRole,
+    TeamSheet,
     Volunteer,
     VolunteerPhoto,
 )
 from volunteerdb.services import (
+    branding,
     custom_fields,
     elections,
     events,
     memberships,
     pages,
     photos,
+    roster_sheets,
+    task_force,
     teams,
     users,
     volunteers,
+    workload,
 )
 
 # --- knobs --------------------------------------------------------------------
@@ -111,6 +166,12 @@ from volunteerdb.services import (
 DEMO_PASSWORD = "demo"
 ADMIN_PASSWORD = os.environ.get("VDB_SEED_ADMIN_PASSWORD", DEMO_PASSWORD)
 
+# The administrator's bearer token for the JSON API (docs/reference/http-api.md),
+# fixed so a reseed does not invalidate the curl line in somebody's notes. Only
+# its digest is stored, as in production; the plaintext is a localhost demo
+# convenience on the same terms as DEMO_PASSWORD above.
+DEMO_API_TOKEN = "vdb-demo-token-do-not-use-in-production"
+
 # Every address the seed invents lives in example.org — RFC 2606 reserves it,
 # so no seeded mail can ever reach a real mailbox if SMTP is switched on.
 EMAIL_DOMAIN = "example.org"
@@ -119,19 +180,64 @@ EMAIL_DOMAIN = "example.org"
 # values are then stable across runs, which is what makes "reseed and try
 # again" a real reproduction step.
 RNG_SEED = 20260816
-COHORT_SIZE = 84  # generated volunteers, on top of the hand-written ones
+
+# The parish ends up this size. The hand-written people below are all of a
+# documented demo shape; the rest of the number is generated around them.
+PARISH_SIZE = 500
 
 ENV = env_mod.build()  # the seed's one Env: its engine, clock and settings
 TZ = ENV.tz
+# One clock read for the whole seed, passed to every service that takes a
+# `now` -- the same discipline the edges keep (api/deps.Ctx), and what makes
+# "created just now" mean one instant rather than a smear across the run.
+NOW = ENV.clock.now()
+TODAY = NOW.astimezone(TZ).date()
 
 
 def db_session(user_id: int | None = None):
     return transaction(ENV, user_id)
 
 
-TODAY = datetime.now(TZ).date()
+def ok[T](result: Result[T, DomainError] | Result[Outcome[T], DomainError]) -> T:
+    """The value of a service call that cannot legitimately be refused here.
+
+    The seed acts as nobody (`actor=None`), on an empty database, with data it
+    wrote itself: a refusal means the seed and the services have drifted apart,
+    which is a bug to read rather than a stack trace to decipher -- so it says
+    which call refused and why.
+
+    An `Outcome` is unwrapped to its value and its domain events are dropped on
+    purpose: they are what a real door would mail, and nobody is written to
+    about a parish that does not exist.
+    """
+    if isinstance(result, Err):
+        sys.exit(f"seed: refused: {message(result.error)}")
+    value = result.value
+    return value.value if isinstance(value, Outcome) else value  # type: ignore[return-value]
+
 
 L, S, C, M = TeamRole.leader, TeamRole.second, TeamRole.core, TeamRole.member
+
+
+# The bands this parish settled on: an admin may rename, recolour and add
+# them (services/workload.py, docs/guide/how-to/set-workload-bands.md), and a
+# demo running the shipped defaults shows none of that. The thresholds below
+# keep the shipped meaning up to 8 and split what used to be one open-ended
+# "red" in two, which is what puts Maria Alvarez in a band of her own.
+WORKLOAD_CONFIG = workload.WorkloadConfig(
+    multipliers={
+        TeamRole.leader: Decimal("3"),
+        TeamRole.second: Decimal("2"),
+        TeamRole.core: Decimal("1.5"),
+        TeamRole.member: Decimal("1"),
+    },
+    bands=[
+        workload.Band("light", "#4caf50", Decimal("4")),
+        workload.Band("steady", "#ffb300", Decimal("8")),
+        workload.Band("heavy", "#c62828", Decimal("14")),
+        workload.Band("too much", "#6a1b9a", None),
+    ],
+)
 
 
 # --- the parish: teams --------------------------------------------------------
@@ -140,12 +246,14 @@ L, S, C, M = TeamRole.leader, TeamRole.second, TeamRole.core, TeamRole.member
 @dataclass(frozen=True)
 class TeamSpec:
     """A team and its sub-teams. `weight` is the optional workload weight
-    ("how work-heavy is this ministry"); unweighted teams count 0."""
+    ("how work-heavy is this ministry"); unweighted teams count 0.
+    `archived` is a ministry that has wound up: kept, not deleted."""
 
     name: str
     weight: str | None = None
     description: str | None = None
     children: tuple["TeamSpec", ...] = ()
+    archived: bool = False
 
 
 T = TeamSpec
@@ -233,12 +341,21 @@ TEAMS: tuple[TeamSpec, ...] = (
     # appended last so the ids above stay put; must be named exactly "Clergy"
     # (services/elections.CLERGY_TEAM_NAME) to be the parish's clergy team
     T("Clergy", None, "The priests and deacon serving the parish."),
+    # wound up, and archived rather than deleted: the service its members gave
+    # stays in the history, while every live listing and the coverage report
+    # pass it by (they filter on is_active)
+    T(
+        "Roof Appeal Committee",
+        "1",
+        "Raised for the 2019 roof. Wound up when the last of it was paid off.",
+        archived=True,
+    ),
 )
 
 # Teams the generated cohort may be dropped into. Clergy is hand-written only,
 # and nobody is generated into a leadership role — that is what keeps the
 # deliberately vacant seats vacant for the coverage report.
-NEVER_GENERATED = frozenset({"Clergy"})
+NEVER_GENERATED = frozenset({"Clergy", "Roof Appeal Committee"})
 
 # Teams that carry the demo's activity, so the generated cohort is weighted
 # towards them: rosters need bodies to schedule.
@@ -772,6 +889,11 @@ PAST_SPELLS: tuple[tuple[str, str, TeamRole, date, date], ...] = (
     ("Vincent Okonkwo", "Altar Servers", M, date(2009, 9, 1), date(2015, 6, 30)),
     ("Yosef Tesfaye", "Home Visits", M, date(2017, 4, 1), date(2023, 3, 31)),
     ("Bartholomew Ng", "Gardening", M, date(2018, 5, 1), date(2026, 3, 31)),
+    # the wound-up committee: nobody serves on it now, and the five years
+    # somebody did are still there to be read
+    ("David Chen", "Roof Appeal Committee", L, date(2019, 2, 1), date(2024, 11, 30)),
+    ("Ivan Petrov", "Roof Appeal Committee", S, date(2019, 2, 1), date(2024, 11, 30)),
+    ("Teresa Romano", "Roof Appeal Committee", M, date(2019, 6, 1), date(2023, 9, 30)),
 )
 
 # assigned as a plain member first, then promoted: a mid-spell role change
@@ -783,6 +905,103 @@ PROMOTIONS: frozenset[tuple[str, str]] = frozenset(
         ("Cecilia Moreau", "Choir"),
     }
 )
+
+
+# --- custom fields ------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FieldSpec:
+    """One admin-defined volunteer property.
+
+    Every FieldType the app offers appears exactly once below, so the fields
+    admin, the volunteer form, the list columns and the query language each
+    have a live example of every kind of value they can be handed — the exact
+    numbers (integer, decimal), the temporal ones (time, interval) and the two
+    timestamps that differ only by whether they carry a zone."""
+
+    label: str
+    field_type: FieldType
+    fill: float  # the share of the parish carrying a value
+    options: tuple[str, ...] | None = None
+    show_in_list: bool = False
+    retired: bool = False  # filled in, then deactivated (see seed_people)
+
+
+F = FieldSpec
+
+FIELDS: tuple[FieldSpec, ...] = (
+    F("Safeguarding training", FieldType.date, 0.65, show_in_list=True),
+    F("Preferred contact", FieldType.select, 0.75, ("Email", "Phone", "Post")),
+    F("Police check on file", FieldType.checkbox, 0.55, show_in_list=True),
+    F("T-shirt size", FieldType.select, 0.4, ("S", "M", "L", "XL", "XXL")),
+    F("Years in the parish", FieldType.number, 0.5),
+    F("Previous parish", FieldType.text, 0.3),
+    F("Children in the programme", FieldType.integer, 0.35, show_in_list=True),
+    F("Mileage rate claimed", FieldType.decimal, 0.15),
+    F("Usual arrival time", FieldType.time, 0.25),
+    F("Time given each week", FieldType.interval, 0.3),
+    F("Registration form received", FieldType.timestamp, 0.45),
+    F("Photo consent recorded", FieldType.timestamptz, 0.35),
+    F("Diocesan volunteer id", FieldType.uuid, 0.2),
+    # the field the parish stopped using; its answers stay on the people who
+    # gave them, and it disappears from the form
+    F("Bazaar stall 2019", FieldType.text, 0.2, retired=True),
+)
+
+PREVIOUS_PARISHES = (
+    "St. Brigid's, Ottawa",
+    "Holy Rosary",
+    "Our Lady of Lourdes",
+    "St. Michael's Cathedral",
+    "Santa Cruz, Manila",
+    "St. Patrick's, Galway",
+    "None — this is home",
+)
+
+BAZAAR_STALLS = ("Bake table", "Raffle", "White elephant", "Tea room", "Door")
+
+
+def _field_value(spec: FieldSpec, rng: random.Random) -> object:
+    """A value in the JSON encoding fieldcodec expects for this field's type —
+    the same shape the write path would have normalized a form entry to."""
+    match spec.field_type:
+        case FieldType.date:
+            return (TODAY - timedelta(days=rng.randint(30, 1400))).isoformat()
+        case FieldType.select:
+            assert spec.options is not None
+            return rng.choice(spec.options)
+        case FieldType.checkbox:
+            return rng.random() < 0.8
+        case FieldType.number:
+            return rng.randint(1, 45)
+        case FieldType.text:
+            if spec.retired:
+                return rng.choice(BAZAAR_STALLS)
+            return rng.choice(PREVIOUS_PARISHES)
+        case FieldType.integer:
+            return rng.randint(0, 4)
+        case FieldType.decimal:
+            # a decimal travels as text: 0.55 the float is not 0.55 the money
+            return f"0.{rng.randint(45, 72)}"
+        case FieldType.time:
+            return time(
+                rng.choice((8, 9, 10, 16, 18)), rng.choice((0, 15, 30))
+            ).isoformat()
+        case FieldType.interval:
+            return f"PT{rng.randint(1, 6)}H{rng.choice((0, 15, 30, 45))}M"
+        case FieldType.timestamp:
+            # no zone: a form was handed in at a wall-clock time, full stop
+            return datetime.combine(
+                TODAY - timedelta(days=rng.randint(60, 2000)),
+                time(rng.randint(9, 17), rng.choice((0, 20, 40))),
+            ).isoformat()
+        case FieldType.timestamptz:
+            # a zone: the moment consent was given, comparable across zones
+            return (NOW - timedelta(days=rng.randint(1, 900))).isoformat()
+        case FieldType.uuid:
+            return str(uuid.UUID(int=rng.getrandbits(128), version=4))
+    raise AssertionError(f"no seed value for {spec.field_type}")  # pragma: no cover
 
 
 # --- accounts -----------------------------------------------------------------
@@ -797,19 +1016,41 @@ class Account:
     invite: bool = False  # keep the invite link armed (redemption demo)
     active: bool = True
     headline: str = ""  # printed in the summary when set
+    # the three things an account can be handed besides a way in: a bearer
+    # token for the JSON API, a personal .ics feed address, and an address
+    # change waiting for the new mailbox to confirm it
+    api_token: bool = False
+    calendar_feed: bool = False
+    pending_email: str | None = None
+    last_login_days: int | None = None  # days ago; None = has never signed in
 
 
 A = Account
 
 ACCOUNTS: tuple[Account, ...] = (
-    A(f"admin@{EMAIL_DOMAIN}", None, is_admin=True, headline="administrator"),
-    A("helen.park@example.org", "Helen Park", is_admin=True),
+    A(
+        f"admin@{EMAIL_DOMAIN}",
+        None,
+        is_admin=True,
+        headline="administrator",
+        api_token=True,
+        last_login_days=0,
+    ),
+    A("helen.park@example.org", "Helen Park", is_admin=True, last_login_days=2),
     A(
         "maria.alvarez@example.org",
         "Maria Alvarez",
-        headline="ministry leader (two teams, red workload)",
+        headline="ministry leader (two teams, the heaviest workload band)",
+        calendar_feed=True,
+        last_login_days=1,
     ),
-    A("felix.garcia@example.org", "Felix Garcia", headline="plain member"),
+    A(
+        "felix.garcia@example.org",
+        "Felix Garcia",
+        headline="plain member",
+        calendar_feed=True,
+        last_login_days=5,
+    ),
     A(
         "dominic.ferraro@example.org",
         "Dominic Ferraro",
@@ -838,15 +1079,22 @@ ACCOUNTS: tuple[Account, ...] = (
     A("simone.beaulieu@example.org", "Simone Beaulieu"),
     A("ruth.abara@example.org", "Ruth Abara"),
     A("grace.kim@example.org", "Grace Kim"),
-    A("monica.silva@example.org", "Monica Silva"),
     A("leo.brennan@example.org", "Leo Brennan"),
+    # an address change staged and not yet confirmed: nothing on file moves
+    # until the link that went to the NEW address is opened
+    A(
+        "monica.silva@example.org",
+        "Monica Silva",
+        pending_email="m.silva.new@example.org",
+        headline="an address change waiting on the new mailbox",
+    ),
     # the three shapes an account can be in besides "has a password"
     A(
         "claire.dubois@example.org",
         "Claire Dubois",
         password=False,
         invite=True,
-        headline="invite still unredeemed (link in the app_user row)",
+        headline="invite still unredeemed — the link is printed below",
     ),
     A(
         "irene.p@example.org",
@@ -907,9 +1155,17 @@ DOC_URL = (
 
 @dataclass(frozen=True)
 class PageSpec:
+    """One team's public page. `status` is the state jobs.fetch_pages left it
+    in: `ok`, `error` (the fetch failed and the last good html is still
+    served), or `pending` (a leader pasted the link; no fetch has run yet).
+    `image` embeds a picture, cached locally the way fetch_and_store caches
+    the ones a Google Doc hotlinks."""
+
     team: str
     blurb: str
     detail: str
+    status: str = "ok"
+    image: bool = False
 
 
 PAGES: tuple[PageSpec, ...] = (
@@ -934,13 +1190,17 @@ PAGES: tuple[PageSpec, ...] = (
         "We sing at the 10:30 Mass and at the great feasts. Practice is "
         "Thursdays at 7:30pm in the hall and runs an hour and a half. You do "
         "not need to read music — half the choir does not.",
+        image=True,
     ),
+    # the doc was moved or unshared after a good fetch: the page still serves
+    # what it last said, and the ministries admin shows why it is stale
     PageSpec(
         "Youth Group",
         "Friday nights for grades 9 to 12.",
         "Games, a talk, small groups and food, every Friday in term time. "
         "Adult leaders are screened and trained; the parish covers the cost "
         "of the police check.",
+        status="error",
     ),
     PageSpec(
         "Food Bank",
@@ -955,6 +1215,14 @@ PAGES: tuple[PageSpec, ...] = (
         "The League meets on the second Tuesday of the month after the 7pm "
         "Mass. We run the bazaar, the bereavement kitchen and the parish's "
         "letter-writing campaigns.",
+    ),
+    # the link is set and nothing has been fetched yet: nothing is published,
+    # and the next nightly run is what makes the page appear
+    PageSpec(
+        "Bible Study",
+        "Wednesday mornings, over coffee, one book at a time.",
+        "",
+        status="pending",
     ),
 )
 
@@ -972,6 +1240,8 @@ class Parish:
     # team name -> active volunteer ids, in the order they joined: the pool
     # every roster, RSVP and ballot below draws from
     rosters: dict[str, list[int]] = field(default_factory=dict)
+    # email -> the plaintext invite link token, for the accounts that keep one
+    invite_links: dict[str, str] = field(default_factory=dict)
     admin_id: int = 0
 
 
@@ -1015,6 +1285,44 @@ def _avatar(person: Person, colour: tuple[int, int, int]) -> bytes:
     return buffer.getvalue()
 
 
+def _feed_token(email: str) -> str:
+    """A stable address for an account's personal .ics feed. Derived from the
+    address so a reseed hands back the same URL — the whole point of a feed is
+    that a subscription keeps working (services/users.ensure_calendar_token)."""
+    return "demo-" + hashlib.sha256(email.encode()).hexdigest()[:32]
+
+
+def _page_picture(team: str) -> bytes:
+    """A banner for a published ministry page. Dev has no Google Doc to pull
+    an image out of, so this stands in for one the doc would have carried."""
+    image = Image.new("RGB", (1200, 400), (28, 44, 62))
+    draw = ImageDraw.Draw(image)
+    draw.text(
+        (600, 200),
+        team,
+        fill=(238, 232, 220),
+        font=ImageFont.load_default(size=64),
+        anchor="mm",
+    )
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _logo() -> bytes:
+    """A stand-in parish mark for the header, the login page and the public
+    shell. branding.normalize() cuts the flat ground and squares it up, which
+    is the same treatment a real upload gets."""
+    image = Image.new("RGB", (1000, 1000), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((60, 60, 940, 940), fill=(28, 44, 62))
+    draw.rectangle((470, 220, 530, 780), fill=(214, 178, 92))
+    draw.rectangle((300, 390, 700, 450), fill=(214, 178, 92))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 AVATAR_COLOURS = (
     (94, 84, 142),
     (36, 110, 108),
@@ -1039,16 +1347,26 @@ def _flatten(
     return out
 
 
-def _generate(rng: random.Random, taken: set[str], fillable: list[str]) -> list[Person]:
+def _generate(
+    rng: random.Random, taken: set[str], fillable: list[str], wanted: int
+) -> list[Person]:
     """The rest of the parish: ordinary members, spread over every team so no
     roster is empty, then weighted towards the ministries the schedule below
     actually staffs. Nobody generated here leads anything — the vacant seats
-    are load-bearing demo data."""
+    are load-bearing demo data.
+
+    `wanted` people come back however many name pairs are skipped on the way:
+    the parish is a stated size (PARISH_SIZE), and a collision with a
+    hand-written name must not quietly shrink it."""
     people: list[Person] = []
-    for index in range(COHORT_SIZE):
+    index = -1
+    while len(people) < wanted:
+        index += 1
+        # strides coprime with the pools, so a pair repeats only after
+        # lcm(48, 43) = 2064 of them — far beyond any parish this seeds
         first = FIRST_NAMES[index % len(FIRST_NAMES)]
         last = LAST_NAMES[(index * 7) % len(LAST_NAMES)]
-        if f"{first} {last}" in taken:  # pragma: no cover - pools are coprime
+        if f"{first} {last}" in taken:
             continue
         taken.add(f"{first} {last}")
         assignments = [(fillable[index % len(fillable)], C if index % 6 == 0 else M)]
@@ -1090,6 +1408,8 @@ async def _staff(
     *,
     by: int | None = None,
     signup: bool = False,
+    notify_7d: bool = False,
+    notify_24h: bool = True,
 ) -> int:
     """Fill `wanted` — [(slot name, how many)] — from `pool`, starting at
     `cursor` in the rotation, and return the next cursor.
@@ -1097,7 +1417,12 @@ async def _staff(
     Nobody is asked twice at one event (uq_event_assignment), and a slot is
     left short rather than double-booked when the roster is smaller than the
     event asks for. `pool` must be the event team's own roster — participation
-    is gated on membership of that exact team, sub-teams included."""
+    is gated on membership of that exact team, sub-teams included.
+
+    `notify_7d`/`notify_24h` are the assignment's own reminder preferences (as
+    in the app: the week's notice off, the next day's on). One series below
+    turns the first on and another turns the second off, so neither column is
+    uniform across the demo."""
     if not pool:
         return cursor
     slots = await _slots(session, event.id)
@@ -1112,21 +1437,28 @@ async def _staff(
             cursor += 1
             taken.add(volunteer_id)
             if signup:
-                (
+                ok(
                     await events.sign_up(
-                        session, None, slot_id=slots[name].id, volunteer_id=volunteer_id
+                        session,
+                        None,
+                        slot_id=slots[name].id,
+                        volunteer_id=volunteer_id,
+                        now=NOW,
+                        notify_7d=notify_7d,
+                        notify_24h=notify_24h,
                     )
-                ).unwrap()
+                )
             else:
-                (
+                ok(
                     await events.assign(
                         session,
                         None,
                         slot_id=slots[name].id,
                         volunteer_id=volunteer_id,
                         assigned_by=by,
+                        now=NOW,
                     )
-                ).unwrap()
+                )
     return cursor
 
 
@@ -1156,7 +1488,7 @@ async def _series(
     not something a real deployment ever does."""
     anchor = _weekday_on_or_after(TODAY + timedelta(days=2), weekday)
     first = _at(anchor, hour, minute)
-    created = (
+    created = ok(
         await events.create_event(
             session,
             None,
@@ -1169,8 +1501,10 @@ async def _series(
             slots=slots,
             repeat_weekly_until=anchor + timedelta(weeks=past + future - 1),
             created_by=created_by,
+            tz=TZ,
+            series_id=ENV.rng.uuid(),
         )
-    ).unwrap()
+    )
     plan: list[Occurrence] = []
     for index, event in enumerate(created):
         starts_at = _at(anchor + timedelta(weeks=index - past), hour, minute)
@@ -1183,7 +1517,7 @@ async def _series(
 async def _settle(session: AsyncSession, plan: list[Occurrence]) -> None:
     """Move a staffed series onto its real dates."""
     for occurrence in plan:
-        (
+        ok(
             await events.update_event(
                 session,
                 None,
@@ -1191,7 +1525,7 @@ async def _settle(session: AsyncSession, plan: list[Occurrence]) -> None:
                 starts_at=occurrence.starts_at,
                 ends_at=occurrence.ends_at,
             )
-        ).unwrap()
+        )
 
 
 async def _one_off(
@@ -1250,7 +1584,7 @@ async def _rsvps(
     for offset in range(min(count, len(pool))):
         volunteer_id = pool[(cursor + offset) % len(pool)]
         available = rng.random() > 0.28
-        (
+        ok(
             await events.set_rsvp(
                 session,
                 None,
@@ -1258,8 +1592,9 @@ async def _rsvps(
                 volunteer_id=volunteer_id,
                 available=available,
                 note=None if available else rng.choice(excuses),
+                now=NOW,
             )
-        ).unwrap()
+        )
 
 
 async def _candidate_ids(session: AsyncSession, proposal_id: int) -> list[int]:
@@ -1311,7 +1646,7 @@ async def _cast_ballots(
         scores = {
             cid: max(0, min(5, bias[cid] + rng.randint(-1, 1))) for cid in candidate_ids
         }
-        (
+        ok(
             await elections.cast_ballot(
                 session,
                 None,
@@ -1319,8 +1654,9 @@ async def _cast_ballots(
                 voter_volunteer_id=volunteer_id,
                 scores=scores,
                 today=today,
+                now=NOW,
             )
-        ).unwrap()
+        )
 
 
 # --- the steps ----------------------------------------------------------------
@@ -1328,7 +1664,7 @@ async def _cast_ballots(
 
 async def seed_teams(session: AsyncSession, parish: Parish) -> None:
     for spec, parent in _flatten(TEAMS):
-        team = (
+        team = ok(
             await teams.create(
                 session,
                 None,
@@ -1337,16 +1673,18 @@ async def seed_teams(session: AsyncSession, parish: Parish) -> None:
                 description=spec.description,
                 workload_weight=Decimal(spec.weight) if spec.weight else None,
             )
-        ).unwrap()
+        )
         parish.team_ids[spec.name] = team.id
         parish.rosters[spec.name] = []
+        if spec.archived:
+            ok(await teams.update(session, None, team.id, is_active=False))
 
 
 async def seed_people(
     session: AsyncSession, parish: Parish, people: list[Person], rng: random.Random
 ) -> None:
     for index, person in enumerate(people):
-        volunteer = (
+        volunteer = ok(
             await volunteers.create(
                 session,
                 None,
@@ -1356,18 +1694,16 @@ async def seed_people(
                 phone=f"555-0{100 + index:03d}" if index % 9 else None,
                 notes=person.notes,
             )
-        ).unwrap()
+        )
         parish.volunteer_ids[person.name] = volunteer.id
         if not person.active:
-            (
-                await volunteers.update(session, None, volunteer.id, is_active=False)
-            ).unwrap()
+            ok(await volunteers.update(session, None, volunteer.id, is_active=False))
 
     # historical churn BEFORE current memberships: assign is an upsert on
     # (volunteer, team), so an ended spell must be gone before the current one
     # exists (that is what makes Grace's rejoin a separate spell)
     for name, team_name, role, joined, left in PAST_SPELLS:
-        spell = (
+        spell = ok(
             await memberships.assign(
                 session,
                 None,
@@ -1375,9 +1711,9 @@ async def seed_people(
                 parish.team_ids[team_name],
                 role,
             )
-        ).unwrap()
+        )
         spell_id = spell.id
-        (await memberships.remove(session, None, spell_id)).unwrap()
+        ok(await memberships.remove(session, None, spell_id))
         # demo-only backdating of the archived interval; real deployments
         # accumulate genuine history and never touch the twin tables
         await session.execute(
@@ -1400,84 +1736,55 @@ async def seed_people(
             if (person.name, team_name) in PROMOTIONS and role is not M:
                 # served as a plain member before taking the seat: two-colour
                 # timeline bar, and an op='U' row in membership_history
-                (
+                ok(
                     await memberships.assign(
                         session, None, volunteer_id, parish.team_ids[team_name], M
                     )
-                ).unwrap()
-            (
+                )
+            ok(
                 await memberships.assign(
                     session, None, volunteer_id, parish.team_ids[team_name], role
                 )
-            ).unwrap()
+            )
             if person.active:
                 parish.rosters[team_name].append(volunteer_id)
 
-    # admin-extensible volunteer properties, and enough values that the list
-    # column and the filters have something to show
-    safeguarding = (
-        await custom_fields.create_def(
-            session,
-            None,
-            "Safeguarding training",
-            FieldType.date,
-            show_in_list=True,
-            position=1,
+    # admin-extensible volunteer properties: one field of every type the app
+    # offers (see FIELDS), filled in for enough of the parish that the list
+    # columns, the volunteer form and the query language all have live values
+    defs: dict[str, CustomFieldDef] = {}
+    for position, spec in enumerate(FIELDS, start=1):
+        defs[spec.label] = ok(
+            await custom_fields.create_def(
+                session,
+                None,
+                spec.label,
+                spec.field_type,
+                options=list(spec.options) if spec.options else None,
+                show_in_list=spec.show_in_list,
+                position=position,
+            )
         )
-    ).unwrap()
-    contact = (
-        await custom_fields.create_def(
-            session,
-            None,
-            "Preferred contact",
-            FieldType.select,
-            options=["Email", "Phone", "Post"],
-            position=2,
-        )
-    ).unwrap()
-    police = (
-        await custom_fields.create_def(
-            session,
-            None,
-            "Police check on file",
-            FieldType.checkbox,
-            show_in_list=True,
-            position=3,
-        )
-    ).unwrap()
-    shirt = (
-        await custom_fields.create_def(
-            session,
-            None,
-            "T-shirt size",
-            FieldType.select,
-            options=["S", "M", "L", "XL", "XXL"],
-            position=4,
-        )
-    ).unwrap()
-    years = (
-        await custom_fields.create_def(
-            session, None, "Years in the parish", FieldType.number, position=5
-        )
-    ).unwrap()
     for person in people:
         volunteer_id = parish.volunteer_ids[person.name]
-        values: dict[str, object] = {}
-        if rng.random() < 0.65:
-            trained = TODAY - timedelta(days=rng.randint(30, 1400))
-            values[safeguarding.key] = trained.isoformat()
-        if rng.random() < 0.75:
-            values[contact.key] = rng.choice(["Email", "Phone", "Post"])
-        if rng.random() < 0.55:
-            values[police.key] = rng.random() < 0.8
-        if rng.random() < 0.4:
-            values[shirt.key] = rng.choice(["S", "M", "L", "XL", "XXL"])
-        if rng.random() < 0.5:
-            values[years.key] = rng.randint(1, 45)
+        values = {
+            defs[spec.label].key: _field_value(spec, rng)
+            for spec in FIELDS
+            if rng.random() < spec.fill
+        }
         if values:
-            (
-                await custom_fields.set_values(session, None, volunteer_id, values)
-            ).unwrap()
+            ok(await custom_fields.set_values(session, None, volunteer_id, values))
+    # retired last: set_values only accepts a live field, so the values above
+    # had to be written while it still was one. It keeps its column in the
+    # export and its answers on the people who gave them — a field is retired,
+    # never deleted, so nothing that was recorded stops being true.
+    for spec in FIELDS:
+        if spec.retired:
+            ok(
+                await custom_fields.update_def(
+                    session, None, defs[spec.label].id, is_active=False
+                )
+            )
 
 
 async def seed_accounts(session: AsyncSession, parish: Parish) -> None:
@@ -1494,7 +1801,10 @@ async def seed_accounts(session: AsyncSession, parish: Parish) -> None:
         else await async_hash_password(ADMIN_PASSWORD)
     )
     for account in ACCOUNTS:
-        user, _ = (
+        # every account is created the way the app creates one: with a link
+        # armed. The ones that end up with a password spend it below, which is
+        # what redeeming or setting a password does.
+        user, token = ok(
             await users.create(
                 session,
                 account.email,
@@ -1503,22 +1813,52 @@ async def seed_accounts(session: AsyncSession, parish: Parish) -> None:
                 else None,
                 is_admin=account.is_admin,
                 link_by_email=False,
+                invite=ENV.invite(),
             )
-        ).unwrap()
+        )
+        if account.invite and token:
+            # only the digest is stored, so this is the one moment the link
+            # exists in the clear; the summary prints it
+            parish.invite_links[account.email] = token
         if account.password:
             user.password_hash = admin_hash if account.is_admin else demo_hash
             # a password in hand spends the invite link users.create armed
             user.invite_token = None
             user.invite_expires_at = None
-            user.confidentiality_agreed_at = datetime.now(UTC)
+            user.confidentiality_agreed_at = NOW
         elif not account.invite:
             # neither password nor invite: an emailed one-time code is the way in
             user.invite_token = None
             user.invite_expires_at = None
-            user.confidentiality_agreed_at = datetime.now(UTC)
+            user.confidentiality_agreed_at = NOW
         user.is_active = account.active
+        if account.last_login_days is not None:
+            user.last_login_at = NOW - timedelta(days=account.last_login_days)
         await session.flush()
         parish.user_ids[account.email] = user.id
+        # the three things an account can carry besides a way in. The tokens
+        # are fixed strings rather than ENV.rng.token() so the summary below
+        # can print an address that keeps working across a reseed — a demo
+        # convenience, exactly like DEMO_PASSWORD, and the same localhost-only
+        # bargain (the API token is stored as a digest either way).
+        if account.api_token:
+            ok(await users.issue_api_token(session, user.id, token=DEMO_API_TOKEN))
+        if account.calendar_feed:
+            ok(
+                await users.ensure_calendar_token(
+                    session, user.id, token=_feed_token(account.email)
+                )
+            )
+        if account.pending_email:
+            ok(
+                await users.start_email_change(
+                    session,
+                    user.id,
+                    account.pending_email,
+                    now=NOW,
+                    token=ENV.rng.token(),
+                )
+            )
     parish.admin_id = parish.user_ids[f"admin@{EMAIL_DOMAIN}"]
 
 
@@ -1527,27 +1867,49 @@ async def seed_photos(
 ) -> None:
     by_name = {person.name: person for person in people}
     for index, name in enumerate(PHOTOGRAPHED):
-        (
+        ok(
             await photos.set_photo(
                 session,
                 parish.volunteer_ids[name],
                 _avatar(by_name[name], AVATAR_COLOURS[index % len(AVATAR_COLOURS)]),
                 uploaded_by=parish.admin_id,
-                now=datetime.now(UTC),
+                now=NOW,
             )
-        ).unwrap()
+        )
 
 
 async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:
     for index, spec in enumerate(PAGES, start=1):
         team_id = parish.team_ids[spec.team]
-        (
+        ok(
             await pages.set_home_doc_url(
                 session, None, team_id, DOC_URL.format(n=index)
             )
-        ).unwrap()
+        )
+        if spec.status == "pending":
+            # the link is set and nothing has been fetched: html NULL is what
+            # keeps the page off /ministries until the nightly job runs
+            session.add(TeamPage(team_id=team_id, status="pending"))
+            continue
+        picture = ""
+        if spec.image:
+            # what fetch_and_store leaves behind for a picture in the doc: the
+            # bytes in team_page_image, and a src pointing at the local route
+            # with the content hash as its cache buster
+            data = _page_picture(spec.team)
+            session.add(
+                TeamPageImage(
+                    team_id=team_id, seq=1, image=data, content_type="image/png"
+                )
+            )
+            digest = hashlib.sha256(data).hexdigest()[:12]
+            picture = (
+                f'<p><img src="/ministries/img/{team_id}/1?v={digest}" '
+                f'alt="{spec.team}"></p>'
+            )
         html = pages.sanitize_doc_html(
             f"<h1>{spec.team}</h1><p><em>{spec.blurb}</em></p>"
+            f"{picture}"
             f"<p>{spec.detail}</p>"
             "<h2>Getting in touch</h2><p>New volunteers are always welcome. "
             "Speak to one of the ministry's leaders after Mass, or call the "
@@ -1557,11 +1919,23 @@ async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:
             TeamPage(
                 team_id=team_id,
                 html=html,
-                fetched_at=datetime.now(UTC),
-                status="ok",
+                # a failed fetch keeps the html and the time it last succeeded
+                fetched_at=NOW - timedelta(days=9 if spec.status == "error" else 1),
+                status=spec.status,
+                error=(
+                    "404 Not Found — the document is no longer shared publicly"
+                    if spec.status == "error"
+                    else None
+                ),
             )
         )
     await session.flush()
+
+
+async def seed_settings(session: AsyncSession, parish: Parish) -> None:
+    """What the parish set for itself: its own mark, and its own bands."""
+    ok(await branding.set_logo(session, None, _logo(), now=NOW))
+    ok(await workload.set_config(session, None, WORKLOAD_CONFIG, now=NOW))
 
 
 async def seed_schedule(
@@ -1661,6 +2035,9 @@ async def seed_schedule(
             parish.rosters["Choir"],
             cursor,
             signup=True,
+            # every Thursday, same time, same hall: the choir turned the
+            # next-day reminder off when they signed up
+            notify_24h=False,
         )
     await _settle(session, choir)
 
@@ -1714,6 +2091,9 @@ async def seed_schedule(
             parish.rosters["Food Bank"],
             cursor,
             signup=True,
+            # the sorters asked for the seven-day reminder as well as the
+            # next-day one, which is off by default everywhere else
+            notify_7d=True,
         )
     await _settle(session, food)
 
@@ -1786,29 +2166,54 @@ async def seed_schedule(
     await _settle(session, [cleaning])
 
     picnic_day = _weekday_on_or_after(TODAY + timedelta(days=30), SATURDAY)
-    picnic = (
-        (
-            await events.create_event(
+    picnic = ok(
+        await events.create_event(
+            session,
+            None,
+            team_id=parish.team_ids["Parish Picnic Task Force"],
+            title="Parish picnic",
+            starts_at=_at(picnic_day, 11),
+            ends_at=_at(picnic_day, 16),
+            description="The whole parish, the whole afternoon. Rain or shine.",
+            location="Memorial park",
+            slots=[
+                slot("Setup", 5, 1, "Trestles and the marquee, from 9:00."),
+                slot("BBQ", 4, 2, "Two grills; the Knights bring the propane."),
+                slot("Games & crafts", 6, 3),
+                slot("First aid", 2, 4, "St. John Ambulance ticket, please."),
+                slot("Cleanup", 5, 5),
+            ],
+            created_by=admin,
+            tz=TZ,
+        )
+    )[0]
+    # Three ministries staff the picnic between them, so it gets a task force:
+    # an auto-created child team holding the union of their rosters, which the
+    # event is repointed onto until it is over (services/task_force.py). That
+    # is what makes sign-up, mail and management work for all three at once —
+    # and what the nightly teardown will undo the day after the picnic.
+    for source in ("Knights of Columbus", "Catholic Women's League", "Hospitality"):
+        meta_team = ok(
+            await task_force.add_collaborating_team(
                 session,
                 None,
-                team_id=parish.team_ids["Parish Picnic Task Force"],
-                title="Parish picnic",
-                starts_at=_at(picnic_day, 11),
-                ends_at=_at(picnic_day, 16),
-                description="The whole parish, the whole afternoon. Rain or shine.",
-                location="Memorial park",
-                slots=[
-                    slot("Setup", 5, 1),
-                    slot("BBQ", 4, 2),
-                    slot("Games & crafts", 6, 3),
-                    slot("First aid", 2, 4),
-                    slot("Cleanup", 5, 5),
-                ],
+                event_id=picnic.id,
+                source_team_id=parish.team_ids[source],
                 created_by=admin,
+                now=NOW,
+                tz=TZ,
             )
-        ).unwrap()
-    )[0]
-    picnic_pool = parish.rosters["Parish Picnic Task Force"]
+        )
+    # the pool is now the meta team's roster, not the owner's: participation is
+    # gated on membership of the team the event currently sits on
+    picnic_pool = list(
+        await session.scalars(
+            sa.select(Membership.volunteer_id)
+            .join(Volunteer, Volunteer.id == Membership.volunteer_id)
+            .where(Membership.team_id == meta_team.id, Volunteer.is_active)
+            .order_by(Membership.id)
+        )
+    )
     await _staff(
         session,
         picnic,
@@ -1826,21 +2231,20 @@ async def seed_schedule(
     await _rsvps(session, picnic, picnic_pool, 4, 16, rng)
 
     funeral_day = _weekday_on_or_after(TODAY + timedelta(days=6), MONDAY)
-    reception = (
-        (
-            await events.create_event(
-                session,
-                None,
-                team_id=parish.team_ids["Bereavement Ministry"],
-                title="Funeral reception — the Delgado family",
-                starts_at=_at(funeral_day, 11),
-                ends_at=_at(funeral_day, 14),
-                description="Sandwiches and tea in the hall after the 10:00 funeral.",
-                location="Parish hall",
-                slots=[slot("Kitchen", 3, 1), slot("Serving", 4, 2)],
-                created_by=admin,
-            )
-        ).unwrap()
+    reception = ok(
+        await events.create_event(
+            session,
+            None,
+            team_id=parish.team_ids["Bereavement Ministry"],
+            title="Funeral reception — the Delgado family",
+            starts_at=_at(funeral_day, 11),
+            ends_at=_at(funeral_day, 14),
+            description="Sandwiches and tea in the hall after the 10:00 funeral.",
+            location="Parish hall",
+            slots=[slot("Kitchen", 3, 1), slot("Serving", 4, 2)],
+            created_by=admin,
+            tz=TZ,
+        )
     )[0]
     await _staff(
         session,
@@ -1854,19 +2258,18 @@ async def seed_schedule(
     bazaar_day = _weekday_on_or_after(TODAY + timedelta(days=11), MONDAY) + timedelta(
         days=1
     )
-    bazaar = (
-        (
-            await events.create_event(
-                session,
-                None,
-                team_id=parish.team_ids["Catholic Women's League"],
-                title="Christmas bazaar — planning meeting",
-                starts_at=_at(bazaar_day, 19),
-                ends_at=_at(bazaar_day, 20),
-                location="Meeting room 2",
-                created_by=admin,
-            )
-        ).unwrap()
+    bazaar = ok(
+        await events.create_event(
+            session,
+            None,
+            team_id=parish.team_ids["Catholic Women's League"],
+            title="Christmas bazaar — planning meeting",
+            starts_at=_at(bazaar_day, 19),
+            ends_at=_at(bazaar_day, 20),
+            location="Meeting room 2",
+            created_by=admin,
+            tz=TZ,
+        )
     )[0]
     await _staff(
         session,
@@ -1889,35 +2292,38 @@ async def seed_schedule(
     # --- substitutions: two open calls, one claimed, one withdrawn ---
     next_mass = lectors[-4].event
     open_call = await _first_assignment(session, next_mass.id)
-    (
+    ok(
         await events.request_sub(
             session,
             None,
             assignment_id=open_call.id,
             requested_by=parish.user_ids["maria.alvarez@example.org"],
             note="Away at a wedding — sorry for the short notice.",
+            now=NOW,
         )
-    ).unwrap()
+    )
     next_servers = servers[-3].event
-    (
+    ok(
         await events.request_sub(
             session,
             None,
             assignment_id=(await _first_assignment(session, next_servers.id)).id,
             requested_by=parish.user_ids["peter.kowalski@example.org"],
             note="Exam that morning.",
+            now=NOW,
         )
-    ).unwrap()
+    )
     next_youth = youth[-2].event
-    claimed = (
+    claimed = ok(
         await events.request_sub(
             session,
             None,
             assignment_id=(await _first_assignment(session, next_youth.id)).id,
             requested_by=parish.user_ids["emmanuel.d@example.org"],
             note="Down with the flu.",
+            now=NOW,
         )
-    ).unwrap()
+    )
     spare = [
         volunteer_id
         for volunteer_id in parish.rosters["Youth Group"]
@@ -1925,12 +2331,16 @@ async def seed_schedule(
         not in await events.assigned_volunteer_ids(session, next_youth.id)
     ]
     if spare:
-        (
+        ok(
             await events.claim_sub(
-                session, None, sub_request_id=claimed.id, volunteer_id=spare[0]
+                session,
+                None,
+                sub_request_id=claimed.id,
+                volunteer_id=spare[0],
+                now=NOW,
             )
-        ).unwrap()
-    withdrawn = (
+        )
+    withdrawn = ok(
         await events.request_sub(
             session,
             None,
@@ -1939,36 +2349,95 @@ async def seed_schedule(
             ).id,
             requested_by=parish.user_ids["emmanuel.d@example.org"],
             note="Might have a clash — will confirm.",
+            now=NOW,
         )
-    ).unwrap()
-    (await events.cancel_sub(session, None, withdrawn.id)).unwrap()
+    )
+    ok(await events.cancel_sub(session, None, withdrawn.id, now=NOW))
+
+    # --- the other two ways a future slot changes hands ---
+    # a manager swaps somebody out directly (no call for a substitute went out)
+    reception_spare = [
+        volunteer_id
+        for volunteer_id in parish.rosters["Bereavement Ministry"]
+        if volunteer_id
+        not in await events.assigned_volunteer_ids(session, reception.id)
+    ]
+    if reception_spare:
+        ok(
+            await events.substitute(
+                session,
+                None,
+                assignment_id=(await _first_assignment(session, reception.id)).id,
+                new_volunteer_id=reception_spare[0],
+                acted_by=admin,
+                # digest, not direct: the seed performs no effects, so the
+                # incoming person must be left for the nightly digest to tell
+                # rather than stamped as already written to
+                notify=NotifyMode.digest,
+                now=NOW,
+            )
+        )
+    # and somebody takes themselves off a slot, saying why (their team's
+    # leaders are the ones the SelfRemoved event would reach)
+    ok(
+        await events.remove_assignment(
+            session,
+            None,
+            (await _first_assignment(session, coffee[-1].event.id)).id,
+            now=NOW,
+            reason="Away at my daughter's graduation — sorry.",
+        )
+    )
+
+    # --- one sign-up copied onto every later week of its series ---
+    choir_slots = await _slots(session, choir[-3].event.id)
+    choir_spare = [
+        volunteer_id
+        for volunteer_id in parish.rosters["Choir"]
+        if volunteer_id
+        not in await events.assigned_volunteer_ids(session, choir[-3].event.id)
+    ]
+    if choir_spare:
+        ok(
+            await events.sign_up_series(
+                session,
+                None,
+                slot_id=choir_slots["Singers"].id,
+                volunteer_id=choir_spare[0],
+                now=NOW,
+            )
+        )
 
     # --- a cancelled event, its roster still attached ---
-    (
-        await events.cancel_event(session, None, choir[-1].event.id, cancelled_by=admin)
-    ).unwrap()
+    ok(
+        await events.cancel_event(
+            session, None, choir[-1].event.id, cancelled_by=admin, now=NOW
+        )
+    )
 
     # --- manager exceptions to the derived attendance on past events ---
     last_mass = lectors[7].event
-    (
+    ok(
         await events.set_attendance(
             session,
             None,
             assignment_id=(await _first_assignment(session, last_mass.id)).id,
             attended=False,
             hours=None,
+            now=NOW,
         )
-    ).unwrap()
-    (
+    )
+    ok(
         await events.set_attendance(
             session,
             None,
             assignment_id=(await _first_assignment(session, work_day.event.id)).id,
             attended=True,
             hours=Decimal("8.50"),
+            now=NOW,
         )
-    ).unwrap()
-    (
+    )
+    ok(
         await events.set_attendance(
             session,
             None,
@@ -1977,8 +2446,9 @@ async def seed_schedule(
             ).id,
             attended=False,
             hours=None,
+            now=NOW,
         )
-    ).unwrap()
+    )
 
 
 async def seed_elections(
@@ -1992,7 +2462,7 @@ async def seed_elections(
         return parish.volunteer_ids[name]
 
     # 1. nominating — the Hospitality vacancy the coverage report leads with
-    (
+    nominating = ok(
         await elections.create_proposal(
             session,
             None,
@@ -2009,11 +2479,37 @@ async def seed_elections(
                 candidate(person("Teresa Romano"), "Knows every family in the parish."),
                 candidate(person("Estela Cruz"), "Already leads Coffee Sunday."),
             ],
+            today=TODAY,
         )
-    ).unwrap()
+    )
+    # both of these are open only while nominating: a name put forward after
+    # the proposal went up, and somebody added to the roll who was not on the
+    # template (leader + second + core, plus the clergy). The roll freezes the
+    # day voting opens, which is why proposals 2-6 below have neither.
+    ok(
+        await elections.add_candidate(
+            session,
+            None,
+            nominating.id,
+            volunteer_id=person("Deirdre Walsh"),
+            nominated_by=admin,
+            note="Put forward from the floor of the pastoral council.",
+            today=TODAY,
+        )
+    )
+    ok(
+        await elections.add_voter(
+            session,
+            None,
+            nominating.id,
+            volunteer_id=person("Bernard Quinn"),
+            added_by=admin,
+            today=TODAY,
+        )
+    )
 
     # 2. voting, ballots half in — the tally stays hidden until the deadline
-    voting = (
+    voting = ok(
         await elections.create_proposal(
             session,
             None,
@@ -2029,7 +2525,7 @@ async def seed_elections(
                 candidate(person("Philomena Achebe"), "Nominated by the League."),
             ],
         )
-    ).unwrap()
+    )
     await _cast_ballots(
         session,
         voting,
@@ -2040,7 +2536,7 @@ async def seed_elections(
     )
 
     # 3. concluded, awaiting a decision — tally visible, appoint button live
-    concluded = (
+    concluded = ok(
         await elections.create_proposal(
             session,
             None,
@@ -2056,7 +2552,7 @@ async def seed_elections(
                 candidate(person("Patrick Byrne"), "Would double up with the Knights."),
             ],
         )
-    ).unwrap()
+    )
     await _cast_ballots(
         session,
         concluded,
@@ -2066,7 +2562,7 @@ async def seed_elections(
     )
 
     # 4. appointed — and the membership the appointment created
-    decided = (
+    decided = ok(
         await elections.create_proposal(
             session,
             None,
@@ -2084,7 +2580,7 @@ async def seed_elections(
                 candidate(person("Dolores Vasquez"), "Would rather stay on the chain."),
             ],
         )
-    ).unwrap()
+    )
     decided_candidates = await _candidate_ids(session, decided.id)
     await _cast_ballots(
         session,
@@ -2094,18 +2590,20 @@ async def seed_elections(
         today=TODAY - timedelta(days=45),
     )
     result = await elections._tally(session, decided.id)
-    (
+    ok(
         await elections.appoint(
             session,
             None,
             decided.id,
             result.winner_id or decided_candidates[0],
             decided_by=admin,
+            today=TODAY,
+            now=NOW,
         )
-    ).unwrap()
+    )
 
     # 5. cancelled — the seat was filled another way
-    cancelled = (
+    cancelled = ok(
         await elections.create_proposal(
             session,
             None,
@@ -2121,11 +2619,11 @@ async def seed_elections(
                 candidate(person("Gregory Nakamura"), "Runs the socials already."),
             ],
         )
-    ).unwrap()
-    (await elections.cancel(session, None, cancelled.id, decided_by=admin)).unwrap()
+    )
+    ok(await elections.cancel(session, None, cancelled.id, decided_by=admin, now=NOW))
 
     # 6. concluded then re-opened: the Ignatian "debate together, then repeat"
-    first_round = (
+    first_round = ok(
         await elections.create_proposal(
             session,
             None,
@@ -2142,7 +2640,7 @@ async def seed_elections(
                 candidate(person("Anita Bakker"), "Catechist for the same age group."),
             ],
         )
-    ).unwrap()
+    )
     await _cast_ballots(
         session,
         first_round,
@@ -2150,7 +2648,7 @@ async def seed_elections(
         rng,
         today=TODAY - timedelta(days=30),
     )
-    (
+    ok(
         await elections.new_round(
             session,
             None,
@@ -2158,8 +2656,157 @@ async def seed_elections(
             created_by=admin,
             nomination_deadline=TODAY + timedelta(days=7),
             voting_deadline=TODAY + timedelta(days=21),
+            today=TODAY,
+            now=NOW,
         )
-    ).unwrap()
+    )
+
+
+# --- what the machinery records about itself ----------------------------------
+
+# The team's roster spreadsheet on Drive, and how its last sync went
+# (jobs/roster_sync.py). The file ids are invented: dev has no Drive, and a
+# sheet nobody can open is still enough for the leader's panel, the admin
+# listing and the four SyncStatus values to have something to show.
+SHEETS: tuple[tuple[str, str, SyncStatus | None, int | None, str | None], ...] = (
+    ("Lectors", "1SeededDemoSheetLectors0000000000000", SyncStatus.applied, 0, None),
+    (
+        "Altar Servers",
+        "1SeededDemoSheetServers000000000000",
+        SyncStatus.unchanged,
+        0,
+        None,
+    ),
+    ("Choir", "1SeededDemoSheetChoir00000000000000", SyncStatus.new, 1, None),
+    (
+        "Food Bank",
+        "1SeededDemoSheetFoodBank000000000000",
+        SyncStatus.error,
+        4,
+        "the sheet has a row whose Team column names a ministry it does not manage",
+    ),
+    # linked and never synced: the leader pasted the link this morning
+    ("Youth Group", "1SeededDemoSheetYouth00000000000000", None, None, None),
+)
+
+
+async def seed_bookkeeping(session: AsyncSession, parish: Parish) -> None:
+    """The rows nothing in the parish wrote: notices already sent, the nightly
+    jobs' last good run, the mail allowance spent, and the roster spreadsheets
+    the teams are linked to. All four are written straight in — they are the
+    app's own bookkeeping, and their real authors are jobs a dev machine has
+    no Google or SMTP to run."""
+    # --- notices already sent -------------------------------------------------
+    # Every stage, on the people a nightly digest would otherwise write to the
+    # first time it ran here. A stamp is keyed by (subject, recipient, stage),
+    # so this is exactly what the jobs would have left behind — and why a
+    # `make dev` does not open with a burst of mail about a fictional parish.
+    stamps: list[dict] = []
+    past = await session.execute(
+        sa.select(EventAssignment.id, EventAssignment.volunteer_id, Event.starts_at)
+        .join(Event, Event.id == EventAssignment.event_id)
+        .where(Event.ends_at < NOW)
+    )
+    for assignment_id, volunteer_id, starts_at in past:
+        for stage, before in (
+            (NotificationStage.event_scheduled, timedelta(days=21)),
+            (NotificationStage.event_week, timedelta(days=7)),
+            (NotificationStage.event_day, timedelta(days=1)),
+        ):
+            stamps.append(
+                {
+                    "assignment_id": assignment_id,
+                    "volunteer_id": volunteer_id,
+                    "stage": stage,
+                    "sent_at": starts_at - before,
+                }
+            )
+    if stamps:
+        await session.execute(
+            pg_insert(Notification)
+            .values(stamps)
+            .on_conflict_do_nothing(constraint="uq_notification_assignment")
+        )
+    # everybody on a roll has been told they are on it; the rolls whose voting
+    # has opened have had the second notice too, and the two proposals still
+    # taking nominations have not
+    voters = await session.execute(
+        sa.select(
+            ProposalVoter.id,
+            ProposalVoter.volunteer_id,
+            Proposal.created_at,
+            Proposal.nomination_deadline,
+        ).join(Proposal, Proposal.id == ProposalVoter.proposal_id)
+    )
+    voter_stamps: list[dict] = []
+    for voter_id, volunteer_id, created_at, nomination_deadline in voters:
+        voter_stamps.append(
+            {
+                "voter_id": voter_id,
+                "volunteer_id": volunteer_id,
+                "stage": NotificationStage.roll_added,
+                "sent_at": created_at,
+            }
+        )
+        if nomination_deadline < TODAY:
+            voter_stamps.append(
+                {
+                    "voter_id": voter_id,
+                    "volunteer_id": volunteer_id,
+                    "stage": NotificationStage.voting_open,
+                    # the digest that morning, which is when voting opened
+                    "sent_at": _at(nomination_deadline + timedelta(days=1), 4),
+                }
+            )
+    if voter_stamps:
+        await session.execute(
+            pg_insert(Notification)
+            .values(voter_stamps)
+            .on_conflict_do_nothing(constraint="uq_notification_voter")
+        )
+
+    # --- the nightly jobs ------------------------------------------------------
+    # Every job has already run today, so starting the app does not set the
+    # whole chain going against a Google account this machine does not have.
+    # Delete a row (or set last_success_on back a day) to watch one run.
+    for job in scheduler.JOBS:
+        failed = job.name == "proposal_digest"
+        session.add(
+            JobRun(
+                job_name=job.name,
+                # one job is mid-retry: it failed at 03:30 and the scheduler
+                # will try it again, which is what last_exit_code is there for
+                last_success_on=TODAY - timedelta(days=1) if failed else TODAY,
+                last_attempt_at=NOW - timedelta(hours=4),
+                last_exit_code=1 if failed else 0,
+            )
+        )
+
+    # --- the mail allowance ----------------------------------------------------
+    # A fortnight of parish days with a weekly shape to them — Sunday, when the
+    # rosters go out, is the heavy one. Deliberately well under both caps: the
+    # gauge should read quiet on a fresh demo, and an admin who wants to see the
+    # warning banner can raise these figures (services/mail_quota.py).
+    for back in range(14):
+        day = TODAY - timedelta(days=back)
+        weekday = day.weekday()
+        session.add(MailQuota(day=day, sent=34 if weekday == 6 else 9 + (weekday * 2)))
+
+    # --- the roster spreadsheets ----------------------------------------------
+    for team_name, file_id, status, days_ago, error in SHEETS:
+        session.add(
+            TeamSheet(
+                team_id=parish.team_ids[team_name],
+                file_id=file_id,
+                file_name=f"{team_name}{roster_sheets.SHEET_SUFFIX}",
+                last_synced_at=(
+                    None if days_ago is None else NOW - timedelta(days=days_ago)
+                ),
+                last_status=status,
+                last_error=error,
+            )
+        )
+    await session.flush()
 
 
 # --- summary ------------------------------------------------------------------
@@ -2177,9 +2824,17 @@ COUNTED: tuple[tuple[str, type], ...] = (
     ("assignments", EventAssignment),
     ("RSVPs", EventRsvp),
     ("substitution requests", EventSubRequest),
+    ("task-force sources", EventTaskForceSource),
     ("proposals", Proposal),
     ("ballots", ProposalBallot),
     ("published pages", TeamPage),
+    ("page images", TeamPageImage),
+    ("roster sheets", TeamSheet),
+    ("notices sent", Notification),
+    ("site logo", SiteLogo),
+    ("settings", AppSetting),
+    ("job runs", JobRun),
+    ("mail-quota days", MailQuota),
 )
 
 
@@ -2200,7 +2855,12 @@ async def seed() -> None:
     fillable = [
         spec.name for spec, _ in _flatten(TEAMS) if spec.name not in NEVER_GENERATED
     ]
-    people += _generate(rng, {person.name for person in people}, fillable)
+    people += _generate(
+        rng,
+        {person.name for person in people},
+        fillable,
+        PARISH_SIZE - len(people),
+    )
 
     async with db_session() as session:
         if (
@@ -2209,14 +2869,24 @@ async def seed() -> None:
             sys.exit("Database already contains volunteers; refusing to seed.")
 
         parish = Parish()
-        await seed_teams(session, parish)
-        await seed_people(session, parish, people, rng)
-        await seed_accounts(session, parish)
-        await seed_photos(session, parish, people)
-        await seed_public_pages(session, parish)
-        await seed_schedule(session, parish, rng)
-        await seed_elections(session, parish, rng)
+
+        async def step(name: str, work: Awaitable[None]) -> None:
+            """One step, announced as it begins: a parish this size takes long
+            enough that a silent run looks like a hung one."""
+            print(f"  … {name}", flush=True)
+            await work
+
+        await step("teams", seed_teams(session, parish))
+        await step("people", seed_people(session, parish, people, rng))
+        await step("accounts", seed_accounts(session, parish))
+        await step("photos", seed_photos(session, parish, people))
+        await step("settings", seed_settings(session, parish))
+        await step("public pages", seed_public_pages(session, parish))
+        await step("schedule", seed_schedule(session, parish, rng))
+        await step("elections", seed_elections(session, parish, rng))
+        await step("bookkeeping", seed_bookkeeping(session, parish))
         counts = await _summarize(session)
+    await ENV.engine.dispose()
 
     print("\nSeeded a demo parish:")
     for label, count in counts:
@@ -2225,8 +2895,11 @@ async def seed() -> None:
     print("  Elections → Vacancies: Hospitality, Prayer Chain, Children's Liturgy…")
     print("  Elections → Proposals: one in every state (nominating → appointed)")
     print("  Events: rosters either side of today, two open substitution calls")
-    print("  Maria Alvarez: two leaderships, red workload, an ended spell")
-    print("  /ministries/: six public pages")
+    print("  Events → Parish picnic: three ministries, one task force")
+    print("  Maria Alvarez: two leaderships, the top workload band, an ended spell")
+    print("  Admin → Fields: one field of every type, and one retired")
+    print("  Admin → Workload: four bands, none of them the shipped default")
+    print("  /ministries/: six pages listed, one of them stale; a seventh unfetched")
     print(f"\nEvery login below uses the password: {DEMO_PASSWORD}")
     for account in ACCOUNTS:
         if account.headline:
@@ -2237,6 +2910,18 @@ async def seed() -> None:
         f"  …and {sum(1 for a in ACCOUNTS if not a.headline)} more accounts, "
         f"one per ministry leader, all on {DEMO_PASSWORD}."
     )
+    print("\nAnd the addresses that are not sign-in pages:")
+    print(f"  JSON API   Authorization: Bearer {DEMO_API_TOKEN}")
+    for account in ACCOUNTS:
+        if account.calendar_feed:
+            print(
+                f"  calendar   /calendar/mine/{_feed_token(account.email)}.ics"
+                f"  ({account.person})"
+            )
+    # the invite link exists in the clear for exactly as long as this run: only
+    # its digest is stored, so an unprinted one could never be shown again
+    for email, token in parish.invite_links.items():
+        print(f"  invite     /invite/{token}  ({email})")
 
 
 if __name__ == "__main__":
