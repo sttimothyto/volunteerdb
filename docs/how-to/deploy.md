@@ -106,6 +106,10 @@ maps is not: `0002` drops `team.application_form_url`. The old container then
 answers 500 on every page that reads that table, until the restart lands. The
 window is tens of seconds. Run such a deploy attended and at a quiet hour, or
 stop `volunteerdb-app.service` first and let the deploy bring it back.
+
+`0010` is the other kind. It adds a NOT NULL column to `notification` that
+the old image's inserts do not fill. A substitution claim or a hand-over in
+that window is refused, and a digest that is running stamps nothing.
 :::
 
 **Reverse proxy (Caddy).**

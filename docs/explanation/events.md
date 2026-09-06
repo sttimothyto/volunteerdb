@@ -160,8 +160,12 @@ Day-granularity is deliberate: reminders arrive with the one nightly digest,
 not at a computed instant.
 
 Idempotency is the proposal-digest pattern, and now literally the same
-table. A row in `notification` per (assignment, stage) marks a sent notice;
-a failed send never writes it, so the next night retries. A self sign-up or
+table. A row in `notification` per (assignment, recipient, stage) marks a
+sent notice; a failed send never writes it, so the next night retries.
+
+The recipient is in the key because a slot changes hands. The new holder has
+no row under their name, so the digest tells them. The previous holder's rows
+stay as a record. A self sign-up or
 a substitution claim gets its stamp at insert. The person acted themselves,
 so only manager assignments earn the "you have been scheduled" notice. The
 digest lists an event with several notices due at once only once, under the

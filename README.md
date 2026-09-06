@@ -126,8 +126,9 @@ its validity period (`sys_period tstzrange`) and the acting user
   date picker in the header's settings menu (read-only snapshot, amber banner)
 - API: add `?as_of=2026-01-01T00:00:00+02:00` to any GET
 
-**Migration note:** any future column change on a versioned table must be
-mirrored on its `_history` twin (the trigger inserts positionally).
+**Migration note:** a new column on a versioned table must be added to its
+`_history` twin as well (the trigger fills the twin by column name, so an
+`ADD COLUMN` on each is enough).
 
 ### Access control
 

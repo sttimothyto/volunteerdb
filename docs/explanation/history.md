@@ -22,8 +22,8 @@ one way. Each transaction sets the Postgres-local `app.user_id`, so the
 trigger can stamp `changed_by`. That gives a full audit trail for free.
 
 The cost of the trigger approach is a maintenance rule. The trigger copies
-rows *positionally*, so any column change on a versioned table must rebuild
-its twin. The recipe is in
+rows *by column name*, so a new column on a versioned table must be added
+to its twin as well. The recipe is in
 [Write a database migration](../how-to/write-a-migration.md).
 
 ## As-of reads

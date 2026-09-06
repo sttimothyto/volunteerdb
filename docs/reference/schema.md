@@ -46,12 +46,12 @@
 |---|---|---|
 | `id` | integer | PK |
 | `first_name`, `last_name` | varchar(100) | |
-| `email` | varchar(255) | nullable; may be shared by a family; CHECK `= lower(email)`, and indexed on `lower(email)` because every lookup folds case |
+| `email` | varchar(255) | nullable; may be shared by a family; CHECK `= lower(email)`, and a plain index `ix_volunteer_email`: the column is never mixed case, so the folded argument compares directly |
 | `phone` | varchar(50) | |
 | `notes` | text | |
 | `is_active` | boolean | |
 | `created_at` | timestamptz | no `updated_at`: `lower(sys_period)` is the last-modified time, maintained by the trigger on every write |
-| `sys_period` | tstzrange | validity period of this row version |
+| `sys_period` | tstzrange | validity period of this row version; CHECK `upper_inf(sys_period)`: a live row's period is open |
 | `custom` | jsonb | custom-field values keyed by `custom_field_def.key` |
 
 - Related rows: `membership` (`ON DELETE CASCADE`), and at most one
@@ -71,7 +71,7 @@
 | `parent_team_id` | integer | self-FK, `ON DELETE RESTRICT` — sub-teams protect their parent |
 | `description` | text | |
 | `is_active` | boolean | |
-| `sys_period` | tstzrange | |
+| `sys_period` | tstzrange | CHECK `upper_inf(sys_period)`, as on `volunteer` |
 | `workload_weight` | numeric(8,2) | NOT NULL DEFAULT 0 — a third state meaning "treat as 0" had no distinct behaviour |
 | `home_doc_url` | varchar(500) | nullable; public Google Doc behind the team's `/ministries/` page |
 
@@ -83,10 +83,13 @@
 | `volunteer_id` | integer | FK → volunteer, `ON DELETE CASCADE`, indexed |
 | `team_id` | integer | FK → team, `ON DELETE CASCADE`, indexed |
 | `role` | team_role | |
-| `sys_period` | tstzrange | |
+| `sys_period` | tstzrange | CHECK `upper_inf(sys_period)`, as on `volunteer` |
 
 - Unique on `(volunteer_id, team_id)`: a volunteer holds exactly one role
   per team.
+- Nothing caps a role per team. A ministry can have two leaders, or two
+  seconds, and both hold the seat in full. That is a decision, not an
+  omission.
 - This is the central relationship: who serves where, in what role.
 
 ## `app_user` (not versioned)
@@ -121,7 +124,7 @@
 | `key` | varchar(50) | unique slug, immutable after creation |
 | `label` | varchar(100) | display name |
 | `field_type` | custom_field_type | one of the twelve types above |
-| `options` | jsonb | choices for `select` fields |
+| `options` | jsonb | choices for `select` fields; CHECK `ck_custom_field_options`: set exactly when `field_type = 'select'` |
 | `show_in_list` | boolean | promotes the field to a volunteers-table column |
 | `position` | integer | display order |
 | `is_active` | boolean | |
@@ -221,9 +224,9 @@
 | Column | Type | Notes |
 |---|---|---|
 | `id` | integer | PK |
-| `proposal_id` | integer | FK → `proposal.id` ON DELETE CASCADE, indexed (denormalized: one-query tally/turnout) |
-| `voter_id` | integer | FK → `proposal_voter.id` ON DELETE CASCADE, **and** composite FK `(proposal_id, voter_id)` → `proposal_voter (proposal_id, id)` |
-| `candidate_id` | integer | FK → `proposal_candidate.id` ON DELETE CASCADE, indexed; likewise composite against `proposal_candidate` |
+| `proposal_id` | integer | indexed; denormalized for a one-query tally, and pinned by the two composite FKs below rather than by an FK of its own |
+| `voter_id` | integer | composite FK `(voter_id, proposal_id)` → `proposal_voter (id, proposal_id)` ON DELETE CASCADE |
+| `candidate_id` | integer | composite FK `(candidate_id, proposal_id)` → `proposal_candidate (id, proposal_id)` ON DELETE CASCADE, indexed |
 | `score` | smallint | CHECK `BETWEEN 0 AND 5` |
 | `updated_at` | timestamptz | ballots are revisable until the voting deadline |
 
@@ -357,11 +360,12 @@
 | `owner_team_id` | integer | nullable; FK → `team.id` ON DELETE SET NULL — the team `team_id` is restored to at teardown |
 
 - The last two columns replaced an `event_task_force` table. They live here
-  because they are properties of the event, and because `SET NULL` is the
-  wanted behaviour.
-- The old table's `team_id` cascaded, so a delete of a meta team took the
-  event and its attendance record with it. Teardown had to repoint and flush
-  in the right order to avoid that.
+  because they are properties of the event.
+- CHECK `ck_event_task_force_gate`: while a task force exists, `team_id` is
+  the meta team. Sign-up gating and the mail audience read `team_id`.
+- So `SET NULL` on the marker does not save the event. A direct delete of
+  the meta team still cascades through `team_id`. The guard is
+  `services/teams.delete`, which refuses; teardown repoints `team_id` first.
 - CHECK `ck_event_task_force_teams` makes sure a task force is never its own
   owner.
 - One team can staff at most one event as a task force, hence the unique.
@@ -488,9 +492,15 @@
 | `assignment_id` | integer | nullable; FK → `event_assignment.id` ON DELETE CASCADE |
 | `voter_id` | integer | nullable; FK → `proposal_voter.id` ON DELETE CASCADE |
 | `sent_at` | timestamptz | |
+| `volunteer_id` | integer | the recipient; FK → `volunteer.id` ON DELETE CASCADE, indexed |
 
-- Unique on `(assignment_id, stage)` and on `(voter_id, stage)`. That is
-  what makes a re-run safe: the jobs insert with `ON CONFLICT DO NOTHING`.
+- Unique on `(assignment_id, volunteer_id, stage)` and on `(voter_id,
+  stage)`. That is what makes a re-run safe: the jobs insert with `ON
+  CONFLICT DO NOTHING`.
+- The recipient is part of the key because an assignment changes hands. The
+  new holder has no row under their name, so the digest tells them. The
+  previous holder's rows stay as a record of what they were told. Before
+  `0010` the services deleted stamps on every hand-over instead.
 - CHECK `(assignment_id IS NULL) <> (voter_id IS NULL)`: exactly one subject
   per row.
 - This table replaced five nullable stamp columns spread over
@@ -538,7 +548,7 @@
 ## History twins and triggers
 
 `volunteer_history`, `team_history`, `membership_history` each hold the live
-table's columns **in live order** (without PK/FK/defaults) followed by:
+table's columns (without PK/FK/defaults), in any order, followed by:
 
 | Column | Type | Notes |
 |---|---|---|
@@ -547,10 +557,10 @@ table's columns **in live order** (without PK/FK/defaults) followed by:
 
 - Indexes: btree on `id`, GiST on `sys_period`.
 - The shared PL/pgSQL function `versioning()` runs BEFORE UPDATE/DELETE on
-  each versioned table. It inserts the old row **positionally**
-  (`INSERT … SELECT ($1).*, uid, op`).
-- That is why a new live column requires a rebuild of the twin. See
-  [Write a database migration](../how-to/write-a-migration.md).
+  each versioned table. It fills the twin's row type **by column name**
+  (`jsonb_populate_record(NULL::<twin>, to_jsonb(OLD) || …)`).
+- So a new live column needs one `ADD COLUMN` on the twin, and nothing
+  else. See [Write a database migration](../how-to/write-a-migration.md).
 
 ## Migration history
 
@@ -586,26 +596,37 @@ The revisions since, in order:
 - `0008` added `app_user.calendar_token`, the personal calendar feed's
   credential. It is stored in clear because the subscribe panel has to show
   it again.
+- `0009` made `versioning()` archive by column name. It moved the volunteer
+  email index onto the model as a plain index. It added four CHECKs the
+  services had kept on their own. A live row's `sys_period` is open. A
+  task-force event's `team_id` is its meta team. A choice field has options,
+  and no other kind does.
+- `0010` added `notification.volunteer_id`, the recipient, and widened the
+  assignment unique to include it.
 
-- `0004`, `0006`, `0007` and `0008` are purely additive, so the previous
-  image continues to serve while they apply. `0002` is the one that needed
-  an attended deploy ([Deploy and upgrade production](../how-to/deploy.md)).
+- `0004`, `0006`, `0007`, `0008` and `0009` are purely additive, so the
+  previous image continues to serve while they apply. `0002` and `0010` are
+  the ones that needed an attended deploy
+  ([Deploy and upgrade production](../how-to/deploy.md)).
 - The statements in `0001` are a frozen snapshot, written out by hand rather
   than generated from `models.Base.metadata` at run time. A migration that
   imports the application's models no longer describes the schema it created
   once those models change again.
-- `tests/test_schema_invariants.py::test_the_migration_builds_the_schema_the_models_describe`
-  keeps the two in step. It compares the migrated database against the
-  models on every run.
+- `tests/test_schema_invariants.py` keeps the two in step. It compares the
+  migrated database against the models on every run. Column order is
+  compared by hand. Types, defaults, indexes, uniques and foreign keys go
+  through alembic's `compare_metadata`. CHECK constraints are compared by
+  name.
 
 :::{note}
 Column *declaration* order in `models.py` follows the order that live
 databases physically have. That is not always the logical order:
-`AppUser.otp_hash` and the columns after it carry a comment that says so. Two
-reasons:
+`AppUser.otp_hash` and the columns after it carry a comment that says so. The
+reason is a diff of `pg_dump --schema-only` between a fresh database and an
+upgraded one. That diff verified the squash, and it verifies any later
+revision whose correctness is not obvious on the page. It only means
+something if the two agree.
 
-- The `versioning()` trigger archives positionally, so a versioned table's
-  order is load-bearing.
-- A diff of `pg_dump --schema-only` between a fresh database and an upgraded
-  one verified the squash. That diff only means something if the two agree.
+Until `0009` the trigger archived positionally as well, which made the order
+load-bearing. It no longer is.
 :::

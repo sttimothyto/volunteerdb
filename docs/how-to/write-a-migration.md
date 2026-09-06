@@ -15,8 +15,10 @@ The chain currently starts at `0001`, which is the whole schema in one
 revision:
 
 - The squash folded revisions `0001`–`0028` into it.
-- `0002` is a worked example of a **drop** on a versioned table. It removes
+- `0002` is a worked example of a **drop** on a versioned table, from the
+  time the trigger copied rows positionally. It removes
   `team.application_form_url` and rebuilds `team_history` around the gap.
+  Since `0009` a drop needs no rebuild (see below).
 - See [the migration history](../reference/schema.md#migration-history) for
   what the squash means for a database that predates it.
 
@@ -30,7 +32,9 @@ uv run alembic upgrade head
 ```
 
 - Write `upgrade()` and `downgrade()` by hand, between the two commands.
-  Autogenerate is not configured against the history twins.
+  Autogenerate is not used. `tests/test_schema_invariants.py` runs alembic's
+  comparison as a test instead, so a migration that builds less or more than
+  the models declare fails there.
 - Test both directions against the dev database before you commit:
 
 ```sh
@@ -40,41 +44,41 @@ uv run alembic downgrade -1 && uv run alembic upgrade head
 ## Columns on versioned tables: the history-twin rule
 
 :::{important}
-`volunteer`, `team`, and `membership` are system-versioned. The
-`versioning()` trigger copies rows into `<table>_history` **positionally**
-(`INSERT … SELECT ($1).*, changed_by, op`). So a twin must contain the live
-columns *in live order*, followed by `changed_by, op`. PostgreSQL can only
-append columns, so in the twin a new column would land after
-`changed_by`/`op`. Therefore, **to add a live column, you must rebuild the
-twin**.
+`volunteer`, `team`, and `membership` are system-versioned. Since `0009`, the
+`versioning()` trigger copies a row into `<table>_history` **by column name**
+(`jsonb_populate_record`). So a twin must carry every live column, under the
+same name and type. Order does not matter. Extra columns on the twin do not
+matter either.
 :::
 
-The squash absorbed the revisions that used to serve as worked examples, so
-this page writes the recipe out in full:
+To **add** a live column, add it to both tables:
 
-1. `op.add_column(<live table>, <new column>)`. This appends the column
-   after `sys_period`.
-2. `CREATE TABLE <t>_history_new` with the live columns in order (with the
-   new one), then `changed_by integer, op char(1)`.
-3. `INSERT INTO <t>_history_new SELECT <old columns>, NULL, changed_by, op
-   FROM <t>_history`. The history rows that are already there get NULL for
-   the new column, because the field did not exist yet.
-4. `DROP TABLE <t>_history; ALTER TABLE <t>_history_new RENAME TO
-   <t>_history`.
-5. Recreate the indexes: `ix_<t>_history_id` (btree) and
-   `ix_<t>_history_sys_period` (GiST). Add any later per-twin extras
-   (`membership_history` also carries `ix_membership_history_volunteer_id`).
+```sql
+ALTER TABLE team ADD COLUMN motto VARCHAR(200);
+ALTER TABLE team_history ADD COLUMN motto VARCHAR(200);
+```
 
-To **drop** a live column, follow the same recipe with the drops first:
+- The rows already in the twin get NULL for the new column. The field did
+  not exist when they were archived.
+- Forget the twin, and `tests/test_schema_invariants.py` fails by name.
+  Without that test, the trigger would archive every later version without
+  the column, and no error would say so.
 
-- PostgreSQL skips dropped columns when it expands a row. So you must
-  rebuild the twin to the post-drop order, and the old column's history
-  values go with it.
-- `migrations/versions/0002_drop_application_form_and_interest.py` is that
-  shape in Python.
+To **drop** a live column, drop it from the live table only:
+
+```sql
+ALTER TABLE team DROP COLUMN motto;
+```
+
+- Keep the twin's column. The archived values stay readable, and the trigger
+  writes NULL there from now on.
+- Drop it from the twin as well only when nobody wants the old values.
 
 You need no trigger changes: `versioning()` resolves `<table>_history` by
 name at runtime.
+
+Before `0009` the trigger copied rows positionally, and every column change
+meant a rebuild of the twin. `0002` shows what that looked like.
 
 Tables that are *not* versioned (`app_user`, `custom_field_def`,
 `app_setting`, and everything under events and elections) take a plain
@@ -130,8 +134,8 @@ uv run pytest            # conftest migrates a scratch volunteerdb_test DB
 For a versioned-table change, also:
 
 1. Update a row of the affected table in the app.
-2. Confirm that a fresh row lands in `<table>_history`. An error here means
-   the column order drifted.
+2. Confirm that a fresh row lands in `<table>_history`. An error here names
+   a live column the twin lacks, or one whose type differs.
 
 In production, migrations run automatically during [deploy](deploy.md),
 before the app restarts onto the new code.
