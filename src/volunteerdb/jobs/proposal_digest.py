@@ -21,7 +21,6 @@ Usage: python -m volunteerdb.jobs.proposal_digest [--today YYYY-MM-DD]
 from __future__ import annotations
 
 import argparse
-import asyncio
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -31,7 +30,6 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import env as env_mod
 from ..db import transaction
 from ..env import Env
 from ..log import init_logging
@@ -46,7 +44,7 @@ from ..models import (
 )
 from ..services import elections, mail
 from ..services import teams as team_service
-from . import JobReport, job_lock
+from . import JobReport, run_locked, send_digests
 
 
 @dataclass(frozen=True)
@@ -180,22 +178,24 @@ def plan(
     ]
 
 
+def _stamp(digest: Digest):
+    """The notices this digest settles, as one insert."""
+    return (
+        pg_insert(Notification)
+        .values([{"voter_id": i, "stage": s} for i, s in digest.stamps])
+        .on_conflict_do_nothing(constraint="uq_notification_voter")
+    )
+
+
 async def execute(digests: Sequence[Digest], env: Env) -> JobReport:
-    sent = failed = 0
-    for digest in digests:
-        subject, body = mail.proposal_digest_email(list(digest.items))
-        if not await env.mailer.send(digest.email, subject, body):
-            failed += 1
-            print(f"FAILED digest to {digest.email}", file=sys.stderr)
-            continue  # nothing recorded — retried the next night
-        async with transaction(env, None) as session:
-            await session.execute(
-                pg_insert(Notification)
-                .values([{"voter_id": i, "stage": s} for i, s in digest.stamps])
-                .on_conflict_do_nothing(constraint="uq_notification_voter")
-            )
-        sent += 1
-    return JobReport(sent=sent, failed=failed)
+    """Send each digest and, once it went, record its notices: a failed send
+    records nothing and is retried the next night (jobs.send_digests)."""
+    return await send_digests(
+        digests,
+        env,
+        render=lambda d: mail.proposal_digest_email(list(d.items)),
+        stamp=_stamp,
+    )
 
 
 async def main(env: Env, today: date | None = None) -> int:
@@ -218,16 +218,7 @@ def cli(argv: list[str] | None = None) -> int:
         help="pretend today is this date (parish day); for manual runs and tests",
     )
     args = parser.parse_args(argv)
-
-    async def locked() -> int:
-        env = env_mod.build()
-        async with job_lock(env, "proposal_digest") as acquired:
-            if not acquired:
-                print("skipped: another proposal_digest run holds the job lock")
-                return 0
-            return await main(env, today=args.today)
-
-    return asyncio.run(locked())
+    return run_locked("proposal_digest", lambda env: main(env, today=args.today))
 
 
 if __name__ == "__main__":

@@ -10,19 +10,17 @@ The HTTP client is the Env's, so a test hands the job a mocked one.
 Usage: python -m volunteerdb.jobs.fetch_pages
 """
 
-import asyncio
 import sys
 
 import sqlalchemy as sa
 
-from .. import env as env_mod
 from ..db import transaction
 from ..env import Env
 from ..fp import expect
 from ..log import init_logging
 from ..models import Team
 from ..services import pages as page_service
-from . import job_lock
+from . import run_locked
 
 
 async def main(env: Env) -> int:
@@ -59,15 +57,7 @@ async def main(env: Env) -> int:
 
 
 def cli() -> int:
-    async def locked() -> int:
-        env = env_mod.build()
-        async with job_lock(env, "fetch_pages") as acquired:
-            if not acquired:
-                print("skipped: another fetch_pages run holds the job lock")
-                return 0
-            return await main(env)
-
-    return asyncio.run(locked())
+    return run_locked("fetch_pages", main)
 
 
 if __name__ == "__main__":

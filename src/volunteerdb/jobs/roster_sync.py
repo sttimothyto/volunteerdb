@@ -18,12 +18,10 @@ filled from the database.
 Usage: python -m volunteerdb.jobs.roster_sync
 """
 
-import asyncio
 import sys
 
 import sqlalchemy as sa
 
-from .. import env as env_mod
 from ..db import transaction
 from ..env import Env
 from ..errors import External, message
@@ -33,7 +31,7 @@ from ..models import SyncStatus, TeamSheet
 from ..services import google_api, gsheets
 from ..services import roster_sheets as sheet_service
 from ..services import teams as team_service
-from . import job_lock
+from . import run_locked
 
 
 async def _syncable_teams(env: Env) -> list[tuple[int, str, str | None]]:
@@ -128,15 +126,7 @@ async def main(env: Env) -> int:
 
 
 def cli() -> int:
-    async def locked() -> int:
-        env = env_mod.build()
-        async with job_lock(env, "roster_sync") as acquired:
-            if not acquired:
-                print("skipped: another roster_sync run holds the job lock")
-                return 0
-            return await main(env)
-
-    return asyncio.run(locked())
+    return run_locked("roster_sync", main)
 
 
 if __name__ == "__main__":

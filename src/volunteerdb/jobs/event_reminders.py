@@ -36,7 +36,6 @@ Usage: python -m volunteerdb.jobs.event_reminders [--today YYYY-MM-DD]
 from __future__ import annotations
 
 import argparse
-import asyncio
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -47,7 +46,6 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import env as env_mod
 from ..db import transaction
 from ..env import Env
 from ..log import init_logging
@@ -62,7 +60,7 @@ from ..models import (
 )
 from ..services import mail
 from ..services import teams as team_service
-from . import JobReport, job_lock
+from . import JobReport, run_locked, send_digests
 
 WEEK_DAYS = 7
 DAY_DAYS = 1
@@ -233,31 +231,27 @@ def plan(
     ]
 
 
+def _stamp(digest: Digest):
+    """The stages this digest settles, as one insert. A stage recorded
+    between the read and here is fine: the notice went out either way."""
+    return (
+        pg_insert(Notification)
+        .values([{"assignment_id": i, "stage": s} for i, s in digest.stamps])
+        .on_conflict_do_nothing(constraint="uq_notification_assignment")
+    )
+
+
 async def execute(digests: Sequence[Digest], env: Env) -> JobReport:
-    """Send each digest through the Env's mailer and, once it went, stamp its
-    stages in a transaction of its own: a failed send stamps nothing and is
-    retried the next night."""
+    """Send each digest and, once it went, stamp its stages: a failed send
+    stamps nothing and is retried the next night (jobs.send_digests)."""
     base = env.settings.public_base_url.rstrip("/")
     events_url = f"{base}/events" if base else None
-    sent = failed = 0
-    for digest in digests:
-        subject, body = mail.event_digest_email(
-            list(digest.items), events_url, tz=env.tz
-        )
-        if not await env.mailer.send(digest.email, subject, body):
-            failed += 1
-            print(f"FAILED digest to {digest.email}", file=sys.stderr)
-            continue  # stamps stay NULL — retried the next night
-        async with transaction(env, None) as session:
-            await session.execute(
-                pg_insert(Notification)
-                .values([{"assignment_id": i, "stage": s} for i, s in digest.stamps])
-                # a stage recorded between the read and here is fine:
-                # the notice went out either way
-                .on_conflict_do_nothing(constraint="uq_notification_assignment")
-            )
-        sent += 1
-    return JobReport(sent=sent, failed=failed)
+    return await send_digests(
+        digests,
+        env,
+        render=lambda d: mail.event_digest_email(list(d.items), events_url, tz=env.tz),
+        stamp=_stamp,
+    )
 
 
 async def main(env: Env, today: date | None = None) -> int:
@@ -282,16 +276,7 @@ def cli(argv: list[str] | None = None) -> int:
         help="pretend today is this date (parish day); for manual runs and tests",
     )
     args = parser.parse_args(argv)
-
-    async def locked() -> int:
-        env = env_mod.build()
-        async with job_lock(env, "event_reminders") as acquired:
-            if not acquired:
-                print("skipped: another event_reminders run holds the job lock")
-                return 0
-            return await main(env, today=args.today)
-
-    return asyncio.run(locked())
+    return run_locked("event_reminders", lambda env: main(env, today=args.today))
 
 
 if __name__ == "__main__":

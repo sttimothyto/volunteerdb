@@ -125,7 +125,7 @@ commit.
   level taking ids rather than closing over page state. The read models are
   listed in the authorization sweep's `SCOPING_ONLY`, each with its reason.
 
-- [ ] **9. Jobs boilerplate.** `jobs.run_locked(name, main)` replaces the six
+- [x] **9. Jobs boilerplate.** `jobs.run_locked(name, main)` replaces the six
   identical `cli()` bodies; `jobs.send_digests` replaces the two digest
   loops. `main(env)` and `cli()` signatures stay.
 

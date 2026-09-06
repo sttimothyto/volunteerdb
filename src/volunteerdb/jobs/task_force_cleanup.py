@@ -11,19 +11,17 @@ Usage: python -m volunteerdb.jobs.task_force_cleanup
 """
 
 import argparse
-import asyncio
 import sys
 
 import structlog
 
-from .. import env as env_mod
 from ..db import transaction
 from ..env import Env
 from ..errors import NotFound, message
 from ..fp import Err
 from ..log import audit_log, init_logging
 from ..services import task_force
-from . import job_lock
+from . import run_locked
 
 logger = structlog.get_logger(__name__)
 
@@ -62,16 +60,7 @@ async def main(env: Env) -> int:
 
 def cli(argv: list[str] | None = None) -> int:
     argparse.ArgumentParser(description=__doc__).parse_args(argv)
-
-    async def locked() -> int:
-        env = env_mod.build()
-        async with job_lock(env, "task_force_cleanup") as acquired:
-            if not acquired:
-                print("skipped: another task_force_cleanup run holds the job lock")
-                return 0
-            return await main(env)
-
-    return asyncio.run(locked())
+    return run_locked("task_force_cleanup", main)
 
 
 if __name__ == "__main__":

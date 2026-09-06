@@ -33,7 +33,6 @@ Usage: python -m volunteerdb.jobs.calendar_sync
 from __future__ import annotations
 
 import argparse
-import asyncio
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -43,7 +42,6 @@ import httpx
 import sqlalchemy as sa
 import structlog
 
-from .. import env as env_mod
 from ..db import transaction
 from ..env import Env
 from ..errors import External
@@ -51,7 +49,7 @@ from ..fp import Err, Ok, Result
 from ..log import init_logging
 from ..models import Event, EventStatus
 from ..services import gcal, google_api
-from . import job_lock
+from . import run_locked
 
 logger = structlog.get_logger(__name__)
 
@@ -321,16 +319,7 @@ async def _run(
 
 def cli(argv: list[str] | None = None) -> int:
     argparse.ArgumentParser(description=__doc__).parse_args(argv)
-
-    async def locked() -> int:
-        env = env_mod.build()
-        async with job_lock(env, "calendar_sync") as acquired:
-            if not acquired:
-                print("skipped: another calendar_sync run holds the job lock")
-                return 0
-            return await main(env)
-
-    return asyncio.run(locked())
+    return run_locked("calendar_sync", main)
 
 
 if __name__ == "__main__":
