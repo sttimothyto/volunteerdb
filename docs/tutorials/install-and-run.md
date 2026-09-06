@@ -4,6 +4,13 @@ In about 10 minutes you will have VolunteerDB on your machine, with a seeded
 demo parish. You will sign in as its administrator and prove the
 installation with the test suite.
 
+:::{tip}
+Do you want to look before you install? A public demo runs at
+<https://vdb.bhw.name>. Sign in as `admin@example.org` with the password
+`demo`. It carries the same seeded parish as this tutorial, and it is dropped
+and rebuilt every night.
+:::
+
 **You need:**
 
 - Linux with [uv](https://docs.astral.sh/uv/) and podman

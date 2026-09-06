@@ -6,6 +6,9 @@ scratch.
 - Run a development instance first
   ([Your first development instance](../tutorials/install-and-run.md)). Then
   you know what the application does before you put it in front of anyone.
+  The public demo at <https://vdb.bhw.name> answers the same question in a
+  browser, with no installation. Sign in there as `admin@example.org` with
+  the password `demo`.
 - Plan for a couple of hours. Most of that time you wait on other people's
   consoles: DNS propagation, a mail provider that verifies your domain, a
   Google Cloud consent screen.

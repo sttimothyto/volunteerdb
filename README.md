@@ -24,6 +24,32 @@ to fill?"**
 - Public **ministry pages** published from a team's Google Doc, and the
   parish's own **site logo**
   
+## Try it
+
+A public demo runs at **<https://vdb.bhw.name>**, carrying the same synthetic
+parish `make seed` builds locally: 500 volunteers across 36 teams, a proposal
+in every election state, and a schedule either side of today.
+
+| Sign in as | Email | Password |
+|---|---|---|
+| Administrator | `admin@example.org` | `demo` |
+| Ministry leader — two teams, top workload band | `maria.alvarez@example.org` | `demo` |
+| Plain member | `felix.garcia@example.org` | `demo` |
+| Clergy — sits on every voting roll | `dominic.ferraro@example.org` | `demo` |
+
+Every other seeded account uses `demo` too, one per ministry leader. The JSON
+API answers to `Authorization: Bearer vdb-demo-token-do-not-use-in-production`.
+Two pages need no sign-in at all: the public ministry index at
+[`/ministries/`](https://vdb.bhw.name/ministries/) and the user guide at
+[`/manual/`](https://vdb.bhw.name/manual/).
+
+Change whatever you like. Nothing there is real — every address is
+`@example.org`, outbound mail is written to the log instead of sent, and the
+database is dropped and re-seeded from `scripts/seed.py` nightly at 04:30
+Toronto time. The demo deliberately has no mail key and no Google credentials,
+so invitations, sign-in codes, the roster sync and the calendar sync are all
+inert there; `journalctl` is where the emails go.
+
 ## Documentation
 
 Full documentation lives in [`docs/`](docs/index.md), organized as
@@ -172,6 +198,14 @@ Interactive docs at `/docs`. Endpoints: `/api/volunteers` (+`/assignments`,
 `/api/reports/coverage`, `/api/graph`, `/api/export/*`, `/api/import`,
 `/api/users` (admin).
 
+Against the demo, with no login round-trip — its administrator's token is
+seeded to a fixed string:
+
+```sh
+curl -s -H 'Authorization: Bearer vdb-demo-token-do-not-use-in-production' \
+  https://vdb.bhw.name/api/teams
+```
+
 ## Spreadsheets
 
 One roster `.csv`, one row per person per team — export, edit, re-import:
@@ -227,6 +261,12 @@ covers the parts the deploy deliberately does not automate: DNS, a mail
 sending domain, the Google Cloud project the backups and roster sheets share —
 and Caddy, if you keep your own reverse proxy rather than letting the deploy
 install and manage it. `make deploy SITE=<name>` does the rest.
+
+Two real site files sit beside the template. `deploy/sites/sttimothy.toml` is
+the parish, with the deploy managing Caddy. `deploy/sites/bhwdemo.toml` is the
+demo above, and is the worked example of the other shape: `[proxy] caddy =
+false` on a host whose reverse proxy already serves other sites, a non-default
+`listen_port`, and no mail key or Google credentials at all.
 
 ## License
 
