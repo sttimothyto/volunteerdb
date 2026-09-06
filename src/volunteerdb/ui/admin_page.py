@@ -1,9 +1,7 @@
-from fastapi import Request
 from nicegui import ui
 
 from ..domain import InviteIssued, Outcome
 from ..effects import SendMail, delivered
-from ..env import current as current_env
 from ..fp import Err, Ok, expect
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
@@ -14,8 +12,7 @@ from .layout import frame
 
 
 @ui.page("/admin/users")
-async def users_page(request: Request):
-    base_url = str(request.base_url).rstrip("/")
+async def users_page():
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
         accounts = (
@@ -34,7 +31,7 @@ async def users_page(request: Request):
         return
 
     def show_invite(token: str, email: str, sent: bool | None = None) -> None:
-        invites.show_invite(base_url, token, email, sent)
+        invites.show_invite(ctx.base_url, token, email, sent)
 
     with frame("Accounts", actor):
         with ui.row().classes("gap-2"):
@@ -185,7 +182,7 @@ async def users_page(request: Request):
                 ui.space()
                 if not account.is_active:
                     ui.badge("disabled", color="muted")
-                elif user_service.invite_live(account, now=current_env().clock.now()):
+                elif user_service.invite_live(account, now=ctx.now):
                     # No link on offer: only its digest is stored
                     # (services.users._issue_invite), so handing one over again
                     # means minting a fresh one — which is what Reinvite does.

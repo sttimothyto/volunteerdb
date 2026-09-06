@@ -23,7 +23,6 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from nicegui import ui
-from starlette.requests import Request
 
 from .. import query_lang, throttle
 from ..effects import Effect, SendMail, ThrottleHit
@@ -513,9 +512,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
 
 
 @ui.page("/events")
-async def events_page(
-    request: Request, past: str = "", team: str = "", view: str = "", month: str = ""
-):
+async def events_page(past: str = "", team: str = "", view: str = "", month: str = ""):
     """The listing had two hardcoded modes — upcoming, or past-and-cancelled —
     while the API took a free `team_id`. `?team=` narrows to one ministry (and
     its sub-teams are separate rows, as they are separate teams), which is what
@@ -523,23 +520,18 @@ async def events_page(
 
     `?view=` picks the calendar's scope (mine, the default, or parish) and
     `?month=YYYY-MM` the month it shows; both are links, not widgets."""
-    base_url = str(request.base_url).rstrip("/")
     show_past = past == "1"
     team_filter = int(team) if team.isdigit() else None
     cal_view = view if view in dict(calendar_grid.VIEWS) else "mine"
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
         duties = (
-            await event_service.my_upcoming(
-                session, actor.volunteer_id, now=current_env().clock.now()
-            )
+            await event_service.my_upcoming(session, actor.volunteer_id, now=ctx.now)
             if actor.volunteer_id is not None
             else []
         )
-        claimable = await event_service.claimable_subs(
-            session, actor, now=current_env().clock.now()
-        )
-        now = datetime.now(_tz())
+        claimable = await event_service.claimable_subs(session, actor, now=ctx.now)
+        now = ctx.now.astimezone(ctx.env.tz)
         summaries = await event_service.list_events(
             session,
             actor,
@@ -561,7 +553,7 @@ async def events_page(
         feed_token = (
             (
                 await user_service.ensure_calendar_token(
-                    session, actor.user.id, token=current_env().rng.token()
+                    session, actor.user.id, token=ctx.env.rng.token()
                 )
             ).unwrap_or([])
             if cal_view == "mine"
@@ -581,7 +573,7 @@ async def events_page(
 
     # drawers must be direct children of page content, so build it before
     # entering frame (see ui/volunteer_panel.py)
-    panel = VolunteerPanel("", base_url)
+    panel = VolunteerPanel("", ctx.base_url)
     with frame("Events", actor):
         if duties:
             ui.label("Your upcoming duties").classes("text-lg font-medium")
@@ -658,7 +650,7 @@ async def events_page(
             ui.space()
             subscribe_panel(
                 view=cal_view,
-                base_url=base_url,
+                base_url=ctx.base_url,
                 token=feed_token,
                 calendar=calendar,
                 is_admin=actor.is_admin,
@@ -1463,8 +1455,7 @@ async def _do_cancel(event_id: int) -> None:
 
 
 @ui.page("/events/{event_id}")
-async def event_detail_page(request: Request, event_id: int):
-    base_url = str(request.base_url).rstrip("/")
+async def event_detail_page(event_id: int):
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
         shown = await event_service.detail(session, actor, event_id)
@@ -1564,7 +1555,7 @@ async def event_detail_page(request: Request, event_id: int):
         suffix = {0: " · available", 1: "", 2: " · UNAVAILABLE"}
         return {v.id: f"{v.full_name}{suffix[rank(v.id)]}" for _, v in entries}
 
-    panel = VolunteerPanel("", base_url)
+    panel = VolunteerPanel("", ctx.base_url)
     with frame(event.title, actor):
         with ui.row().classes("w-full items-center gap-2"):
             ui.link(view.path, f"/teams/{event.team_id}").classes("font-medium")
@@ -1575,7 +1566,7 @@ async def event_detail_page(request: Request, event_id: int):
             if event.location:
                 ui.label(f"· {event.location}").classes("text-sm text-gray-600")
             ui.space()
-            _share_panel(base_url, event_id)
+            _share_panel(ctx.base_url, event_id)
             if can_manage and event.status == EventStatus.scheduled.value:
                 ui.button(
                     "Edit", icon="edit", on_click=lambda: _edit_event_dialog(event)

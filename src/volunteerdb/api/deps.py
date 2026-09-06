@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -46,21 +48,46 @@ logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
+class RequestFacts:
+    """What a request states about itself, read once: the origin links are
+    built on, the client's address (for the throttles and the log), and the
+    host name a feed identifies itself by. The one place these are derived,
+    so the fallbacks agree everywhere."""
+
+    base_url: str
+    ip: str
+    host: str
+
+    @classmethod
+    def from_request(cls, request: Request) -> RequestFacts:
+        return cls(
+            base_url=str(request.base_url).rstrip("/"),
+            ip=request.client.host if request.client else "-",
+            host=request.url.hostname or "volunteerdb",
+        )
+
+
+@dataclass(frozen=True)
 class Ctx:
-    """One authenticated request: its transaction, who is asking, the Env the
-    edge performs effects with, the moment the request began (one clock read,
-    passed to every service that needs a `now`), and the origin links are
-    built on."""
+    """One request or page action, whichever door it came through: its
+    transaction, who is asking, the Env the edge performs effects with, the
+    moment it began (one clock read, passed to every service that needs a
+    `now`), the origin links are built on, how the people a write affects
+    are told, and -- for a page that time-travels -- the as-of instant.
+
+    The JSON API builds these with the default `notify`: that door sends no
+    roster mail of its own, and a volunteer an API call scheduled hears about
+    it from the nightly digest (docs/reference/http-api.md). The GUI's
+    PageCtx passes the Env's mode, `direct`."""
 
     session: AsyncSession
     actor: Actor
     env: Env
     now: datetime
     base_url: str
-    # This door sends no roster mail of its own: a volunteer an API call
-    # scheduled hears about it from the nightly digest (docs/reference/
-    # http-api.md). The GUI's PageCtx runs the Env's mode, `direct`.
+    ip: str = "-"
     notify: NotifyMode = NotifyMode.digest
+    as_of: datetime | None = None
 
     def policy_ctx(self) -> policy.PolicyCtx:
         """What the rules need, as values: the moment, the link base, this
@@ -91,8 +118,7 @@ async def api_ctx(
     user id recorded transaction-locally for the history triggers."""
     env = env_of(request)
     now = env.clock.now()
-    base_url = str(request.base_url).rstrip("/")
-    ip = request.client.host if request.client else "-"
+    facts = RequestFacts.from_request(request)
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(
@@ -105,7 +131,7 @@ async def api_ctx(
             async with session.begin():
                 user = await user_service.authenticate_token(session, token.strip())
                 if user is None:
-                    logger.warning("auth.api_token_invalid", ip=ip)
+                    logger.warning("auth.api_token_invalid", ip=facts.ip)
                     raise HTTPException(
                         401, "invalid token", headers={"WWW-Authenticate": "Bearer"}
                     )
@@ -113,7 +139,7 @@ async def api_ctx(
                     sa.select(sa.func.set_config("app.user_id", str(user.id), True))
                 )
                 stack.enter_context(
-                    bind_actor(f"{user.id}:{user.email}", ip=ip, via="api")
+                    bind_actor(f"{user.id}:{user.email}", ip=facts.ip, via="api")
                 )
                 # admins only: nobody else can raise the plan or cut the sending
                 quota = (
@@ -126,7 +152,8 @@ async def api_ctx(
                     actor=await load_actor(session, user, mail_quota=quota),
                     env=env,
                     now=now,
-                    base_url=base_url,
+                    base_url=facts.base_url,
+                    ip=facts.ip,
                 )
 
 
@@ -213,7 +240,7 @@ def dispatch[T](
     response body. `silent`: the response itself carries what the mail would
     (a link an admin asked for), so the sends are dropped and the audit lines
     kept."""
-    value, events = _split(raise_http(result))
+    value, events = split_outcome(raise_http(result))
     planned = policy.plan(events, ctx.policy_ctx())
     if silent:
         planned = tuple(e for e in planned if not isinstance(e, effects.SendMail))
@@ -229,22 +256,29 @@ def throttled(env: Env, *keys: str, now: datetime) -> bool:
 
 
 async def perform(
-    env: Env, events, *, base_url: str, now: datetime
+    env: Env,
+    events,
+    *,
+    base_url: str,
+    now: datetime,
+    notify: NotifyMode = NotifyMode.digest,
 ) -> effects.EffectReport:
-    """For the unauthenticated routes (sign-in, redeem, confirm) and for a
-    fact the route itself states (a failed attempt): plan the events and run
-    their effects now, after the caller's transaction."""
+    """For a door with no signed-in actor (sign-in, redeem, confirm) and for
+    a fact the edge itself states (a failed attempt, a code requested): plan
+    the events and run their effects now, after the caller's transaction.
+    `notify` is the door's mode; the JSON API's default is `digest`."""
     ctx = policy.PolicyCtx(
         now=now,
         base_url=base_url,
-        notify=NotifyMode.digest,
+        notify=notify,
         throttle=env.throttle.snapshot(),
         copy=env.mail_context(),
     )
     return await effects.run(policy.plan(events, ctx), env)
 
 
-def _split[T](value: Outcome[T] | T) -> tuple[T, tuple]:
+def split_outcome[T](value: Outcome[T] | T) -> tuple[T, tuple]:
+    """A service's plain value, or its Outcome's value and events."""
     if isinstance(value, Outcome):
         return value.value, value.events
     return value, ()

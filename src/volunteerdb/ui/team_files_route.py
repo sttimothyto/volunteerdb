@@ -15,7 +15,7 @@ from fastapi import HTTPException, Request
 from nicegui import app
 from starlette.responses import Response
 
-from ..api.deps import gate, raise_http
+from ..api.deps import RequestFacts, gate, raise_http
 from ..db import transaction
 from ..env import current as current_env
 from ..models import Team
@@ -83,7 +83,7 @@ async def roster_template(request: Request) -> Response:
 async def page_qr(team_id: int, request: Request) -> Response:
     """A QR code for the team's public page — print-usable, and only for a
     page that is actually published; the address inside it is public."""
-    base_url = str(request.base_url).rstrip("/")
+    base_url = RequestFacts.from_request(request).base_url
     async with transaction(current_env(), None) as session:
         if await get_actor(session) is None:
             raise HTTPException(401, "sign in to download the QR code")

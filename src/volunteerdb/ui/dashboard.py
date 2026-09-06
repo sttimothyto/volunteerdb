@@ -1,6 +1,5 @@
 from urllib.parse import quote_plus, urlencode
 
-from fastapi import Request
 from nicegui import ui
 
 from .. import query_lang
@@ -38,7 +37,7 @@ def _dashboard_href(*, as_of: str = "", q: str = "") -> str:
 
 
 @ui.page("/")
-async def dashboard(request: Request, as_of: str = "", q: str = ""):
+async def dashboard(as_of: str = "", q: str = ""):
     # the graph library is loaded via dynamic import() at Vue mount, far too
     # late for the browser's preload scanner — announce it in the head instead
     ui.add_head_html(
@@ -79,8 +78,8 @@ async def dashboard(request: Request, as_of: str = "", q: str = ""):
             session,
             actor,
             at=at,
-            now=current_env().clock.now(),
-            today=current_env().today(),
+            now=ctx.now,
+            today=ctx.env.today(),
         )
         # band chips in the legend, for the viewers who see coloured dots at all
         bands = (
@@ -89,7 +88,7 @@ async def dashboard(request: Request, as_of: str = "", q: str = ""):
             else []
         )
 
-    panel = VolunteerPanel(as_of, str(request.base_url).rstrip("/"))
+    panel = VolunteerPanel(as_of, ctx.base_url)
 
     async def refresh_graph() -> None:
         async with page_ctx() as ctx:

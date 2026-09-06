@@ -45,26 +45,24 @@ _REQUEST_ATTRS = frozenset({"base_url", "client"})
 
 # What the tree carried when the sweep was written: module -> habit -> count.
 BASELINE: dict[str, dict[str, int]] = {
-    "api/auth.py": {"request_facts": 7},
     "api/events.py": {"orm_reach": 4},
-    "ui/account_page.py": {"env_read": 6, "request_facts": 3},
+    "ui/account_page.py": {"env_read": 4},
     "ui/account_status.py": {"env_read": 2},
-    "ui/admin_page.py": {"env_read": 1, "request_facts": 1},
     "ui/calendar_panel.py": {"env_read": 1},
-    "ui/calendar_routes.py": {"env_read": 13, "request_facts": 1},
-    "ui/dashboard.py": {"env_read": 4, "request_facts": 1},
+    "ui/calendar_routes.py": {"env_read": 1},
+    "ui/dashboard.py": {"env_read": 2},
     "ui/elections_page.py": {"env_read": 6},
-    "ui/events_page.py": {"env_read": 6, "request_facts": 2},
+    "ui/events_page.py": {"env_read": 3},
     "ui/invites.py": {"env_read": 2},
     "ui/layout.py": {"env_read": 1},
-    "ui/login.py": {"env_read": 3, "request_facts": 5},
+    "ui/login.py": {"env_read": 3},
     "ui/logo_route.py": {"env_read": 2, "orm_reach": 2},
     "ui/ministries_routes.py": {"env_read": 3, "orm_reach": 2},
     "ui/photos_route.py": {"env_read": 1},
-    "ui/team_files_route.py": {"env_read": 5, "orm_reach": 1, "request_facts": 1},
-    "ui/teams_page.py": {"env_read": 7, "orm_reach": 2, "request_facts": 1},
+    "ui/team_files_route.py": {"env_read": 5, "orm_reach": 1},
+    "ui/teams_page.py": {"env_read": 4, "orm_reach": 2},
     "ui/volunteer_panel.py": {"env_read": 1},
-    "ui/volunteers_page.py": {"env_read": 3, "request_facts": 2},
+    "ui/volunteers_page.py": {"env_read": 1},
 }
 
 

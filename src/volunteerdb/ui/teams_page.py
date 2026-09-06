@@ -2,7 +2,6 @@ from decimal import Decimal
 from functools import partial
 from urllib.parse import quote
 
-from fastapi import Request
 from nicegui import events, ui
 
 from .. import query_lang
@@ -549,9 +548,9 @@ async def _sync_sheet(team_id: int, direction: str) -> None:
     across a demotion stops syncing. sync_team is an orchestrator with units
     of work of its own, so it is not a command: the refusal is toasted here.
     """
-    env = current_env()
     async with page_ctx() as ctx:
         user_id = ctx.actor.user.id
+    env = ctx.env
     ui.notify("Syncing with Google Sheets…")
     synced = await roster_sheets.sync_team(
         env, team_id, direction=direction, user_id=user_id, now=env.clock.now()
@@ -653,7 +652,7 @@ def _sheet_import_block(is_admin: bool) -> None:
         async with page_ctx() as ctx:
             user_id = ctx.actor.user.id  # run_import checks the right itself
         report = await importer.run_import(
-            current_env(), content, dry_run=dry_run, user_id=user_id
+            ctx.env, content, dry_run=dry_run, user_id=user_id
         )
         if isinstance(report, Err):
             toast(report.error)
@@ -827,9 +826,8 @@ async def _fetch_home_page(team_id: int) -> None:
 
 
 @ui.page("/teams/{team_id}")
-async def team_detail(request: Request, team_id: int, as_of: str = ""):
+async def team_detail(team_id: int, as_of: str = ""):
     at = parse_as_of(as_of, current_env().tz)
-    base_url = str(request.base_url).rstrip("/")
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
         # out of the tree rather than team_service.get(): the page reads the whole
@@ -891,7 +889,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
             if can_names and at is None
             else []
         )
-    panel = VolunteerPanel(as_of, base_url)
+    panel = VolunteerPanel(as_of, ctx.base_url)
     with frame(
         paths.get(team_id, team.name), actor, as_of=at, asof_path=f"/teams/{team_id}"
     ):
@@ -969,7 +967,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
         # core members included on purpose: leaders are often elderly and a
         # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
         if can_full and at is None:
-            _home_page_section(team, team_page, team_id, slug, base_url)
+            _home_page_section(team, team_page, team_id, slug, ctx.base_url)
 
         if children:
             ui.label("Sub-teams").classes("text-lg font-medium")
@@ -1058,7 +1056,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                                 volunteer.full_name,
                                 volunteer.email,
                                 accounts.get(volunteer.id),
-                                base_url,
+                                ctx.base_url,
                                 reveal=actor.is_admin,
                             )
                             if can_invite and volunteer.is_active
@@ -1086,7 +1084,7 @@ async def team_detail(request: Request, team_id: int, as_of: str = ""):
                         )
                         ui.label(
                             mail.event_when(
-                                s.event.starts_at, s.event.ends_at, tz=current_env().tz
+                                s.event.starts_at, s.event.ends_at, tz=ctx.env.tz
                             )
                         ).classes("text-sm text-gray-600")
                         ui.space()

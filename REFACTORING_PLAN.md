@@ -76,7 +76,7 @@ commit.
   `session.execute` and `sa.select` under `ui/` and `api/`; request-origin
   and client-IP derivation outside `api/deps`.
 
-- [ ] **2. `api/deps` becomes the one edge kernel.** `Ctx` gains `as_of` and
+- [x] **2. `api/deps` becomes the one edge kernel.** `Ctx` gains `as_of` and
   takes `notify` as a constructor argument; `PageCtx` becomes a subclass, so
   there is one `policy_ctx()`. `perform` gains a `notify` keyword, `_split`
   becomes the public `split_outcome`, and `RequestFacts.from_request` replaces

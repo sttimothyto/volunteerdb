@@ -6,6 +6,7 @@ from nicegui import ui
 from starlette.responses import RedirectResponse
 
 from .. import passwords
+from ..api.deps import RequestFacts
 from ..db import transaction
 from ..domain import OtpRequested, SignedIn, SignInFailed
 from ..env import current
@@ -73,8 +74,7 @@ def login_page(request: Request, redirect_to: str = "/"):
 
     apply_theme()
 
-    ip = request.client.host if request.client else "unknown"
-    base_url = str(request.base_url).rstrip("/")
+    facts = RequestFacts.from_request(request)
     env = current()
 
     def finish(user_id: int, method: str) -> None:
@@ -88,8 +88,10 @@ def login_page(request: Request, redirect_to: str = "/"):
             ui.notify("Enter your email address", color="warning")
             return
         if password.value:
-            if throttled(f"pw:{addr.lower()}", f"pw-ip:{ip}", now=now):
-                logger.warning("auth.throttled", method="password", email=addr, ip=ip)
+            if throttled(f"pw:{addr.lower()}", f"pw-ip:{facts.ip}", now=now):
+                logger.warning(
+                    "auth.throttled", method="password", email=addr, ip=facts.ip
+                )
                 ui.notify(
                     "Too many failed attempts — try again in a few minutes.",
                     color="negative",
@@ -101,17 +103,19 @@ def login_page(request: Request, redirect_to: str = "/"):
                 )
             if isinstance(signed, Err):
                 logger.warning(
-                    "auth.login_failed", method="password", email=addr, ip=ip
+                    "auth.login_failed", method="password", email=addr, ip=facts.ip
                 )
                 await perform(
-                    [SignInFailed("password", addr, ip)], base_url=base_url, now=now
+                    [SignInFailed("password", addr, facts.ip)],
+                    base_url=facts.base_url,
+                    now=now,
                 )
                 ui.notify("Invalid email or password", color="negative")
                 return
             user = signed.value
             await perform(
-                [SignedIn(user.id, user.email, "password", ip)],
-                base_url=base_url,
+                [SignedIn(user.id, user.email, "password", facts.ip)],
+                base_url=facts.base_url,
                 now=now,
             )
             finish(user.id, "password")
@@ -121,8 +125,8 @@ def login_page(request: Request, redirect_to: str = "/"):
     async def send_code() -> None:
         now = env.clock.now()
         addr = (email.value or "").strip()
-        if throttled(f"otp-ip:{ip}", now=now):
-            logger.warning("auth.throttled", method="otp", email=addr, ip=ip)
+        if throttled(f"otp-ip:{facts.ip}", now=now):
+            logger.warning("auth.throttled", method="otp", email=addr, ip=facts.ip)
             ui.notify(
                 "Too many code requests from this device — try again later.",
                 color="negative",
@@ -135,10 +139,10 @@ def login_page(request: Request, redirect_to: str = "/"):
         # The request is charged and logged whether or not the account exists
         # (no enumeration); a fresh code -- the service says when, a live one
         # is not resent -- is what gets mailed.
-        events = [OtpRequested(addr, ip)]
+        events = [OtpRequested(addr, facts.ip)]
         if isinstance(result, Ok):
             events.extend(result.value.events)
-        await perform(events, base_url=base_url, now=now)
+        await perform(events, base_url=facts.base_url, now=now)
         # Identical response whether or not the account exists (no enumeration).
         code_hint.set_text(f"Enter the 6-digit code emailed to {addr}")
         code_input.value = ""
@@ -155,7 +159,7 @@ def login_page(request: Request, redirect_to: str = "/"):
             )
         if isinstance(verified, Err):
             logger.warning(
-                "auth.login_failed", method="otp", email=pending_email, ip=ip
+                "auth.login_failed", method="otp", email=pending_email, ip=facts.ip
             )
             ui.notify(
                 "That code didn't work — it may be mistyped or expired. "
@@ -165,7 +169,9 @@ def login_page(request: Request, redirect_to: str = "/"):
             return
         user = verified.value
         await perform(
-            [SignedIn(user.id, user.email, "otp", ip)], base_url=base_url, now=now
+            [SignedIn(user.id, user.email, "otp", facts.ip)],
+            base_url=facts.base_url,
+            now=now,
         )
         finish(user.id, "otp")
 
@@ -238,7 +244,7 @@ def login_page(request: Request, redirect_to: str = "/"):
 @ui.page("/invite/{token}")
 def invite_page(token: str, request: Request):
     apply_theme()
-    base_url = str(request.base_url).rstrip("/")
+    facts = RequestFacts.from_request(request)
 
     env = current()
 
@@ -284,7 +290,7 @@ def invite_page(token: str, request: Request):
             )
             return
         user = redeemed.value.value
-        await perform(redeemed.value.events, base_url=base_url, now=now)
+        await perform(redeemed.value.events, base_url=facts.base_url, now=now)
         establish_session(user.id, remember=remember.value, method="invite")
         ui.notify(
             "Welcome! Your password is set."
@@ -356,8 +362,8 @@ async def confirm_email_page(token: str, request: Request):
     account was reachable at is owed the news that it no longer is.
     """
     apply_theme()
-    base_url = str(request.base_url).rstrip("/")
-    login_url = f"{base_url}/login"
+    facts = RequestFacts.from_request(request)
+    login_url = f"{facts.base_url}/login"
     env = current()
     async with transaction(env, None) as session:
         account = await user_service.pending_email_change(
@@ -380,7 +386,7 @@ async def confirm_email_page(token: str, request: Request):
                 _show_dead_link(body, login_url)
                 return
         user, _was = result.value.value
-        await perform(result.value.events, base_url=base_url, now=now)
+        await perform(result.value.events, base_url=facts.base_url, now=now)
         settled = user.email
         body.clear()
         with body:

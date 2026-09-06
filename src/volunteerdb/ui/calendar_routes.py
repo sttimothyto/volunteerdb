@@ -13,21 +13,27 @@ responses, registered from register_pages() the way ministries_routes are.
     POST /calendar/mine/reset     a new token; every client on the old address
                                   goes dark. A form, not a button handler, so
                                   the subscribe panel needs no websocket.
+
+Each handler reads the Env, the request's facts and the moment once, at the
+door (`_at_the_door`), and the moment is the Env's clock -- so the window a
+feed covers moves with a test's clock the way every other page does.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import HTTPException, Request
 from nicegui import app
 from starlette.responses import RedirectResponse, Response
 
 from ..actors import load_actor
-from ..api.deps import raise_http
+from ..api.deps import RequestFacts, raise_http
 from ..db import transaction
+from ..env import Env
 from ..env import current as current_env
 from ..services import events as event_service
 from ..services import gcal, ics
 from ..services import users as user_service
+from ..services.events import CalendarEntry
 from .context import get_actor
 
 MEDIA_TYPE = "text/calendar; charset=utf-8"
@@ -35,51 +41,77 @@ MEDIA_TYPE = "text/calendar; charset=utf-8"
 # from being served stale for long, at parish scale
 PARISH_CACHE = {"Cache-Control": "public, max-age=900"}
 PERSONAL_CACHE = {"Cache-Control": "private, max-age=900"}
+DOWNLOAD_HEADERS = {
+    "Cache-Control": "private, no-store",
+    "Content-Disposition": 'attachment; filename="my-duties.ics"',
+}
 
 
-def _origin(request: Request) -> tuple[str, str]:
-    base_url = str(request.base_url).rstrip("/")
-    return base_url, request.url.hostname or "volunteerdb"
+def _at_the_door(request: Request) -> tuple[Env, RequestFacts, datetime]:
+    """The Env, what the request states about itself, and the moment -- read
+    once per request, the way a page's PageCtx reads them."""
+    env = current_env()
+    return env, RequestFacts.from_request(request), env.clock.now()
 
 
-def _window() -> tuple[datetime, datetime]:
-    now = datetime.now(UTC)
+def _window(now: datetime) -> tuple[datetime, datetime]:
+    """The span a feed covers, around the Env's `now`."""
     return now - ics.WINDOW_BACK, now + ics.WINDOW_FORWARD
 
 
-def parish_feed_name() -> str:
-    return gcal.calendar_name(current_env().settings.org_name)
+def parish_feed_name(env: Env) -> str:
+    return gcal.calendar_name(env.settings.org_name)
 
 
-def personal_feed_name() -> str:
-    org = current_env().settings.org_name.strip()
+def personal_feed_name(env: Env) -> str:
+    org = env.settings.org_name.strip()
     return f"My duties — {org}" if org else "My duties"
 
 
+def _feed(
+    entries: list[CalendarEntry],
+    *,
+    env: Env,
+    facts: RequestFacts,
+    now: datetime,
+    name: str,
+    headers: dict[str, str],
+) -> Response:
+    """The rendered feed as a response: the one call to ics.render."""
+    body = ics.render(
+        entries,
+        name=name,
+        host=facts.host,
+        base_url=facts.base_url,
+        now=now,
+        tz=env.tz,
+    )
+    return Response(content=body, media_type=MEDIA_TYPE, headers=headers)
+
+
 async def parish_feed(request: Request) -> Response:
-    base_url, host = _origin(request)
-    from_, to = _window()
-    async with transaction(current_env(), None) as session:
+    env, facts, now = _at_the_door(request)
+    from_, to = _window(now)
+    async with transaction(env, None) as session:
         entries = raise_http(
             await event_service.calendar_entries(
                 session, None, scope="parish", from_=from_, to=to
             )
         )
-    body = ics.render(
+    return _feed(
         entries,
-        name=parish_feed_name(),
-        host=host,
-        base_url=base_url,
-        now=current_env().clock.now(),
-        tz=current_env().tz,
+        env=env,
+        facts=facts,
+        now=now,
+        name=parish_feed_name(env),
+        headers=PARISH_CACHE,
     )
-    return Response(content=body, media_type=MEDIA_TYPE, headers=PARISH_CACHE)
 
 
 async def personal_feed(token: str, request: Request) -> Response:
-    base_url, host = _origin(request)
-    from_, to = _window()
-    async with transaction(current_env(), None) as session:
+    env, facts, now = _at_the_door(request)
+    from_, to = _window(now)
+    async with transaction(env, None) as session:
         user = await user_service.by_calendar_token(session, token)
         if user is None:
             raise HTTPException(404, "no such calendar")
@@ -89,21 +121,20 @@ async def personal_feed(token: str, request: Request) -> Response:
                 session, actor, scope="mine", from_=from_, to=to
             )
         )
-    body = ics.render(
+    return _feed(
         entries,
-        name=personal_feed_name(),
-        host=host,
-        base_url=base_url,
-        now=current_env().clock.now(),
-        tz=current_env().tz,
+        env=env,
+        facts=facts,
+        now=now,
+        name=personal_feed_name(env),
+        headers=PERSONAL_CACHE,
     )
-    return Response(content=body, media_type=MEDIA_TYPE, headers=PERSONAL_CACHE)
 
 
 async def personal_download(request: Request) -> Response:
-    base_url, host = _origin(request)
-    from_, to = _window()
-    async with transaction(current_env(), None) as session:
+    env, facts, now = _at_the_door(request)
+    from_, to = _window(now)
+    async with transaction(env, None) as session:
         actor = await get_actor(session)
         if actor is None:
             raise HTTPException(401, "sign in to download your calendar")
@@ -112,39 +143,33 @@ async def personal_download(request: Request) -> Response:
                 session, actor, scope="mine", from_=from_, to=to
             )
         )
-    body = ics.render(
+    return _feed(
         entries,
-        name=personal_feed_name(),
-        host=host,
-        base_url=base_url,
-        now=current_env().clock.now(),
-        tz=current_env().tz,
-    )
-    return Response(
-        content=body,
-        media_type=MEDIA_TYPE,
-        headers={
-            "Cache-Control": "private, no-store",
-            "Content-Disposition": 'attachment; filename="my-duties.ics"',
-        },
+        env=env,
+        facts=facts,
+        now=now,
+        name=personal_feed_name(env),
+        headers=DOWNLOAD_HEADERS,
     )
 
 
 async def reset_personal(request: Request) -> Response:
-    async with transaction(current_env(), None) as session:
+    env, facts, _now = _at_the_door(request)
+    async with transaction(env, None) as session:
         actor = await get_actor(session)
         if actor is None:
             raise HTTPException(401, "sign in to reset your calendar address")
         raise_http(
             await user_service.reset_calendar_token(
-                session, actor.user.id, token=current_env().rng.token()
+                session, actor.user.id, token=env.rng.token()
             )
         )
     # back to the page the form was on — same origin only, or /events
-    base_url, _ = _origin(request)
     referer = request.headers.get("referer", "")
     target = (
-        referer[len(base_url) :] if referer.startswith(base_url + "/") else "/events"
+        referer[len(facts.base_url) :]
+        if referer.startswith(facts.base_url + "/")
+        else "/events"
     )
     return RedirectResponse(target or "/events", status_code=303)
 

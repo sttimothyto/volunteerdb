@@ -1,4 +1,12 @@
-"""Per-page/per-action helpers bridging NiceGUI sessions and the service layer."""
+"""Per-page/per-action helpers bridging NiceGUI sessions and the service layer.
+
+The edge kernel is ``api/deps``: the context a request carries, the
+interpreter that runs a mutation's effects, the throttle pre-check. This
+module is the GUI's face of it -- a ``PageCtx`` is a ``Ctx`` built inside a
+page's unit of work, and the helpers below delegate to their API namesakes
+with the process Env filled in, since a ``@ui.page`` function has no
+dependency injection to hand one over.
+"""
 
 import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -10,8 +18,10 @@ from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import asof_param, effects, policy, throttle
+from .. import asof_param, effects, policy
 from ..actors import load_actor
+from ..api import deps
+from ..api.deps import Ctx, RequestFacts, split_outcome
 from ..db import transaction
 from ..domain import Outcome
 from ..effects import Effect
@@ -124,35 +134,17 @@ def _base_url() -> str:
     """The origin the page was requested on, for links in mail and toasts. A
     handler over the websocket still sees the page's original request."""
     try:
-        return str(context.client.request.base_url).rstrip("/")
+        return RequestFacts.from_request(context.client.request).base_url
     except Exception:  # background task or no client scope
         return ""
 
 
 @dataclass(frozen=True)
-class PageCtx:
-    """One page load or one action: its transaction, who is asking, the Env
-    the edge performs effects with, the moment it began (one clock read for
-    every service that needs a `now`), the origin links are built on, and the
-    as-of instant a time-travelling page was opened at."""
-
-    session: AsyncSession
-    actor: Actor
-    env: Env
-    now: datetime
-    base_url: str
-    as_of: datetime | None = None
-
-    def policy_ctx(self) -> policy.PolicyCtx:
-        """What the rules need, as values: the moment, the link base, this
-        door's notify mode, a snapshot of the throttle ledger, the copy."""
-        return policy.PolicyCtx(
-            now=self.now,
-            base_url=self.base_url,
-            notify=self.env.notify,
-            throttle=self.env.throttle.snapshot(),
-            copy=self.env.mail_context(),
-        )
+class PageCtx(Ctx):
+    """One page load or one action: the request context, built inside the
+    page's unit of work with the Env's notify mode (`direct`: the people a
+    write affects are mailed right after the commit) and the as-of instant a
+    time-travelling page was opened at."""
 
 
 @asynccontextmanager
@@ -170,10 +162,9 @@ async def page_ctx(as_of: datetime | None = None) -> AsyncIterator[PageCtx]:
                 clear_session()
                 ui.navigate.to("/login")
                 raise Forbidden("not signed in")
+            ip = _client_ip()
             stack.enter_context(
-                bind_actor(
-                    f"{actor.user.id}:{actor.user.email}", ip=_client_ip(), via="gui"
-                )
+                bind_actor(f"{actor.user.id}:{actor.user.email}", ip=ip, via="gui")
             )
             yield PageCtx(
                 session=session,
@@ -181,15 +172,10 @@ async def page_ctx(as_of: datetime | None = None) -> AsyncIterator[PageCtx]:
                 env=env,
                 now=now,
                 base_url=_base_url(),
+                ip=ip,
+                notify=env.notify,
                 as_of=as_of,
             )
-
-
-def split_outcome[T](value: Outcome[T] | T) -> tuple[T, tuple]:
-    """A service's plain value, or its Outcome's value and events."""
-    if isinstance(value, Outcome):
-        return value.value, value.events
-    return value, ()
 
 
 async def run_command[T](
@@ -238,8 +224,7 @@ async def run_command[T](
 def throttled(*keys: str, now: datetime) -> bool:
     """A front door's own pre-check, over the ledger as a VALUE (the cell is
     only read): a throttled sign-in must not even reach authenticate()."""
-    ledger = current().throttle.snapshot()
-    return any(throttle.blocked(ledger, key, now) for key in keys)
+    return deps.throttled(current(), *keys, now=now)
 
 
 async def perform(
@@ -250,14 +235,13 @@ async def perform(
     attempt, a code requested): plan the events and run their effects now.
     The caller does this AFTER its transaction, as run_command does."""
     env = current()
-    ctx = policy.PolicyCtx(
-        now=now if now is not None else env.clock.now(),
+    return await deps.perform(
+        env,
+        events,
         base_url=base_url,
+        now=now if now is not None else env.clock.now(),
         notify=env.notify,
-        throttle=env.throttle.snapshot(),
-        copy=env.mail_context(),
     )
-    return await effects.run(policy.plan(events, ctx), env)
 
 
 def toast(err: DomainError) -> None:

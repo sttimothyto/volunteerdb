@@ -7,7 +7,15 @@ from ..domain import ApiTokenIssued, EmailChangeAttempted, SignInFailed
 from ..errors import NotFound, message
 from ..fp import Err
 from ..services import users as service
-from .deps import CtxDep, dispatch, env_of, perform, raise_http, throttled
+from .deps import (
+    CtxDep,
+    RequestFacts,
+    dispatch,
+    env_of,
+    perform,
+    raise_http,
+    throttled,
+)
 from .schemas import (
     EmailChangeConfirmIn,
     EmailChangeIn,
@@ -28,13 +36,12 @@ async def login(data: LoginIn, request: Request) -> TokenOut:
     """Exchange email+password for a fresh personal API token. Only a hash of
     the token is stored, so a new one is issued (revoking the old) on every
     login."""
-    ip = request.client.host if request.client else "unknown"
+    facts = RequestFacts.from_request(request)
     env = env_of(request)
     now = env.clock.now()
-    base_url = str(request.base_url).rstrip("/")
     addr = data.email.strip().lower()
-    if throttled(env, f"pw:{addr}", f"pw-ip:{ip}", now=now):
-        logger.warning("auth.throttled", method="api", email=data.email, ip=ip)
+    if throttled(env, f"pw:{addr}", f"pw-ip:{facts.ip}", now=now):
+        logger.warning("auth.throttled", method="api", email=data.email, ip=facts.ip)
         raise HTTPException(429, "too many failed attempts; try again in a few minutes")
     async with transaction(env, None) as session:
         signed = await service.authenticate(session, data.email, data.password, now=now)
@@ -46,11 +53,19 @@ async def login(data: LoginIn, request: Request) -> TokenOut:
                 await service.issue_api_token(session, user.id, token=env.rng.token())
             )
     if isinstance(signed, Err):
-        logger.warning("auth.login_failed", method="api", email=data.email, ip=ip)
-        await perform(env, [SignInFailed("api", addr, ip)], base_url=base_url, now=now)
+        logger.warning("auth.login_failed", method="api", email=data.email, ip=facts.ip)
+        await perform(
+            env,
+            [SignInFailed("api", addr, facts.ip)],
+            base_url=facts.base_url,
+            now=now,
+        )
         raise HTTPException(401, "invalid credentials")
     await perform(
-        env, [ApiTokenIssued(user.id, user.email, ip)], base_url=base_url, now=now
+        env,
+        [ApiTokenIssued(user.id, user.email, facts.ip)],
+        base_url=facts.base_url,
+        now=now,
     )
     return TokenOut(token=token)
 
@@ -78,7 +93,7 @@ async def me(ctx: CtxDep) -> UserOut:
 
 @router.put("/password", status_code=204)
 async def set_own_password(
-    ctx: CtxDep, data: PasswordIn, request: Request, background: BackgroundTasks
+    ctx: CtxDep, data: PasswordIn, background: BackgroundTasks
 ) -> None:
     """Set or change the caller's own password.
 
@@ -89,7 +104,7 @@ async def set_own_password(
     hearing about on a channel the caller does not control."""
     user = ctx.actor.user
     email = user.email
-    ip = request.client.host if request.client else "unknown"
+    ip = ctx.ip
     # both buckets, exactly as POST /auth/login charges them: the per-account
     # limit and the per-IP flood limit, so a spray of current-password guesses
     # across many accounts from one IP is throttled at the IP too.
@@ -114,9 +129,7 @@ async def set_own_password(
 
 
 @router.delete("/password", status_code=204)
-async def clear_own_password(
-    ctx: CtxDep, request: Request, background: BackgroundTasks
-) -> None:
+async def clear_own_password(ctx: CtxDep, background: BackgroundTasks) -> None:
     """Drop back to emailed-code sign-in.
 
     This also revokes the API token making the call — it was issued against the
@@ -128,7 +141,7 @@ async def clear_own_password(
 
 @router.post("/email-change", status_code=202)
 async def request_email_change(
-    ctx: CtxDep, data: EmailChangeIn, request: Request, background: BackgroundTasks
+    ctx: CtxDep, data: EmailChangeIn, background: BackgroundTasks
 ) -> PendingEmailOut:
     """Ask to move this account to a new address.
 
@@ -196,7 +209,10 @@ async def confirm_email_change(
     # after the commit: the receipt to the mailbox the account moved AWAY from
     # (§4.1.2) is the policy's, from the EmailChanged event
     await perform(
-        env, result.value.events, base_url=str(request.base_url).rstrip("/"), now=now
+        env,
+        result.value.events,
+        base_url=RequestFacts.from_request(request).base_url,
+        now=now,
     )
     return out
 
@@ -237,6 +253,9 @@ async def redeem_invite(
         out.invite_token = out.invite_expires_at = None
     # after the commit: the welcome, from the InviteRedeemed event
     await perform(
-        env, redeemed.value.events, base_url=str(request.base_url).rstrip("/"), now=now
+        env,
+        redeemed.value.events,
+        base_url=RequestFacts.from_request(request).base_url,
+        now=now,
     )
     return out

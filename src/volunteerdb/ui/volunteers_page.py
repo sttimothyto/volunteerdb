@@ -1,11 +1,9 @@
 from urllib.parse import quote_plus
 
-from fastapi import Request
 from nicegui import app, ui
 
 from .. import query_lang
 from ..domain import EmailChangeAttempted
-from ..env import current
 from ..env import current as current_env
 from ..fp import Err, expect
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
@@ -34,7 +32,7 @@ ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
 
 @ui.page("/volunteers")
-async def volunteers_page(request: Request, q: str = "", band: str = ""):
+async def volunteers_page(q: str = "", band: str = ""):
     is_query = query_lang.parse(q) is not None
     query_error: str | None = None
     async with page_ctx() as ctx:
@@ -60,7 +58,7 @@ async def volunteers_page(request: Request, q: str = "", band: str = ""):
         # filtering happens strictly within the permitted set — no workload leak
         found = [v for v in found if v.id in wl and wl[v.id][1].label == band]
 
-    panel = VolunteerPanel("", str(request.base_url).rstrip("/"))
+    panel = VolunteerPanel("", ctx.base_url)
     with frame("Volunteers", actor):
         if query_error:
             ui.notify(query_error, color="warning")
@@ -251,8 +249,7 @@ def _new_volunteer_dialog() -> None:
 
 
 @ui.page("/volunteers/{volunteer_id}")
-async def volunteer_detail(request: Request, volunteer_id: int):
-    base_url = str(request.base_url).rstrip("/")
+async def volunteer_detail(volunteer_id: int):
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
         volunteer = await volunteer_service.get(session, volunteer_id)
@@ -277,12 +274,12 @@ async def volunteer_detail(request: Request, volunteer_id: int):
         )
         # scoped inside the service: only proposals this actor may see
         involvements = await elections_service.involving(
-            session, actor, volunteer_id, today=current_env().today()
+            session, actor, volunteer_id, today=ctx.env.today()
         )
         hours = (
             expect(
                 await event_service.hours_for_volunteer(
-                    session, actor, volunteer_id, now=current_env().clock.now()
+                    session, actor, volunteer_id, now=ctx.now
                 )
             )
             if can_view
@@ -329,7 +326,7 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                             actor.is_admin,
                             field_defs,
                             is_self=volunteer_id == actor.volunteer_id,
-                            base_url=base_url,
+                            base_url=ctx.base_url,
                             own_login=actor.user.email,
                             own_user_id=actor.user.id,
                         ),
@@ -386,7 +383,7 @@ async def volunteer_detail(request: Request, volunteer_id: int):
                         volunteer.full_name,
                         volunteer.email,
                         account,
-                        base_url,
+                        ctx.base_url,
                         reveal=actor.is_admin,
                         where="profile",
                     )
@@ -652,7 +649,7 @@ def _edit_dialog(
                 # F1: charge the send budget the /account and API doors charge,
                 # on every attempt (before the service reveals whether the
                 # address is taken), so this door is not the loose one.
-                now = current().clock.now()
+                now = current_env().clock.now()
                 if throttled(f"email-change:{own_user_id}", now=now):
                     ui.notify(
                         "Too many address changes requested — try again in a "

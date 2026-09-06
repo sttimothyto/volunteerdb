@@ -17,7 +17,6 @@ transaction that made the change.
 """
 
 import structlog
-from fastapi import Request
 from nicegui import ui
 
 from .. import passwords
@@ -41,9 +40,7 @@ logger = structlog.get_logger(__name__)
 
 
 @ui.page("/account")
-async def account_page(request: Request):
-    base_url = str(request.base_url).rstrip("/")
-    ip = request.client.host if request.client else "unknown"
+async def account_page():
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
         user = actor.user
@@ -52,7 +49,7 @@ async def account_page(request: Request):
         email, has_password = user.email, stored_hash is not None
         pending = (
             user.pending_email
-            if user_service.email_change_live(user, current_env().clock.now())
+            if user_service.email_change_live(user, ctx.now)
             else None
         )
         pending_until = user.email_change_expires_at if pending else None
@@ -63,7 +60,7 @@ async def account_page(request: Request):
         must_retype = has_password and not proved_by_email
         feed_token = expect(
             await user_service.ensure_calendar_token(
-                session, user_id, token=current_env().rng.token()
+                session, user_id, token=ctx.env.rng.token()
             )
         )
 
@@ -84,7 +81,7 @@ async def account_page(request: Request):
         # charge every attempt, before the service can reveal whether the
         # address is taken: a failed probe must count too, or it is an
         # unthrottled account-existence oracle.
-        await perform([EmailChangeAttempted(user_id)], base_url=base_url, now=now)
+        await perform([EmailChangeAttempted(user_id)], base_url=ctx.base_url, now=now)
 
         async def command(ctx: PageCtx):
             return await user_service.start_email_change(
@@ -136,7 +133,7 @@ async def account_page(request: Request):
             # sign-ins for this account (SP 800-63B §3.2.2): the per-account
             # bucket AND the per-IP flood bucket, exactly as the login page does.
             now = current_env().clock.now()
-            if throttled(f"pw:{email.lower()}", f"pw-ip:{ip}", now=now):
+            if throttled(f"pw:{email.lower()}", f"pw-ip:{ctx.ip}", now=now):
                 ui.notify(
                     "Too many failed attempts — try again in a few minutes.",
                     color="negative",
@@ -145,7 +142,9 @@ async def account_page(request: Request):
             if not await async_verify_password(stored_hash, current.value or ""):
                 logger.warning("auth.password_change_denied", email=email)
                 await perform(
-                    [SignInFailed("password", email, ip)], base_url=base_url, now=now
+                    [SignInFailed("password", email, ctx.ip)],
+                    base_url=ctx.base_url,
+                    now=now,
                 )
                 ui.notify("That is not your current password", color="negative")
                 return
@@ -211,7 +210,7 @@ async def account_page(request: Request):
             ).classes("text-sm text-gray-500")
             subscribe_panel(
                 view="mine",
-                base_url=base_url,
+                base_url=ctx.base_url,
                 token=feed_token,
                 calendar=None,
                 is_admin=False,
