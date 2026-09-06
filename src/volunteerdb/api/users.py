@@ -10,22 +10,11 @@ from .schemas import UserIn, UserOut, UserPatch
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-def _user_out(user, invite_token: str | None = None) -> UserOut:
-    """`invite_token` is passed in, never read off the row: only the digest is
-    stored (services.users._issue_invite), so a freshly minted link is the only
-    one that exists in readable form and the column itself must never be
-    serialized. `invite_expires_at` still comes off the row — a caller may
-    always learn that a link is outstanding, just not what it is."""
-    out = UserOut.model_validate(user)
-    out.has_password = user.password_hash is not None
-    out.invite_token = invite_token
-    return out
-
-
 @router.get("")
 async def list_users(ctx: CtxDep) -> list[UserOut]:
     return [
-        _user_out(u) for u in raise_http(await service.list_all(ctx.session, ctx.actor))
+        UserOut.of(u)
+        for u in raise_http(await service.list_all(ctx.session, ctx.actor))
     ]
 
 
@@ -45,7 +34,7 @@ async def create_user(
             user.id, user.email, token, ctx.env.settings.invite_ttl_hours
         )
         dispatch(ctx, background, Ok(Outcome(None, (issued,))), silent=True)
-    return _user_out(user, token)
+    return UserOut.of(user, token)
 
 
 @router.patch("/{user_id}")
@@ -61,7 +50,7 @@ async def update_user(ctx: CtxDep, user_id: int, data: UserPatch) -> UserOut:
         user = raise_http(
             await service.set_volunteer(ctx.session, user_id, link, actor=ctx.actor)
         )
-    return _user_out(user)
+    return UserOut.of(user)
 
 
 @router.post("/{user_id}/reinvite")
@@ -79,13 +68,26 @@ async def reinvite(ctx: CtxDep, user_id: int, background: BackgroundTasks) -> Us
         ),
         silent=True,  # the caller is an admin and gets the link here
     )
-    return _user_out(await service.get(ctx.session, user_id), token)
+    return UserOut.of(await service.get(ctx.session, user_id), token)
 
 
 class ProvisionOut(BaseModel):
     created: list[UserOut]
     linked: list[UserOut]
     skipped: list[dict]
+
+    @classmethod
+    def of(cls, report: service.ProvisionReport) -> "ProvisionOut":
+        """The links come back in the body -- the one readable copy of each --
+        so an admin can hand them out; nothing was mailed."""
+        return cls(
+            created=[UserOut.of(u, token) for _, u, token in report.created],
+            linked=[UserOut.of(u) for _, u in report.linked],
+            skipped=[
+                {"volunteer_id": v.id, "name": v.full_name, "reason": reason}
+                for v, reason in report.skipped
+            ],
+        )
 
 
 @router.post("/provision")
@@ -99,11 +101,4 @@ async def provision(ctx: CtxDep, background: BackgroundTasks) -> ProvisionOut:
         await service.bulk_provision(ctx.session, ctx.actor, mint=ctx.env.invite),
         silent=True,
     )
-    return ProvisionOut(
-        created=[_user_out(u, token) for _, u, token in report.created],
-        linked=[_user_out(u) for _, u in report.linked],
-        skipped=[
-            {"volunteer_id": v.id, "name": v.full_name, "reason": reason}
-            for v, reason in report.skipped
-        ],
-    )
+    return ProvisionOut.of(report)

@@ -75,10 +75,7 @@ async def login(data: LoginIn, request: Request) -> TokenOut:
 
 @router.get("/me")
 async def me(ctx: CtxDep) -> UserOut:
-    out = UserOut.model_validate(ctx.actor.user)
-    out.has_password = ctx.actor.user.password_hash is not None
-    out.invite_token = out.invite_expires_at = None
-    return out
+    return UserOut.own(ctx.actor.user)
 
 
 # --- the caller's own account -------------------------------------------------
@@ -177,10 +174,7 @@ async def request_email_change(
             ctx.session, user.id, data.new_email, now=now, token=env.rng.token()
         ),
     )
-    return PendingEmailOut(
-        pending_email=account.pending_email,
-        email_change_expires_at=account.email_change_expires_at,
-    )
+    return PendingEmailOut.of(account)
 
 
 @router.delete("/email-change", status_code=204)
@@ -214,9 +208,7 @@ async def confirm_email_change(
             case Err(err):
                 raise HTTPException(422, message(err))
         user, _was = result.value.value
-        out = UserOut.model_validate(user)
-        out.has_password = user.password_hash is not None
-        out.invite_token = out.invite_expires_at = None
+        out = UserOut.own(user)
     # after the commit: the receipt to the mailbox the account moved AWAY from
     # (§4.1.2) is the policy's, from the EmailChanged event
     await perform(
@@ -258,10 +250,7 @@ async def redeem_invite(
                 raise HTTPException(404, "that link is not valid any more")
             case Err(err):
                 raise HTTPException(422, message(err))
-        user = redeemed.value.value
-        out = UserOut.model_validate(user)
-        out.has_password = user.password_hash is not None
-        out.invite_token = out.invite_expires_at = None
+        out = UserOut.own(redeemed.value.value)
     # after the commit: the welcome, from the InviteRedeemed event
     await perform(
         env,

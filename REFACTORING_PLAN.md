@@ -101,7 +101,7 @@ commit.
   sync-login, plain, blank-own or needs-confirmation, and both doors consult
   it. The six private `_UNSET` sentinels become `fp.UNSET`.
 
-- [ ] **6. API presenters in place.** Each hand-assembled Out model gets a
+- [x] **6. API presenters in place.** Each hand-assembled Out model gets a
   constructor classmethod in `api/schemas.py` (`UserOut.of`, `UserOut.own`,
   `ProposalOut.of`, `VolunteerOut.redacted`, `EventDetailOut.of`, …),
   replacing the post-hoc mutations. The cross-router helpers move there, so

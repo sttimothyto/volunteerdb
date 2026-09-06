@@ -17,10 +17,7 @@ from .schemas import (
     TeamPatch,
     TeamSheetOut,
     TeamWithPath,
-    VolunteerOut,
-    role_label,
 )
-from .volunteers import redacted
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -35,10 +32,7 @@ def _weight_to_decimal(fields: dict) -> None:
 async def list_teams(ctx: CtxDep, as_of: AsOf) -> list[TeamWithPath]:
     """The team directory (structure is visible to every signed-in user)."""
     tree = await service.tree(ctx.session, at=as_of)
-    return [
-        TeamWithPath(**TeamOut.model_validate(t).model_dump(), path=tree.paths[t.id])
-        for t in tree.teams
-    ]
+    return [TeamWithPath.of(t, tree.paths[t.id]) for t in tree.teams]
 
 
 @router.post("", status_code=201)
@@ -164,25 +158,10 @@ async def team_roster(ctx: CtxDep, team_id: int, as_of: AsOf) -> list[RosterEntr
     if await service.get(ctx.session, team_id, at=as_of) is None:
         raise HTTPException(404, f"team {team_id} not found")
     rows = raise_http(await service.roster(ctx.session, ctx.actor, team_id, at=as_of))
-    full = ctx.actor.can_view_full_roster(team_id)
-    manage = ctx.actor.can_manage_team(team_id)
-    entries = []
-    for membership, volunteer in rows:
-        if full:
-            out = VolunteerOut.model_validate(volunteer)
-            if not manage:
-                out.notes = None
-        else:
-            out = redacted(ctx.actor, volunteer, {team_id})
-        entries.append(
-            RosterEntry(
-                membership_id=membership.id,
-                volunteer=out,
-                role=membership.role,
-                role_label=role_label(membership.role),
-            )
-        )
-    return entries
+    return [
+        RosterEntry.of(membership, volunteer, actor=ctx.actor, team_id=team_id)
+        for membership, volunteer in rows
+    ]
 
 
 @router.get("/{team_id}/page")

@@ -1,49 +1,27 @@
-from decimal import Decimal
-
 from fastapi import APIRouter
 
 from ..permissions import team_ids_map
 from ..services import volunteers as volunteer_service
 from ..services import workload as service
 from .deps import AsOf, CtxDep, raise_http
-from .schemas import BandOut, WorkloadConfigIn, WorkloadConfigOut, WorkloadScoreOut
+from .schemas import WorkloadConfigIn, WorkloadConfigOut, WorkloadScoreOut
 
 router = APIRouter(prefix="/workload", tags=["workload"])
-
-
-def _config_out(config: service.WorkloadConfig) -> WorkloadConfigOut:
-    return WorkloadConfigOut(
-        multipliers={role: float(m) for role, m in config.multipliers.items()},
-        bands=[
-            BandOut(
-                label=b.label,
-                color=b.color,
-                upper=None if b.upper is None else float(b.upper),
-            )
-            for b in config.bands
-        ],
-    )
 
 
 @router.get("/config")
 async def get_config(ctx: CtxDep) -> WorkloadConfigOut:
     """Multipliers and band colors/thresholds; leaders need them to render workload."""
-    return _config_out(raise_http(await service.get_config(ctx.session, ctx.actor)))
+    return WorkloadConfigOut.of(
+        raise_http(await service.get_config(ctx.session, ctx.actor))
+    )
 
 
 @router.put("/config")
 async def put_config(ctx: CtxDep, data: WorkloadConfigIn) -> WorkloadConfigOut:
-    config = service.WorkloadConfig(
-        multipliers={role: Decimal(str(m)) for role, m in data.multipliers.items()},
-        bands=[
-            service.Band(
-                b.label, b.color, None if b.upper is None else Decimal(str(b.upper))
-            )
-            for b in data.bands
-        ],
-    )
+    config = data.to_config()
     raise_http(await service.set_config(ctx.session, ctx.actor, config, now=ctx.now))
-    return _config_out(config)
+    return WorkloadConfigOut.of(config)
 
 
 @router.get("/scores")
@@ -58,8 +36,6 @@ async def workload_scores(ctx: CtxDep, as_of: AsOf) -> list[WorkloadScoreOut]:
         at=as_of,
     )
     return [
-        WorkloadScoreOut(
-            volunteer_id=vid, score=float(score), band=band.label, color=band.color
-        )
+        WorkloadScoreOut.of(vid, score, band)
         for vid, (score, band) in sorted(visible.items())
     ]

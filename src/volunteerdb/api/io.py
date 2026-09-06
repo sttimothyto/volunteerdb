@@ -58,6 +58,10 @@ class IssueOut(BaseModel):
     row: int
     message: str
 
+    @classmethod
+    def of(cls, issue: importer.Issue) -> "IssueOut":
+        return cls(sheet=issue.sheet, row=issue.row, message=issue.message)
+
 
 class ImportReportOut(BaseModel):
     applied: bool
@@ -68,6 +72,19 @@ class ImportReportOut(BaseModel):
     memberships_updated: int
     errors: list[IssueOut]
     warnings: list[IssueOut]
+
+    @classmethod
+    def of(cls, report: importer.ImportReport) -> "ImportReportOut":
+        return cls(
+            applied=report.applied,
+            volunteers_created=report.volunteers_created,
+            volunteers_updated=report.volunteers_updated,
+            volunteers_reactivated=report.volunteers_reactivated,
+            memberships_created=report.memberships_created,
+            memberships_updated=report.memberships_updated,
+            errors=[IssueOut.of(i) for i in report.errors],
+            warnings=[IssueOut.of(i) for i in report.warnings],
+        )
 
 
 @router.post("/import")
@@ -94,13 +111,4 @@ async def import_roster(
             ctx.env, content, dry_run=dry_run, user_id=ctx.actor.user.id
         )
     )
-    return ImportReportOut(
-        applied=report.applied,
-        volunteers_created=report.volunteers_created,
-        volunteers_updated=report.volunteers_updated,
-        volunteers_reactivated=report.volunteers_reactivated,
-        memberships_created=report.memberships_created,
-        memberships_updated=report.memberships_updated,
-        errors=[IssueOut(**vars(i)) for i in report.errors],
-        warnings=[IssueOut(**vars(i)) for i in report.warnings],
-    )
+    return ImportReportOut.of(report)

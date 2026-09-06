@@ -34,20 +34,16 @@ from .schemas import (
     EventOut,
     EventPatch,
     EventRsvpIn,
-    EventRsvpOut,
     EventSlotIn,
     EventSlotOut,
     EventSlotPatch,
     EventSummaryOut,
     MyDutyOut,
     SimilarEventOut,
-    SlotViewOut,
     SubRequestIn,
     SubRequestOut,
     SubstituteIn,
     TaskForceOut,
-    TeamOut,
-    TeamWithPath,
 )
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -58,37 +54,6 @@ async def _get_or_404(ctx: CtxDep, event_id: int) -> Event:
     if event is None:
         raise HTTPException(404, f"event {event_id} not found")
     return event
-
-
-def _detail_out(
-    view: event_service.EventDetail, sub_wanted: set[int]
-) -> EventDetailOut:
-    slots = []
-    for sv in view.slots:
-        entries = []
-        for assignment, volunteer in sv.entries:
-            out = EventAssignmentOut.model_validate(assignment)
-            out.volunteer_name = volunteer.full_name
-            out.sub_requested = assignment.id in sub_wanted
-            entries.append(out)
-        slots.append(
-            SlotViewOut(
-                slot=EventSlotOut.model_validate(sv.slot),
-                entries=entries,
-                open_spots=sv.open_spots,
-            )
-        )
-    rsvps = []
-    for rsvp, volunteer in view.rsvps:
-        out = EventRsvpOut.model_validate(rsvp)
-        out.volunteer_name = volunteer.full_name
-        rsvps.append(out)
-    return EventDetailOut(
-        event=EventOut.model_validate(view.event),
-        path=view.path,
-        slots=slots,
-        rsvps=rsvps,
-    )
 
 
 @router.get("")
@@ -109,17 +74,7 @@ async def list_events(
         to=to,
         include_cancelled=include_cancelled,
     )
-    return [
-        EventSummaryOut(
-            event=EventOut.model_validate(s.event),
-            path=s.path,
-            filled=s.filled,
-            capacity=s.capacity,
-            my_assignment_id=s.my_assignment.id if s.my_assignment else None,
-            my_rsvp_available=s.my_rsvp.available if s.my_rsvp else None,
-        )
-        for s in summaries
-    ]
+    return [EventSummaryOut.of(s) for s in summaries]
 
 
 @router.get("/mine")
@@ -131,16 +86,7 @@ async def my_duties(ctx: CtxDep) -> list[MyDutyOut]:
     duties = await event_service.my_upcoming(
         ctx.session, ctx.actor.volunteer_id, now=ctx.now
     )
-    return [
-        MyDutyOut(
-            assignment_id=d.assignment.id,
-            event=EventOut.model_validate(d.event),
-            slot_id=d.slot.id,
-            slot_name=d.slot.name,
-            open_sub_request_id=d.open_sub.id if d.open_sub else None,
-        )
-        for d in duties
-    ]
+    return [MyDutyOut.of(d) for d in duties]
 
 
 @router.get("/claimable")
@@ -149,20 +95,7 @@ async def claimable(ctx: CtxDep) -> list[ClaimableSubOut]:
     events, minus the ones they already serve at."""
     gate(ctx.actor.volunteer_id is not None, "claim a substitution")
     subs = await event_service.claimable_subs(ctx.session, ctx.actor, now=ctx.now)
-    return [
-        ClaimableSubOut(
-            sub_request_id=c.sub.id,
-            assignment_id=c.assignment.id,
-            event=EventOut.model_validate(c.event),
-            slot_id=c.slot.id,
-            slot_name=c.slot.name,
-            asked_by_volunteer_id=c.volunteer.id,
-            asked_by_name=c.volunteer.full_name,
-            note=c.sub.note,
-            path=c.path,
-        )
-        for c in subs
-    ]
+    return [ClaimableSubOut.of(c) for c in subs]
 
 
 @router.get("/similar")
@@ -192,16 +125,7 @@ async def similar(
             tz=ctx.env.tz,
         )
     )
-    return [
-        SimilarEventOut(
-            starts_at=h.starts_at,
-            ends_at=h.ends_at,
-            location=h.location,
-            team_path=h.team_path,
-            title=h.title,
-        )
-        for h in hits
-    ]
+    return [SimilarEventOut.of(h) for h in hits]
 
 
 @router.post("", status_code=201)
@@ -235,29 +159,18 @@ async def create_event(ctx: CtxDep, data: EventCreateIn) -> list[EventOut]:
 async def event_detail(ctx: CtxDep, event_id: int) -> EventDetailOut:
     event = await _get_or_404(ctx, event_id)
     view = raise_http(await event_service.detail(ctx.session, ctx.actor, event_id))
-    out = _detail_out(view, {a.id for _, a in view.open_subs})
-    if ctx.actor.can_manage_team(event.team_id) and event_service.is_past(
-        event, now=ctx.now
+    # the attendance sheet: a manager's, and only once the event has ended
+    attendance = None
+    if (
+        ctx.actor.can_manage_team(event.team_id)
+        and event_service.is_past(event, now=ctx.now)
+        and event.status == EventStatus.scheduled.value
     ):
-        if event.status == EventStatus.scheduled.value:
-            rows = raise_http(
-                await event_service.attendance_rows(ctx.session, ctx.actor, event_id)
-            )
-            out.attendance = [
-                AttendanceRowOut(
-                    assignment_id=a.id,
-                    volunteer_id=v.id,
-                    volunteer_name=v.full_name,
-                    slot_name=s.name,
-                    attended=att,
-                    hours=float(hours),
-                    overridden=a.attended_override is not None
-                    or a.hours_override is not None,
-                )
-                for a, s, v in rows
-                for att, hours in [event_service.effective(a, event)]
-            ]
-    return out
+        rows = raise_http(
+            await event_service.attendance_rows(ctx.session, ctx.actor, event_id)
+        )
+        attendance = [AttendanceRowOut.of(a, s, v, event) for a, s, v in rows]
+    return EventDetailOut.of(view, attendance=attendance)
 
 
 @router.patch("/{event_id}")
@@ -510,17 +423,7 @@ async def set_attendance(
     slot, volunteer, event = await event_service.attendance_entry(
         ctx.session, assignment
     )
-    attended, hours = event_service.effective(assignment, event)
-    return AttendanceRowOut(
-        assignment_id=assignment.id,
-        volunteer_id=assignment.volunteer_id,
-        volunteer_name=volunteer.full_name,
-        slot_name=slot.name,
-        attended=attended,
-        hours=float(hours),
-        overridden=assignment.attended_override is not None
-        or assignment.hours_override is not None,
-    )
+    return AttendanceRowOut.of(assignment, slot, volunteer, event)
 
 
 # --- task forces --------------------------------------------------------------
@@ -540,15 +443,7 @@ async def _task_force_out(ctx: CtxDep, event_id: int) -> TaskForceOut | None:
     if view is None:
         return None
     paths = (await team_service.tree(ctx.session)).paths
-    return TaskForceOut(
-        event_id=event_id,
-        team_id=view.team_id,
-        owner_team_id=view.owner_team_id,
-        sources=[
-            TeamWithPath(**TeamOut.model_validate(t).model_dump(), path=paths[t.id])
-            for t in view.sources
-        ],
-    )
+    return TaskForceOut.of(view, paths)
 
 
 @router.get("/{event_id}/task-force")

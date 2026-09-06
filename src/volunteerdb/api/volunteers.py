@@ -2,8 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFi
 from starlette.responses import Response
 
 from ..errors import Invalid
-from ..models import Volunteer
-from ..permissions import Actor, team_ids_map, volunteer_team_ids
+from ..permissions import team_ids_map, volunteer_team_ids
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
 from ..services import events as event_service
@@ -11,33 +10,20 @@ from ..services import photos as photo_service
 from ..services import users as user_service
 from ..services import volunteers as service
 from .deps import AsOf, CtxDep, dispatch, gate, raise_http, to_http
-from .elections import proposal_out
 from .schemas import (
     AssignmentOut,
     ImpactOut,
     InvolvementOut,
     PhotoMetaOut,
-    TimelineSegmentOut,
     TimelineSpellOut,
     UserOut,
     VolunteerHoursOut,
     VolunteerIn,
     VolunteerOut,
     VolunteerPatch,
-    role_label,
 )
 
 router = APIRouter(prefix="/volunteers", tags=["volunteers"])
-
-
-def redacted(actor: Actor, volunteer: Volunteer, team_ids: set[int]) -> VolunteerOut:
-    """Everyone may see names; contact details, notes and custom values need closer ties."""
-    out = VolunteerOut.model_validate(volunteer)
-    if not actor.can_view_volunteer(volunteer.id, team_ids):
-        out.email = out.phone = out.notes = out.custom = None
-    elif not actor.can_edit_volunteer(volunteer.id, team_ids):
-        out.notes = None
-    return out
 
 
 @router.get("")
@@ -65,10 +51,12 @@ async def list_volunteers(
     )
     teams_map = await team_ids_map(ctx.session, [v.id for v in found], as_of)
     photo_ids = await photo_service.versions(ctx.session, [v.id for v in found])
-    out = [redacted(ctx.actor, v, teams_map.get(v.id, set())) for v in found]
-    for entry in out:
-        entry.has_photo = entry.id in photo_ids
-    return out
+    return [
+        VolunteerOut.redacted(
+            ctx.actor, v, teams_map.get(v.id, set()), has_photo=v.id in photo_ids
+        )
+        for v in found
+    ]
 
 
 @router.post("", status_code=201)
@@ -85,9 +73,8 @@ async def get_volunteer(ctx: CtxDep, volunteer_id: int, as_of: AsOf) -> Voluntee
     if volunteer is None:
         raise HTTPException(404, f"volunteer {volunteer_id} not found")
     team_ids = (await team_ids_map(ctx.session, [volunteer_id], as_of))[volunteer_id]
-    out = redacted(ctx.actor, volunteer, team_ids)
-    out.has_photo = bool(await photo_service.versions(ctx.session, [volunteer_id]))
-    return out
+    has_photo = bool(await photo_service.versions(ctx.session, [volunteer_id]))
+    return VolunteerOut.redacted(ctx.actor, volunteer, team_ids, has_photo=has_photo)
 
 
 @router.patch("/{volunteer_id}")
@@ -138,7 +125,7 @@ async def update_volunteer(
                 ctx.session, ctx.actor, volunteer_id, custom
             )
         )
-    return redacted(ctx.actor, volunteer, team_ids)
+    return VolunteerOut.redacted(ctx.actor, volunteer, team_ids)
 
 
 @router.delete("/{volunteer_id}", status_code=204)
@@ -163,12 +150,7 @@ async def put_photo(ctx: CtxDep, volunteer_id: int, file: UploadFile) -> PhotoMe
             now=ctx.now,
         )
     )
-    return PhotoMetaOut(
-        volunteer_id=record.volunteer_id,
-        content_type=record.content_type,
-        size_bytes=len(record.image),
-        uploaded_at=record.uploaded_at,
-    )
+    return PhotoMetaOut.of(record)
 
 
 @router.get("/{volunteer_id}/photo")
@@ -192,12 +174,7 @@ async def volunteer_assignments(
 ) -> list[AssignmentOut]:
     """Which teams does this person serve on? Visible to all signed-in users."""
     rows = await service.assignments(ctx.session, volunteer_id, at=as_of)
-    return [
-        AssignmentOut(
-            membership_id=m.id, team=t, role=m.role, role_label=role_label(m.role)
-        )
-        for m, t in rows
-    ]
+    return [AssignmentOut.of(m, t) for m, t in rows]
 
 
 @router.get("/{volunteer_id}/timeline")
@@ -208,27 +185,7 @@ async def volunteer_timeline(ctx: CtxDep, volunteer_id: int) -> list[TimelineSpe
     like /assignments.
     """
     spells = await service.timeline(ctx.session, volunteer_id, tz=ctx.env.tz)
-    return [
-        TimelineSpellOut(
-            team_id=s.team_id,
-            team_name=s.team_name,
-            team_deleted=s.team_deleted,
-            role=s.role,
-            role_label=role_label(s.role),
-            start=s.start,
-            end=s.end,
-            segments=[
-                TimelineSegmentOut(
-                    role=seg.role,
-                    role_label=role_label(seg.role),
-                    start=seg.start,
-                    end=seg.end,
-                )
-                for seg in s.segments
-            ],
-        )
-        for s in spells
-    ]
+    return [TimelineSpellOut.of(s) for s in spells]
 
 
 @router.post("/{volunteer_id}/invite")
@@ -268,11 +225,9 @@ async def invite_volunteer(
         ),
         silent=ctx.actor.is_admin,
     )
-    out = UserOut.model_validate(account)
-    out.has_password = account.password_hash is not None
-    # never off the row — the column holds only a digest (services.users)
-    out.invite_token = token if ctx.actor.is_admin else None
-    return out
+    # the link only ever reaches the body for an admin (UserOut.of never
+    # reads it off the row: the column holds only a digest)
+    return UserOut.of(account, token if ctx.actor.is_admin else None)
 
 
 @router.get("/{volunteer_id}/proposals")
@@ -285,16 +240,7 @@ async def volunteer_proposals(ctx: CtxDep, volunteer_id: int) -> list[Involvemen
     rows = await elections_service.involving(
         ctx.session, ctx.actor, volunteer_id, today=ctx.env.today()
     )
-    return [
-        InvolvementOut(
-            proposal=proposal_out(r.proposal, today=ctx.env.today()),
-            path=r.path,
-            as_candidate=r.as_candidate,
-            as_voter=r.as_voter,
-            appointed=r.appointed,
-        )
-        for r in rows
-    ]
+    return [InvolvementOut.of(r, today=ctx.env.today()) for r in rows]
 
 
 @router.get("/{volunteer_id}/hours")
@@ -309,11 +255,7 @@ async def volunteer_hours(ctx: CtxDep, volunteer_id: int) -> VolunteerHoursOut:
             ctx.session, ctx.actor, volunteer_id, now=ctx.now
         )
     )
-    return VolunteerHoursOut(
-        volunteer_id=volunteer_id,
-        total_hours=float(summary.total_hours),
-        events_attended=summary.events_attended,
-    )
+    return VolunteerHoursOut.of(volunteer_id, summary)
 
 
 @router.get("/{volunteer_id}/impact")
@@ -324,13 +266,4 @@ async def volunteer_impact(
     rows = raise_http(
         await service.impact(ctx.session, ctx.actor, volunteer_id, at=as_of)
     )
-    return [
-        ImpactOut(
-            team=r.team,
-            role=r.role,
-            role_label=role_label(r.role),
-            leaders_left=r.leaders_left,
-            leadership_left=r.leadership_left,
-        )
-        for r in rows
-    ]
+    return [ImpactOut.of(r) for r in rows]

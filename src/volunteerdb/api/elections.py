@@ -6,23 +6,17 @@ Ballots are secret: these routes return turnout flags and post-conclusion
 aggregates, never a voter's scores.
 """
 
-from datetime import date
-
 from fastapi import APIRouter, HTTPException
 
-from ..models import Proposal, TeamRole
 from ..services import elections as service
 from ..services import volunteers as volunteer_service
-from ..star import StarResult
 from .deps import CtxDep, gate, raise_http
 from .schemas import (
     AppointIn,
-    AssignmentOut,
     BallotIn,
     BallotOut,
     CandidateIn,
     CandidateOut,
-    CandidateTallyOut,
     CoverageOut,
     NewRoundIn,
     ProposalCreateIn,
@@ -30,72 +24,11 @@ from .schemas import (
     ProposalOut,
     ProposalPatch,
     TallyOut,
-    TeamOut,
     VoterIn,
     VoterOut,
-    role_label,
 )
 
 router = APIRouter(prefix="/elections", tags=["elections"])
-
-
-def proposal_out(proposal: Proposal, *, today: date) -> ProposalOut:
-    out = ProposalOut.model_validate(proposal)
-    out.role_label = role_label(TeamRole(proposal.role))
-    phase = service.phase_of(proposal, today)
-    out.phase = phase.value if phase else None
-    return out
-
-
-def _tally_out(result: StarResult, names: dict[int, str]) -> TallyOut:
-    ranked = sorted(result.totals.items(), key=lambda kv: (-kv[1], kv[0]))
-    return TallyOut(
-        ballot_count=result.ballot_count,
-        totals=[
-            CandidateTallyOut(
-                candidate_id=cid, volunteer_name=names.get(cid, ""), total=total
-            )
-            for cid, total in ranked
-        ],
-        finalist_ids=list(result.finalist_ids) if result.finalist_ids else None,
-        runoff=dict(result.runoff) if result.runoff else None,
-        no_preference=result.no_preference,
-        winner_candidate_id=result.winner_id,
-        tie=result.tie,
-        tied_candidate_ids=list(result.tied_ids),
-    )
-
-
-def _detail_out(view: service.ProposalDetail, *, today: date) -> ProposalDetailOut:
-    candidates = []
-    for c in view.candidates:
-        out = CandidateOut.model_validate(c.candidate)
-        out.volunteer_name = c.volunteer.full_name
-        out.assignments = [
-            AssignmentOut(
-                membership_id=m.id,
-                team=TeamOut.model_validate(t),
-                role=m.role,
-                role_label=role_label(m.role),
-            )
-            for m, t in c.assignments
-        ]
-        candidates.append(out)
-    voters = []
-    for v in view.voters:
-        out = VoterOut.model_validate(v.voter)
-        out.volunteer_name = v.volunteer.full_name
-        out.has_account = v.has_account
-        out.has_voted = v.has_voted
-        voters.append(out)
-    names = {c.candidate.id: c.volunteer.full_name for c in view.candidates}
-    return ProposalDetailOut(
-        proposal=proposal_out(view.proposal, today=today),
-        path=view.path,
-        candidates=candidates,
-        voters=voters,
-        tally=_tally_out(view.tally, names) if view.tally else None,
-    )
 
 
 @router.get("/proposals")
@@ -108,7 +41,7 @@ async def list_proposals(
     views = await service.list_proposals(
         ctx.session, ctx.actor, team_id=team_id, status=status, today=ctx.env.today()
     )
-    return [proposal_out(v.proposal, today=ctx.env.today()) for v in views]
+    return [ProposalOut.of(v.proposal, today=ctx.env.today()) for v in views]
 
 
 @router.post("/proposals", status_code=201)
@@ -129,19 +62,15 @@ async def create_proposal(ctx: CtxDep, data: ProposalCreateIn) -> ProposalOut:
             today=ctx.env.today(),
         )
     )
-    return proposal_out(proposal, today=ctx.env.today())
+    return ProposalOut.of(proposal, today=ctx.env.today())
 
 
 @router.get("/proposals/{proposal_id}")
 async def get_proposal(ctx: CtxDep, proposal_id: int) -> ProposalDetailOut:
-    return _detail_out(
-        raise_http(
-            await service.detail(
-                ctx.session, ctx.actor, proposal_id, today=ctx.env.today()
-            )
-        ),
-        today=ctx.env.today(),
+    view = raise_http(
+        await service.detail(ctx.session, ctx.actor, proposal_id, today=ctx.env.today())
     )
+    return ProposalDetailOut.of(view, today=ctx.env.today())
 
 
 @router.patch("/proposals/{proposal_id}")
@@ -160,7 +89,7 @@ async def update_proposal(
             today=ctx.env.today(),
         )
     )
-    return proposal_out(updated, today=ctx.env.today())
+    return ProposalOut.of(updated, today=ctx.env.today())
 
 
 @router.post("/proposals/{proposal_id}/candidates", status_code=201)
@@ -180,10 +109,8 @@ async def add_candidate(
             today=ctx.env.today(),
         )
     )
-    out = CandidateOut.model_validate(candidate)
     volunteer = await volunteer_service.get(ctx.session, data.volunteer_id)
-    out.volunteer_name = volunteer.full_name if volunteer else ""
-    return out
+    return CandidateOut.of(candidate, volunteer)
 
 
 @router.delete("/proposals/{proposal_id}/candidates/{candidate_id}", status_code=204)
@@ -207,10 +134,8 @@ async def add_voter(ctx: CtxDep, proposal_id: int, data: VoterIn) -> VoterOut:
             today=ctx.env.today(),
         )
     )
-    out = VoterOut.model_validate(voter)
     volunteer = await volunteer_service.get(ctx.session, data.volunteer_id)
-    out.volunteer_name = volunteer.full_name if volunteer else ""
-    return out
+    return VoterOut.of(voter, volunteer)
 
 
 @router.delete("/proposals/{proposal_id}/voters/{voter_id}", status_code=204)
@@ -232,20 +157,7 @@ async def vacancies(ctx: CtxDep) -> list[CoverageOut]:
     """
     gate(ctx.actor.can_access_elections, "use the elections page")
     rows = await service.vacancies(ctx.session, ctx.actor)
-    return [
-        CoverageOut(
-            team_id=r.team.id,
-            path=r.path,
-            leader=r.counts.get(TeamRole.leader, 0),
-            second=r.counts.get(TeamRole.second, 0),
-            core=r.counts.get(TeamRole.core, 0),
-            member=r.counts.get(TeamRole.member, 0),
-            total=r.total,
-            missing_leader=r.missing_leader,
-            missing_second=r.missing_second,
-        )
-        for r in rows
-    ]
+    return [CoverageOut.of(r) for r in rows]
 
 
 @router.get("/proposals/{proposal_id}/ballot")
@@ -289,14 +201,14 @@ async def get_tally(ctx: CtxDep, proposal_id: int) -> TallyOut:
     if view.tally is None:
         raise HTTPException(422, "voting has not concluded")
     names = {c.candidate.id: c.volunteer.full_name for c in view.candidates}
-    return _tally_out(view.tally, names)
+    return TallyOut.of(view.tally, names)
 
 
 @router.post("/proposals/{proposal_id}/appoint")
 async def appoint(ctx: CtxDep, proposal_id: int, data: AppointIn) -> ProposalOut:
     """Appoint: flips the status and creates/upgrades the membership together.
     The tally is advisory — any candidate may be appointed."""
-    return proposal_out(
+    return ProposalOut.of(
         raise_http(
             await service.appoint(
                 ctx.session,
@@ -314,7 +226,7 @@ async def appoint(ctx: CtxDep, proposal_id: int, data: AppointIn) -> ProposalOut
 
 @router.post("/proposals/{proposal_id}/cancel")
 async def cancel(ctx: CtxDep, proposal_id: int) -> ProposalOut:
-    return proposal_out(
+    return ProposalOut.of(
         raise_http(
             await service.cancel(
                 ctx.session,
@@ -332,7 +244,7 @@ async def cancel(ctx: CtxDep, proposal_id: int) -> ProposalOut:
 async def new_round(ctx: CtxDep, proposal_id: int, data: NewRoundIn) -> ProposalOut:
     """Close a concluded round and open a fresh one for the same seat with
     the same candidates and roll — the Ignatian repeat."""
-    return proposal_out(
+    return ProposalOut.of(
         raise_http(
             await service.new_round(
                 ctx.session,
