@@ -44,6 +44,7 @@ from ..models import (
 from ..permissions import Actor
 from ..services import elections as election_service
 from ..services import events as event_service
+from ..services import readmodels
 from ..services import task_force as task_force_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
@@ -935,19 +936,22 @@ class EventDetailOut(BaseModel):
     attendance: list[AttendanceRowOut] | None = None
 
     @classmethod
-    def of(
-        cls,
-        view: event_service.EventDetail,
-        *,
-        attendance: list[AttendanceRowOut] | None = None,
-    ) -> EventDetailOut:
-        sub_wanted = {a.id for _, a in view.open_subs}
+    def of(cls, room: readmodels.EventWorkroom) -> EventDetailOut:
+        view = room.view
+        sub_wanted = set(room.sub_wanted)
         return cls(
             event=EventOut.model_validate(view.event),
             path=view.path,
             slots=[SlotViewOut.of(sv, sub_wanted) for sv in view.slots],
             rsvps=[EventRsvpOut.of(r, v) for r, v in view.rsvps],
-            attendance=attendance,
+            attendance=(
+                None
+                if room.attendance is None
+                else [
+                    AttendanceRowOut.of(a, s, v, view.event)
+                    for a, s, v in room.attendance
+                ]
+            ),
         )
 
 

@@ -114,7 +114,7 @@ commit.
   to a core `timefmt` module, re-exported as `mail.event_when`, so the GUI and
   `task_force` stop importing mail templates for a formatter.
 
-- [ ] **8. Read models, and pages as outlines.** `services/readmodels.py`
+- [x] **8. Read models, and pages as outlines.** `services/readmodels.py`
   holds `event_workroom`, `team_room`, `volunteer_profile` and
   `proposal_workroom`, each taking session, actor and now and returning a
   frozen value of plain data; the API detail endpoints reuse them where they

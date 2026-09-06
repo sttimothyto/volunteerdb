@@ -174,6 +174,12 @@ list, and one call per section. Sections and action handlers are
 module-level functions. They take ids and the rows they draw, not closures
 over page state, so a reader can read each without the page around it.
 
+For the four detail pages (an event, a team, a volunteer, a proposal) that
+load is one call into `services/readmodels.py`. A read model answers both
+questions a page has: the rows, and the facts about the reader that decide
+which sections exist. The refusal comes from the gated reader underneath;
+the read model only narrows. The API's event detail reads the same value.
+
 The rule earns its keep on the detail pages. There the alternative was a
 single 600-line function whose sections a reader could find only by a count
 of indentation. NiceGUI's slot stack is dynamic, so a section called inside

@@ -1,22 +1,24 @@
+from datetime import datetime
 from urllib.parse import quote_plus
+from zoneinfo import ZoneInfo
 
 from nicegui import app, ui
 
 from .. import query_lang
 from ..domain import EmailChangeAttempted
 from ..env import current as current_env
-from ..fp import Err, expect
+from ..fp import Err
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
-from ..permissions import Actor, team_ids_map, volunteer_team_ids
+from ..permissions import Actor, team_ids_map
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
-from ..services import events as event_service
 from ..services import memberships as membership_service
-from ..services import photos as photo_service
+from ..services import readmodels
 from ..services import teams as team_service
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
+from ..services.readmodels import VolunteerProfile
 from ..services.volunteers import AddressChange
 from . import column_order, invites
 from .account_status import invitable, last_login_text
@@ -251,243 +253,240 @@ def _new_volunteer_dialog() -> None:
     dialog.open()
 
 
+# --- the profile's sections ----------------------------------------------------
+#
+# One function per block on /volunteers/{id}, in the order the page draws
+# them; each takes the profile (readmodels.volunteer_profile) or the rows it
+# draws. The handlers they drive are module-level and take ids.
+
+
+async def _reload_page() -> None:
+    ui.navigate.reload()
+
+
+def _contact_details(profile: VolunteerProfile) -> None:
+    volunteer = profile.volunteer
+    ui.label(f"Email: {volunteer.email or '—'}").classes("text-sm text-gray-700")
+    ui.label(f"Phone: {volunteer.phone or '—'}").classes("text-sm text-gray-700")
+    for defn in profile.field_defs:
+        value = (volunteer.custom or {}).get(defn.key)
+        ui.label(f"{defn.label}: {format_custom(defn, value)}").classes(
+            "text-sm text-gray-700"
+        )
+    if profile.can_edit and volunteer.notes:
+        ui.label(f"Notes: {volunteer.notes}").classes("text-sm text-gray-700")
+    hours = profile.hours
+    if hours is not None and hours.events_attended:
+        ui.label(
+            f"Service hours: {hours.total_hours:g} h across "
+            f"{hours.events_attended} event"
+            f"{'s' if hours.events_attended != 1 else ''}"
+        ).classes("text-sm text-gray-700").tooltip(
+            "Derived from event attendance: scheduled duration "
+            "unless a leader recorded an exception"
+        )
+
+
+def _profile_card(profile: VolunteerProfile, actor: Actor, base_url: str) -> None:
+    """Name, photo and badges, with Edit and Delete for those who may; the
+    contact details for those who may read them; and for everyone the
+    sign-in status -- whether someone reads what the app sends them is not
+    a contact detail."""
+    volunteer = profile.volunteer
+    with ui.card().classes("w-full gap-1 p-4"):
+        with ui.row().classes("items-center gap-2"):
+            photo_avatar(
+                volunteer.id,
+                volunteer.full_name,
+                profile.photo_at,
+                on_change=_reload_page,
+            )
+            ui.label(volunteer.full_name).classes("text-lg font-medium")
+            if not volunteer.is_active:
+                inactive_badge()
+            if profile.workload is not None:
+                workload_badge(*profile.workload, prefix="workload: ")
+            ui.space()
+            if profile.can_edit:
+                ui.button(
+                    "Edit",
+                    icon="edit",
+                    on_click=lambda: _edit_dialog(
+                        volunteer, actor, profile.field_defs, base_url=base_url
+                    ),
+                ).props("dense outline")
+            if actor.is_admin:
+                ui.button(
+                    "Delete",
+                    icon="delete",
+                    on_click=lambda: _delete_volunteer(volunteer.id),
+                ).props("dense outline color=negative")
+        if profile.can_view:
+            _contact_details(profile)
+        else:
+            ui.label(
+                "Contact details visible to their team leaders and core members."
+            ).classes("text-sm text-gray-400 italic")
+        with ui.row().classes("items-center gap-2 no-wrap"):
+            ui.label(f"Last login: {last_login_text(profile.account)}").classes(
+                "text-sm text-gray-700"
+            )
+            # just the control here: the line above already says the status
+            if (
+                actor.can_invite_volunteer(profile.team_ids)
+                and volunteer.is_active
+                and invitable(profile.account)
+            ):
+                invites.invite_control(
+                    volunteer.id,
+                    volunteer.full_name,
+                    volunteer.email,
+                    profile.account,
+                    base_url,
+                    reveal=actor.is_admin,
+                    where="profile",
+                )
+
+
+def _serves_on_section(profile: VolunteerProfile, actor: Actor) -> None:
+    ui.label("Serves on").classes("text-lg font-medium")
+    if not profile.assignments:
+        ui.label("Not on any team.").classes("text-gray-500")
+    for membership, team in profile.assignments:
+        with ui.row().classes(
+            "w-full items-center gap-2 p-2 rounded hover:bg-gray-100"
+        ):
+            ui.link(profile.paths.get(team.id, team.name), f"/teams/{team.id}").classes(
+                "font-medium"
+            )
+            role_badge(membership.role)
+            ui.space()
+            if actor.can_manage_team(team.id):
+                ui.button(
+                    icon="person_remove",
+                    on_click=lambda _, mid=membership.id: _unassign(mid),
+                ).props("dense flat color=negative").tooltip("Remove from team")
+
+
+def _add_to_team_row(volunteer_id: int, assignable: dict[int, str]) -> None:
+    ui.label("Add to team").classes("text-lg font-medium")
+    with ui.row().classes("items-center gap-2"):
+        team_select = (
+            ui.select(assignable, label="Team", with_input=True)
+            .props("outlined dense")
+            .classes("w-64")
+        )
+        role_select = (
+            ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
+            .props("outlined dense")
+            .classes("w-52")
+        )
+        ui.button(
+            "Add",
+            icon="group_add",
+            on_click=lambda: _add_to_team(
+                volunteer_id, team_select.value, role_select.value
+            ),
+        ).props("dense")
+
+
+def _timeline_section(
+    profile: VolunteerProfile, *, now: datetime, tz: ZoneInfo
+) -> None:
+    ui.label("Service timeline").classes("text-lg font-medium")
+    timeline_chart(
+        profile.spells,
+        profile.paths,
+        dark=app.storage.user.get("dark_mode", False),
+        now=now,
+        tz=tz,
+    )
+
+
+def _impact_section(profile: VolunteerProfile) -> None:
+    """The priest's question: if they leave, what holes appear?"""
+    ui.label("If they leave, what vacancies appear?").classes("text-lg font-medium")
+    if not profile.impact:
+        ui.label("No memberships — no holes.").classes("text-gray-500")
+    for row in profile.impact:
+        critical = row.leadership_left == 0
+        warn = row.leaders_left == 0 and not critical
+        color = "bg-red-50" if critical else ("bg-amber-50" if warn else "bg-gray-50")
+        with ui.row().classes(f"w-full items-center gap-2 p-2 rounded {color}"):
+            ui.label(profile.paths.get(row.team.id, row.team.name)).classes(
+                "font-medium"
+            )
+            role_badge(row.role)
+            ui.space()
+            if critical:
+                ui.badge("team left with NO leadership", color="negative")
+            elif warn:
+                ui.badge("no leader left (second remains)", color="warning")
+            else:
+                ui.label(
+                    f"{row.leaders_left} leader(s), {row.leadership_left} leadership total remain"
+                ).classes("text-sm text-gray-600")
+
+
+def _involvements_section(
+    involvements: list[elections_service.ProposalInvolvement],
+) -> None:
+    ui.label("Proposals involving them").classes("text-lg font-medium")
+    for inv in involvements:
+        proposal = inv.proposal
+        with ui.row().classes("w-full items-center gap-2 p-2 rounded bg-gray-50"):
+            ui.link(
+                f"{inv.path}: {ROLE_LABELS[TeamRole(proposal.role)]}",
+                f"/elections/{proposal.id}",
+            ).classes("font-medium")
+            if inv.appointed:
+                # the person-badge implies the proposal state, so the
+                # phase badge (which would repeat "Appointed") is skipped
+                ui.badge("Appointed", color="positive")
+            else:
+                phase_badge(proposal, inv.phase)
+                if inv.as_candidate:
+                    ui.badge("Candidate", color="primary").props("outline")
+            if inv.as_voter:
+                ui.badge("Voting member").props("outline")
+
+
 @ui.page("/volunteers/{volunteer_id}")
 async def volunteer_detail(volunteer_id: int):
     async with page_ctx() as ctx:
-        session, actor = ctx.session, ctx.actor
-        volunteer = await volunteer_service.get(session, volunteer_id)
-    if volunteer is None:
+        actor, tz = ctx.actor, ctx.env.tz
+        shown = await readmodels.volunteer_profile(
+            ctx.session, actor, volunteer_id, now=ctx.now, tz=tz
+        )
+    if isinstance(shown, Err):
         with frame("Volunteer not found", actor):
             ui.label(f"No volunteer with id {volunteer_id}.")
         return
-    async with page_ctx() as ctx:
-        session, actor = ctx.session, ctx.actor
-        team_ids = await volunteer_team_ids(session, volunteer_id)
-        can_view = actor.can_view_volunteer(volunteer_id, team_ids)
-        can_edit = actor.can_edit_volunteer(volunteer_id, team_ids)
-        field_defs = await custom_field_service.list_defs(session)
-        wl = await workload_service.visible_scores(
-            session, actor, {volunteer_id: team_ids}
-        )
-        assignments = await volunteer_service.assignments(session, volunteer_id)
-        impact = (
-            expect(await volunteer_service.impact(session, actor, volunteer_id))
-            if can_view
-            else []
-        )
-        # scoped inside the service: only proposals this actor may see
-        involvements = await elections_service.involving(
-            session, actor, volunteer_id, today=ctx.env.today()
-        )
-        hours = (
-            expect(
-                await event_service.hours_for_volunteer(
-                    session, actor, volunteer_id, now=ctx.now
-                )
-            )
-            if can_view
-            else None
-        )
-        spells = await volunteer_service.timeline(session, volunteer_id, tz=ctx.env.tz)
-        account = await user_service.account_for_volunteer(session, volunteer_id)
-        tree = await team_service.tree(session)
-        paths = tree.paths
-        assignable = {
-            t.id: paths[t.id] for t in tree.teams if actor.can_manage_team(t.id)
-        }
-        photo_at = (await photo_service.versions(session, [volunteer_id])).get(
-            volunteer_id
+    profile = shown.value
+
+    with frame(profile.volunteer.full_name, actor):
+        _profile_card(profile, actor, ctx.base_url)
+        _serves_on_section(profile, actor)
+        if profile.assignable:
+            _add_to_team_row(volunteer_id, profile.assignable)
+        _timeline_section(profile, now=ctx.now, tz=tz)
+        if profile.can_view:
+            _impact_section(profile)
+        if profile.involvements:
+            _involvements_section(profile.involvements)
+
+
+async def _add_to_team(volunteer_id: int, team_id: int | None, role_value: str) -> None:
+    if not team_id:
+        ui.notify("Pick a team", color="warning")
+        return
+
+    async def command(ctx: PageCtx):
+        return await membership_service.assign(
+            ctx.session, ctx.actor, volunteer_id, team_id, TeamRole(role_value)
         )
 
-    async def _reload() -> None:
-        ui.navigate.reload()
-
-    with frame(volunteer.full_name, actor):
-        with ui.card().classes("w-full gap-1 p-4"):
-            with ui.row().classes("items-center gap-2"):
-                photo_avatar(
-                    volunteer_id, volunteer.full_name, photo_at, on_change=_reload
-                )
-                ui.label(volunteer.full_name).classes("text-lg font-medium")
-                if not volunteer.is_active:
-                    inactive_badge()
-                if volunteer_id in wl:
-                    workload_badge(*wl[volunteer_id], prefix="workload: ")
-                ui.space()
-                if can_edit:
-                    ui.button(
-                        "Edit",
-                        icon="edit",
-                        on_click=lambda: _edit_dialog(
-                            volunteer, actor, field_defs, base_url=ctx.base_url
-                        ),
-                    ).props("dense outline")
-                if actor.is_admin:
-                    ui.button(
-                        "Delete",
-                        icon="delete",
-                        on_click=lambda: _delete_volunteer(volunteer_id),
-                    ).props("dense outline color=negative")
-            if can_view:
-                ui.label(f"Email: {volunteer.email or '—'}").classes(
-                    "text-sm text-gray-700"
-                )
-                ui.label(f"Phone: {volunteer.phone or '—'}").classes(
-                    "text-sm text-gray-700"
-                )
-                for defn in field_defs:
-                    value = (volunteer.custom or {}).get(defn.key)
-                    ui.label(f"{defn.label}: {format_custom(defn, value)}").classes(
-                        "text-sm text-gray-700"
-                    )
-                if can_edit and volunteer.notes:
-                    ui.label(f"Notes: {volunteer.notes}").classes(
-                        "text-sm text-gray-700"
-                    )
-                if hours is not None and hours.events_attended:
-                    ui.label(
-                        f"Service hours: {hours.total_hours:g} h across "
-                        f"{hours.events_attended} event"
-                        f"{'s' if hours.events_attended != 1 else ''}"
-                    ).classes("text-sm text-gray-700").tooltip(
-                        "Derived from event attendance: scheduled duration "
-                        "unless a leader recorded an exception"
-                    )
-            else:
-                ui.label(
-                    "Contact details visible to their team leaders and core members."
-                ).classes("text-sm text-gray-400 italic")
-            # outside the can_view gate on purpose: whether someone reads what
-            # the app sends them is not a contact detail
-            with ui.row().classes("items-center gap-2 no-wrap"):
-                ui.label(f"Last login: {last_login_text(account)}").classes(
-                    "text-sm text-gray-700"
-                )
-                # just the control here: the line above already says the status
-                if (
-                    actor.can_invite_volunteer(team_ids)
-                    and volunteer.is_active
-                    and invitable(account)
-                ):
-                    invites.invite_control(
-                        volunteer_id,
-                        volunteer.full_name,
-                        volunteer.email,
-                        account,
-                        ctx.base_url,
-                        reveal=actor.is_admin,
-                        where="profile",
-                    )
-
-        ui.label("Serves on").classes("text-lg font-medium")
-        if not assignments:
-            ui.label("Not on any team.").classes("text-gray-500")
-        for membership, team in assignments:
-            with ui.row().classes(
-                "w-full items-center gap-2 p-2 rounded hover:bg-gray-100"
-            ):
-                ui.link(paths.get(team.id, team.name), f"/teams/{team.id}").classes(
-                    "font-medium"
-                )
-                role_badge(membership.role)
-                ui.space()
-                if actor.can_manage_team(team.id):
-                    ui.button(
-                        icon="person_remove",
-                        on_click=lambda _, mid=membership.id: _unassign(mid),
-                    ).props("dense flat color=negative").tooltip("Remove from team")
-
-        if assignable:
-            ui.label("Add to team").classes("text-lg font-medium")
-            with ui.row().classes("items-center gap-2"):
-                team_select = (
-                    ui.select(assignable, label="Team", with_input=True)
-                    .props("outlined dense")
-                    .classes("w-64")
-                )
-                role_select = (
-                    ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
-                    .props("outlined dense")
-                    .classes("w-52")
-                )
-
-                async def add() -> None:
-                    if not team_select.value:
-                        ui.notify("Pick a team", color="warning")
-                        return
-
-                    async def command(ctx: PageCtx):
-                        return await membership_service.assign(
-                            ctx.session,
-                            ctx.actor,
-                            volunteer_id,
-                            team_select.value,
-                            TeamRole(role_select.value),
-                        )
-
-                    await run_command(command, reload=True)
-
-                ui.button("Add", icon="group_add", on_click=add).props("dense")
-
-        ui.label("Service timeline").classes("text-lg font-medium")
-        timeline_chart(
-            spells,
-            paths,
-            dark=app.storage.user.get("dark_mode", False),
-            now=ctx.now,
-            tz=ctx.env.tz,
-        )
-
-        if can_view:
-            ui.label("If they leave, what vacancies appear?").classes(
-                "text-lg font-medium"
-            )
-            if not impact:
-                ui.label("No memberships — no holes.").classes("text-gray-500")
-            for row in impact:
-                critical = row.leadership_left == 0
-                warn = row.leaders_left == 0 and not critical
-                color = (
-                    "bg-red-50"
-                    if critical
-                    else ("bg-amber-50" if warn else "bg-gray-50")
-                )
-                with ui.row().classes(f"w-full items-center gap-2 p-2 rounded {color}"):
-                    ui.label(paths.get(row.team.id, row.team.name)).classes(
-                        "font-medium"
-                    )
-                    role_badge(row.role)
-                    ui.space()
-                    if critical:
-                        ui.badge("team left with NO leadership", color="negative")
-                    elif warn:
-                        ui.badge("no leader left (second remains)", color="warning")
-                    else:
-                        ui.label(
-                            f"{row.leaders_left} leader(s), {row.leadership_left} leadership total remain"
-                        ).classes("text-sm text-gray-600")
-
-        if involvements:
-            ui.label("Proposals involving them").classes("text-lg font-medium")
-            for inv in involvements:
-                proposal = inv.proposal
-                with ui.row().classes(
-                    "w-full items-center gap-2 p-2 rounded bg-gray-50"
-                ):
-                    ui.link(
-                        f"{inv.path}: {ROLE_LABELS[TeamRole(proposal.role)]}",
-                        f"/elections/{proposal.id}",
-                    ).classes("font-medium")
-                    if inv.appointed:
-                        # the person-badge implies the proposal state, so the
-                        # phase badge (which would repeat "Appointed") is skipped
-                        ui.badge("Appointed", color="positive")
-                    else:
-                        phase_badge(proposal, inv.phase)
-                        if inv.as_candidate:
-                            ui.badge("Candidate", color="primary").props("outline")
-                    if inv.as_voter:
-                        ui.badge("Voting member").props("outline")
+    await run_command(command, reload=True)
 
 
 def _custom_widget(defn: CustomFieldDef, value):

@@ -1,3 +1,12 @@
+"""The door: sign in, redeem an invite, confirm a new address.
+
+No page here has a signed-in actor, so none uses page_ctx(): each reads the
+request's facts and the Env once and runs its own unit of work. The work
+behind each button -- the throttle check, the service call, the events
+performed after it -- is a module-level function taking the typed values;
+the nested handlers only read the widgets and move between the steps.
+"""
+
 import html
 
 import structlog
@@ -9,9 +18,10 @@ from .. import passwords
 from ..api.deps import RequestFacts
 from ..db import transaction
 from ..domain import OtpRequested, SignedIn, SignInFailed
-from ..env import current
+from ..env import Env, current
 from ..errors import Invalid
 from ..fp import Err, Ok
+from ..models import AppUser
 from ..services import users as user_service
 from .context import (
     establish_session,
@@ -67,6 +77,91 @@ def _safe_target(redirect_to: str) -> str:
     return redirect_to if safe else "/"
 
 
+# --- the sign-in page's work -----------------------------------------------------
+
+
+async def _password_sign_in(
+    addr: str, password: str, *, facts: RequestFacts, env: Env
+) -> int | None:
+    """The account's id when the password is right. A throttled or failed
+    attempt is charged, logged and toasted here, and answers None."""
+    now = env.clock.now()
+    if denied := rate_limit(
+        f"pw:{addr.lower()}", f"pw-ip:{facts.ip}", now=now, what="sign in"
+    ):
+        logger.warning("auth.throttled", method="password", email=addr, ip=facts.ip)
+        toast(denied.error)
+        return None
+    async with transaction(env, None) as session:
+        signed = await user_service.authenticate(session, addr, password, now=now)
+    if isinstance(signed, Err):
+        logger.warning("auth.login_failed", method="password", email=addr, ip=facts.ip)
+        await perform(
+            [SignInFailed("password", addr, facts.ip)],
+            base_url=facts.base_url,
+            now=now,
+        )
+        ui.notify("Invalid email or password", color="negative")
+        return None
+    user = signed.value
+    await perform(
+        [SignedIn(user.id, user.email, "password", facts.ip)],
+        base_url=facts.base_url,
+        now=now,
+    )
+    return user.id
+
+
+async def _request_code(addr: str, *, facts: RequestFacts, env: Env) -> bool:
+    """Mail a one-time code; True when the code step should open. The
+    request is charged and logged whether or not the account exists (no
+    enumeration); a fresh code -- the service says when, a live one is not
+    resent -- is what gets mailed."""
+    now = env.clock.now()
+    if denied := rate_limit(
+        f"otp-ip:{facts.ip}", now=now, what="request a sign-in code"
+    ):
+        logger.warning("auth.throttled", method="otp", email=addr, ip=facts.ip)
+        toast(denied.error)
+        return False
+    async with transaction(env, None) as session:
+        result = await user_service.start_otp_login(
+            session, addr, now=now, code=env.rng.otp_code()
+        )
+    events = [OtpRequested(addr, facts.ip)]
+    if isinstance(result, Ok):
+        events.extend(result.value.events)
+    await perform(events, base_url=facts.base_url, now=now)
+    # Identical response whether or not the account exists (no enumeration).
+    ui.notify("If that address has an account, a sign-in code is on its way.")
+    return True
+
+
+async def _verify_code(
+    addr: str, code: str, *, facts: RequestFacts, env: Env
+) -> int | None:
+    """The account's id when the code is right; None once the refusal has
+    been logged and toasted."""
+    now = env.clock.now()
+    async with transaction(env, None) as session:
+        verified = await user_service.verify_otp(session, addr, code, now=now)
+    if isinstance(verified, Err):
+        logger.warning("auth.login_failed", method="otp", email=addr, ip=facts.ip)
+        ui.notify(
+            "That code didn't work — it may be mistyped or expired. "
+            "Resend to get a fresh one.",
+            color="negative",
+        )
+        return None
+    user = verified.value
+    await perform(
+        [SignedIn(user.id, user.email, "otp", facts.ip)],
+        base_url=facts.base_url,
+        now=now,
+    )
+    return user.id
+
+
 @ui.page("/login")
 def login_page(request: Request, redirect_to: str = "/"):
     # Already signed in: the card has nothing to offer. The public ministries
@@ -88,96 +183,30 @@ def login_page(request: Request, redirect_to: str = "/"):
         ui.navigate.to(_safe_target(redirect_to))
 
     async def submit() -> None:
-        now = env.clock.now()
         addr = (email.value or "").strip()
         if not addr:
             ui.notify("Enter your email address", color="warning")
             return
-        if password.value:
-            if denied := rate_limit(
-                f"pw:{addr.lower()}", f"pw-ip:{facts.ip}", now=now, what="sign in"
-            ):
-                logger.warning(
-                    "auth.throttled", method="password", email=addr, ip=facts.ip
-                )
-                toast(denied.error)
-                return
-            async with transaction(env, None) as session:
-                signed = await user_service.authenticate(
-                    session, addr, password.value, now=now
-                )
-            if isinstance(signed, Err):
-                logger.warning(
-                    "auth.login_failed", method="password", email=addr, ip=facts.ip
-                )
-                await perform(
-                    [SignInFailed("password", addr, facts.ip)],
-                    base_url=facts.base_url,
-                    now=now,
-                )
-                ui.notify("Invalid email or password", color="negative")
-                return
-            user = signed.value
-            await perform(
-                [SignedIn(user.id, user.email, "password", facts.ip)],
-                base_url=facts.base_url,
-                now=now,
-            )
-            finish(user.id, "password")
-        else:
+        if not password.value:
             await send_code()
+            return
+        user_id = await _password_sign_in(addr, password.value, facts=facts, env=env)
+        if user_id is not None:
+            finish(user_id, "password")
 
     async def send_code() -> None:
-        now = env.clock.now()
         addr = (email.value or "").strip()
-        if denied := rate_limit(
-            f"otp-ip:{facts.ip}", now=now, what="request a sign-in code"
-        ):
-            logger.warning("auth.throttled", method="otp", email=addr, ip=facts.ip)
-            toast(denied.error)
-            return
-        async with transaction(env, None) as session:
-            result = await user_service.start_otp_login(
-                session, addr, now=now, code=env.rng.otp_code()
-            )
-        # The request is charged and logged whether or not the account exists
-        # (no enumeration); a fresh code -- the service says when, a live one
-        # is not resent -- is what gets mailed.
-        events = [OtpRequested(addr, facts.ip)]
-        if isinstance(result, Ok):
-            events.extend(result.value.events)
-        await perform(events, base_url=facts.base_url, now=now)
-        # Identical response whether or not the account exists (no enumeration).
-        code_hint.set_text(f"Enter the 6-digit code emailed to {addr}")
-        code_input.value = ""
-        show_step(code_step)
-        ui.notify("If that address has an account, a sign-in code is on its way.")
+        if await _request_code(addr, facts=facts, env=env):
+            code_hint.set_text(f"Enter the 6-digit code emailed to {addr}")
+            code_input.value = ""
+            show_step(code_step)
 
     async def verify() -> None:
         # the address the code went to is the one still in the (hidden) box
-        pending_email = (email.value or "").strip()
-        now = env.clock.now()
-        async with transaction(env, None) as session:
-            verified = await user_service.verify_otp(
-                session, pending_email, code_input.value or "", now=now
-            )
-        if isinstance(verified, Err):
-            logger.warning(
-                "auth.login_failed", method="otp", email=pending_email, ip=facts.ip
-            )
-            ui.notify(
-                "That code didn't work — it may be mistyped or expired. "
-                "Resend to get a fresh one.",
-                color="negative",
-            )
-            return
-        user = verified.value
-        await perform(
-            [SignedIn(user.id, user.email, "otp", facts.ip)],
-            base_url=facts.base_url,
-            now=now,
-        )
-        finish(user.id, "otp")
+        addr = (email.value or "").strip()
+        user_id = await _verify_code(addr, code_input.value or "", facts=facts, env=env)
+        if user_id is not None:
+            finish(user_id, "otp")
 
     def show_step(step: ui.column) -> None:
         credentials_step.set_visibility(step is credentials_step)
@@ -245,56 +274,81 @@ def login_page(request: Request, redirect_to: str = "/"):
         ).classes("text-sm text-gray-500 max-w-80 text-center")
 
 
+# --- the invite page's work ------------------------------------------------------
+
+
+async def _redeem_invite(
+    token: str,
+    password: str,
+    again: str,
+    *,
+    agreed: bool,
+    facts: RequestFacts,
+    env: Env,
+) -> AppUser | None:
+    """The account behind a redeemed link, with its events performed; None
+    once the refusal has been toasted. The password is optional: given, it
+    has to pass the policy and be typed twice."""
+    if not agreed:
+        ui.notify(
+            "To finish setup, please agree to keep personal information confidential.",
+            color="warning",
+        )
+        return None
+    if password or again:
+        # The service checks the policy too (it is the choke point); doing
+        # it here as well is what turns a 500-shaped surprise into the
+        # specific sentence the person needs while the form is still open.
+        weak = passwords.problem(password, site_terms=env.password_terms)
+        if weak:
+            ui.notify(weak, color="negative", multi_line=True, timeout=8000)
+            return None
+        if password != again:
+            ui.notify("The two passwords don't match", color="negative")
+            return None
+    now = env.clock.now()
+    async with transaction(env, None) as session:
+        redeemed = await user_service.redeem_invite(
+            session,
+            token,
+            password or None,
+            agreed_to_confidentiality=agreed,
+            now=now,
+            site_terms=env.password_terms,
+        )
+    if isinstance(redeemed, Err):
+        logger.warning("auth.invite_invalid", reason=type(redeemed.error).__name__)
+        ui.notify(
+            "This link has expired or has already been used. You can still "
+            "sign in: enter your email on the sign-in page and leave the "
+            "password blank, and we'll email you a code.",
+            color="negative",
+            multi_line=True,
+            timeout=10000,
+        )
+        return None
+    await perform(redeemed.value.events, base_url=facts.base_url, now=now)
+    return redeemed.value.value
+
+
 @ui.page("/invite/{token}")
 def invite_page(token: str, request: Request):
     apply_theme()
     facts = RequestFacts.from_request(request)
-
     env = current()
 
     async def redeem() -> None:
-        if not agree.value:
-            ui.notify(
-                "To finish setup, please agree to keep personal information "
-                "confidential.",
-                color="warning",
-            )
-            return
         pw = password.value or ""
-        if pw or confirm.value:
-            # The service checks the policy too (it is the choke point); doing
-            # it here as well is what turns a 500-shaped surprise into the
-            # specific sentence the person needs while the form is still open.
-            weak = passwords.problem(pw, site_terms=env.password_terms)
-            if weak:
-                ui.notify(weak, color="negative", multi_line=True, timeout=8000)
-                return
-            if pw != confirm.value:
-                ui.notify("The two passwords don't match", color="negative")
-                return
-        now = env.clock.now()
-        async with transaction(env, None) as session:
-            redeemed = await user_service.redeem_invite(
-                session,
-                token,
-                pw or None,
-                agreed_to_confidentiality=agree.value,
-                now=now,
-                site_terms=env.password_terms,
-            )
-        if isinstance(redeemed, Err):
-            logger.warning("auth.invite_invalid", reason=type(redeemed.error).__name__)
-            ui.notify(
-                "This link has expired or has already been used. You can still "
-                "sign in: enter your email on the sign-in page and leave the "
-                "password blank, and we'll email you a code.",
-                color="negative",
-                multi_line=True,
-                timeout=10000,
-            )
+        user = await _redeem_invite(
+            token,
+            pw,
+            confirm.value or "",
+            agreed=bool(agree.value),
+            facts=facts,
+            env=env,
+        )
+        if user is None:
             return
-        user = redeemed.value.value
-        await perform(redeemed.value.events, base_url=facts.base_url, now=now)
         establish_session(user.id, remember=remember.value, method="invite")
         ui.notify(
             "Welcome! Your password is set."
@@ -345,6 +399,41 @@ def invite_page(token: str, request: Request):
             ui.button("Finish setup and sign in", on_click=redeem).classes("w-full")
 
 
+# --- the confirmation page's work ------------------------------------------------
+
+
+async def _apply_email_change(
+    token: str, body: ui.column, login_url: str, *, facts: RequestFacts, env: Env
+) -> None:
+    """Spend the token: the address moves, the outgoing one is mailed its
+    last message, and `body` is redrawn with the outcome."""
+    now = env.clock.now()
+    async with transaction(env, None) as session:
+        # the EmailChanged event names the outgoing address: that mailbox
+        # is owed the receipt (§4.1.2) for a binding that just changed
+        result = await user_service.confirm_email_change(session, token, now=now)
+    match result:
+        case Err(Invalid(text, _)):  # the address went to somebody else first
+            _show_dead_link(body, login_url, text)
+            return
+        case Err():
+            logger.warning("auth.email_change_invalid")
+            _show_dead_link(body, login_url)
+            return
+    user, _was = result.value.value
+    await perform(result.value.events, base_url=facts.base_url, now=now)
+    body.clear()
+    with body:
+        ui.label("Address confirmed").classes("text-2xl vdb-brand")
+        with ui.card().classes("w-80 gap-3"):
+            ui.label(user.email).classes("font-medium")
+            ui.label(
+                "This is now the address you sign in with, and the one "
+                "your ministries reach you at."
+            ).classes("text-sm text-gray-500")
+            ui.button("Sign in").props(f'href="{login_url}"').classes("w-full")
+
+
 @ui.page("/confirm-email/{token}")
 async def confirm_email_page(token: str, request: Request):
     """The other end of a requested address change.
@@ -375,48 +464,25 @@ async def confirm_email_page(token: str, request: Request):
         )
         target = account.pending_email if account is not None else None
 
-    async def apply() -> None:
-        now = env.clock.now()
-        async with transaction(env, None) as session:
-            # the EmailChanged event names the outgoing address: that mailbox
-            # is owed the receipt (§4.1.2) for a binding that just changed
-            result = await user_service.confirm_email_change(session, token, now=now)
-        match result:
-            case Err(Invalid(text, _)):  # the address went to somebody else first
-                _show_dead_link(body, login_url, text)
-                return
-            case Err():
-                logger.warning("auth.email_change_invalid")
-                _show_dead_link(body, login_url)
-                return
-        user, _was = result.value.value
-        await perform(result.value.events, base_url=facts.base_url, now=now)
-        settled = user.email
-        body.clear()
-        with body:
-            ui.label("Address confirmed").classes("text-2xl vdb-brand")
-            with ui.card().classes("w-80 gap-3"):
-                ui.label(settled).classes("font-medium")
-                ui.label(
-                    "This is now the address you sign in with, and the one "
-                    "your ministries reach you at."
-                ).classes("text-sm text-gray-500")
-                ui.button("Sign in").props(f'href="{login_url}"').classes("w-full")
-
     body = ui.column().classes("absolute-center items-center gap-4")
     if target is None:
         logger.warning("auth.email_change_invalid")
         _show_dead_link(body, login_url)
-    else:
-        with body:
-            ui.label("Confirm your new address").classes("text-2xl vdb-brand")
-            with ui.card().classes("w-80 gap-3"):
-                ui.label(target).classes("font-medium")
-                ui.label(
-                    "Confirming makes this the address you sign in with, and "
-                    "the one on every ministry roster you serve on."
-                ).classes("text-sm text-gray-500")
-                ui.button("Confirm this address", on_click=apply).classes("w-full")
+        return
+    with body:
+        ui.label("Confirm your new address").classes("text-2xl vdb-brand")
+        with ui.card().classes("w-80 gap-3"):
+            ui.label(target).classes("font-medium")
+            ui.label(
+                "Confirming makes this the address you sign in with, and "
+                "the one on every ministry roster you serve on."
+            ).classes("text-sm text-gray-500")
+            ui.button(
+                "Confirm this address",
+                on_click=lambda: _apply_email_change(
+                    token, body, login_url, facts=facts, env=env
+                ),
+            ).classes("w-full")
 
 
 def _show_dead_link(body: ui.column, login_url: str, reason: str = "") -> None:

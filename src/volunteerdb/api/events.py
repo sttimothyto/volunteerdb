@@ -17,8 +17,9 @@ from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
-from ..models import Event, EventStatus
+from ..models import Event
 from ..services import events as event_service
+from ..services import readmodels
 from ..services import task_force as task_force_service
 from ..services import teams as team_service
 from .deps import CtxDep, dispatch, gate, raise_http
@@ -157,20 +158,14 @@ async def create_event(ctx: CtxDep, data: EventCreateIn) -> list[EventOut]:
 
 @router.get("/{event_id}")
 async def event_detail(ctx: CtxDep, event_id: int) -> EventDetailOut:
-    event = await _get_or_404(ctx, event_id)
-    view = raise_http(await event_service.detail(ctx.session, ctx.actor, event_id))
-    # the attendance sheet: a manager's, and only once the event has ended
-    attendance = None
-    if (
-        ctx.actor.can_manage_team(event.team_id)
-        and event_service.is_past(event, now=ctx.now)
-        and event.status == EventStatus.scheduled.value
-    ):
-        rows = raise_http(
-            await event_service.attendance_rows(ctx.session, ctx.actor, event_id)
-        )
-        attendance = [AttendanceRowOut.of(a, s, v, event) for a, s, v in rows]
-    return EventDetailOut.of(view, attendance=attendance)
+    """The event as the GUI's workroom reads it: the slots and RSVPs for
+    anyone who may see the event, plus the attendance sheet for a manager
+    once it has ended."""
+    await _get_or_404(ctx, event_id)
+    room = raise_http(
+        await readmodels.event_workroom(ctx.session, ctx.actor, event_id, now=ctx.now)
+    )
+    return EventDetailOut.of(room)
 
 
 @router.patch("/{event_id}")

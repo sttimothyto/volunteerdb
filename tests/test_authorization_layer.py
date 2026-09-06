@@ -57,6 +57,14 @@ SCOPING_ONLY = {
     "volunteers.search_or_query",
     "workload.visible_scores",  # only volunteers whose workload you may see
     "importer.apply_rows",  # licences each row against the actor, one by one
+    # the read models (services/readmodels.py): each opens with a gated reader
+    # (events.detail, elections.detail, teams.roster, volunteers.impact) and
+    # the actor then decides which SECTIONS of the page exist -- never whether
+    # the page does
+    "readmodels.event_workroom",
+    "readmodels.team_room",
+    "readmodels.volunteer_profile",
+    "readmodels.proposal_workroom",
 }
 
 # `require()` calls that legitimately remain at a front door: an actor-shaped

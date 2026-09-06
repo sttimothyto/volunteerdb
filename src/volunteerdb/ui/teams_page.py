@@ -1,22 +1,23 @@
 from decimal import Decimal
 from functools import partial
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from nicegui import events, ui
 
 from .. import query_lang, timefmt
 from ..env import current as current_env
 from ..errors import not_found
-from ..fp import Err, Ok, expect
-from ..models import ROLE_LABELS, TeamRole, TeamSheet
+from ..fp import Err, Ok
+from ..models import ROLE_LABELS, Membership, Team, TeamRole, TeamSheet, Volunteer
 from ..services import events as event_service
 from ..services import memberships as membership_service
 from ..services import pages as page_service
+from ..services import readmodels, roster_sheets
 from ..services import reports as report_service
-from ..services import roster_sheets
 from ..services import teams as team_service
-from ..services import users as user_service
 from ..services import volunteers as volunteer_service
+from ..services.readmodels import TeamRoom
 from ..sheets import importer
 from ..sheets.common import sheet_url
 from . import column_order, invites
@@ -797,283 +798,256 @@ async def _fetch_home_page(team_id: int) -> None:
     await run_command(command, on_ok=done, reload=False)
 
 
+# --- the team page's sections --------------------------------------------------
+#
+# One function per block on /teams/{id}, in the order the page draws them.
+# Each takes the room (readmodels.team_room) or the rows it draws; the
+# handlers they drive are module-level and take ids.
+
+
+def _copy_emails(emails: list[str]) -> None:
+    ui.clipboard.write(", ".join(emails))
+    ui.notify(f"{len(emails)} addresses copied", color="positive")
+
+
+def _team_actions(room: TeamRoom, *, is_admin: bool, as_of: str) -> None:
+    """The row under the description: the admin's Edit and Delete, the
+    exporter and the mail helpers for full-roster viewers, and for everyone
+    else the one door to the public page."""
+    team_id = room.team.id
+    with ui.row().classes("gap-2 w-full items-center"):
+        if is_admin and room.live:
+            options = _parent_options(room.tree, team_id)
+            ui.button(
+                "Edit team",
+                icon="edit",
+                on_click=lambda: _team_dialog(options, room.team),
+            ).props("dense outline")
+            ui.button(
+                "Delete", icon="delete", on_click=lambda: _delete_team(team_id)
+            ).props("dense outline color=negative")
+        if room.can_full:
+            # a link to a route (ui/team_files_route.py); the exporter
+            # re-checks the actor there, so a tab left open across a
+            # demotion stops exporting just as the handler did
+            roster_suffix = f"?as_of={as_of}" if as_of else ""
+            ui.button("Export roster (.csv)", icon="download").props(
+                f'dense outline href="/teams/{team_id}/roster.csv{roster_suffix}"'
+            )
+            # roster emails are already shown to can_full viewers, so the
+            # buttons add convenience, not exposure; live view only — no
+            # copying a historical snapshot's stale addresses
+            emails = room.emails
+            if emails and room.live:
+                ui.button(
+                    "Copy email list",
+                    icon="content_copy",
+                    on_click=lambda: _copy_emails(emails),
+                ).props("dense outline")
+                ui.button("Email all (BCC)", icon="mail").props(
+                    f'dense outline href="mailto:?bcc={quote(",".join(emails))}"'
+                ).tooltip(
+                    "Opens your mail app with everyone in BCC; for very "
+                    "large teams use Copy email list instead"
+                )
+        # can_full viewers reach the page from the Volunteer home page
+        # section below, so this is the door for everyone else — a reader
+        # not on this team gets an otherwise empty row and this one link
+        if room.has_public_page and not (room.can_full and room.live):
+            ui.space()
+            ui.button("View public homepage", icon="public").props(
+                f'dense outline href="/ministries/{room.slug}.html"'
+            )
+
+
+def _anniversaries_banner(anniversaries: list[volunteer_service.Anniversary]) -> None:
+    summary = "; ".join(
+        f"{a.volunteer.full_name}: {a.years} "
+        f"{'year' if a.years == 1 else 'years'} on {a.anniversary:%B %-d}"
+        for a in anniversaries
+    )
+    with ui.row().classes("w-full bg-amber-100 rounded p-2 items-center gap-2"):
+        ui.icon("celebration")
+        ui.label(f"Service anniversaries — {summary}").classes(
+            "text-amber-900 font-medium"
+        )
+    ui.label(
+        "Continuous service on this team, measured from the database's "
+        "records — members imported when VolunteerDB was set up count "
+        "from that import."
+    ).classes("text-xs text-gray-500 vdb-prose")
+
+
+def _subteams_row(children: list[Team]) -> None:
+    ui.label("Sub-teams").classes("text-lg font-medium")
+    with ui.row().classes("gap-2"):
+        for child in children:
+            ui.button(child.name).props(f'outline dense href="/teams/{child.id}"')
+
+
+def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> None:
+    ui.label("Add member").classes("text-lg font-medium")
+    with ui.row().classes("items-center gap-2"):
+        who = (
+            ui.select(volunteer_options, label="Volunteer", with_input=True)
+            .props("outlined dense")
+            .classes("w-64")
+        )
+        role = (
+            ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
+            .props("outlined dense")
+            .classes("w-52")
+        )
+        ui.button(
+            "Add",
+            icon="person_add",
+            on_click=lambda: _add_member(team_id, who.value, role.value),
+        ).props("dense")
+
+
+def _roster_row(
+    room: TeamRoom,
+    membership: Membership,
+    volunteer: Volunteer,
+    panel: VolunteerPanel,
+    base_url: str,
+    *,
+    reveal: bool,
+) -> None:
+    """One member: the name, the role (a picker for a manager), contact
+    details for full-roster viewers, the sign-in status with the invite
+    control for those who may send one, and the manager's Remove."""
+    # the column widths live in theme.css (.vdb-roster-name,
+    # .vdb-roster-email), which lets a phone drop them and stack
+    # the row as a block under the name
+    account = room.accounts.get(volunteer.id)
+    with ui.row().classes("w-full items-center gap-3 p-2 rounded hover:bg-gray-100"):
+        volunteer_link(
+            volunteer.full_name, volunteer.id, panel, classes="vdb-roster-name"
+        )
+        if room.can_manage:
+            role_select = ui.select(ROLE_OPTIONS, value=membership.role.value).props(
+                "dense outlined"
+            )
+            role_select.on_value_change(
+                lambda e, mid=membership.id: _change_role(mid, e.value)
+            )
+        else:
+            role_badge(membership.role)
+        if room.can_full:
+            ui.label(volunteer.email or "").classes(
+                "text-sm text-gray-600 vdb-roster-email"
+            )
+            ui.label(volunteer.phone or "").classes("text-sm text-gray-600")
+        ui.space()
+        # every member sees this, not just full-roster viewers; the
+        # invite control rides along for leaders/seconds/core only
+        roster_account(
+            account,
+            action=(
+                partial(
+                    invites.invite_control,
+                    volunteer.id,
+                    volunteer.full_name,
+                    volunteer.email,
+                    account,
+                    base_url,
+                    reveal=reveal,
+                )
+                if room.can_invite and volunteer.is_active
+                else None
+            ),
+        )
+        if room.can_manage:
+            ui.button(
+                icon="person_remove",
+                on_click=lambda _, mid=membership.id: _remove_member(mid),
+            ).props("dense flat color=negative").tooltip("Remove from team")
+
+
+def _roster_section(
+    room: TeamRoom, panel: VolunteerPanel, base_url: str, *, reveal: bool
+) -> None:
+    ui.label("Roster").classes("text-lg font-medium")
+    if not room.can_names:
+        ui.label(
+            "You are not on this team, so its roster is not visible to you."
+        ).classes("text-gray-500")
+    elif not room.roster:
+        ui.label("Nobody on this team yet.").classes("text-gray-500")
+    for membership, volunteer in room.roster:
+        _roster_row(room, membership, volunteer, panel, base_url, reveal=reveal)
+
+
+def _upcoming_events_section(
+    upcoming_events: list[event_service.EventSummary], tz: ZoneInfo
+) -> None:
+    ui.label("Upcoming events").classes("text-lg font-medium")
+    with ui.column().classes("w-full gap-1"):
+        for s in upcoming_events[:5]:
+            with ui.row().classes("w-full items-center gap-2 p-2 rounded bg-gray-50"):
+                ui.link(s.event.title, f"/events/{s.event.id}").classes("font-medium")
+                ui.label(
+                    timefmt.event_when(s.event.starts_at, s.event.ends_at, tz=tz)
+                ).classes("text-sm text-gray-600")
+                ui.space()
+                cap = "∞" if s.capacity is None else s.capacity
+                ui.label(f"{s.filled}/{cap} filled").classes("text-sm text-gray-600")
+        if len(upcoming_events) > 5:
+            ui.link(f"All {len(upcoming_events)} upcoming events", "/events").classes(
+                "text-sm"
+            )
+
+
 @ui.page("/teams/{team_id}")
 async def team_detail(team_id: int, as_of: str = ""):
-    at = parse_as_of(as_of, current_env().tz)
     async with page_ctx() as ctx:
-        session, actor = ctx.session, ctx.actor
-        # out of the tree rather than team_service.get(): the page reads the whole
-        # table either way, and get() is a second round trip for a row in hand
-        tree = await team_service.tree(session, at=at)
-        team = tree.by_id.get(team_id)
-        # No rollback when it is missing: a rollback expires every loaded row,
-        # the actor's user among them, and the frame below reads that row after
-        # the session has closed -- a snapshot from before the team existed
-        # was a 500, not a page. Committing a read is nothing.
-    if team is None:
+        actor, tz = ctx.actor, ctx.env.tz
+        at = parse_as_of(as_of, tz)
+        shown = await readmodels.team_room(
+            ctx.session, actor, team_id, now=ctx.now, tz=tz, at=at
+        )
+    if isinstance(shown, Err):
         with frame("Team not found", actor, as_of=at, asof_path=f"/teams/{team_id}"):
             ui.label(f"No team with id {team_id} at this time.")
         return
-    async with page_ctx() as ctx:
-        session, actor = ctx.session, ctx.actor
-        paths = tree.paths
-        slug = page_service.slug_map(paths).get(team_id)
-        can_names = actor.can_view_roster_names(team_id)
-        can_full = actor.can_view_full_roster(team_id)
-        can_manage = actor.can_manage_team(team_id) and at is None
-        # leader/second/core of this team may invite its members; never off a
-        # snapshot, where the roster is history and the addresses may be stale
-        can_invite = can_full and at is None
-        roster = (
-            expect(await team_service.roster(session, actor, team_id, at=at))
-            if can_names
-            else []
-        )
-        # accounts are not system-versioned (like photos): an as-of roster still
-        # reports who can sign in *now*
-        accounts = await user_service.accounts_by_volunteer(
-            session, [v.id for _, v in roster]
-        )
-        children = tree.by_parent.get(team_id, [])
-        volunteer_options = (
-            await volunteer_service.name_map(session) if can_manage else {}
-        )
-        team_page = (
-            expect(await page_service.page_status(session, actor, team_id))
-            if can_full and at is None
-            else None
-        )
-        # whose roster you are on has nothing to do with a page the world can
-        # read; the check never pulls the html the way team_page does
-        has_public_page = slug is not None and await page_service.is_published(
-            session, team_id
-        )
-        team_sheet = (
-            expect(await team_service.roster_sheet(session, actor, team_id))
-            if can_manage
-            else None
-        )
-        anniversaries = (
-            await volunteer_service.team_anniversaries(
-                session, team_id, ctx.env.today(), tz=ctx.env.tz
-            )
-            if can_manage
-            else []
-        )
-        upcoming_events = (
-            await event_service.list_events(
-                session, actor, team_id=team_id, from_=ctx.now
-            )
-            if can_names and at is None
-            else []
-        )
+    room = shown.value
+
     panel = VolunteerPanel(as_of, ctx.base_url)
-    with frame(
-        paths.get(team_id, team.name), actor, as_of=at, asof_path=f"/teams/{team_id}"
-    ):
-        if team.description:
-            ui.label(team.description).classes("text-gray-600")
-        if not team.is_active:
+    with frame(room.path, actor, as_of=at, asof_path=f"/teams/{team_id}"):
+        if room.team.description:
+            ui.label(room.team.description).classes("text-gray-600")
+        if not room.team.is_active:
             inactive_badge()
-
-        with ui.row().classes("gap-2 w-full items-center"):
-            if actor.is_admin and at is None:
-                options = _parent_options(tree, team_id)
-                ui.button(
-                    "Edit team",
-                    icon="edit",
-                    on_click=lambda: _team_dialog(options, team),
-                ).props("dense outline")
-                ui.button(
-                    "Delete", icon="delete", on_click=lambda: _delete_team(team_id)
-                ).props("dense outline color=negative")
-            if can_full:
-                # a link to a route (ui/team_files_route.py); the exporter
-                # re-checks the actor there, so a tab left open across a
-                # demotion stops exporting just as the handler did
-                roster_suffix = f"?as_of={as_of}" if as_of else ""
-                ui.button("Export roster (.csv)", icon="download").props(
-                    f'dense outline href="/teams/{team_id}/roster.csv{roster_suffix}"'
-                )
-
-                # roster emails are already shown to can_full viewers, so the
-                # buttons add convenience, not exposure; live view only — no
-                # copying a historical snapshot's stale addresses
-                emails = sorted({v.email for _, v in roster if v.email})
-                if emails and at is None:
-                    joined = ", ".join(emails)
-
-                    def copy_emails(text: str = joined, n: int = len(emails)) -> None:
-                        ui.clipboard.write(text)
-                        ui.notify(f"{n} addresses copied", color="positive")
-
-                    ui.button(
-                        "Copy email list", icon="content_copy", on_click=copy_emails
-                    ).props("dense outline")
-                    ui.button("Email all (BCC)", icon="mail").props(
-                        f'dense outline href="mailto:?bcc={quote(",".join(emails))}"'
-                    ).tooltip(
-                        "Opens your mail app with everyone in BCC; for very "
-                        "large teams use Copy email list instead"
-                    )
-            # can_full viewers reach the page from the Volunteer home page
-            # section below, so this is the door for everyone else — a reader
-            # not on this team gets an otherwise empty row and this one link
-            if has_public_page and not (can_full and at is None):
-                ui.space()
-                ui.button("View public homepage", icon="public").props(
-                    f'dense outline href="/ministries/{slug}.html"'
-                )
-
-        if anniversaries:
-            summary = "; ".join(
-                f"{a.volunteer.full_name}: {a.years} "
-                f"{'year' if a.years == 1 else 'years'} on {a.anniversary:%B %-d}"
-                for a in anniversaries
-            )
-            with ui.row().classes("w-full bg-amber-100 rounded p-2 items-center gap-2"):
-                ui.icon("celebration")
-                ui.label(f"Service anniversaries — {summary}").classes(
-                    "text-amber-900 font-medium"
-                )
-            ui.label(
-                "Continuous service on this team, measured from the database's "
-                "records — members imported when VolunteerDB was set up count "
-                "from that import."
-            ).classes("text-xs text-gray-500 vdb-prose")
-
+        _team_actions(room, is_admin=actor.is_admin, as_of=as_of)
+        if room.anniversaries:
+            _anniversaries_banner(room.anniversaries)
         # core members included on purpose: leaders are often elderly and a
         # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
-        if can_full and at is None:
-            _home_page_section(team, team_page, team_id, slug, ctx.base_url)
+        if room.can_full and room.live:
+            _home_page_section(room.team, room.page, team_id, room.slug, ctx.base_url)
+        if room.children:
+            _subteams_row(room.children)
+        if room.can_manage:
+            _add_member_row(team_id, room.volunteer_options)
+        _roster_section(room, panel, ctx.base_url, reveal=actor.is_admin)
+        if room.can_manage:
+            _sheet_section(room.sheet, team_id, actor.is_admin)
+        if room.upcoming_events:
+            _upcoming_events_section(room.upcoming_events, tz)
 
-        if children:
-            ui.label("Sub-teams").classes("text-lg font-medium")
-            with ui.row().classes("gap-2"):
-                for child in children:
-                    ui.button(child.name).props(
-                        f'outline dense href="/teams/{child.id}"'
-                    )
 
-        if can_manage:
-            ui.label("Add member").classes("text-lg font-medium")
-            with ui.row().classes("items-center gap-2"):
-                who = (
-                    ui.select(volunteer_options, label="Volunteer", with_input=True)
-                    .props("outlined dense")
-                    .classes("w-64")
-                )
-                role = (
-                    ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
-                    .props("outlined dense")
-                    .classes("w-52")
-                )
+async def _add_member(team_id: int, volunteer_id: int | None, role_value: str) -> None:
+    if not volunteer_id:
+        ui.notify("Pick a volunteer", color="warning")
+        return
 
-                async def add() -> None:
-                    if not who.value:
-                        ui.notify("Pick a volunteer", color="warning")
-                        return
+    async def command(ctx: PageCtx):
+        return await membership_service.assign(
+            ctx.session, ctx.actor, volunteer_id, team_id, TeamRole(role_value)
+        )
 
-                    async def command(ctx: PageCtx):
-                        return await membership_service.assign(
-                            ctx.session,
-                            ctx.actor,
-                            who.value,
-                            team_id,
-                            TeamRole(role.value),
-                        )
-
-                    await run_command(command, reload=True)
-
-                ui.button("Add", icon="person_add", on_click=add).props("dense")
-
-        ui.label("Roster").classes("text-lg font-medium")
-        if not can_names:
-            ui.label(
-                "You are not on this team, so its roster is not visible to you."
-            ).classes("text-gray-500")
-        elif not roster:
-            ui.label("Nobody on this team yet.").classes("text-gray-500")
-        else:
-            for membership, volunteer in roster:
-                # the column widths live in theme.css (.vdb-roster-name,
-                # .vdb-roster-email), which lets a phone drop them and stack
-                # the row as a block under the name
-                with ui.row().classes(
-                    "w-full items-center gap-3 p-2 rounded hover:bg-gray-100"
-                ):
-                    volunteer_link(
-                        volunteer.full_name,
-                        volunteer.id,
-                        panel,
-                        classes="vdb-roster-name",
-                    )
-                    if can_manage:
-                        role_select = ui.select(
-                            ROLE_OPTIONS, value=membership.role.value
-                        ).props("dense outlined")
-                        role_select.on_value_change(
-                            lambda e, mid=membership.id: _change_role(mid, e.value)
-                        )
-                    else:
-                        role_badge(membership.role)
-                    if can_full:
-                        ui.label(volunteer.email or "").classes(
-                            "text-sm text-gray-600 vdb-roster-email"
-                        )
-                        ui.label(volunteer.phone or "").classes("text-sm text-gray-600")
-                    ui.space()
-                    # every member sees this, not just full-roster viewers; the
-                    # invite control rides along for leaders/seconds/core only
-                    roster_account(
-                        accounts.get(volunteer.id),
-                        action=(
-                            partial(
-                                invites.invite_control,
-                                volunteer.id,
-                                volunteer.full_name,
-                                volunteer.email,
-                                accounts.get(volunteer.id),
-                                ctx.base_url,
-                                reveal=actor.is_admin,
-                            )
-                            if can_invite and volunteer.is_active
-                            else None
-                        ),
-                    )
-                    if can_manage:
-                        ui.button(
-                            icon="person_remove",
-                            on_click=lambda _, mid=membership.id: _remove_member(mid),
-                        ).props("dense flat color=negative").tooltip("Remove from team")
-
-        if can_manage:
-            _sheet_section(team_sheet, team_id, actor.is_admin)
-
-        if upcoming_events:
-            ui.label("Upcoming events").classes("text-lg font-medium")
-            with ui.column().classes("w-full gap-1"):
-                for s in upcoming_events[:5]:
-                    with ui.row().classes(
-                        "w-full items-center gap-2 p-2 rounded bg-gray-50"
-                    ):
-                        ui.link(s.event.title, f"/events/{s.event.id}").classes(
-                            "font-medium"
-                        )
-                        ui.label(
-                            timefmt.event_when(
-                                s.event.starts_at, s.event.ends_at, tz=ctx.env.tz
-                            )
-                        ).classes("text-sm text-gray-600")
-                        ui.space()
-                        cap = "∞" if s.capacity is None else s.capacity
-                        ui.label(f"{s.filled}/{cap} filled").classes(
-                            "text-sm text-gray-600"
-                        )
-                if len(upcoming_events) > 5:
-                    ui.link(
-                        f"All {len(upcoming_events)} upcoming events", "/events"
-                    ).classes("text-sm")
+    await run_command(command, reload=True)
 
 
 async def _change_role(membership_id: int, role_value: str) -> None:
@@ -1096,7 +1070,6 @@ async def _remove_member(membership_id: int) -> None:
 
 
 async def _delete_team(team_id: int) -> None:
-
     async def command(ctx: PageCtx):
         return await team_service.delete(ctx.session, ctx.actor, team_id)
 

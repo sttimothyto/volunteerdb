@@ -6,7 +6,12 @@ candidates with their current commitments (the overwork check), the voting
 roll with turnout, the ballot form during the voting phase, and the tally
 plus appoint/new-round actions once voting has concluded. Permission gates
 mirror the API: managers run the seat, voting members nominate and vote,
-and every action handler re-checks inside its own action_session.
+and every action handler re-checks inside its own unit of work.
+
+Both pages read as outlines. The workroom loads readmodels.proposal_workroom
+-- the proposal, and what this reader may do with it -- and draws one call
+per section. Sections, dialogs and handlers are module-level and take ids
+and the rows they draw.
 """
 
 from datetime import date, timedelta
@@ -15,12 +20,13 @@ from nicegui import ui
 
 from ..env import current as current_env
 from ..errors import NotFound
-from ..fp import Err, Ok, expect
-from ..models import ROLE_LABELS, ProposalStatus, TeamRole
-from ..permissions import team_ids_map
+from ..fp import Err
+from ..models import ROLE_LABELS, Proposal, ProposalStatus, TeamRole
 from ..services import elections as elections_service
+from ..services import readmodels
 from ..services import volunteers as volunteer_service
-from ..services import workload as workload_service
+from ..services.readmodels import ProposalWorkroom
+from ..services.reports import CoverageRow
 from ..star import StarResult
 from .context import PageCtx, page_ctx, run_command
 from .date_input import date_input
@@ -61,6 +67,131 @@ def _parse_deadlines(d1: ui.input, d2: ui.input) -> tuple[date, date] | None:
         return None
 
 
+# --- the listing -----------------------------------------------------------------
+
+
+def _summary_row(s: elections_service.ProposalSummary) -> None:
+    p = s.proposal
+    with ui.row().classes("w-full items-center gap-2 p-2 rounded bg-gray-50"):
+        ui.link(
+            f"{s.path}: {ROLE_LABELS[TeamRole(p.role)]}", f"/elections/{p.id}"
+        ).classes("font-medium")
+        phase_badge(p, s.phase)
+        ui.space()
+        ui.label(
+            f"{s.candidate_count} candidate{'s' if s.candidate_count != 1 else ''}"
+            f" · {s.voted_count}/{s.voter_count} ballots"
+        ).classes("text-sm text-gray-600")
+
+
+def _create_proposal_dialog(
+    team_id: int, path: str, default_role: TeamRole, volunteer_options: dict[int, str]
+) -> None:
+    with dialog_card(f"Propose for {path}", width="w-[28rem]") as dialog:
+        role = (
+            ui.select(ROLE_OPTIONS, label="Role", value=default_role.value)
+            .props("outlined dense")
+            .classes("w-full")
+        )
+        who = (
+            ui.select(volunteer_options, label="First candidate", with_input=True)
+            .props("outlined dense")
+            .classes("w-full")
+        )
+        why = ui.input("Why them?").props("outlined dense").classes("w-full")
+        today = current_env().today()
+        d1, d2 = _deadline_inputs(
+            today + timedelta(days=14), today + timedelta(days=28)
+        )
+        # The API has always accepted notes on create and on patch; the GUI
+        # displayed them and could never write one, so the proposer's own
+        # framing of the seat could only be set over JSON.
+        notes = (
+            ui.textarea("Notes (what is this seat, and why now?)")
+            .props("outlined dense autogrow")
+            .classes("w-full")
+        )
+        notes.tooltip(
+            "Shown to the voting roll on the proposal page — the case for "
+            "the seat, not for a candidate"
+        )
+        ui.label(
+            "The voting roll is prefilled: this team's leader, second and "
+            "core members, plus the clergy team. Voting members may add "
+            "candidates until nominations close."
+        ).classes("text-xs text-gray-500")
+
+        async def save() -> None:
+            if not who.value:
+                ui.notify("Pick the first candidate", color="warning")
+                return
+            if (deadlines := _parse_deadlines(d1, d2)) is None:
+                return
+
+            async def command(ctx: PageCtx):
+                return await elections_service.create_proposal(
+                    ctx.session,
+                    ctx.actor,
+                    team_id=team_id,
+                    role=TeamRole(role.value),
+                    nomination_deadline=deadlines[0],
+                    voting_deadline=deadlines[1],
+                    created_by=ctx.actor.user.id,
+                    candidates=[elections_service.CandidateInput(who.value, why.value)],
+                    notes=notes.value or None,
+                    today=ctx.env.today(),
+                )
+
+            def done(proposal, _effects, _report) -> None:
+                dialog.close()
+                ui.navigate.to(f"/elections/{proposal.id}")
+
+            await run_command(command, on_ok=done, reload=False)
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            # not "Open proposal": that is a substring of the section
+            # header "Open proposals" and would confuse content matching
+            ui.button("Create proposal", icon="how_to_vote", on_click=save)
+    dialog.open()
+
+
+def _vacancies_section(
+    vacancies: list[CoverageRow],
+    proposal_team_ids: set[int],
+    volunteer_options: dict[int, str],
+) -> None:
+    """Teams missing a leader or a second, each with the button that opens a
+    proposal for the missing seat."""
+    ui.label("Vacancies").classes("text-lg font-medium mt-4")
+    if not vacancies:
+        ui.label("Every team has a leader and a second-in-command. 🎉").classes(
+            "text-positive"
+        )
+    for r in vacancies:
+        seat = TeamRole.leader if r.missing_leader else TeamRole.second
+        with ui.card().classes("w-full gap-2 p-3"):
+            with ui.row().classes("w-full items-center gap-2"):
+                ui.link(r.path, f"/teams/{r.team.id}").classes("font-medium")
+                if r.missing_leader:
+                    ui.badge("no leader", color="negative")
+                if r.missing_second:
+                    ui.badge("no second-in-command", color="warning")
+                if r.team.id in proposal_team_ids:
+                    ui.badge("proposal open", color="primary")
+                ui.space()
+                ui.label(f"{r.total} member{'s' if r.total != 1 else ''}").classes(
+                    "text-sm text-gray-600"
+                )
+                ui.button(
+                    "Start proposal",
+                    icon="how_to_vote",
+                    on_click=lambda _, tid=r.team.id, path=r.path, role=seat: (
+                        _create_proposal_dialog(tid, path, role, volunteer_options)
+                    ),
+                ).props("dense outline")
+
+
 @ui.page("/elections")
 async def elections_page():
     async with page_ctx() as ctx:
@@ -94,133 +225,320 @@ async def elections_page():
     ]
     proposal_team_ids = {s.proposal.team_id for s in open_rows}
 
-    def summary_row(s: elections_service.ProposalSummary) -> None:
-        p = s.proposal
-        with ui.row().classes("w-full items-center gap-2 p-2 rounded bg-gray-50"):
-            ui.link(
-                f"{s.path}: {ROLE_LABELS[TeamRole(p.role)]}", f"/elections/{p.id}"
-            ).classes("font-medium")
-            phase_badge(p, s.phase)
-            ui.space()
-            ui.label(
-                f"{s.candidate_count} candidate{'s' if s.candidate_count != 1 else ''}"
-                f" · {s.voted_count}/{s.voter_count} ballots"
-            ).classes("text-sm text-gray-600")
-
-    def create_dialog(team_id: int, path: str, default_role: TeamRole) -> None:
-        with dialog_card(f"Propose for {path}", width="w-[28rem]") as dialog:
-            role = (
-                ui.select(ROLE_OPTIONS, label="Role", value=default_role.value)
-                .props("outlined dense")
-                .classes("w-full")
-            )
-            who = (
-                ui.select(volunteer_options, label="First candidate", with_input=True)
-                .props("outlined dense")
-                .classes("w-full")
-            )
-            why = ui.input("Why them?").props("outlined dense").classes("w-full")
-            today = current_env().today()
-            d1, d2 = _deadline_inputs(
-                today + timedelta(days=14), today + timedelta(days=28)
-            )
-            # The API has always accepted notes on create and on patch; the GUI
-            # displayed them and could never write one, so the proposer's own
-            # framing of the seat could only be set over JSON.
-            notes = (
-                ui.textarea("Notes (what is this seat, and why now?)")
-                .props("outlined dense autogrow")
-                .classes("w-full")
-            )
-            notes.tooltip(
-                "Shown to the voting roll on the proposal page — the case for "
-                "the seat, not for a candidate"
-            )
-            ui.label(
-                "The voting roll is prefilled: this team's leader, second and "
-                "core members, plus the clergy team. Voting members may add "
-                "candidates until nominations close."
-            ).classes("text-xs text-gray-500")
-
-            async def save() -> None:
-                if not who.value:
-                    ui.notify("Pick the first candidate", color="warning")
-                    return
-                if (deadlines := _parse_deadlines(d1, d2)) is None:
-                    return
-
-                async def command(ctx: PageCtx):
-                    return await elections_service.create_proposal(
-                        ctx.session,
-                        ctx.actor,
-                        team_id=team_id,
-                        role=TeamRole(role.value),
-                        nomination_deadline=deadlines[0],
-                        voting_deadline=deadlines[1],
-                        created_by=ctx.actor.user.id,
-                        candidates=[
-                            elections_service.CandidateInput(who.value, why.value)
-                        ],
-                        notes=notes.value or None,
-                        today=ctx.env.today(),
-                    )
-
-                def done(value, _effects, _report) -> None:
-                    proposal = value
-                    dialog.close()
-                    ui.navigate.to(f"/elections/{proposal.id}")
-
-                await run_command(command, on_ok=done, reload=False)
-
-            with ui.row().classes("justify-end w-full gap-2"):
-                ui.button("Cancel", on_click=dialog.close).props("flat")
-                # not "Open proposal": that is a substring of the section
-                # header "Open proposals" and would confuse content matching
-                ui.button("Create proposal", icon="how_to_vote", on_click=save)
-        dialog.open()
-
     with frame("Elections", actor):
         if open_rows:
             ui.label("Open proposals").classes("text-lg font-medium")
             with ui.column().classes("w-full gap-1"):
                 for s in open_rows:
-                    summary_row(s)
+                    _summary_row(s)
         elif not can_create:
             ui.label("No open proposals need you right now.").classes("text-gray-500")
 
         if can_create:
-            ui.label("Vacancies").classes("text-lg font-medium mt-4")
-            if not vacancy_rows:
-                ui.label("Every team has a leader and a second-in-command. 🎉").classes(
-                    "text-positive"
-                )
-            for r in vacancy_rows:
-                with ui.card().classes("w-full gap-2 p-3"):
-                    with ui.row().classes("w-full items-center gap-2"):
-                        ui.link(r.path, f"/teams/{r.team.id}").classes("font-medium")
-                        if r.missing_leader:
-                            ui.badge("no leader", color="negative")
-                        if r.missing_second:
-                            ui.badge("no second-in-command", color="warning")
-                        if r.team.id in proposal_team_ids:
-                            ui.badge("proposal open", color="primary")
-                        ui.space()
-                        ui.label(
-                            f"{r.total} member{'s' if r.total != 1 else ''}"
-                        ).classes("text-sm text-gray-600")
-                        ui.button(
-                            "Start proposal",
-                            icon="how_to_vote",
-                            on_click=lambda _, tid=r.team.id, path=r.path, role=(TeamRole.leader if r.missing_leader else TeamRole.second): (
-                                create_dialog(tid, path, role)
-                            ),
-                        ).props("dense outline")
+            _vacancies_section(vacancy_rows, proposal_team_ids, volunteer_options)
 
         if decided_rows:
             ui.label("Recently decided").classes("text-lg font-medium mt-4")
             with ui.column().classes("w-full gap-1"):
                 for s in decided_rows[:20]:
-                    summary_row(s)
+                    _summary_row(s)
+
+
+# --- the workroom's dialogs and actions ----------------------------------------
+#
+# Each takes ids, not page state; the service it calls decides whether the
+# actor may do it, and run_command toasts the refusal.
+
+
+def _edit_proposal_dialog(proposal: Proposal) -> None:
+    with dialog_card("Edit proposal", width="w-[30rem]") as dialog:
+        d1, d2 = _deadline_inputs(
+            proposal.nomination_deadline, proposal.voting_deadline
+        )
+        notes = (
+            ui.textarea("Notes", value=proposal.notes or "")
+            .props("outlined dense autogrow")
+            .classes("w-full")
+        )
+
+        async def save() -> None:
+            if (deadlines := _parse_deadlines(d1, d2)) is None:
+                return
+            dialog.close()
+
+            async def command(ctx: PageCtx):
+                return await elections_service.update_proposal(
+                    ctx.session,
+                    ctx.actor,
+                    proposal.id,
+                    nomination_deadline=deadlines[0],
+                    voting_deadline=deadlines[1],
+                    notes=notes.value or None,
+                    today=ctx.env.today(),
+                )
+
+            await run_command(command)
+
+        actions(dialog, "Save", save)
+    dialog.open()
+
+
+async def _cancel_proposal(proposal_id: int) -> None:
+    if not await confirm(
+        "Cancel this proposal? Ballots are discarded with it.",
+        yes="Yes, cancel it",
+        no="Keep it",
+        danger=True,
+    ):
+        return
+
+    async def command(ctx: PageCtx):
+        return await elections_service.cancel(
+            ctx.session,
+            ctx.actor,
+            proposal_id,
+            decided_by=ctx.actor.user.id,
+            now=ctx.now,
+        )
+
+    await run_command(command)
+
+
+async def _appoint(
+    proposal_id: int, candidate_id: int, *, name: str, role_label: str
+) -> None:
+    if not await confirm(
+        f"Appoint {name} as {role_label}? This assigns the role immediately.",
+        yes="Yes, appoint",
+        no="Back",
+    ):
+        return
+
+    async def command(ctx: PageCtx):
+        return await elections_service.appoint(
+            ctx.session,
+            ctx.actor,
+            proposal_id,
+            candidate_id,
+            decided_by=ctx.actor.user.id,
+            today=ctx.env.today(),
+            now=ctx.now,
+        )
+
+    await run_command(command)
+
+
+def _new_round_dialog(proposal_id: int) -> None:
+    with dialog_card("Start a new round") as dialog:
+        ui.label("Candidates and the voting roll carry over; ballots do not.").classes(
+            "text-sm text-gray-500"
+        )
+        today = current_env().today()
+        d1, d2 = _deadline_inputs(
+            today + timedelta(days=14), today + timedelta(days=28)
+        )
+
+        async def save() -> None:
+            if (deadlines := _parse_deadlines(d1, d2)) is None:
+                return
+
+            async def command(ctx: PageCtx):
+                return await elections_service.new_round(
+                    ctx.session,
+                    ctx.actor,
+                    proposal_id,
+                    created_by=ctx.actor.user.id,
+                    nomination_deadline=deadlines[0],
+                    voting_deadline=deadlines[1],
+                    today=ctx.env.today(),
+                    now=ctx.now,
+                )
+
+            def done(fresh, _effects, _report) -> None:
+                dialog.close()
+                ui.navigate.to(f"/elections/{fresh.id}")
+
+            await run_command(command, on_ok=done, reload=False)
+
+        actions(dialog, "Start round", save, icon="restart_alt")
+    dialog.open()
+
+
+async def _nominate(proposal_id: int, volunteer_id: int | None, note: str) -> None:
+    if not volunteer_id:
+        ui.notify("Pick a volunteer", color="warning")
+        return
+
+    async def command(ctx: PageCtx):
+        return await elections_service.add_candidate(
+            ctx.session,
+            ctx.actor,
+            proposal_id,
+            volunteer_id=volunteer_id,
+            nominated_by=ctx.actor.user.id,
+            note=note,
+            today=ctx.env.today(),
+        )
+
+    await run_command(command, reload=True)
+
+
+async def _remove_candidate(proposal_id: int, candidate_id: int) -> None:
+    await run_command(
+        lambda ctx: elections_service.remove_candidate(
+            ctx.session, ctx.actor, proposal_id, candidate_id, today=ctx.env.today()
+        )
+    )
+
+
+async def _add_voter(proposal_id: int, volunteer_id: int | None) -> None:
+    if not volunteer_id:
+        ui.notify("Pick a volunteer", color="warning")
+        return
+
+    async def command(ctx: PageCtx):
+        return await elections_service.add_voter(
+            ctx.session,
+            ctx.actor,
+            proposal_id,
+            volunteer_id=volunteer_id,
+            added_by=ctx.actor.user.id,
+            today=ctx.env.today(),
+        )
+
+    await run_command(command, reload=True)
+
+
+async def _remove_voter(proposal_id: int, voter_id: int) -> None:
+    await run_command(
+        lambda ctx: elections_service.remove_voter(
+            ctx.session, ctx.actor, proposal_id, voter_id, today=ctx.env.today()
+        )
+    )
+
+
+async def _cast_ballot(
+    proposal_id: int, scores: dict[int, int], *, voting_deadline: date
+) -> None:
+    async def command(ctx: PageCtx):
+        return await elections_service.cast_ballot(
+            ctx.session,
+            ctx.actor,
+            proposal_id,
+            voter_volunteer_id=ctx.actor.volunteer_id,
+            scores=scores,
+            today=ctx.env.today(),
+            now=ctx.now,
+        )
+
+    def done(_value, _effects, _report) -> None:
+        ui.notify(
+            f"Ballot recorded — you may revise it until {voting_deadline}",
+            color="positive",
+        )
+
+    await run_command(command, on_ok=done, reload=True)
+
+
+# --- the workroom's sections ---------------------------------------------------
+#
+# One function per block on /elections/{id}, in the order the page draws
+# them; each takes the room (readmodels.proposal_workroom) or the rows it
+# draws.
+
+
+def _proposal_header(room: ProposalWorkroom) -> None:
+    """Team, role and phase, the manager's Edit and Cancel while the proposal
+    is open, the two deadlines, who opened and decided it, the notes, and
+    the note on how an Ignatian election is run."""
+    p = room.proposal
+    with ui.row().classes("w-full items-center gap-2"):
+        ui.link(room.view.path, f"/teams/{p.team_id}").classes("font-medium")
+        role_badge(TeamRole(p.role))
+        phase_badge(p, room.phase)
+        ui.space()
+        if room.can_manage and p.status == ProposalStatus.open.value:
+            ui.button(
+                "Edit deadlines & notes",
+                icon="edit_calendar",
+                on_click=lambda: _edit_proposal_dialog(p),
+            ).props("dense outline")
+            ui.button("Cancel proposal", on_click=lambda: _cancel_proposal(p.id)).props(
+                "dense outline color=negative"
+            )
+    with ui.row().classes("w-full gap-4 text-sm text-gray-600"):
+        ui.label(f"Nominations close {p.nomination_deadline}")
+        ui.label(f"Voting closes {p.voting_deadline}")
+        if room.view.creator_email:
+            ui.label(f"opened by {room.view.creator_email}")
+        if p.decided_at is not None and room.view.decider_email:
+            ui.label(f"decided by {room.view.decider_email}")
+    if p.notes:
+        ui.label(p.notes).classes("text-gray-600")
+
+    with ui.card().classes("w-full p-3"):
+        with ui.row().classes("items-center gap-2 no-wrap"):
+            ui.icon("campaign", size="sm").classes("text-primary")
+            ui.label(IGNATIAN_NOTE).classes("text-sm italic")
+
+
+def _candidate_card(
+    room: ProposalWorkroom, cv: elections_service.CandidateView
+) -> None:
+    """One candidate: their badges (appointed, STAR winner, workload), who
+    nominated them, the manager's Remove or Appoint, the nomination note and
+    their current commitments -- the overwork check."""
+    p = room.proposal
+    cid = cv.candidate.id
+    winner = room.view.tally is not None and room.view.tally.winner_id == cid
+    with ui.card().classes("w-full gap-2 p-3"):
+        with ui.row().classes("w-full items-center gap-2"):
+            ui.link(cv.volunteer.full_name, f"/volunteers/{cv.volunteer.id}").classes(
+                "font-medium"
+            )
+            if p.appointed_candidate_id == cid:
+                ui.badge("Appointed", color="positive")
+            if winner:
+                ui.badge("STAR winner", color="primary")
+            if cv.volunteer.id in room.workload:
+                workload_badge(
+                    *room.workload[cv.volunteer.id], tooltip="Current workload"
+                )
+            ui.space()
+            if cv.nominator_email:
+                ui.label(f"nominated by {cv.nominator_email}").classes(
+                    "text-xs text-gray-400"
+                )
+            if room.can_manage and room.phase is Phase.nominating:
+                ui.button(
+                    "Remove",
+                    on_click=lambda _, c=cid: _remove_candidate(p.id, c),
+                ).props("dense flat color=negative")
+            if room.can_manage and room.phase is Phase.concluded:
+                ui.button(
+                    "Appoint",
+                    icon="verified",
+                    on_click=lambda _, c=cid: _appoint(
+                        p.id,
+                        c,
+                        name=room.names[c],
+                        role_label=ROLE_LABELS[TeamRole(p.role)],
+                    ),
+                ).props("dense" + ("" if winner else " outline"))
+        if cv.candidate.note:
+            ui.label(cv.candidate.note).classes("text-sm text-gray-600")
+        with ui.row().classes("items-center gap-1 flex-wrap"):
+            ui.label("Current commitments:").classes("text-xs text-gray-500")
+            if not cv.assignments:
+                ui.label("none").classes("text-xs text-gray-500")
+            for m, t in cv.assignments:
+                ui.badge(f"{t.name} · {ROLE_LABELS[m.role]}").props("outline")
+
+
+def _candidates_section(room: ProposalWorkroom) -> None:
+    ui.label("Candidates").classes("text-lg font-medium mt-2")
+    for cv in room.view.candidates:
+        _candidate_card(room, cv)
 
 
 def _nominate_row(proposal_id: int, volunteer_options: dict[int, str]) -> None:
@@ -235,26 +553,11 @@ def _nominate_row(proposal_id: int, volunteer_options: dict[int, str]) -> None:
             .classes("w-64")
         )
         why = ui.input("Why them?").props("outlined dense").classes("grow")
-
-        async def nominate() -> None:
-            if not who.value:
-                ui.notify("Pick a volunteer", color="warning")
-                return
-
-            async def command(ctx: PageCtx):
-                return await elections_service.add_candidate(
-                    ctx.session,
-                    ctx.actor,
-                    proposal_id,
-                    volunteer_id=who.value,
-                    nominated_by=ctx.actor.user.id,
-                    note=why.value,
-                    today=ctx.env.today(),
-                )
-
-            await run_command(command, reload=True)
-
-        ui.button("Nominate", icon="person_add", on_click=nominate).props("dense")
+        ui.button(
+            "Nominate",
+            icon="person_add",
+            on_click=lambda: _nominate(proposal_id, who.value, why.value),
+        ).props("dense")
 
 
 def _voters_section(
@@ -291,27 +594,11 @@ def _voters_section(
                     .props("outlined dense")
                     .classes("w-64")
                 )
-
-                async def add_voter() -> None:
-                    if not extra.value:
-                        ui.notify("Pick a volunteer", color="warning")
-                        return
-
-                    async def command(ctx: PageCtx):
-                        return await elections_service.add_voter(
-                            ctx.session,
-                            ctx.actor,
-                            proposal_id,
-                            volunteer_id=extra.value,
-                            added_by=ctx.actor.user.id,
-                            today=ctx.env.today(),
-                        )
-
-                    await run_command(command, reload=True)
-
-                ui.button("Add voter", icon="person_add", on_click=add_voter).props(
-                    "dense"
-                )
+                ui.button(
+                    "Add voter",
+                    icon="person_add",
+                    on_click=lambda: _add_voter(proposal_id, extra.value),
+                ).props("dense")
 
 
 def _ballot_section(
@@ -333,300 +620,15 @@ def _ballot_section(
                     {n: str(n) for n in range(6)},
                     value=mine.get(cv.candidate.id, 0),
                 ).props("dense")
-
-    async def submit_ballot() -> None:
-        scores = {c: t.value or 0 for c, t in toggles.items()}
-
-        async def command(ctx: PageCtx):
-            return await elections_service.cast_ballot(
-                ctx.session,
-                ctx.actor,
-                proposal_id,
-                voter_volunteer_id=ctx.actor.volunteer_id,
-                scores=scores,
-                today=ctx.env.today(),
-                now=ctx.now,
-            )
-
-        def done(_value, _effects, _report) -> None:
-            ui.notify(
-                f"Ballot recorded — you may revise it until {voting_deadline}",
-                color="positive",
-            )
-
-        await run_command(command, on_ok=done, reload=True)
-
-    ui.button("Submit ballot", icon="how_to_vote", on_click=submit_ballot)
-
-
-@ui.page("/elections/{proposal_id}")
-async def proposal_detail(proposal_id: int):
-    async with page_ctx() as ctx:
-        session, actor = ctx.session, ctx.actor
-        shown = await elections_service.detail(
-            session, actor, proposal_id, today=ctx.env.today()
-        )
-        can_manage = is_voter = False
-        my, team_sets, wl, volunteer_options = {}, {}, {}, {}
-        if isinstance(shown, Ok):
-            view = shown.value
-            can_manage = actor.can_manage_team(view.proposal.team_id)
-            is_voter = (
-                actor.volunteer_id is not None
-                and proposal_id in actor.voter_proposal_ids
-            )
-            my = (
-                expect(
-                    await elections_service.my_scores(
-                        session, actor, proposal_id, actor.volunteer_id
-                    )
-                )
-                if is_voter
-                else {}
-            )
-            team_sets = await team_ids_map(
-                session, [cv.volunteer.id for cv in view.candidates]
-            )
-            wl = await workload_service.visible_scores(session, actor, team_sets)
-            volunteer_options = (
-                await volunteer_service.name_map(session)
-                if can_manage or is_voter
-                else {}
-            )
-    match shown:
-        case Err(NotFound()):
-            with frame("Proposal not found", actor):
-                ui.label(f"No proposal with id {proposal_id}.")
-            return
-        case Err():
-            # the service decides; the page only chooses how to say it, and
-            # a whole page reads better than a toast on an empty frame
-            with frame("Elections", actor):
-                ui.label(
-                    "This proposal is visible to its voting members and to "
-                    "the team's managers."
-                ).classes("text-gray-500")
-            return
-    view = shown.value
-
-    p = view.proposal
-    phase = view.phase
-    nominating = phase is Phase.nominating
-    voting = phase is Phase.voting
-    names = {cv.candidate.id: cv.volunteer.full_name for cv in view.candidates}
-
-    async def _managed_action(what: str, action) -> None:
-        """`what` survives only as the toast's subject when a service refuses;
-        the refusal itself comes from the service (services/elections.py) and
-        run_command toasts it -- the Result was silently dropped here once."""
-        await run_command(lambda ctx: action(ctx.session, ctx.actor))
-
-    def edit_deadlines_dialog() -> None:
-        with dialog_card("Edit proposal", width="w-[30rem]") as dialog:
-            d1, d2 = _deadline_inputs(p.nomination_deadline, p.voting_deadline)
-            notes = (
-                ui.textarea("Notes", value=p.notes or "")
-                .props("outlined dense autogrow")
-                .classes("w-full")
-            )
-
-            async def save() -> None:
-                if (deadlines := _parse_deadlines(d1, d2)) is None:
-                    return
-                dialog.close()
-                await _managed_action(
-                    "manage proposals for this team",
-                    lambda session, actor: elections_service.update_proposal(
-                        session,
-                        actor,
-                        proposal_id,
-                        nomination_deadline=deadlines[0],
-                        voting_deadline=deadlines[1],
-                        notes=notes.value or None,
-                        today=current_env().today(),
-                    ),
-                )
-
-            actions(dialog, "Save", save)
-        dialog.open()
-
-    async def cancel_proposal() -> None:
-        if not await confirm(
-            "Cancel this proposal? Ballots are discarded with it.",
-            yes="Yes, cancel it",
-            no="Keep it",
-            danger=True,
-        ):
-            return
-        await _managed_action(
-            "manage proposals for this team",
-            lambda session, actor: elections_service.cancel(
-                session,
-                actor,
-                proposal_id,
-                decided_by=actor.user.id,
-                now=current_env().clock.now(),
-            ),
-        )
-
-    async def appoint(candidate_id: int) -> None:
-        if not await confirm(
-            f"Appoint {names[candidate_id]} as "
-            f"{ROLE_LABELS[TeamRole(p.role)]}? This assigns the role "
-            "immediately.",
-            yes="Yes, appoint",
-            no="Back",
-        ):
-            return
-        await _managed_action(
-            "appoint for this team",
-            lambda session, actor: elections_service.appoint(
-                session,
-                actor,
-                proposal_id,
-                candidate_id,
-                decided_by=actor.user.id,
-                today=current_env().today(),
-                now=current_env().clock.now(),
-            ),
-        )
-
-    def new_round_dialog() -> None:
-        with dialog_card("Start a new round") as dialog:
-            ui.label(
-                "Candidates and the voting roll carry over; ballots do not."
-            ).classes("text-sm text-gray-500")
-            today = current_env().today()
-            d1, d2 = _deadline_inputs(
-                today + timedelta(days=14), today + timedelta(days=28)
-            )
-
-            async def save() -> None:
-                if (deadlines := _parse_deadlines(d1, d2)) is None:
-                    return
-
-                async def command(ctx: PageCtx):
-                    return await elections_service.new_round(
-                        ctx.session,
-                        ctx.actor,
-                        proposal_id,
-                        created_by=ctx.actor.user.id,
-                        nomination_deadline=deadlines[0],
-                        voting_deadline=deadlines[1],
-                        today=ctx.env.today(),
-                        now=ctx.now,
-                    )
-
-                def done(value, _effects, _report) -> None:
-                    fresh = value
-                    dialog.close()
-                    ui.navigate.to(f"/elections/{fresh.id}")
-
-                await run_command(command, on_ok=done, reload=False)
-
-            actions(dialog, "Start round", save, icon="restart_alt")
-        dialog.open()
-
-    with frame(f"{view.path}: {ROLE_LABELS[TeamRole(p.role)]}", actor):
-        with ui.row().classes("w-full items-center gap-2"):
-            ui.link(view.path, f"/teams/{p.team_id}").classes("font-medium")
-            role_badge(TeamRole(p.role))
-            phase_badge(p, phase)
-            ui.space()
-            if can_manage and p.status == ProposalStatus.open.value:
-                ui.button(
-                    "Edit deadlines & notes",
-                    icon="edit_calendar",
-                    on_click=edit_deadlines_dialog,
-                ).props("dense outline")
-                ui.button("Cancel proposal", on_click=cancel_proposal).props(
-                    "dense outline color=negative"
-                )
-        with ui.row().classes("w-full gap-4 text-sm text-gray-600"):
-            ui.label(f"Nominations close {p.nomination_deadline}")
-            ui.label(f"Voting closes {p.voting_deadline}")
-            if view.creator_email:
-                ui.label(f"opened by {view.creator_email}")
-            if p.decided_at is not None and view.decider_email:
-                ui.label(f"decided by {view.decider_email}")
-        if p.notes:
-            ui.label(p.notes).classes("text-gray-600")
-
-        with ui.card().classes("w-full p-3"):
-            with ui.row().classes("items-center gap-2 no-wrap"):
-                ui.icon("campaign", size="sm").classes("text-primary")
-                ui.label(IGNATIAN_NOTE).classes("text-sm italic")
-
-        ui.label("Candidates").classes("text-lg font-medium mt-2")
-        for cv in view.candidates:
-            cid = cv.candidate.id
-            with ui.card().classes("w-full gap-2 p-3"):
-                with ui.row().classes("w-full items-center gap-2"):
-                    ui.link(
-                        cv.volunteer.full_name, f"/volunteers/{cv.volunteer.id}"
-                    ).classes("font-medium")
-                    if p.appointed_candidate_id == cid:
-                        ui.badge("Appointed", color="positive")
-                    if view.tally and view.tally.winner_id == cid:
-                        ui.badge("STAR winner", color="primary")
-                    if cv.volunteer.id in wl:
-                        workload_badge(*wl[cv.volunteer.id], tooltip="Current workload")
-                    ui.space()
-                    if cv.nominator_email:
-                        ui.label(f"nominated by {cv.nominator_email}").classes(
-                            "text-xs text-gray-400"
-                        )
-                    if can_manage and nominating:
-                        ui.button(
-                            "Remove",
-                            on_click=lambda _, c=cid: _remove_candidate(proposal_id, c),
-                        ).props("dense flat color=negative")
-                    if can_manage and phase is Phase.concluded:
-                        ui.button(
-                            "Appoint",
-                            icon="verified",
-                            on_click=lambda _, c=cid: appoint(c),
-                        ).props(
-                            "dense"
-                            + (
-                                ""
-                                if view.tally and view.tally.winner_id == cid
-                                else " outline"
-                            )
-                        )
-                if cv.candidate.note:
-                    ui.label(cv.candidate.note).classes("text-sm text-gray-600")
-                with ui.row().classes("items-center gap-1 flex-wrap"):
-                    ui.label("Current commitments:").classes("text-xs text-gray-500")
-                    if not cv.assignments:
-                        ui.label("none").classes("text-xs text-gray-500")
-                    for m, t in cv.assignments:
-                        ui.badge(f"{t.name} · {ROLE_LABELS[m.role]}").props("outline")
-
-        if nominating and (can_manage or is_voter):
-            _nominate_row(proposal_id, volunteer_options)
-
-        _voters_section(
+    ui.button(
+        "Submit ballot",
+        icon="how_to_vote",
+        on_click=lambda: _cast_ballot(
             proposal_id,
-            view.voters,
-            volunteer_options,
-            can_manage=can_manage,
-            nominating=nominating,
-        )
-
-        if voting and is_voter:
-            _ballot_section(proposal_id, view.candidates, my, p.voting_deadline)
-        elif voting:
-            ui.label(
-                "Voting is in progress. The tally appears once voting closes."
-            ).classes("text-sm text-gray-500")
-
-        if view.tally:
-            _result_section(view.tally, names)
-            if can_manage and phase is Phase.concluded:
-                ui.button(
-                    "Start new round", icon="restart_alt", on_click=new_round_dialog
-                ).props("outline")
+            {c: t.value or 0 for c, t in toggles.items()},
+            voting_deadline=voting_deadline,
+        ),
+    )
 
 
 def _result_section(tally: StarResult, names: dict[int, str]) -> None:
@@ -662,17 +664,57 @@ def _result_section(tally: StarResult, names: dict[int, str]) -> None:
     ).classes("text-sm text-gray-500 italic")
 
 
-async def _remove_candidate(proposal_id: int, candidate_id: int) -> None:
-    await run_command(
-        lambda ctx: elections_service.remove_candidate(
-            ctx.session, ctx.actor, proposal_id, candidate_id, today=ctx.env.today()
+@ui.page("/elections/{proposal_id}")
+async def proposal_detail(proposal_id: int):
+    async with page_ctx() as ctx:
+        actor = ctx.actor
+        shown = await readmodels.proposal_workroom(
+            ctx.session, actor, proposal_id, now=ctx.now, tz=ctx.env.tz
         )
-    )
+    match shown:
+        case Err(NotFound()):
+            with frame("Proposal not found", actor):
+                ui.label(f"No proposal with id {proposal_id}.")
+            return
+        case Err():
+            # the service decides; the page only chooses how to say it, and
+            # a whole page reads better than a toast on an empty frame
+            with frame("Elections", actor):
+                ui.label(
+                    "This proposal is visible to its voting members and to "
+                    "the team's managers."
+                ).classes("text-gray-500")
+            return
+    room = shown.value
+    p = room.proposal
+    nominating = room.phase is Phase.nominating
+    voting = room.phase is Phase.voting
 
-
-async def _remove_voter(proposal_id: int, voter_id: int) -> None:
-    await run_command(
-        lambda ctx: elections_service.remove_voter(
-            ctx.session, ctx.actor, proposal_id, voter_id, today=ctx.env.today()
+    with frame(f"{room.view.path}: {ROLE_LABELS[TeamRole(p.role)]}", actor):
+        _proposal_header(room)
+        _candidates_section(room)
+        if nominating and (room.can_manage or room.is_voter):
+            _nominate_row(proposal_id, room.volunteer_options)
+        _voters_section(
+            proposal_id,
+            room.view.voters,
+            room.volunteer_options,
+            can_manage=room.can_manage,
+            nominating=nominating,
         )
-    )
+        if voting and room.is_voter:
+            _ballot_section(
+                proposal_id, room.view.candidates, room.my_scores, p.voting_deadline
+            )
+        elif voting:
+            ui.label(
+                "Voting is in progress. The tally appears once voting closes."
+            ).classes("text-sm text-gray-500")
+        if room.view.tally:
+            _result_section(room.view.tally, room.names)
+            if room.can_manage and room.phase is Phase.concluded:
+                ui.button(
+                    "Start new round",
+                    icon="restart_alt",
+                    on_click=lambda: _new_round_dialog(proposal_id),
+                ).props("outline")

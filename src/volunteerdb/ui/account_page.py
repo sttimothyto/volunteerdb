@@ -14,7 +14,13 @@ while a session that signed in with an emailed code has already proved the
 thing a reset link proves and is not asked again. Either way the account's
 address gets a notification, which §4.1.2 requires to be independent of the
 transaction that made the change.
+
+The page is four cards, one function each; the work behind their buttons is
+module-level and takes the typed values and the facts the page knew at load.
 """
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import structlog
 from nicegui import ui
@@ -35,19 +41,296 @@ from .context import (
     session_auth_method,
     toast,
 )
+from .forms import confirm
 from .layout import frame
 
 logger = structlog.get_logger(__name__)
 
 
+# --- the work ------------------------------------------------------------------
+
+
+async def _request_email_change(address: str, *, user_id: int, base_url: str) -> None:
+    """Stage the new address and mail it a confirmation link."""
+    addr = address.strip()
+    if not addr:
+        ui.notify("Type the new address first", color="warning")
+        return
+    # The budget is on *sends*, not failures: what is worth abusing here is
+    # the parish's sender, one address at a time.
+    now = current_env().clock.now()
+    if denied := rate_limit(
+        f"email-change:{user_id}", now=now, what="change your email address"
+    ):
+        toast(denied.error)
+        return
+    # charge every attempt, before the service can reveal whether the
+    # address is taken: a failed probe must count too, or it is an
+    # unthrottled account-existence oracle.
+    await perform([EmailChangeAttempted(user_id)], base_url=base_url, now=now)
+
+    async def command(ctx: PageCtx):
+        return await user_service.start_email_change(
+            ctx.session,
+            ctx.actor.user.id,
+            addr,
+            now=ctx.now,
+            token=ctx.env.rng.token(),
+        )
+
+    def done(value, _effects, _report) -> None:
+        account, _token = value
+        ui.notify(
+            f"Confirmation sent to {account.pending_email}. Nothing changes "
+            "until the link in it is opened.",
+            color="positive",
+            multi_line=True,
+            timeout=8000,
+        )
+
+    await run_command(command, on_ok=done)
+
+
+async def _drop_email_change() -> None:
+    async def command(ctx: PageCtx):
+        return await user_service.cancel_email_change(ctx.session, ctx.actor.user.id)
+
+    await run_command(
+        command,
+        on_ok=lambda _v, _e, _r: ui.notify(
+            "Address change cancelled — the link no longer works."
+        ),
+    )
+
+
+async def _save_password(
+    new: str,
+    again: str,
+    current: str,
+    *,
+    email: str,
+    stored_hash: str | None,
+    must_retype: bool,
+    ip: str,
+    base_url: str,
+) -> None:
+    """Set the password, once it passes the policy and -- for a session that
+    signed in with the old one -- once the old one is re-typed."""
+    weak = passwords.problem(new, email=email, site_terms=current_env().password_terms)
+    if weak:
+        ui.notify(weak, color="negative", multi_line=True, timeout=8000)
+        return
+    if new != again:
+        ui.notify("The two passwords don't match", color="negative")
+        return
+    if must_retype:
+        # Failed attempts here count against the same budgets as failed
+        # sign-ins for this account (SP 800-63B §3.2.2): the per-account
+        # bucket AND the per-IP flood bucket, exactly as the login page does.
+        now = current_env().clock.now()
+        if denied := rate_limit(
+            f"pw:{email.lower()}",
+            f"pw-ip:{ip}",
+            now=now,
+            what="confirm your current password",
+        ):
+            toast(denied.error)
+            return
+        if not await async_verify_password(stored_hash, current):
+            logger.warning("auth.password_change_denied", email=email)
+            await perform(
+                [SignInFailed("password", email, ip)], base_url=base_url, now=now
+            )
+            ui.notify("That is not your current password", color="negative")
+            return
+
+    async def command(ctx: PageCtx):
+        return await user_service.set_password(
+            ctx.session, ctx.actor.user.id, new, site_terms=ctx.env.password_terms
+        )
+
+    await run_command(
+        command,
+        on_ok=lambda _v, _e, _r: ui.notify(
+            "Password saved. You can sign in with it from now on.",
+            color="positive",
+        ),
+    )
+
+
+async def _remove_password() -> None:
+    if not await confirm(
+        "Remove the password from this account? You'll sign in by "
+        "entering your email and typing the code we send you. Any API "
+        "token you hold stops working.",
+        yes="Remove password",
+        danger=True,
+    ):
+        return
+
+    async def command(ctx: PageCtx):
+        return await user_service.clear_password(ctx.session, ctx.actor.user.id)
+
+    await run_command(
+        command,
+        on_ok=lambda _v, _e, _r: ui.notify(
+            "Password removed — you now sign in with emailed codes."
+        ),
+    )
+
+
+# --- the cards -----------------------------------------------------------------
+
+
+def _signin_card(email: str, has_password: bool) -> None:
+    with ui.card().classes("w-full max-w-xl gap-2"):
+        ui.label(email).classes("font-medium")
+        ui.label(
+            "You sign in with your email address and a password."
+            if has_password
+            else "You sign in with a one-time code emailed to this address."
+        ).classes("text-sm text-gray-500")
+        if not has_password:
+            ui.label(
+                "Setting a password is optional — the emailed code works "
+                "forever. It is only needed to use the JSON API."
+            ).classes("text-sm text-gray-500")
+
+
+def _calendar_card(base_url: str, feed_token: str) -> None:
+    with ui.card().classes("w-full max-w-xl gap-2"):
+        ui.label("Your duties in your own calendar").classes("font-medium")
+        ui.label(
+            "Subscribe your phone or desktop calendar to the events you are "
+            "signed up for; it stays current as you sign up and withdraw. The "
+            "same panel is on the Events page."
+        ).classes("text-sm text-gray-500")
+        subscribe_panel(
+            view="mine",
+            base_url=base_url,
+            token=feed_token,
+            calendar=None,
+            is_admin=False,
+        )
+
+
+def _email_card(
+    *,
+    user_id: int,
+    base_url: str,
+    pending: str | None,
+    pending_until: datetime | None,
+    tz: ZoneInfo,
+) -> None:
+    """Change the sign-in address: the change waiting to be confirmed, if
+    any, and the box for a new one."""
+    with ui.card().classes("w-full max-w-xl gap-3"):
+        ui.label("Change your email address")
+        ui.label(
+            "This is the address you sign in at, and — for volunteers — "
+            "the one on every ministry roster you serve on. Both move "
+            "together, once the new address confirms itself."
+        ).classes("text-sm text-gray-500")
+        if pending is not None:
+            with ui.row().classes("items-center gap-2 w-full no-wrap"):
+                ui.icon("mark_email_unread").classes("text-amber-700")
+                ui.label(
+                    f"Waiting for {pending} to confirm"
+                    + (
+                        f" — the link stops working "
+                        f"{pending_until.astimezone(tz).strftime('%a %d %b, %H:%M')}"
+                        if pending_until is not None
+                        else ""
+                    )
+                ).classes("text-sm text-amber-800")
+                ui.space()
+                ui.button("Cancel", on_click=_drop_email_change).props(
+                    "flat dense color=negative"
+                )
+
+        async def request() -> None:
+            await _request_email_change(
+                new_email.value or "", user_id=user_id, base_url=base_url
+            )
+
+        new_email = (
+            ui.input("New email address")
+            .props("outlined dense autocomplete=email")
+            .classes("w-full")
+            .mark("new-email")
+            .on("keydown.enter", request)
+        )
+        with ui.row().classes("w-full justify-end"):
+            ui.button("Send confirmation", on_click=request).props("dense")
+
+
+def _password_card(
+    *,
+    email: str,
+    stored_hash: str | None,
+    must_retype: bool,
+    ip: str,
+    base_url: str,
+) -> None:
+    """Set or change the password, and drop it."""
+    has_password = stored_hash is not None
+    with ui.card().classes("w-full max-w-xl gap-3"):
+        ui.label("Change your password" if has_password else "Set a password")
+        current = None
+        if must_retype:
+            current = (
+                ui.input("Current password", password=True)
+                .props("outlined dense autocomplete=current-password")
+                .classes("w-full")
+                .mark("current-password")
+            )
+        elif has_password:
+            ui.label(
+                "You signed in with an emailed code, so you can set a new "
+                "password without the old one."
+            ).classes("text-sm text-gray-500")
+        new_password = (
+            ui.input("New password", password=True, password_toggle_button=True)
+            .props("outlined dense autocomplete=new-password")
+            .classes("w-full")
+            .mark("new-password")
+        )
+        ui.label(passwords.GUIDANCE).classes("text-xs text-gray-500")
+
+        async def save() -> None:
+            await _save_password(
+                new_password.value or "",
+                repeat.value or "",
+                (current.value or "") if current is not None else "",
+                email=email,
+                stored_hash=stored_hash,
+                must_retype=must_retype,
+                ip=ip,
+                base_url=base_url,
+            )
+
+        repeat = (
+            ui.input("Repeat new password", password=True, password_toggle_button=True)
+            .props("outlined dense autocomplete=new-password")
+            .classes("w-full")
+            .mark("repeat-password")
+            .on("keydown.enter", save)
+        )
+        with ui.row().classes("w-full justify-between items-center"):
+            if has_password:
+                ui.button("Remove password", on_click=_remove_password).props(
+                    "flat dense color=negative"
+                )
+            else:
+                ui.space()
+            ui.button("Save password", on_click=save).props("dense")
+
+
 @ui.page("/account")
 async def account_page():
     async with page_ctx() as ctx:
-        session, actor = ctx.session, ctx.actor
+        actor = ctx.actor
         user = actor.user
-        user_id = user.id
-        stored_hash = user.password_hash
-        email, has_password = user.email, stored_hash is not None
         pending = (
             user.pending_email
             if user_service.email_change_live(user, ctx.now)
@@ -58,234 +341,27 @@ async def account_page():
         # mailbox — the same proof a reset link carries, so it stands in for
         # the forgotten password.
         proved_by_email = session_auth_method() in ("otp", "invite")
-        must_retype = has_password and not proved_by_email
+        must_retype = user.password_hash is not None and not proved_by_email
         feed_token = expect(
             await user_service.ensure_calendar_token(
-                session, user_id, token=ctx.env.rng.token()
+                ctx.session, user.id, token=ctx.env.rng.token()
             )
-        )
-
-    async def request_email_change() -> None:
-        addr = (new_email.value or "").strip()
-        if not addr:
-            ui.notify("Type the new address first", color="warning")
-            return
-        # The budget is on *sends*, not failures: what is worth abusing here is
-        # the parish's sender, one address at a time.
-        now = current_env().clock.now()
-        if denied := rate_limit(
-            f"email-change:{user_id}", now=now, what="change your email address"
-        ):
-            toast(denied.error)
-            return
-        # charge every attempt, before the service can reveal whether the
-        # address is taken: a failed probe must count too, or it is an
-        # unthrottled account-existence oracle.
-        await perform([EmailChangeAttempted(user_id)], base_url=ctx.base_url, now=now)
-
-        async def command(ctx: PageCtx):
-            return await user_service.start_email_change(
-                ctx.session,
-                ctx.actor.user.id,
-                addr,
-                now=ctx.now,
-                token=ctx.env.rng.token(),
-            )
-
-        def done(value, _effects, _report) -> None:
-            account, _token = value
-            ui.notify(
-                f"Confirmation sent to {account.pending_email}. Nothing changes "
-                "until the link in it is opened.",
-                color="positive",
-                multi_line=True,
-                timeout=8000,
-            )
-
-        await run_command(command, on_ok=done)
-
-    async def drop_email_change() -> None:
-        async def command(ctx: PageCtx):
-            return await user_service.cancel_email_change(
-                ctx.session, ctx.actor.user.id
-            )
-
-        await run_command(
-            command,
-            on_ok=lambda _v, _e, _r: ui.notify(
-                "Address change cancelled — the link no longer works."
-            ),
-        )
-
-    async def save() -> None:
-        new, again = new_password.value or "", confirm.value or ""
-        weak = passwords.problem(
-            new, email=email, site_terms=current_env().password_terms
-        )
-        if weak:
-            ui.notify(weak, color="negative", multi_line=True, timeout=8000)
-            return
-        if new != again:
-            ui.notify("The two passwords don't match", color="negative")
-            return
-        if must_retype:
-            # Failed attempts here count against the same budgets as failed
-            # sign-ins for this account (SP 800-63B §3.2.2): the per-account
-            # bucket AND the per-IP flood bucket, exactly as the login page does.
-            now = current_env().clock.now()
-            if denied := rate_limit(
-                f"pw:{email.lower()}",
-                f"pw-ip:{ctx.ip}",
-                now=now,
-                what="confirm your current password",
-            ):
-                toast(denied.error)
-                return
-            if not await async_verify_password(stored_hash, current.value or ""):
-                logger.warning("auth.password_change_denied", email=email)
-                await perform(
-                    [SignInFailed("password", email, ctx.ip)],
-                    base_url=ctx.base_url,
-                    now=now,
-                )
-                ui.notify("That is not your current password", color="negative")
-                return
-
-        async def command(ctx: PageCtx):
-            return await user_service.set_password(
-                ctx.session, ctx.actor.user.id, new, site_terms=ctx.env.password_terms
-            )
-
-        await run_command(
-            command,
-            on_ok=lambda _v, _e, _r: ui.notify(
-                "Password saved. You can sign in with it from now on.",
-                color="positive",
-            ),
-        )
-
-    async def remove() -> None:
-        if not await confirm(
-            "Remove the password from this account? You'll sign in by "
-            "entering your email and typing the code we send you. Any API "
-            "token you hold stops working.",
-            yes="Remove password",
-            danger=True,
-        ):
-            return
-
-        async def command(ctx: PageCtx):
-            return await user_service.clear_password(ctx.session, ctx.actor.user.id)
-
-        await run_command(
-            command,
-            on_ok=lambda _v, _e, _r: ui.notify(
-                "Password removed — you now sign in with emailed codes."
-            ),
         )
 
     with frame("Your account", actor):
-        with ui.card().classes("w-full max-w-xl gap-2"):
-            ui.label(email).classes("font-medium")
-            ui.label(
-                "You sign in with your email address and a password."
-                if has_password
-                else "You sign in with a one-time code emailed to this address."
-            ).classes("text-sm text-gray-500")
-            if not has_password:
-                ui.label(
-                    "Setting a password is optional — the emailed code works "
-                    "forever. It is only needed to use the JSON API."
-                ).classes("text-sm text-gray-500")
-
-        with ui.card().classes("w-full max-w-xl gap-2"):
-            ui.label("Your duties in your own calendar").classes("font-medium")
-            ui.label(
-                "Subscribe your phone or desktop calendar to the events you are "
-                "signed up for; it stays current as you sign up and withdraw. The "
-                "same panel is on the Events page."
-            ).classes("text-sm text-gray-500")
-            subscribe_panel(
-                view="mine",
-                base_url=ctx.base_url,
-                token=feed_token,
-                calendar=None,
-                is_admin=False,
-            )
-
-        with ui.card().classes("w-full max-w-xl gap-3"):
-            ui.label("Change your email address")
-            ui.label(
-                "This is the address you sign in at, and — for volunteers — "
-                "the one on every ministry roster you serve on. Both move "
-                "together, once the new address confirms itself."
-            ).classes("text-sm text-gray-500")
-            if pending is not None:
-                with ui.row().classes("items-center gap-2 w-full no-wrap"):
-                    ui.icon("mark_email_unread").classes("text-amber-700")
-                    ui.label(
-                        f"Waiting for {pending} to confirm"
-                        + (
-                            f" — the link stops working "
-                            f"{pending_until.astimezone(current_env().tz).strftime('%a %d %b, %H:%M')}"
-                            if pending_until is not None
-                            else ""
-                        )
-                    ).classes("text-sm text-amber-800")
-                    ui.space()
-                    ui.button("Cancel", on_click=drop_email_change).props(
-                        "flat dense color=negative"
-                    )
-            new_email = (
-                ui.input("New email address")
-                .props("outlined dense autocomplete=email")
-                .classes("w-full")
-                .mark("new-email")
-                .on("keydown.enter", request_email_change)
-            )
-            with ui.row().classes("w-full justify-end"):
-                ui.button("Send confirmation", on_click=request_email_change).props(
-                    "dense"
-                )
-
-        with ui.card().classes("w-full max-w-xl gap-3"):
-            ui.label("Change your password" if has_password else "Set a password")
-            if must_retype:
-                current = (
-                    ui.input("Current password", password=True)
-                    .props("outlined dense autocomplete=current-password")
-                    .classes("w-full")
-                    .mark("current-password")
-                )
-            elif has_password:
-                current = None
-                ui.label(
-                    "You signed in with an emailed code, so you can set a new "
-                    "password without the old one."
-                ).classes("text-sm text-gray-500")
-            else:
-                current = None
-            new_password = (
-                ui.input("New password", password=True, password_toggle_button=True)
-                .props("outlined dense autocomplete=new-password")
-                .classes("w-full")
-                .mark("new-password")
-            )
-            ui.label(passwords.GUIDANCE).classes("text-xs text-gray-500")
-            confirm = (
-                ui.input(
-                    "Repeat new password", password=True, password_toggle_button=True
-                )
-                .props("outlined dense autocomplete=new-password")
-                .classes("w-full")
-                .mark("repeat-password")
-                .on("keydown.enter", save)
-            )
-            with ui.row().classes("w-full justify-between items-center"):
-                if has_password:
-                    ui.button("Remove password", on_click=remove).props(
-                        "flat dense color=negative"
-                    )
-                else:
-                    ui.space()
-                ui.button("Save password", on_click=save).props("dense")
+        _signin_card(user.email, user.password_hash is not None)
+        _calendar_card(ctx.base_url, feed_token)
+        _email_card(
+            user_id=user.id,
+            base_url=ctx.base_url,
+            pending=pending,
+            pending_until=pending_until,
+            tz=ctx.env.tz,
+        )
+        _password_card(
+            email=user.email,
+            stored_hash=user.password_hash,
+            must_retype=must_retype,
+            ip=ctx.ip,
+            base_url=ctx.base_url,
+        )
