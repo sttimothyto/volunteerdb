@@ -70,7 +70,7 @@ Every step keeps existing names working through re-exports or aliases, adds
 or tightens one ratchet sweep, and ends with the full suite green in its own
 commit.
 
-- [ ] **1. Baseline and ratchets.** Record the suite and coverage figure. Add
+- [x] **1. Baseline and ratchets.** Record the suite and coverage figure. Add
   `tests/test_edge_layer.py` with three baseline-driven sweeps that may only
   shrink: `current_env()`/`current()` calls per ui module; `session.get`,
   `session.execute` and `sa.select` under `ui/` and `api/`; request-origin
