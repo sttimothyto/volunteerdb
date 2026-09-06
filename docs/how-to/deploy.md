@@ -101,15 +101,14 @@ container-name DNS), curl, ca-certificates, rclone.
 :::{note}
 Steps 4 and 5 are not simultaneous: the migration runs against a database
 that the *previous* image still serves. A revision that only adds is
-invisible in that window. One that **drops** a column the live image still
-maps is not: `0002` drops `team.application_form_url`. The old container then
-answers 500 on every page that reads that table, until the restart lands. The
-window is tens of seconds. Run such a deploy attended and at a quiet hour, or
-stop `volunteerdb-app.service` first and let the deploy bring it back.
+invisible in that window. One that **drops** or renames a column the live
+image still maps is not. The old container answers 500 on every page that
+reads that table, until the restart lands.
 
-`0010` is the other kind. It adds a NOT NULL column to `notification` that
-the old image's inserts do not fill. A substitution claim or a hand-over in
-that window is refused, and a digest that is running stamps nothing.
+One that adds a NOT NULL column the old image's inserts do not fill refuses
+those inserts for the same window. The window is tens of seconds. Run such a
+deploy attended and at a quiet hour, or stop `volunteerdb-app.service` first
+and let the deploy bring it back.
 :::
 
 **Reverse proxy (Caddy).**
@@ -177,8 +176,9 @@ git checkout main
 - The deploy does not downgrade migrations. If the bad release included one,
   restore the database from a [backup](backup-restore.md), or run a reviewed
   `alembic downgrade` as a one-shot container.
-- Note that `0001` is now the base revision. A downgrade of it drops every
-  table. So for anything below the current head, restore from backup instead.
+- `0001` is the base revision and creates the whole schema, so a downgrade
+  of it drops every table. For anything below the current head, restore from
+  backup instead.
 - The managed Caddyfile rolls back with the code: the older commit's site
   file renders the older configuration.
 - The hand-written file that the first managed deploy replaced is still on

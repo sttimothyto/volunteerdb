@@ -1,8 +1,8 @@
 """Membership timeline: spells stitched from live + history rows.
 
-Spell boundaries are system times (rev 0011 dropped the operator-entered
-joined_on): a spell starts when its membership record was created and ends
-when it was deleted.
+Spell boundaries are system times (there is no operator-entered joined-on
+date): a spell starts when its membership record was created and ends when it
+was deleted.
 """
 
 from datetime import date, timedelta

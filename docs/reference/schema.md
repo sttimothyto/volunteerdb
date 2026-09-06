@@ -323,12 +323,9 @@
   (`services.teams.set_roster_sheet`), and `jobs.roster_sync` syncs it. See
   [Sync team rosters with Google Sheets](../how-to/roster-spreadsheets.md).
 - A pointer to an external artifact: current-state only.
-- Revision `0005` dropped a `requested_file_id`/`requested_import` pair.
-  That pair held a pasted link *beside* `file_id` until a nightly run could
-  verify it.
-- That indirection existed only because the app could not reach Drive. A
-  link-shared sheet is readable the moment it is pasted, so the app now
-  writes `file_id` directly.
+- Nothing is parked beside `file_id` awaiting verification. A link-shared
+  sheet is readable the moment it is pasted, so the app checks a pasted link
+  on the spot and writes `file_id` directly.
 
 (event)=
 ## `event` (not versioned)
@@ -410,7 +407,7 @@
 | `kind` | assignment_kind | provenance only, no logic branches on it |
 | `assigned_by` | integer | FK → `app_user.id` ON DELETE SET NULL |
 | `created_at` | timestamptz | |
-| `notify_7d`, `notify_24h` | boolean | not null; `notify_24h` defaults true, `notify_7d` false since `0007` (the week-ahead reminder restated a notice the volunteer already had). Reminder-stage *preferences* chosen at sign-up — settings, not records, which is why they stayed here when the stamps left |
+| `notify_7d`, `notify_24h` | boolean | not null; `notify_24h` defaults true, `notify_7d` false (the week-ahead reminder restates a notice the volunteer already had). Reminder-stage *preferences* chosen at sign-up — settings, not records, which is why they stayed here when the stamps left |
 | `attended_override` | boolean | nullable; NULL = auto (attended) |
 | `hours_override` | numeric(5,2) | nullable; NULL = auto (scheduled duration), CHECK `>= 0` |
 
@@ -499,8 +496,7 @@
   CONFLICT DO NOTHING`.
 - The recipient is part of the key because an assignment changes hands. The
   new holder has no row under their name, so the digest tells them. The
-  previous holder's rows stay as a record of what they were told. Before
-  `0010` the services deleted stamps on every hand-over instead.
+  previous holder's rows stay as a record of what they were told.
 - CHECK `(assignment_id IS NULL) <> (voter_id IS NULL)`: exactly one subject
   per row.
 - This table replaced five nullable stamp columns spread over
@@ -562,56 +558,16 @@ table's columns (without PK/FK/defaults), in any order, followed by:
 - So a new live column needs one `ADD COLUMN` on the twin, and nothing
   else. See [Write a database migration](../how-to/write-a-migration.md).
 
-## Migration history
+(the-migration)=
+## The migration
 
-- The chain starts at `0001`.
-- The squash folded revisions `0001`–`0028` into a single `0001_initial.py`,
-  which describes the finished schema. 28 files of accreted history answered
-  a question nobody asks: how the schema got here. They did so at the cost
-  of the one people do ask: what it is now.
-- The reasons that mattered moved into `models.py`, beside the columns they
-  explain.
-- `0002` drops the public interest pipeline: the `interest` table and
-  `team.application_form_url`. They were one feature in two places: the
-  Google Form link only ever went out as the confirmation email that a
-  submission triggered.
-- `team` is system-versioned and `versioning()` archives positionally. So
-  the column drop meant a rebuild of `team_history` to the post-drop order,
-  and the historical values went with it.
-
-The revisions since, in order:
-
-- `0003` added a `requested_file_id`/`requested_import` pair to
-  `team_sheet`. The pair parked a pasted spreadsheet link beside `file_id`
-  until the nightly rclone run could check it. `0005` dropped the pair
-  again, once link-shared sheets made a pasted link checkable on the spot
-  ({ref}`team_sheet <team_sheet>`).
-- `0004` added `event_slot.description`, so a slot's detail no longer has to
-  ride in the name that the weekly copy-forward matches on.
-- `0006` created [`site_logo`](#site_logo).
-- `0007` created [`mail_quota`](#mail_quota) and flipped the default of
-  `event_assignment.notify_7d` to false. The 7-day reminder restated a
-  notice the volunteer already had, and was a third of all event mail on a
-  weekend roster. Rows that already carry a preference keep it.
-- `0008` added `app_user.calendar_token`, the personal calendar feed's
-  credential. It is stored in clear because the subscribe panel has to show
-  it again.
-- `0009` made `versioning()` archive by column name. It moved the volunteer
-  email index onto the model as a plain index. It added four CHECKs the
-  services had kept on their own. A live row's `sys_period` is open. A
-  task-force event's `team_id` is its meta team. A choice field has options,
-  and no other kind does.
-- `0010` added `notification.volunteer_id`, the recipient, and widened the
-  assignment unique to include it.
-
-- `0004`, `0006`, `0007`, `0008` and `0009` are purely additive, so the
-  previous image continues to serve while they apply. `0002` and `0010` are
-  the ones that needed an attended deploy
-  ([Deploy and upgrade production](../how-to/deploy.md)).
-- The statements in `0001` are a frozen snapshot, written out by hand rather
-  than generated from `models.Base.metadata` at run time. A migration that
+- The chain is one revision, `0001`, which creates the whole schema.
+- Its statements are a frozen snapshot, written out by hand rather than
+  generated from `models.Base.metadata` at run time. A migration that
   imports the application's models no longer describes the schema it created
   once those models change again.
+- The reasons that matter live in `models.py`, beside the columns they
+  explain.
 - `tests/test_schema_invariants.py` keeps the two in step. It compares the
   migrated database against the models on every run. Column order is
   compared by hand. Types, defaults, indexes, uniques and foreign keys go
@@ -622,11 +578,11 @@ The revisions since, in order:
 Column *declaration* order in `models.py` follows the order that live
 databases physically have. That is not always the logical order:
 `AppUser.otp_hash` and the columns after it carry a comment that says so. The
-reason is a diff of `pg_dump --schema-only` between a fresh database and an
-upgraded one. That diff verified the squash, and it verifies any later
-revision whose correctness is not obvious on the page. It only means
-something if the two agree.
+reason is a diff of `pg_dump --schema-only` between a fresh database and a
+live one. That diff verifies any revision whose correctness is not obvious on
+the page ([Write a database migration](../how-to/write-a-migration.md)). It
+only means something if the two agree.
 
-Until `0009` the trigger archived positionally as well, which made the order
-load-bearing. It no longer is.
+The trigger archives by column name, so the order is a convention for the
+reader and the diff, not a mechanism.
 :::

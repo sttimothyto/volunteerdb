@@ -127,9 +127,9 @@ async def test_the_migration_builds_the_schema_the_models_describe(database):
     The test database is built by a real `alembic upgrade head` (conftest),
     never `create_all`, so this is what keeps the hand-written DDL and the
     models from parting company. Order is held for the reader, not for the
-    trigger: models.py is meant to read as the physical layout, and the
-    revisions since the squash were verified by diffing a fresh database
-    against an upgraded one, which only means something while the two agree.
+    trigger: models.py is meant to read as the physical layout, and a revision
+    is verified by diffing a fresh database against an upgraded one, which only
+    means something while the two agree.
     Types, defaults, indexes and constraints are the next test's job.
     """
     async with database.connect() as conn:
@@ -172,9 +172,9 @@ async def test_the_migrated_database_is_exactly_the_metadata(database):
     and server default, every index, unique and foreign key the models declare
     is in the migrated database, and nothing is there that they do not declare.
 
-    Before this, only column names and order were compared, so an index that
-    existed in the migration alone (ix_volunteer_email_lower, until 0009) or a
-    unique a migration forgot went unnoticed. Constraint names follow
+    Without it only column names and order would be compared, so an index that
+    existed in the migration alone or a unique a migration forgot would go
+    unnoticed. Constraint names follow
     PostgreSQL's defaults (models.NAMING_CONVENTION) so the comparison is by
     name. CHECKs are not compared by alembic; the next test covers them."""
     async with database.connect() as conn:

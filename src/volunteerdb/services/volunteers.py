@@ -486,8 +486,8 @@ async def timeline(
         segments: list[RoleSegment] = []
         for row in run:
             if segments and segments[-1].role == row.role:
-                # same-role consecutive versions: pre-0011 history rows where
-                # only joined_on/notes changed
+                # same-role consecutive versions: history rows where something
+                # other than the role changed
                 segments[-1].end = row.sys_period.upper
             else:
                 segments.append(

@@ -11,16 +11,9 @@ Schema changes ship as Alembic revisions in `migrations/versions/`, named
 - Append a new column at the end of the class, because that is where
   `ALTER TABLE … ADD COLUMN` puts it.
 
-The chain currently starts at `0001`, which is the whole schema in one
-revision:
-
-- The squash folded revisions `0001`–`0028` into it.
-- `0002` is a worked example of a **drop** on a versioned table, from the
-  time the trigger copied rows positionally. It removes
-  `team.application_form_url` and rebuilds `team_history` around the gap.
-  Since `0009` a drop needs no rebuild (see below).
-- See [the migration history](../reference/schema.md#migration-history) for
-  what the squash means for a database that predates it.
+The chain starts at `0001`, which is the whole schema in one revision. Later
+revisions alter it. See [the migration](../reference/schema.md#the-migration)
+for what `0001` is and how it is kept honest.
 
 ## Ordinary migrations
 
@@ -44,7 +37,7 @@ uv run alembic downgrade -1 && uv run alembic upgrade head
 ## Columns on versioned tables: the history-twin rule
 
 :::{important}
-`volunteer`, `team`, and `membership` are system-versioned. Since `0009`, the
+`volunteer`, `team`, and `membership` are system-versioned. The
 `versioning()` trigger copies a row into `<table>_history` **by column name**
 (`jsonb_populate_record`). So a twin must carry every live column, under the
 same name and type. Order does not matter. Extra columns on the twin do not
@@ -77,9 +70,6 @@ ALTER TABLE team DROP COLUMN motto;
 You need no trigger changes: `versioning()` resolves `<table>_history` by
 name at runtime.
 
-Before `0009` the trigger copied rows positionally, and every column change
-meant a rebuild of the twin. `0002` shows what that looked like.
-
 Tables that are *not* versioned (`app_user`, `custom_field_def`,
 `app_setting`, and everything under events and elections) take a plain
 `add_column`.
@@ -97,8 +87,8 @@ Tables that are *not* versioned (`app_user`, `custom_field_def`,
 
 ## Verifying a migration you cannot check by reading
 
-Build both paths and diff them. This is the check the squash passed.
-Repeat it for any migration whose correctness is not obvious on the page:
+Build both paths and diff them, for any migration whose correctness is not
+obvious on the page:
 
 ```sh
 createdb check_fresh && createdb check_upgraded
@@ -107,11 +97,13 @@ VDB_DATABASE_URL=…/check_upgraded uv run alembic upgrade <the revision before>
 VDB_DATABASE_URL=…/check_upgraded uv run alembic upgrade head
 pg_dump --schema-only --no-owner --no-privileges check_fresh    > fresh.sql
 pg_dump --schema-only --no-owner --no-privileges check_upgraded > upgraded.sql
-diff <(grep -vE '^--|^$|^SET ' fresh.sql) <(grep -vE '^--|^$|^SET ' upgraded.sql)
+diff <(grep -vE '^--|^$|^SET |^\\(un)?restrict ' fresh.sql) \
+     <(grep -vE '^--|^$|^SET |^\\(un)?restrict ' upgraded.sql)
 ```
 
 - An empty diff means an upgraded database is indistinguishable from one
-  created today.
+  created today. (The `\restrict` lines are a token pg_dump draws afresh
+  for every dump, hence the filter.)
 - Read a non-empty diff closely; do not wave it through. Each of these is
   real, and each surfaces later as a test failure that nobody can place:
   - constraint names that PostgreSQL derived, instead of names you chose

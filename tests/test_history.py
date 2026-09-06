@@ -91,10 +91,9 @@ async def test_rolled_back_changes_leave_no_history(database):
         assert count == 0
 
 
-# The next three tests guard the twin rebuilds (0002: volunteer_history and
-# team_history; 0011: membership_history): if a twin's column order ever drifts
-# from live-order + (changed_by, op), the trigger's positional INSERT breaks
-# and these fail on the first UPDATE.
+# The next three tests guard the twins: if a twin ever lacks a live column, or
+# holds it under another type, the trigger's INSERT fails on the first UPDATE
+# and these fail with it.
 
 
 async def test_membership_role_changes_are_versioned(database):

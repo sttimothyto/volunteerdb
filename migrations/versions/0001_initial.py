@@ -3,30 +3,26 @@
 Revision ID: 0001
 Revises: none
 
-Revisions 0001-0028 were squashed into this file. What they built incrementally
--- the three core tables and their history twins, custom fields, elections,
-events and task forces, team pages, the Drive sheet pointers, interest
-submissions, the scheduler's job record, and the notification log -- is stated
-here once, in its finished shape, with the reasoning kept in models.py beside the
-columns it belongs to.
+The three core tables and their history twins, custom fields, elections,
+events and task forces, team pages, the Drive sheet pointers, the site logo,
+the mail counter, the scheduler's job record, and the notification log -- all
+stated once, in their finished shape, with the reasoning kept in models.py
+beside the columns it belongs to.
 
 The statements below are a frozen snapshot, deliberately spelled out rather than
 generated from `models.Base.metadata` at run time: a migration that imports the
 application's models stops describing the schema it created the moment those
-models change again. They were emitted from the metadata once, when the squash
-was made, and `tests/test_schema_invariants.py` keeps them honest from here -- it
-compares the migrated database against the models on every run.
+models change again. They were emitted from the metadata once, and
+`tests/test_schema_invariants.py` keeps them honest from here -- it compares the
+migrated database against the models on every run.
 
-**Upgrading an existing database.** This revision creates a schema; it cannot
-migrate one. The hand-run SQL that once carried a pre-squash database up to
-0001 was retired after the last such database had been upgraded. Column
-declaration order in models.py is kept in the order live databases physically
-have -- see the note on AppUser.otp_hash -- because positional history
-archiving depends on it.
+Column order is the order live databases physically have, and models.py
+declares its columns in the same order, so that a fresh database and a live one
+diff clean under `pg_dump --schema-only` (docs/how-to/write-a-migration.md).
+That is a convention for the reader and the diff, not a mechanism: the
+versioning trigger below archives by column name.
 
-**pg_trgm is not installed here.** Revision 0005 added it for two GIN indexes on
-volunteer, and 0025 dropped those indexes: the access-control rewrite of
-`services/volunteers.search` had put them behind an OR no index could serve.
+pg_trgm is not installed: no index here needs it.
 """
 
 import sqlalchemy as sa
@@ -41,10 +37,12 @@ VERSIONED_TABLES = ("volunteer", "team", "membership")
 
 # BEFORE UPDATE/DELETE on each versioned table: close the old row's validity
 # period, copy it into the twin, and open a fresh period on the new row. The
-# archive INSERT is POSITIONAL -- `SELECT ($1).*` expands the row in column
-# order -- which is why a twin must mirror its live table column for column, and
-# why adding a live column means rebuilding the twin. See
-# docs/how-to/write-a-migration.md.
+# archive INSERT builds a row of the twin's own type from the old row's JSON,
+# so columns match by NAME: `to_jsonb(OLD)` carries every live column, the two
+# audit fields are appended to the object, and any twin column the object does
+# not mention (one the live table has dropped since) is NULL. Order is
+# irrelevant, a type mismatch raises, and adding a live column is two ADD
+# COLUMNs. See docs/how-to/write-a-migration.md.
 VERSIONING_FN = """
 CREATE OR REPLACE FUNCTION versioning() RETURNS trigger LANGUAGE plpgsql AS $fn$
 DECLARE
@@ -55,25 +53,26 @@ DECLARE
 BEGIN
     IF TG_OP = 'UPDATE' THEN
         OLD.sys_period := tstzrange(lower(OLD.sys_period), ts);
-        EXECUTE format('INSERT INTO %s SELECT ($1).*, $2, $3', hist) USING OLD, uid, 'U';
+        EXECUTE format(
+            'INSERT INTO %s SELECT (jsonb_populate_record(NULL::%s, '
+            'to_jsonb($1) || jsonb_build_object(''changed_by'', $2, ''op'', $3))).*',
+            hist, hist
+        ) USING OLD, uid, 'U';
         NEW.sys_period := tstzrange(ts, NULL);
         RETURN NEW;
     ELSIF TG_OP = 'DELETE' THEN
         OLD.sys_period := tstzrange(lower(OLD.sys_period), ts);
-        EXECUTE format('INSERT INTO %s SELECT ($1).*, $2, $3', hist) USING OLD, uid, 'D';
+        EXECUTE format(
+            'INSERT INTO %s SELECT (jsonb_populate_record(NULL::%s, '
+            'to_jsonb($1) || jsonb_build_object(''changed_by'', $2, ''op'', $3))).*',
+            hist, hist
+        ) USING OLD, uid, 'D';
         RETURN OLD;
     END IF;
     RETURN NEW;
 END
 $fn$;
 """
-
-# Expression indexes SQLAlchemy cannot hang off a mapped column. Every email
-# lookup in the codebase folds case, so a plain btree on the raw column could
-# never be used -- rev 0025 replaced one with this.
-EXPRESSION_INDEXES = [
-    "CREATE INDEX ix_volunteer_email_lower ON volunteer (lower(email))",
-]
 
 SCHEMA: list[str] = [
     """CREATE TYPE assignment_kind AS ENUM ('signup', 'assigned', 'sub')""",
@@ -102,6 +101,7 @@ SCHEMA: list[str] = [
 	is_active BOOLEAN DEFAULT true NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
 	PRIMARY KEY (id),
+	CONSTRAINT ck_custom_field_options CHECK ((field_type = 'select') = (options IS NOT NULL)),
 	UNIQUE (key)
 )""",
     """CREATE TABLE job_run (
@@ -110,6 +110,11 @@ SCHEMA: list[str] = [
 	last_attempt_at TIMESTAMP WITH TIME ZONE,
 	last_exit_code INTEGER,
 	PRIMARY KEY (job_name)
+)""",
+    """CREATE TABLE mail_quota (
+	day DATE NOT NULL,
+	sent INTEGER DEFAULT 0 NOT NULL,
+	PRIMARY KEY (day)
 )""",
     """CREATE TABLE membership_history (
 	id INTEGER,
@@ -132,8 +137,8 @@ SCHEMA: list[str] = [
 	sys_period TSTZRANGE DEFAULT tstzrange(clock_timestamp(), NULL) NOT NULL,
 	workload_weight NUMERIC(8, 2) DEFAULT 0 NOT NULL,
 	home_doc_url VARCHAR(500),
-	application_form_url VARCHAR(500),
 	PRIMARY KEY (id),
+	CONSTRAINT ck_team_sys_period_open CHECK (upper_inf(sys_period)),
 	UNIQUE NULLS NOT DISTINCT (parent_team_id, name),
 	FOREIGN KEY(parent_team_id) REFERENCES team (id) ON DELETE RESTRICT
 )""",
@@ -147,7 +152,6 @@ SCHEMA: list[str] = [
 	sys_period TSTZRANGE,
 	workload_weight NUMERIC(8, 2),
 	home_doc_url VARCHAR(500),
-	application_form_url VARCHAR(500),
 	changed_by INTEGER,
 	op CHAR(1)
 )""",
@@ -165,8 +169,10 @@ SCHEMA: list[str] = [
 	sys_period TSTZRANGE DEFAULT tstzrange(clock_timestamp(), NULL) NOT NULL,
 	custom JSONB DEFAULT '{}'::jsonb NOT NULL,
 	PRIMARY KEY (id),
-	CONSTRAINT ck_volunteer_email_lower CHECK (email IS NULL OR email = lower(email))
+	CONSTRAINT ck_volunteer_email_lower CHECK (email IS NULL OR email = lower(email)),
+	CONSTRAINT ck_volunteer_sys_period_open CHECK (upper_inf(sys_period))
 )""",
+    """CREATE INDEX ix_volunteer_email ON volunteer (email)""",
     """CREATE INDEX ix_volunteer_name ON volunteer (last_name, first_name)""",
     """CREATE TABLE volunteer_history (
 	id INTEGER,
@@ -204,6 +210,7 @@ SCHEMA: list[str] = [
 	pending_email VARCHAR(255),
 	email_change_token VARCHAR(64),
 	email_change_expires_at TIMESTAMP WITH TIME ZONE,
+	calendar_token VARCHAR(64),
 	PRIMARY KEY (id),
 	CONSTRAINT ck_app_user_invite_pair CHECK ((invite_token IS NULL) = (invite_expires_at IS NULL)),
 	CONSTRAINT ck_app_user_email_change_triple CHECK ((pending_email IS NULL) = (email_change_token IS NULL) AND (pending_email IS NULL) = (email_change_expires_at IS NULL)),
@@ -214,7 +221,18 @@ SCHEMA: list[str] = [
 	UNIQUE (email),
 	UNIQUE (api_token),
 	UNIQUE (invite_token),
-	UNIQUE (email_change_token)
+	UNIQUE (email_change_token),
+	UNIQUE (calendar_token)
+)""",
+    """CREATE TABLE site_logo (
+	id SERIAL NOT NULL,
+	image BYTEA NOT NULL,
+	content_type VARCHAR(50) DEFAULT 'image/png' NOT NULL,
+	uploaded_by INTEGER,
+	uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT ck_site_logo_singleton CHECK (id = 1),
+	FOREIGN KEY(uploaded_by) REFERENCES app_user (id) ON DELETE SET NULL
 )""",
     """CREATE TABLE membership (
 	id SERIAL NOT NULL,
@@ -223,6 +241,7 @@ SCHEMA: list[str] = [
 	role team_role NOT NULL,
 	sys_period TSTZRANGE DEFAULT tstzrange(clock_timestamp(), NULL) NOT NULL,
 	PRIMARY KEY (id),
+	CONSTRAINT ck_membership_sys_period_open CHECK (upper_inf(sys_period)),
 	UNIQUE (volunteer_id, team_id),
 	FOREIGN KEY(volunteer_id) REFERENCES volunteer (id) ON DELETE CASCADE,
 	FOREIGN KEY(team_id) REFERENCES team (id) ON DELETE CASCADE
@@ -279,6 +298,7 @@ SCHEMA: list[str] = [
 	CONSTRAINT ck_event_times CHECK (starts_at < ends_at),
 	CONSTRAINT ck_event_cancelled_at CHECK ((status = 'cancelled') = (cancelled_at IS NOT NULL)),
 	CONSTRAINT ck_event_task_force_teams CHECK (task_force_team_id IS NULL OR task_force_team_id <> owner_team_id),
+	CONSTRAINT ck_event_task_force_gate CHECK (task_force_team_id IS NULL OR team_id = task_force_team_id),
 	CONSTRAINT uq_event_task_force_team UNIQUE (task_force_team_id),
 	FOREIGN KEY(team_id) REFERENCES team (id) ON DELETE CASCADE,
 	FOREIGN KEY(cancelled_by) REFERENCES app_user (id) ON DELETE SET NULL,
@@ -292,23 +312,6 @@ SCHEMA: list[str] = [
     """CREATE INDEX ix_event_series ON event (series_id) WHERE series_id IS NOT NULL""",
     """CREATE INDEX ix_event_starts_at ON event (starts_at)""",
     """CREATE INDEX ix_event_team_starts ON event (team_id, starts_at)""",
-    """CREATE TABLE interest (
-	id SERIAL NOT NULL,
-	team_id INTEGER NOT NULL,
-	name VARCHAR(200) NOT NULL,
-	email VARCHAR(255) NOT NULL,
-	phone VARCHAR(50),
-	note TEXT,
-	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-	resolved_at TIMESTAMP WITH TIME ZONE,
-	resolved_by INTEGER,
-	PRIMARY KEY (id),
-	CONSTRAINT ck_interest_email_lower CHECK (email = lower(email)),
-	CONSTRAINT ck_interest_resolution CHECK (resolved_by IS NULL OR resolved_at IS NOT NULL),
-	FOREIGN KEY(team_id) REFERENCES team (id) ON DELETE CASCADE,
-	FOREIGN KEY(resolved_by) REFERENCES app_user (id) ON DELETE SET NULL
-)""",
-    """CREATE UNIQUE INDEX uq_interest_open ON interest (team_id, email) WHERE resolved_at IS NULL""",
     """CREATE TABLE proposal (
 	id SERIAL NOT NULL,
 	team_id INTEGER NOT NULL,
@@ -363,6 +366,7 @@ SCHEMA: list[str] = [
 	name VARCHAR(100) NOT NULL,
 	capacity SMALLINT,
 	position INTEGER DEFAULT 0 NOT NULL,
+	description VARCHAR(300),
 	PRIMARY KEY (id),
 	CONSTRAINT uq_event_slot_name UNIQUE (event_id, name),
 	CONSTRAINT uq_slot_event UNIQUE (id, event_id),
@@ -415,7 +419,7 @@ SCHEMA: list[str] = [
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
 	attended_override BOOLEAN,
 	hours_override NUMERIC(5, 2),
-	notify_7d BOOLEAN DEFAULT true NOT NULL,
+	notify_7d BOOLEAN DEFAULT false NOT NULL,
 	notify_24h BOOLEAN DEFAULT true NOT NULL,
 	PRIMARY KEY (id),
 	CONSTRAINT uq_event_assignment UNIQUE (event_id, volunteer_id),
@@ -466,21 +470,22 @@ SCHEMA: list[str] = [
 	assignment_id INTEGER,
 	voter_id INTEGER,
 	sent_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	volunteer_id INTEGER NOT NULL,
 	PRIMARY KEY (id),
-	CONSTRAINT uq_notification_assignment UNIQUE (assignment_id, stage),
+	CONSTRAINT uq_notification_assignment UNIQUE (assignment_id, volunteer_id, stage),
 	CONSTRAINT uq_notification_voter UNIQUE (voter_id, stage),
 	CONSTRAINT ck_notification_subject CHECK ((assignment_id IS NULL) <> (voter_id IS NULL)),
 	FOREIGN KEY(assignment_id) REFERENCES event_assignment (id) ON DELETE CASCADE,
-	FOREIGN KEY(voter_id) REFERENCES proposal_voter (id) ON DELETE CASCADE
+	FOREIGN KEY(voter_id) REFERENCES proposal_voter (id) ON DELETE CASCADE,
+	FOREIGN KEY(volunteer_id) REFERENCES volunteer (id) ON DELETE CASCADE
 )""",
+    """CREATE INDEX ix_notification_volunteer_id ON notification (volunteer_id)""",
     """ALTER TABLE proposal ADD CONSTRAINT fk_proposal_appointed_candidate FOREIGN KEY(appointed_candidate_id) REFERENCES proposal_candidate (id) ON DELETE SET NULL""",
 ]
 
 
 def upgrade() -> None:
     for statement in SCHEMA:
-        op.execute(statement)
-    for statement in EXPRESSION_INDEXES:
         op.execute(statement)
     op.execute(VERSIONING_FN)
     for table in VERSIONED_TABLES:
@@ -493,9 +498,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Drop everything this created.
 
-    Read from the catalog rather than listing tables: the schema is one revision
-    now, so there is no half-way state to step back to, and a hand-kept list
-    would be one more thing to forget."""
+    Read from the catalog rather than listing tables: the schema is one revision,
+    so there is no half-way state to step back to, and a hand-kept list would be
+    one more thing to forget."""
     for table in VERSIONED_TABLES:
         op.execute(f"DROP TRIGGER IF EXISTS versioning_trigger ON {table}")
     op.execute("DROP FUNCTION IF EXISTS versioning()")

@@ -143,6 +143,6 @@ solved double-entry but not the familiarity problem. The proposer still
 picked one name from memory, and one manager decided alone. The
 nomination-and-vote flow replaced it outright and rebuilt the table rather
 than keep both paths, so that *every* appointment passes through the same
-deliberate gate. (The old shape survives nowhere in the repo now that the
-migration chain is squashed. That is the intended trade: the schema is
-easier to read, and one abandoned data model is no longer part of it.)
+deliberate gate. (The old shape survives nowhere in the repo. The migration
+chain is one revision that states the schema as it is, so an abandoned data
+model is no part of it.)

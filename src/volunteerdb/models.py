@@ -45,13 +45,11 @@ ROLE_LABELS: dict[TeamRole, str] = {
 
 # One mechanism for every closed set of values: a native PostgreSQL enum, with
 # the column typed as the Python enum so a typo is a failure at assignment
-# rather than at flush. Earlier revisions used varchar + CHECK for these,
-# reasoning that adding a value would need ALTER TYPE — but `ALTER TYPE … ADD
-# VALUE` has existed since 9.1, and the one revision that did widen a set showed
-# the CHECK path is no cheaper: it needed DROP + CREATE with the value list
-# duplicated in the migration and in this file. Every member is a StrEnum, so `event.status ==
-# "cancelled"` still reads true and nothing had to change at the comparison
-# sites.
+# rather than at flush. A varchar + CHECK would be no cheaper to widen: `ALTER
+# TYPE … ADD VALUE` has existed since 9.1, whereas widening a CHECK needs DROP +
+# CREATE with the value list duplicated in the migration and in this file. Every
+# member is a StrEnum, so `event.status == "cancelled"` still reads true and
+# nothing had to change at the comparison sites.
 
 
 def _pg_enum(members: type[enum.StrEnum], name: str) -> sa.Enum:
@@ -664,9 +662,9 @@ class EventAssignment(Base):
     # settings, not records — what has already been *sent* lives in
     # models.Notification, keyed by (assignment, stage).
     #
-    # Declared after the overrides because the revision that added them appended
-    # them there; see AppUser's docstring for why declaration order is kept
-    # honest against the deployed order.
+    # Declared after the overrides because that is where they physically sit;
+    # see AppUser's docstring for why declaration order follows the deployed
+    # order.
     # The 24h reminder is the one that changes what somebody does; the 7-day
     # one restates a "you have been scheduled" notice they already had, and on
     # a 200-message/day mail allowance that middle notice is a third of all
@@ -835,8 +833,8 @@ class Notification(Base):
     sent_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
     # the recipient: for an assignment row the holder at the time, for a voter
     # row a repeat of proposal_voter.volunteer_id (which never changes), so the
-    # column can be NOT NULL and mean one thing. Appended by a later revision,
-    # so it sits last: models.py declares columns in their physical order.
+    # column can be NOT NULL and mean one thing. Last because that is where it
+    # physically sits: models.py declares columns in their physical order.
     volunteer_id: Mapped[int] = mapped_column(
         sa.ForeignKey("volunteer.id", ondelete="CASCADE")
     )
@@ -854,12 +852,11 @@ class AppUser(Base):
     function looked.
 
     The declaration order is the *deployed* order, not the logical one: the
-    invite expiry, the confidentiality stamp and the address-change trio were
-    each appended by a later revision, so that is where they physically sit in
-    every live database. Keeping the two in step is what lets a fresh
-    database and a migrated one be diffed against each other, which is how the
-    squashed 0001 was verified. Group members are noted in their comments
-    instead.
+    invite expiry, the confidentiality stamp and the address-change trio sit
+    after the OTP columns in every live database, and 0001 spells them there.
+    Keeping the two in step is what lets a fresh database and a live one be
+    diffed against each other (docs/how-to/write-a-migration.md). Group
+    members are noted in their comments instead.
     """
 
     __tablename__ = "app_user"
