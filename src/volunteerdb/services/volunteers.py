@@ -167,9 +167,8 @@ async def find_by_email(session: AsyncSession, email: str) -> list[Volunteer]:
 
     A list, not a row: volunteer.email is deliberately not unique — families
     share an address — so the caller decides what an ambiguous match means.
-    lower() on the column as well as the argument, since rows written before
-    create/update normalized (or written by SQL) may be mixed case; that skips
-    ix_volunteer_email, which at parish scale costs nothing.
+    The column is never mixed case (ck_volunteer_email_lower refuses it), so
+    the folded argument compares directly and ix_volunteer_email serves it.
     """
     addr = email.strip().lower()
     if not addr:
@@ -178,7 +177,7 @@ async def find_by_email(session: AsyncSession, email: str) -> list[Volunteer]:
         (
             await session.execute(
                 sa.select(Volunteer)
-                .where(Volunteer.is_active, sa.func.lower(Volunteer.email) == addr)
+                .where(Volunteer.is_active, Volunteer.email == addr)
                 .order_by(Volunteer.id)
             )
         ).scalars()

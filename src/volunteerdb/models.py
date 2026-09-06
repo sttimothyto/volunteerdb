@@ -7,9 +7,26 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, TSTZRANGE, UUID, Range
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+# Constraint names follow PostgreSQL's own defaults, so every constraint the
+# models leave anonymous carries, in the metadata, the name the database gave
+# it (membership_volunteer_id_team_id_key, event_team_id_fkey, team_pkey).
+# Nothing is renamed by this; it lets the metadata and the migrated database be
+# compared by name (tests/test_schema_invariants.py), and a violation be
+# recognised by name at the boundary should a message ever want to say which.
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",  # SQLAlchemy's own default, which a dict replaces
+    "pk": "%(table_name)s_pkey",
+    "uq": "%(table_name)s_%(column_0_N_name)s_key",
+    "fk": "%(table_name)s_%(column_0_N_name)s_fkey",
+}
+
 
 class Base(DeclarativeBase):
-    pass
+    metadata = sa.MetaData(naming_convention=NAMING_CONVENTION)
+    # A bare `Mapped[datetime]` is a timestamptz. Without this it would be a
+    # naive TIMESTAMP, the one type every reader here mishandles -- the
+    # host-timezone ratchet in tests/test_purity_layer.py exists for a reason.
+    type_annotation_map = {datetime: sa.TIMESTAMP(timezone=True)}
 
 
 class TeamRole(enum.StrEnum):
@@ -35,7 +52,19 @@ ROLE_LABELS: dict[TeamRole, str] = {
 # duplicated in the migration and in this file. Every member is a StrEnum, so `event.status ==
 # "cancelled"` still reads true and nothing had to change at the comparison
 # sites.
-team_role_enum = sa.Enum(TeamRole, name="team_role")
+
+
+def _pg_enum(members: type[enum.StrEnum], name: str) -> sa.Enum:
+    """A native enum whose database labels are the members' VALUES.
+
+    SQLAlchemy persists member *names* unless told otherwise. The two agree for
+    every enum here today; this keeps it from mattering if one day they do not
+    (tests/test_schema_invariants.py checks every enum column went through here).
+    """
+    return sa.Enum(members, name=name, values_callable=lambda e: [m.value for m in e])
+
+
+team_role_enum = _pg_enum(TeamRole, "team_role")
 
 
 class ProposalStatus(enum.StrEnum):
@@ -126,17 +155,27 @@ class SubRequestStatus(enum.StrEnum):
     cancelled = "cancelled"
 
 
-notification_stage_enum = sa.Enum(NotificationStage, name="notification_stage")
-proposal_status_enum = sa.Enum(ProposalStatus, name="proposal_status")
-field_type_enum = sa.Enum(FieldType, name="custom_field_type")
-event_status_enum = sa.Enum(EventStatus, name="event_status")
-assignment_kind_enum = sa.Enum(AssignmentKind, name="assignment_kind")
-sub_request_status_enum = sa.Enum(SubRequestStatus, name="sub_request_status")
-page_status_enum = sa.Enum(PageStatus, name="page_status")
-sync_status_enum = sa.Enum(SyncStatus, name="sync_status")
+notification_stage_enum = _pg_enum(NotificationStage, "notification_stage")
+proposal_status_enum = _pg_enum(ProposalStatus, "proposal_status")
+field_type_enum = _pg_enum(FieldType, "custom_field_type")
+event_status_enum = _pg_enum(EventStatus, "event_status")
+assignment_kind_enum = _pg_enum(AssignmentKind, "assignment_kind")
+sub_request_status_enum = _pg_enum(SubRequestStatus, "sub_request_status")
+page_status_enum = _pg_enum(PageStatus, "page_status")
+sync_status_enum = _pg_enum(SyncStatus, "sync_status")
 
-# sys_period marks when this row version became current; history triggers close it
-SYS_PERIOD_DEFAULT = sa.text("tstzrange(clock_timestamp(), NULL)")
+# Which foreign keys carry an index: any that a delete path scans -- a CASCADE or
+# SET NULL from the referenced table -- unless the referenced table is app_user.
+# The `…_by` attribution columns all point there; an account is deleted perhaps
+# once a year and the tables are small, so nine indexes to hurry that delete
+# would tax every insert for nothing. tests/test_schema_invariants.py holds the
+# rule, with its exceptions listed beside it.
+
+# sys_period marks when this row version became current; history triggers close
+# it. Spelled the way PostgreSQL reflects it, so the drift test compares equal.
+SYS_PERIOD_DEFAULT = sa.text(
+    "tstzrange(clock_timestamp(), NULL::timestamp with time zone)"
+)
 
 
 class Volunteer(Base):
@@ -149,22 +188,26 @@ class Volunteer(Base):
         sa.CheckConstraint(
             "email IS NULL OR email = lower(email)", name="ck_volunteer_email_lower"
         ),
+        # the CHECK above is what lets a plain btree serve find_by_email: the
+        # column is lowercase, so the folded argument compares directly
+        sa.Index("ix_volunteer_email", "email"),
+        # a live row's period is open; the trigger closes only the copy it
+        # archives. A closed one would vanish from every as-of read past its end.
+        sa.CheckConstraint(
+            "upper_inf(sys_period)", name="ck_volunteer_sys_period_open"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     first_name: Mapped[str] = mapped_column(sa.String(100))
     last_name: Mapped[str] = mapped_column(sa.String(100))
-    # Indexed on lower(email), not the raw column: every lookup in the codebase
-    # folds case (services/volunteers.find_by_email), so a plain btree could
-    # never be used. The functional index lives in the migration — SQLAlchemy
-    # cannot express it on a mapped column.
+    # never mixed case (the CHECK above), so ix_volunteer_email serves every
+    # lookup, all of which fold their argument first
     email: Mapped[str | None] = mapped_column(sa.String(255))
     phone: Mapped[str | None] = mapped_column(sa.String(50))
     notes: Mapped[str | None] = mapped_column(sa.Text)
     is_active: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
     # No updated_at: lower(sys_period) IS the last-modified time, maintained by
     # the versioning trigger on every write. A second column meant the same
     # thing only as long as every write went through the ORM — a Core UPDATE
@@ -172,8 +215,7 @@ class Volunteer(Base):
     sys_period: Mapped[Range[datetime]] = mapped_column(
         TSTZRANGE, server_default=SYS_PERIOD_DEFAULT
     )
-    # admin-defined custom field values, keyed by CustomFieldDef.key;
-    # keep this the LAST column so the history twin's order matches the DB
+    # admin-defined custom field values, keyed by CustomFieldDef.key
     custom: Mapped[dict] = mapped_column(
         JSONB, default=dict, server_default=sa.text("'{}'::jsonb")
     )
@@ -193,6 +235,7 @@ class Team(Base):
         # lookup BY name — which is how the clergy voting roll is built
         # (services/elections.py) and how every listing orders
         sa.Index("ix_team_name", "name"),
+        sa.CheckConstraint("upper_inf(sys_period)", name="ck_team_sys_period_open"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -211,14 +254,22 @@ class Team(Base):
     workload_weight: Mapped[Decimal] = mapped_column(
         sa.Numeric(8, 2), default=Decimal(0), server_default=sa.text("0")
     )
-    # public Google Doc used as the team's volunteer home page (services/pages.py).
-    # keep this the LAST column so the history twin's order matches the DB
+    # public Google Doc used as the team's volunteer home page (services/pages.py)
     home_doc_url: Mapped[str | None] = mapped_column(sa.String(500))
 
 
 class Membership(Base):
+    """One volunteer's role on one team. The only uniqueness is one row per
+    pair: nothing caps a role per team, by decision -- a ministry may have two
+    leaders, or two seconds, and both hold the seat in full."""
+
     __tablename__ = "membership"
-    __table_args__ = (sa.UniqueConstraint("volunteer_id", "team_id"),)
+    __table_args__ = (
+        sa.UniqueConstraint("volunteer_id", "team_id"),
+        sa.CheckConstraint(
+            "upper_inf(sys_period)", name="ck_membership_sys_period_open"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # no index=: the (volunteer_id, team_id) unique above leads with this column,
@@ -307,13 +358,11 @@ class Proposal(Base):
     created_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
     decided_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
-    decided_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    decided_at: Mapped[datetime | None]
 
 
 class ProposalCandidate(Base):
@@ -343,9 +392,7 @@ class ProposalCandidate(Base):
     nominated_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
 class ProposalVoter(Base):
@@ -371,9 +418,7 @@ class ProposalVoter(Base):
     added_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
     # What this voter has already been told lives in models.Notification, keyed
     # by (voter, stage) — it used to be two columns here, and a third notice
     # would have meant a third.
@@ -417,9 +462,7 @@ class ProposalBallot(Base):
     score: Mapped[int] = mapped_column(sa.SmallInteger)
     # no onupdate=: cast_ballot writes through a Core ON CONFLICT upsert that
     # sets this explicitly, so the declarative hook never fired
-    updated_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    updated_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
 class Event(Base):
@@ -472,6 +515,12 @@ class Event(Base):
             "task_force_team_id IS NULL OR task_force_team_id <> owner_team_id",
             name="ck_event_task_force_teams",
         ),
+        # while a task force staffs the event, team_id IS the meta team: that is
+        # what gates sign-up and picks the mail audience (services/task_force.py)
+        sa.CheckConstraint(
+            "task_force_team_id IS NULL OR team_id = task_force_team_id",
+            name="ck_event_task_force_gate",
+        ),
         # one event per meta team: a task force exists for exactly one occasion
         sa.UniqueConstraint("task_force_team_id", name="uq_event_task_force_team"),
         # a cascade-delete path from team, and the column the teardown sweep reads
@@ -488,23 +537,21 @@ class Event(Base):
     title: Mapped[str] = mapped_column(sa.String(200))
     description: Mapped[str | None] = mapped_column(sa.Text)
     location: Mapped[str | None] = mapped_column(sa.String(200))
-    starts_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True))
-    ends_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True))
+    starts_at: Mapped[datetime]
+    ends_at: Mapped[datetime]
     status: Mapped[EventStatus] = mapped_column(
         event_status_enum,
         default=EventStatus.scheduled,
         server_default=EventStatus.scheduled.value,
     )
-    cancelled_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    cancelled_at: Mapped[datetime | None]
     cancelled_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
     created_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
     # calendar-sync bookkeeping, owned by jobs/calendar_sync.py — never
     # user-editable. NULL google_event_id = not (yet) on the parish calendar;
     # the fingerprint is a hash of the last-pushed payload (change detection).
@@ -520,12 +567,12 @@ class Event(Base):
     # real owner parked here until teardown. Both NULL means one team staffs
     # this event alone, which is the ordinary case.
     #
-    # ON DELETE SET NULL on both, and that is the point of them living here.
-    # They used to be a side table whose team_id cascaded, so deleting the meta
-    # team deleted the row — which meant teardown had to repoint the event and
-    # FLUSH *before* the delete, or event.team_id's own cascade took the event
-    # and its whole attendance record with it. An ordering requirement that
-    # load-bearing is better expressed as a column that simply goes NULL.
+    # ON DELETE SET NULL on both. They used to be a side table whose team_id
+    # cascaded, so deleting the meta team deleted the row. What SET NULL does
+    # NOT do is save the event: team_id above is the meta team for as long as a
+    # task force exists (ck_event_task_force_gate), and team_id's own cascade
+    # still takes the event with a directly deleted meta team. The guard is
+    # services/teams.delete, which refuses; teardown repoints team_id first.
     task_force_team_id: Mapped[int | None] = mapped_column(
         sa.ForeignKey("team.id", ondelete="SET NULL")
     )
@@ -608,9 +655,7 @@ class EventAssignment(Base):
     assigned_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
     # manager-recorded exceptions to auto attendance; NULL = auto
     attended_override: Mapped[bool | None]
     hours_override: Mapped[Decimal | None] = mapped_column(sa.Numeric(5, 2))
@@ -671,13 +716,9 @@ class EventRsvp(Base):
     )
     available: Mapped[bool]
     note: Mapped[str | None] = mapped_column(sa.String(200))
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
     # no onupdate=: set_rsvp upserts through Core and sets this explicitly
-    updated_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    updated_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
 class EventSubRequest(Base):
@@ -734,10 +775,8 @@ class EventSubRequest(Base):
     claimed_by_volunteer_id: Mapped[int | None] = mapped_column(
         sa.ForeignKey("volunteer.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
-    resolved_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+    resolved_at: Mapped[datetime | None]
 
 
 class Notification(Base):
@@ -756,17 +795,28 @@ class Notification(Base):
     foreign keys keep that, keep referential integrity, and let the CHECK below
     insist on exactly one subject per row.
 
+    A row also names WHO was told (volunteer_id). An assignment changes hands
+    (claim_sub, substitute) and the incoming person has had none of the
+    outgoing one's notices; with the recipient in the key their stamps simply
+    stop matching, where the services used to delete them on every hand-over.
+
     Not system-versioned: bookkeeping, not parish data. A failed send simply
     writes no row and the next night tries again.
     """
 
     __tablename__ = "notification"
     __table_args__ = (
-        # one notice of each kind per thing, which is what makes a re-run safe
+        # one notice of each kind per thing AND per person, which is what makes
+        # a re-run safe and a hand-over forgetful of nothing
         sa.UniqueConstraint(
-            "assignment_id", "stage", name="uq_notification_assignment"
+            "assignment_id",
+            "volunteer_id",
+            "stage",
+            name="uq_notification_assignment",
         ),
         sa.UniqueConstraint("voter_id", "stage", name="uq_notification_voter"),
+        # a cascade path from volunteer, and the column is not a unique's prefix
+        sa.Index("ix_notification_volunteer_id", "volunteer_id"),
         # exactly one subject: `<>` on two IS NULL tests is XOR
         sa.CheckConstraint(
             "(assignment_id IS NULL) <> (voter_id IS NULL)",
@@ -782,8 +832,13 @@ class Notification(Base):
     voter_id: Mapped[int | None] = mapped_column(
         sa.ForeignKey("proposal_voter.id", ondelete="CASCADE")
     )
-    sent_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
+    sent_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
+    # the recipient: for an assignment row the holder at the time, for a voter
+    # row a repeat of proposal_voter.volunteer_id (which never changes), so the
+    # column can be NOT NULL and mean one thing. Appended by a later revision,
+    # so it sits last: models.py declares columns in their physical order.
+    volunteer_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("volunteer.id", ondelete="CASCADE")
     )
 
 
@@ -839,25 +894,19 @@ class AppUser(Base):
     # below — set and cleared together, and CHECKed.
     invite_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
     is_active: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
-    last_login_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    last_login_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
     # an active email OTP: argon2 hash, because six digits is a small space
     otp_hash: Mapped[str | None] = mapped_column(sa.String(255))
-    otp_sent_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
-    otp_expires_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    otp_sent_at: Mapped[datetime | None]
+    otp_expires_at: Mapped[datetime | None]
     otp_attempts: Mapped[int] = mapped_column(default=0, server_default=sa.text("0"))
     # The other half of invite_token. A token whose expiry has passed
     # (or was never recorded) is dead — see services/users.invite_live.
-    invite_expires_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
+    invite_expires_at: Mapped[datetime | None]
     # When the person accepted the confidentiality notice while
     # redeeming their invite. NULL: the account predates the notice.
-    confidentiality_agreed_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
+    confidentiality_agreed_at: Mapped[datetime | None]
     # An address change waits here until the new address opens its
     # link, so nothing on file moves before somebody proves they read mail
     # there. Set and cleared as a triple, and CHECKed as one; the address itself
@@ -865,9 +914,7 @@ class AppUser(Base):
     # only the first to confirm gets it. The token is a digest, like the others.
     pending_email: Mapped[str | None] = mapped_column(sa.String(255))
     email_change_token: Mapped[str | None] = mapped_column(sa.String(64), unique=True)
-    email_change_expires_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
+    email_change_expires_at: Mapped[datetime | None]
     # The address of this account's personal calendar feed,
     # /calendar/mine/<token>.ics. Kept in CLEAR, unlike the three digests
     # above, on purpose: the address has to be shown again every time the
@@ -888,17 +935,27 @@ class CustomFieldDef(Base):
     """
 
     __tablename__ = "custom_field_def"
+    __table_args__ = (
+        # a choice field has its options and no other kind does; the service
+        # always wrote it so, and now nothing else can write it otherwise
+        sa.CheckConstraint(
+            "(field_type = 'select') = (options IS NOT NULL)",
+            name="ck_custom_field_options",
+        ),
+    )
+
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(sa.String(50), unique=True)  # immutable slug
     label: Mapped[str] = mapped_column(sa.String(100))
     field_type: Mapped[FieldType] = mapped_column(field_type_enum)
-    options: Mapped[list | None] = mapped_column(JSONB)  # select choices
+    # select choices. none_as_null: a Python None is a SQL NULL here, not the
+    # JSON value null that JSONB writes by default -- the CHECK above asks
+    # whether there are options, and 'null'::jsonb IS NOT NULL
+    options: Mapped[list | None] = mapped_column(JSONB(none_as_null=True))
     show_in_list: Mapped[bool] = mapped_column(default=False, server_default=sa.false())
     position: Mapped[int] = mapped_column(default=0, server_default=sa.text("0"))
     is_active: Mapped[bool] = mapped_column(default=True, server_default=sa.true())
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
 class AppSetting(Base):
@@ -909,9 +966,7 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(sa.String(100), primary_key=True)
     value: Mapped[dict] = mapped_column(JSONB)
     # no onupdate=: workload.set_config upserts through Core and sets this
-    updated_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    updated_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
 class VolunteerPhoto(Base):
@@ -933,9 +988,7 @@ class VolunteerPhoto(Base):
     uploaded_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
-    uploaded_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    uploaded_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
 class SiteLogo(Base):
@@ -959,9 +1012,7 @@ class SiteLogo(Base):
     uploaded_by: Mapped[int | None] = mapped_column(
         sa.ForeignKey("app_user.id", ondelete="SET NULL")
     )
-    uploaded_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    uploaded_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
 class TeamPage(Base):
@@ -978,7 +1029,7 @@ class TeamPage(Base):
         sa.ForeignKey("team.id", ondelete="CASCADE"), primary_key=True
     )
     html: Mapped[str | None] = mapped_column(sa.Text)
-    fetched_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    fetched_at: Mapped[datetime | None]
     status: Mapped[PageStatus] = mapped_column(
         page_status_enum,
         default=PageStatus.pending,
@@ -1025,12 +1076,10 @@ class TeamSheet(Base):
     )
     file_id: Mapped[str | None] = mapped_column(sa.String(128), unique=True)
     file_name: Mapped[str | None] = mapped_column(sa.String(300))
-    last_synced_at: Mapped[datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    last_synced_at: Mapped[datetime | None]
     last_status: Mapped[SyncStatus | None] = mapped_column(sync_status_enum)
     last_error: Mapped[str | None] = mapped_column(sa.Text)
-    created_at: Mapped[datetime] = mapped_column(
-        sa.TIMESTAMP(timezone=True), server_default=sa.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sa.func.now())
 
 
 class JobRun(Base):
@@ -1048,9 +1097,7 @@ class JobRun(Base):
 
     job_name: Mapped[str] = mapped_column(sa.String(100), primary_key=True)
     last_success_on: Mapped[date | None] = mapped_column(sa.Date)  # parish date
-    last_attempt_at: Mapped[datetime | None] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
+    last_attempt_at: Mapped[datetime | None]
     # Written, never read by the app: it is for whoever is looking at a job that
     # misbehaved, one SELECT away, after the alert mail has already gone out.
     # Kept deliberately — a nightly job's last exit code costs one integer and
@@ -1083,8 +1130,11 @@ class MailQuota(Base):
 
 
 def _make_history_table(live: sa.Table) -> sa.Table:
-    """History twin: live columns (no PK/defaults) + audit columns, no FKs so
-    archived rows survive deletion of whatever they referenced."""
+    """History twin: the live columns (no PK, no defaults, no FKs -- an archived
+    row must survive the deletion of whatever it referenced) and two audit
+    columns. versioning() fills it BY NAME, so a twin may carry its columns in
+    any order and keep ones the live table has since dropped; what it must
+    have is every live column, under the same name and type."""
     return sa.Table(
         f"{live.name}_history",
         Base.metadata,
@@ -1102,9 +1152,7 @@ volunteer_history = _make_history_table(Volunteer.__table__)
 team_history = _make_history_table(Team.__table__)
 membership_history = _make_history_table(Membership.__table__)
 
-# the timeline view filters membership history by volunteer. The one other
-# expression-only index, `ix_volunteer_email_lower`, cannot be declared on a
-# mapped column either and lives in the migration alone.
+# the timeline view filters membership history by volunteer
 sa.Index("ix_membership_history_volunteer_id", membership_history.c.volunteer_id)
 
 HISTORY_TABLES: dict[type[Base], sa.Table] = {

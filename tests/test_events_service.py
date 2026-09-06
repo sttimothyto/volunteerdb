@@ -12,6 +12,7 @@ from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.domain import NotifyMode
 from volunteerdb.models import (
+    EventAssignment,
     EventSubRequest,
     Notification,
     NotificationStage,
@@ -559,17 +560,24 @@ async def test_cancel_resolves_open_subs_and_returns_assignee_emails(database):
 
 
 async def _notices(assignment_id: int) -> set[str]:
-    """Which one-shot notices this assignment has already had.
+    """Which one-shot notices this assignment's CURRENT holder has already had.
 
     models.Notification replaced the three stamp columns that used to sit on the
-    assignment row, so "already told them" is the presence of a row now."""
+    assignment row, so "already told them" is the presence of a row now -- under
+    the holder's own name. A previous holder's rows stay, and do not count."""
     async with db_session() as session:
         return {
             row.stage
             for row in await session.execute(
-                sa.select(Notification.stage).where(
-                    Notification.assignment_id == assignment_id
+                sa.select(Notification.stage)
+                .join(
+                    EventAssignment,
+                    sa.and_(
+                        EventAssignment.id == Notification.assignment_id,
+                        EventAssignment.volunteer_id == Notification.volunteer_id,
+                    ),
                 )
+                .where(Notification.assignment_id == assignment_id)
             )
         }
 
@@ -1153,9 +1161,9 @@ async def test_substitute_hands_the_slot_over(database):
 
 
 async def test_substitute_default_lets_the_digest_reach_the_new_person(database):
-    """With no direct mail (the JSON API), the "scheduled" stamp the outgoing
-    person carried must be cleared so the nightly digest tells the incoming
-    volunteer — a stale stamp would otherwise silence it."""
+    """With no direct mail (the JSON API), the nightly digest must reach the
+    incoming volunteer. The outgoing person's "scheduled" stamp stays on record
+    under their own name; it is simply not the new holder's."""
     team_id, vids = await _team_with_members(3)
     event_id = await _one_event(team_id)
     async with db_session() as session:
@@ -1186,8 +1194,8 @@ async def test_substitute_default_lets_the_digest_reach_the_new_person(database)
         handed_over_id = assignment.id
     notices = await _notices(handed_over_id)
     assert NotificationStage.event_scheduled not in notices, (
-        "no direct mail: the stale stamp is cleared so the digest notifies "
-        "the incoming volunteer"
+        "no direct mail: the incoming volunteer has no stamp of their own, so "
+        "the digest notifies them"
     )
 
 

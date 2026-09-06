@@ -1166,32 +1166,25 @@ async def set_rsvp(
 
 
 async def _mark_notified(
-    session: AsyncSession, assignment_id: int, stage: NotificationStage
+    session: AsyncSession, assignment: EventAssignment, stage: NotificationStage
 ) -> None:
-    """Record a notice as already delivered, so the nightly digest skips it.
+    """Record a notice as already delivered to the assignment's current holder,
+    so the nightly digest skips it.
 
     Used where the person has just been told by the very action they took (a
     self sign-up, a claimed substitution) or by a message the caller sends right
     after commit (a hand-off). ON CONFLICT DO NOTHING because the point is
-    idempotence, not the row."""
+    idempotence, not the row. Nothing ever has to be un-recorded: a stamp names
+    its recipient, so when the slot changes hands the outgoing person's stamps
+    stop matching and the incoming one starts with none."""
     await session.execute(
         pg_insert(Notification)
-        .values(assignment_id=assignment_id, stage=stage)
-        .on_conflict_do_nothing(constraint="uq_notification_assignment")
-    )
-
-
-async def _reset_reminders(session: AsyncSession, assignment_id: int) -> None:
-    """Forget the reminders sent for this assignment: the slot changed hands, so
-    the incoming person has not had them. The "scheduled" notice is handled
-    separately by the caller — they are being told directly."""
-    await session.execute(
-        sa.delete(Notification).where(
-            Notification.assignment_id == assignment_id,
-            Notification.stage.in_(
-                (NotificationStage.event_week, NotificationStage.event_day)
-            ),
+        .values(
+            assignment_id=assignment.id,
+            volunteer_id=assignment.volunteer_id,
+            stage=stage,
         )
+        .on_conflict_do_nothing(constraint="uq_notification_assignment")
     )
 
 
@@ -1252,7 +1245,7 @@ async def _join_slot(
     if kind is not AssignmentKind.assigned:
         # the person acted themselves, so the digest's "you have been scheduled"
         # notice would be telling them what they just did
-        await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
+        await _mark_notified(session, assignment, NotificationStage.event_scheduled)
     return Ok(assignment)
 
 
@@ -1594,8 +1587,7 @@ async def claim_sub(
     # the outgoing volunteer's choices, which were theirs and not this one's
     assignment.notify_7d, assignment.notify_24h = False, True
     await session.flush()
-    await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
-    await _reset_reminders(session, assignment.id)  # the claimant has had none
+    await _mark_notified(session, assignment, NotificationStage.event_scheduled)
     await session.refresh(sub)
     slot = await session.get(EventSlot, assignment.slot_id)
     claimant = await session.get(Volunteer, vid)
@@ -1639,10 +1631,9 @@ async def substitute(
     scheduled. `notify` says how (domain.NotifyMode): `direct` when the caller
     mails them a substitution notice right after commit (the GUI) -- the
     digest's "scheduled" notice is then stamped as sent to avoid a duplicate;
-    `digest` for a caller that sends no mail (the JSON API) -- any stale
-    "scheduled" stamp the outgoing person's assignment carried is cleared so
-    the nightly digest tells the new person, matching how a manager `assign`
-    reaches its volunteer."""
+    `digest` for a caller that sends no mail (the JSON API) -- the incoming
+    person carries no stamp of their own, so the nightly digest tells them,
+    matching how a manager `assign` reaches its volunteer."""
     assignment = await session.get(EventAssignment, assignment_id)
     if assignment is None:
         return not_found("assignment", assignment_id)
@@ -1691,18 +1682,9 @@ async def substitute(
     if notify is NotifyMode.direct:
         # the caller mails the incoming volunteer right after commit, so the
         # digest's "scheduled" notice would only duplicate it
-        await _mark_notified(session, assignment.id, NotificationStage.event_scheduled)
-    else:
-        # no direct mail from this caller: clear any "scheduled" stamp the
-        # outgoing person's assignment carried so the nightly digest reaches the
-        # incoming volunteer (a stale stamp would otherwise silence it)
-        await session.execute(
-            sa.delete(Notification).where(
-                Notification.assignment_id == assignment.id,
-                Notification.stage == NotificationStage.event_scheduled,
-            )
-        )
-    await _reset_reminders(session, assignment.id)
+        await _mark_notified(session, assignment, NotificationStage.event_scheduled)
+    # else nothing: the incoming person has no stamp under their name, so the
+    # nightly digest tells them, and the outgoing person's stamps stay on record
     slot = await session.get(EventSlot, assignment.slot_id)
     return Ok(
         Outcome(

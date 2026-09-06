@@ -16,11 +16,14 @@ A row pending several notices at once is listed once, under the strongest,
 and records every stage whose window it satisfied, so the next night cannot
 repeat it under a weaker one.
 
-Rows in `notification`, keyed by (assignment, stage), make each notice
-one-shot and per-person idempotent: a failed send writes nothing and retries
-the next night; a crash mid-run re-sends at most the people with no row yet.
-(These used to be three columns on the assignment itself, so a fourth notice
-would have meant a fourth column.) Windows use the event's
+Rows in `notification`, keyed by (assignment, recipient, stage), make each
+notice one-shot and per-person idempotent: a failed send writes nothing and
+retries the next night; a crash mid-run re-sends at most the people with no
+row yet. The recipient is in the key because a slot changes hands: the
+incoming person has no row under their name, so they are told, and the
+outgoing person's rows stay as a record of what they were told. (These used
+to be three columns on the assignment itself, so a fourth notice would have
+meant a fourth column.) Windows use the event's
 parish-day date (the Env's zone), never the container's UTC clock —
 "tomorrow" means the digest sent the morning of the day before.
 
@@ -93,15 +96,18 @@ class Digest:
     email: str
     items: tuple[mail.EventDigestItem, ...]
     stamps: tuple[Stamp, ...]
+    volunteer_id: int
 
 
 def _unsent(stage: NotificationStage):
-    """ "this assignment has had no `stage` notice yet", as a NOT EXISTS.
+    """ "this assignment's current holder has had no `stage` notice yet", as a
+    NOT EXISTS.
 
-    The uq_notification_assignment unique on (assignment_id, stage) is what
-    makes each of these an index lookup rather than a scan."""
+    The uq_notification_assignment unique on (assignment_id, volunteer_id,
+    stage) is what makes each of these an index lookup rather than a scan."""
     return ~sa.exists().where(
         Notification.assignment_id == EventAssignment.id,
+        Notification.volunteer_id == EventAssignment.volunteer_id,
         Notification.stage == stage,
     )
 
@@ -139,16 +145,22 @@ async def read(
         )
     ).all()
     paths = (await team_service.tree(session)).paths
-    # which stages these assignments have already had, in one query: the
-    # per-row decisions in plan() are then plain set membership
+    # which stages these assignments' current holders have already had, in one
+    # query: the per-row decisions in plan() are then plain set membership
     already: set[Stamp] = set()
     if rows:
         already = {
             (row.assignment_id, row.stage)
             for row in await session.execute(
-                sa.select(Notification.assignment_id, Notification.stage).where(
-                    Notification.assignment_id.in_([a.id for a, _e, _s, _v in rows])
+                sa.select(Notification.assignment_id, Notification.stage)
+                .join(
+                    EventAssignment,
+                    sa.and_(
+                        EventAssignment.id == Notification.assignment_id,
+                        EventAssignment.volunteer_id == Notification.volunteer_id,
+                    ),
                 )
+                .where(Notification.assignment_id.in_([a.id for a, _e, _s, _v in rows]))
             )
         }
     plain = [
@@ -226,8 +238,8 @@ def plan(
         if not sent(NotificationStage.event_day) and days_out <= DAY_DAYS:
             stamps.append((row.assignment_id, NotificationStage.event_day))
     return [
-        Digest(email, tuple(items), tuple(stamps))
-        for email, items, stamps in per_person.values()
+        Digest(email, tuple(items), tuple(stamps), volunteer_id=vid)
+        for vid, (email, items, stamps) in per_person.items()
     ]
 
 
@@ -236,7 +248,12 @@ def _stamp(digest: Digest):
     between the read and here is fine: the notice went out either way."""
     return (
         pg_insert(Notification)
-        .values([{"assignment_id": i, "stage": s} for i, s in digest.stamps])
+        .values(
+            [
+                {"assignment_id": i, "volunteer_id": digest.volunteer_id, "stage": s}
+                for i, s in digest.stamps
+            ]
+        )
         .on_conflict_do_nothing(constraint="uq_notification_assignment")
     )
 

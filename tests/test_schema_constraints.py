@@ -18,9 +18,11 @@ from sqlalchemy.exc import IntegrityError
 
 from volunteerdb.models import (
     AppUser,
+    CustomFieldDef,
     Event,
     EventAssignment,
     EventSlot,
+    Notification,
     Proposal,
     ProposalBallot,
     Team,
@@ -220,12 +222,11 @@ async def test_a_task_force_cannot_be_its_own_owner(database):
     assert "ck_event_task_force_teams" in detail
 
 
-async def test_deleting_a_meta_team_no_longer_threatens_its_event(database):
-    """The reason the task force moved onto the event. It used to be a side table
-    whose team_id cascaded from team, so teardown had to repoint the event and
-    flush BEFORE deleting the meta team, or event.team_id's own cascade took the
-    event and its whole attendance record. The column is ON DELETE SET NULL now,
-    so the same delete blanks a marker instead."""
+async def test_a_task_force_event_is_staffed_by_its_meta_team(database):
+    """While a task force exists, event.team_id IS the meta team: sign-up
+    gating and the mail audience read team_id (services/task_force.py). That
+    was a comment. A row naming a meta team while team_id still pointed at
+    the owner would have gated sign-up on the wrong roster."""
     async with db_session() as session:
         owner = await session.scalar(
             sa.insert(Team).values(name="Liturgy").returning(Team.id)
@@ -233,28 +234,91 @@ async def test_deleting_a_meta_team_no_longer_threatens_its_event(database):
         meta = await session.scalar(
             sa.insert(Team).values(name="Liturgy task force").returning(Team.id)
         )
+    starts = datetime.now(UTC) + timedelta(days=7)
+    detail = await _refused(
+        sa.insert(Event).values(
+            team_id=owner,
+            title="Picnic",
+            starts_at=starts,
+            ends_at=starts + timedelta(hours=2),
+            task_force_team_id=meta,
+            owner_team_id=owner,
+        )
+    )
+    assert "ck_event_task_force_gate" in detail
+
+
+async def test_a_live_row_cannot_carry_a_closed_period(database):
+    """The versioning trigger closes sys_period only on the copy it archives.
+    A live row written closed -- by a seed, or a psql session -- would be
+    absent from every as-of read after its end while still being the current
+    row (history.snapshot unions live and archived rows whose period contains
+    the instant)."""
+    detail = await _refused(
+        sa.insert(Volunteer).values(
+            first_name="Ann",
+            last_name="Able",
+            sys_period=sa.text("tstzrange('2024-01-01+00', '2024-06-01+00')"),
+        )
+    )
+    assert "ck_volunteer_sys_period_open" in detail
+
+
+async def test_a_choice_field_has_options_and_nothing_else_does(database):
+    """services.custom_fields always wrote it so; the database now refuses the
+    other shapes, which a form would have rendered as a choice with no
+    choices, or a number with a stray list beside it."""
+    detail = await _refused(
+        sa.insert(CustomFieldDef).values(
+            key="colour", label="Colour", field_type="select", options=None
+        )
+    )
+    assert "ck_custom_field_options" in detail
+
+    detail = await _refused(
+        sa.insert(CustomFieldDef).values(
+            key="age", label="Age", field_type="integer", options=["1"]
+        )
+    )
+    assert "ck_custom_field_options" in detail
+
+
+async def test_a_notice_names_its_recipient(database):
+    """Who was told is part of the key (models.Notification): a slot changes
+    hands, and a stamp with no recipient would silence the digest for whoever
+    holds it next."""
+    async with db_session() as session:
+        team = await session.scalar(
+            sa.insert(Team).values(name="Liturgy").returning(Team.id)
+        )
+        vol = await session.scalar(
+            sa.insert(Volunteer)
+            .values(first_name="Ann", last_name="Able")
+            .returning(Volunteer.id)
+        )
         starts = datetime.now(UTC) + timedelta(days=7)
         event = await session.scalar(
             sa.insert(Event)
             .values(
-                team_id=owner,  # not the meta team: this test is about the marker
-                title="Picnic",
+                team_id=team,
+                title="Mass",
                 starts_at=starts,
                 ends_at=starts + timedelta(hours=2),
-                task_force_team_id=meta,
-                owner_team_id=owner,
             )
             .returning(Event.id)
         )
+        slot = await session.scalar(
+            sa.insert(EventSlot)
+            .values(event_id=event, name="Lector")
+            .returning(EventSlot.id)
+        )
+        assignment = await session.scalar(
+            sa.insert(EventAssignment)
+            .values(slot_id=slot, event_id=event, volunteer_id=vol, kind="signup")
+            .returning(EventAssignment.id)
+        )
 
-    async with db_session() as session:
-        await session.execute(sa.delete(Team).where(Team.id == meta))
-
-    async with db_session() as session:
-        row = (
-            await session.execute(
-                sa.select(Event.id, Event.task_force_team_id).where(Event.id == event)
-            )
-        ).one()
-        assert row.id == event, "the event survived its meta team"
-        assert row.task_force_team_id is None
+    detail = await _refused(
+        sa.insert(Notification).values(assignment_id=assignment, stage="event_day")
+    )
+    assert "volunteer_id" in detail

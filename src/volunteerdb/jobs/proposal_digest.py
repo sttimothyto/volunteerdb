@@ -68,6 +68,7 @@ class Digest:
     email: str
     items: tuple[mail.DigestItem, ...]
     stamps: tuple[Stamp, ...]
+    volunteer_id: int
 
 
 def _unsent(stage: NotificationStage):
@@ -173,8 +174,8 @@ def plan(
         if pending_voting:
             stamps.append((row.voter_id, NotificationStage.voting_open))
     return [
-        Digest(email, tuple(items), tuple(stamps))
-        for email, items, stamps in per_person.values()
+        Digest(email, tuple(items), tuple(stamps), volunteer_id=vid)
+        for vid, (email, items, stamps) in per_person.items()
     ]
 
 
@@ -182,7 +183,12 @@ def _stamp(digest: Digest):
     """The notices this digest settles, as one insert."""
     return (
         pg_insert(Notification)
-        .values([{"voter_id": i, "stage": s} for i, s in digest.stamps])
+        .values(
+            [
+                {"voter_id": i, "volunteer_id": digest.volunteer_id, "stage": s}
+                for i, s in digest.stamps
+            ]
+        )
         .on_conflict_do_nothing(constraint="uq_notification_voter")
     )
 
