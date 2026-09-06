@@ -74,6 +74,18 @@ def hit(ledger: Ledger, key: str, now: datetime) -> Ledger:
     return Ledger({**ledger.hits, key: live})
 
 
+def retry_after(ledger: Ledger, key: str, now: datetime) -> timedelta:
+    """How long `key` stays blocked from `now`: until the oldest hit that
+    still counts against the limit leaves the window. Zero when it is not
+    blocked, so a caller can take the longest of several keys' waits."""
+    limit = limit_for(key)
+    live = sorted(_live(ledger.hits.get(key, ()), now - limit.window))
+    if len(live) < limit.hits:
+        return timedelta(0)
+    oldest_counting = live[len(live) - limit.hits]
+    return oldest_counting + limit.window - now
+
+
 def prune(ledger: Ledger, now: datetime) -> Ledger:
     """Every key with a hit still inside its window, and nothing else. Keys are
     attacker-supplied (an address on the login throttle, an IP on the OTP one),

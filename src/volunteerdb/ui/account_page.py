@@ -30,9 +30,10 @@ from .context import (
     PageCtx,
     page_ctx,
     perform,
+    rate_limit,
     run_command,
     session_auth_method,
-    throttled,
+    toast,
 )
 from .layout import frame
 
@@ -72,11 +73,10 @@ async def account_page():
         # The budget is on *sends*, not failures: what is worth abusing here is
         # the parish's sender, one address at a time.
         now = current_env().clock.now()
-        if throttled(f"email-change:{user_id}", now=now):
-            ui.notify(
-                "Too many address changes requested — try again in a few minutes.",
-                color="negative",
-            )
+        if denied := rate_limit(
+            f"email-change:{user_id}", now=now, what="change your email address"
+        ):
+            toast(denied.error)
             return
         # charge every attempt, before the service can reveal whether the
         # address is taken: a failed probe must count too, or it is an
@@ -133,11 +133,13 @@ async def account_page():
             # sign-ins for this account (SP 800-63B §3.2.2): the per-account
             # bucket AND the per-IP flood bucket, exactly as the login page does.
             now = current_env().clock.now()
-            if throttled(f"pw:{email.lower()}", f"pw-ip:{ctx.ip}", now=now):
-                ui.notify(
-                    "Too many failed attempts — try again in a few minutes.",
-                    color="negative",
-                )
+            if denied := rate_limit(
+                f"pw:{email.lower()}",
+                f"pw-ip:{ctx.ip}",
+                now=now,
+                what="confirm your current password",
+            ):
+                toast(denied.error)
                 return
             if not await async_verify_password(stored_hash, current.value or ""):
                 logger.warning("auth.password_change_denied", email=email)

@@ -46,6 +46,25 @@ def test_keys_are_independent_and_families_differ():
     assert throttle.limit_for("sub-req:7").window == timedelta(days=1)
 
 
+def test_retry_after_is_the_wait_until_the_oldest_counting_hit_leaves():
+    """Five hits a minute apart block the key; it opens again the moment the
+    first of them (the oldest that still counts) is a window old."""
+    limit = throttle.LIMITS["pw"]
+    ledger = throttle.Ledger()
+    for minute in range(limit.hits):
+        ledger = throttle.hit(
+            ledger, "pw:a@example.org", T0 + timedelta(minutes=minute)
+        )
+    asked = T0 + timedelta(minutes=limit.hits)
+    assert throttle.retry_after(ledger, "pw:a@example.org", asked) == (
+        T0 + limit.window - asked
+    )
+    assert throttle.retry_after(ledger, "pw:b@example.org", asked) == timedelta(0)
+    assert throttle.retry_after(ledger, "pw:a@example.org", T0 + limit.window) == (
+        timedelta(0)
+    )
+
+
 def test_hit_returns_a_new_ledger_and_leaves_the_old_one_alone():
     before = throttle.Ledger()
     after = throttle.hit(before, "otp-ip:1.2.3.4", T0)

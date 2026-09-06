@@ -14,7 +14,8 @@ from .deps import (
     env_of,
     perform,
     raise_http,
-    throttled,
+    rate_limit,
+    to_http,
 )
 from .schemas import (
     EmailChangeConfirmIn,
@@ -40,9 +41,11 @@ async def login(data: LoginIn, request: Request) -> TokenOut:
     env = env_of(request)
     now = env.clock.now()
     addr = data.email.strip().lower()
-    if throttled(env, f"pw:{addr}", f"pw-ip:{facts.ip}", now=now):
+    if denied := rate_limit(
+        env, f"pw:{addr}", f"pw-ip:{facts.ip}", now=now, what="sign in"
+    ):
         logger.warning("auth.throttled", method="api", email=data.email, ip=facts.ip)
-        raise HTTPException(429, "too many failed attempts; try again in a few minutes")
+        raise to_http(denied.error)
     async with transaction(env, None) as session:
         signed = await service.authenticate(session, data.email, data.password, now=now)
         if isinstance(signed, Err):
@@ -109,8 +112,14 @@ async def set_own_password(
     # limit and the per-IP flood limit, so a spray of current-password guesses
     # across many accounts from one IP is throttled at the IP too.
     env, now = ctx.env, ctx.now
-    if throttled(env, f"pw:{email.lower()}", f"pw-ip:{ip}", now=now):
-        raise HTTPException(429, "too many failed attempts; try again in a few minutes")
+    if denied := rate_limit(
+        env,
+        f"pw:{email.lower()}",
+        f"pw-ip:{ip}",
+        now=now,
+        what="confirm your current password",
+    ):
+        raise to_http(denied.error)
     if user.password_hash is None or not await async_verify_password(
         user.password_hash, data.current_password
     ):
@@ -152,8 +161,10 @@ async def request_email_change(
     sender, one address at a time."""
     user = ctx.actor.user
     env, now = ctx.env, ctx.now
-    if throttled(env, f"email-change:{user.id}", now=now):
-        raise HTTPException(429, "too many address changes requested; try again later")
+    if denied := rate_limit(
+        env, f"email-change:{user.id}", now=now, what="change your email address"
+    ):
+        raise to_http(denied.error)
     # charge the budget on every attempt, before the service can reveal whether
     # the address exists: a probe that fails ("another account already signs in
     # with that address") must count too, or the budget is only on successful

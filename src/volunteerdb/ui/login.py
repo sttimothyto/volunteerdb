@@ -13,7 +13,13 @@ from ..env import current
 from ..errors import Invalid
 from ..fp import Err, Ok
 from ..services import users as user_service
-from .context import establish_session, perform, session_user_id, throttled
+from .context import (
+    establish_session,
+    perform,
+    rate_limit,
+    session_user_id,
+    toast,
+)
 from .help_links import SIGNING_IN
 from .logo_dialog import logo_img
 from .theme import apply_theme
@@ -88,14 +94,13 @@ def login_page(request: Request, redirect_to: str = "/"):
             ui.notify("Enter your email address", color="warning")
             return
         if password.value:
-            if throttled(f"pw:{addr.lower()}", f"pw-ip:{facts.ip}", now=now):
+            if denied := rate_limit(
+                f"pw:{addr.lower()}", f"pw-ip:{facts.ip}", now=now, what="sign in"
+            ):
                 logger.warning(
                     "auth.throttled", method="password", email=addr, ip=facts.ip
                 )
-                ui.notify(
-                    "Too many failed attempts — try again in a few minutes.",
-                    color="negative",
-                )
+                toast(denied.error)
                 return
             async with transaction(env, None) as session:
                 signed = await user_service.authenticate(
@@ -125,12 +130,11 @@ def login_page(request: Request, redirect_to: str = "/"):
     async def send_code() -> None:
         now = env.clock.now()
         addr = (email.value or "").strip()
-        if throttled(f"otp-ip:{facts.ip}", now=now):
+        if denied := rate_limit(
+            f"otp-ip:{facts.ip}", now=now, what="request a sign-in code"
+        ):
             logger.warning("auth.throttled", method="otp", email=addr, ip=facts.ip)
-            ui.notify(
-                "Too many code requests from this device — try again later.",
-                color="negative",
-            )
+            toast(denied.error)
             return
         async with transaction(env, None) as session:
             result = await user_service.start_otp_login(

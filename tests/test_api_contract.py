@@ -45,6 +45,9 @@ async def test_login_throttle_429(client, seeded):
         json={"email": "admin@example.org", "password": "secret-pass-phrase"},
     )
     assert r.status_code == 429, "throttled even with the correct password"
+    # the refusal is a Throttled value: the one phrasing, and how long to wait
+    assert "sign in" in r.json()["detail"]
+    assert int(r.headers["retry-after"]) > 0
 
     r = await client.post(
         "/api/auth/login", json={"email": "member@example.org", "password": "wrong"}

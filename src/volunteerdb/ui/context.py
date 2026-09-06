@@ -221,10 +221,15 @@ async def run_command[T](
     return Ok(value)
 
 
-def throttled(*keys: str, now: datetime) -> bool:
-    """A front door's own pre-check, over the ledger as a VALUE (the cell is
-    only read): a throttled sign-in must not even reach authenticate()."""
-    return deps.throttled(current(), *keys, now=now)
+def rate_limit(*keys: str, now: datetime, what: str) -> Err[Throttled] | None:
+    """A front door's own pre-check as a value (api.deps.rate_limit, over
+    the process Env): a throttled sign-in must not even reach authenticate().
+
+        if denied := rate_limit(key, now=now, what="sign in"):
+            toast(denied.error)
+            return
+    """
+    return deps.rate_limit(current(), *keys, now=now, what=what)
 
 
 async def perform(

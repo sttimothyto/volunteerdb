@@ -83,7 +83,7 @@ commit.
   the origin and IP derivations. `ui/context` keeps its names and delegates.
   The two stray clock reads become the context's `now`.
 
-- [ ] **3. One throttle gate.** `api/deps.throttle_gate(env, *keys, now,
+- [x] **3. One throttle gate.** `api/deps.rate_limit(env, *keys, now,
   what)` returns `Err(Throttled)` or `None`, backed by a pure
   `throttle.retry_after`. The seven hand-rolled sites become gate, then
   charge, then call, and 429s flow through `to_http` and `toast`.

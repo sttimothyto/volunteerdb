@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import math
 from collections.abc import AsyncIterator
 from contextlib import ExitStack
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 import sqlalchemy as sa
@@ -249,10 +250,25 @@ def dispatch[T](
     return value
 
 
-def throttled(env: Env, *keys: str, now: datetime) -> bool:
-    """A front door's own pre-check, over the ledger as a value."""
+def rate_limit(env: Env, *keys: str, now: datetime, what: str) -> Err[Throttled] | None:
+    """A front door's own pre-check, over the ledger as a value, in the same
+    walrus idiom as the permission gates::
+
+        if denied := rate_limit(env, key, now=now, what="sign in"):
+            raise to_http(denied.error)
+
+    `what` names the action for the refusal the caller shows (``errors
+    .message``); the wait is the longest any of the keys still has to run,
+    which is what the Retry-After header carries. The ledger is only read:
+    a charge is a ThrottleHit effect the interpreter performs."""
     ledger = env.throttle.snapshot()
-    return any(throttle.blocked(ledger, key, now) for key in keys)
+    wait = max(
+        (throttle.retry_after(ledger, key, now) for key in keys),
+        default=timedelta(0),
+    )
+    if wait <= timedelta(0):
+        return None
+    return Err(Throttled(math.ceil(wait.total_seconds()), what))
 
 
 async def perform(

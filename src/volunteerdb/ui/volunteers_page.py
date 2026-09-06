@@ -19,7 +19,7 @@ from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from . import column_order, invites
 from .account_status import invitable, last_login_text
-from .context import PageCtx, page_ctx, perform, run_command, throttled
+from .context import PageCtx, page_ctx, perform, rate_limit, run_command, toast
 from .date_input import date_input, time_input
 from .elections_page import phase_badge
 from .layout import frame
@@ -650,12 +650,12 @@ def _edit_dialog(
                 # on every attempt (before the service reveals whether the
                 # address is taken), so this door is not the loose one.
                 now = current_env().clock.now()
-                if throttled(f"email-change:{own_user_id}", now=now):
-                    ui.notify(
-                        "Too many address changes requested — try again in a "
-                        "few minutes.",
-                        color="negative",
-                    )
+                if denied := rate_limit(
+                    f"email-change:{own_user_id}",
+                    now=now,
+                    what="change your email address",
+                ):
+                    toast(denied.error)
                     return
                 await perform(
                     [EmailChangeAttempted(own_user_id)], base_url=base_url, now=now
