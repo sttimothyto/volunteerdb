@@ -164,6 +164,23 @@ uv run python scripts/bench.py compare bench-results/base-500.json bench-results
 - `compare` diffs two run files.
 - `bench-results/` is gitignored.
 
+## `scripts/screenshots.py` — every screen as a picture
+
+```sh
+uv run python scripts/screenshots.py [--role admin|leader|member|anonymous] [--width 1280|390] [--light-only] [--only NAME] [--base-url URL]
+make screenshots ARGS="--role leader --light-only"
+```
+
+- Starts the app against the development database (the seeded parish), with
+  the scheduler off. It signs in through the real form as each role. It
+  writes `screenshots/<role>/<page>@<width>[-dark].png` for every page of the
+  user guide's [screens](../guide/reference/screens.md), plus the common
+  dialogs and the side panel.
+- The ids the detail pages need are looked up at the start, so a reseed
+  never breaks it.
+- `--base-url` points it at a server that is already running and skips the
+  start-up. `screenshots/` is gitignored.
+
 ## `volunteerdb.admin_bootstrap` — admin bootstrap
 
 ```sh

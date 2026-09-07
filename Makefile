@@ -34,7 +34,7 @@ PYINFRA ?= uvx pyinfra==3.10.0
 SITE ?=
 
 .PHONY: help db down clean migrate seed dev serve test coverage lint types format docs \
-        model fresh deploy-dry deploy
+        model fresh screenshots deploy-dry deploy
 
 help: ## list these targets
 	@echo "VolunteerDB developer tasks"
@@ -107,6 +107,13 @@ docs: ## build the HTML manual into docs/_build/html
 # Without it the manual's search box still works, on keywords alone.
 model: ## fetch the manual's search model into .models/ (30 MB, once)
 	$(UV) run python -m volunteerdb.manual_model .models/potion-base-8M
+
+# Every screen as a picture, for eyeballing a UI change: scripts/screenshots.py
+# starts the app against the seeded dev database and drives a real browser
+# through it as each role. Local only, like bench; screenshots/ is gitignored.
+#   make screenshots ARGS="--role leader --light-only --only team"
+screenshots: db ## photograph every screen into screenshots/ (needs make seed)
+	$(UV) run python scripts/screenshots.py $(ARGS)
 
 fresh: ## wipe the database volume, then migrate and seed from scratch
 	@$(MAKE) clean

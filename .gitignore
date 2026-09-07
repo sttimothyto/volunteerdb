@@ -11,6 +11,8 @@ docs/_build/
 # the manual's search model (make model)
 .models/
 bench-results/
+# every screen as a picture (make screenshots)
+screenshots/
 # playwright's screenshots, videos and traces (pytest --output)
 test-results/
 
