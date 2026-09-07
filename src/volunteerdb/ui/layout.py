@@ -99,8 +99,10 @@ def frame(
         ):
             with ui.menu():
                 for label, target in nav_items:
+                    # an <a href> that Quasar would announce as a list item:
+                    # role=link says what it is
                     ui.menu_item(label).props(
-                        f'href="{with_as_of(target, snapshot)}"'
+                        f'href="{with_as_of(target, snapshot)}" role="link"'
                         + _current(here, target)
                     )
         ui.space()

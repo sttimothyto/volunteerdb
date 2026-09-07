@@ -395,7 +395,7 @@ screens that changed, and ends with the full suite green in its own commit.
   (`photo_dialog.py:144`) and the logo (`logo_dialog.py:131`) become real buttons
   (`.vdb-rowbtn` already styles a bare `<button>`) with `aria-label`s; Enter and
   Space work.
-- [ ] **38. axe fails on moderate.** `tests/e2e/test_browser_a11y.py:19` adds
+- [x] **38. axe fails on moderate.** `tests/e2e/test_browser_a11y.py:19` adds
   `moderate` to the failing impacts and `/teams/15`, `/events/{id}`,
   `/elections/{id}` to the page list once steps 10, 35–37 have landed. The four
   deferrals in `accessibility.md:116-126` stay deferred except the menu-items-as-

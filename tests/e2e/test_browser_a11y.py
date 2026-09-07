@@ -13,10 +13,71 @@ import pytest
 from axe_playwright_python.async_playwright import Axe
 from playwright.async_api import Page, expect
 
+from volunteerdb.permissions import SYSTEM
+
 from .conftest import icon_button, ready, sign_in
+from tests import mint
+from tests.conftest import db_session
+from tests.fp_helpers import ok
 
 PAGES = ("/", "/events", "/teams", "/volunteers", "/account")
-FAIL_ON = ("serious", "critical")
+# the three detail pages, once steps 10 and 35-37 of uiux-improvement.md had
+# landed: a team, an event and a proposal from the seeded parish
+DETAIL = ("/teams/{team}", "/events/{event}", "/elections/{proposal}")
+FAIL_ON = ("moderate", "serious", "critical")
+
+
+@pytest.fixture
+async def detail_pages(seeded) -> list[str]:
+    """The seeded parish with an event and an open proposal, so the three
+    detail pages have something on them."""
+    from datetime import timedelta
+
+    import sqlalchemy as sa
+
+    from volunteerdb.models import AppUser, TeamRole
+    from volunteerdb.services import elections
+    from volunteerdb.services import events as event_service
+
+    async with db_session() as session:
+        admin_id = await session.scalar(
+            sa.select(AppUser.id).where(AppUser.email == "admin@example.org")
+        )
+        assert admin_id is not None
+        starts = mint.now() + timedelta(days=7)
+        created = ok(
+            await event_service.create_event(
+                session,
+                SYSTEM,
+                team_id=seeded["team_id"],
+                title="Sunday Mass",
+                starts_at=starts,
+                ends_at=starts + timedelta(hours=2),
+                created_by=None,
+                tz=mint.tz(),
+                series_id=mint.uuid(),
+            )
+        )
+        today = mint.today()
+        proposal = ok(
+            await elections.create_proposal(
+                session,
+                SYSTEM,
+                team_id=seeded["team_id"],
+                role=TeamRole.leader,
+                nomination_deadline=today + timedelta(days=5),
+                voting_deadline=today + timedelta(days=15),
+                created_by=admin_id,
+                candidates=[elections.CandidateInput(seeded["volunteer_id"], "steady")],
+                today=today,
+            )
+        )
+        return [
+            path.format(
+                team=seeded["team_id"], event=created[0].id, proposal=proposal.id
+            )
+            for path in DETAIL
+        ]
 
 
 def _findings(results, impacts=FAIL_ON) -> list[str]:
@@ -31,7 +92,7 @@ def _findings(results, impacts=FAIL_ON) -> list[str]:
 
 async def _audit(page: Page, where: str) -> None:
     results = await Axe().run(page)
-    minor = _findings(results, ("minor", "moderate"))
+    minor = _findings(results, ("minor",))
     if minor:
         print(f"{where}: lesser findings\n  " + "\n  ".join(minor))
     serious = _findings(results)
@@ -46,7 +107,9 @@ async def test_the_login_page(page: Page, base_url: str):
 
 
 @pytest.mark.parametrize("dark", [False, True], ids=["light", "dark"])
-async def test_the_signed_in_pages(seeded, page: Page, base_url: str, dark: bool):
+async def test_the_signed_in_pages(
+    seeded, detail_pages, page: Page, base_url: str, dark: bool
+):
     await page.set_viewport_size({"width": 1280, "height": 900})
     await sign_in(page, "admin@example.org", "secret-pass-phrase")
     await ready(page)
@@ -55,7 +118,7 @@ async def test_the_signed_in_pages(seeded, page: Page, base_url: str, dark: bool
         await page.get_by_role("switch", name="Dark mode").click()
         await page.keyboard.press("Escape")
         await page.wait_for_selector("body.body--dark")
-    for path in PAGES:
+    for path in (*PAGES, *detail_pages):
         await page.goto(path)
         await ready(page)
         if dark:

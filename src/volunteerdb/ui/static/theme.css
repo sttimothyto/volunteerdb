@@ -993,7 +993,10 @@ body.body--dark .q-badge.bg-positive,
 body.body--dark .q-badge.bg-negative,
 body.body--dark .q-badge.bg-warning,
 body.body--dark .q-badge.bg-info,
-body.body--dark .q-badge.bg-muted {
+body.body--dark .q-badge.bg-muted,
+body.body--dark .q-badge:not(.q-badge--outline) {
+  /* the last one is the default badge: Quasar paints it primary without a
+     bg-* class, and white on the dark primary is 3.2:1 */
   color: #1c1917;
   text-shadow: none;
 }

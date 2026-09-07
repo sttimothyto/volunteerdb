@@ -323,7 +323,13 @@ ACCOUNT_COLUMNS = [
         "classes": "vdb-col-wide",  # not on a phone
         "headerClasses": "vdb-col-wide",
     },
-    {"name": "actions", "label": "", "field": "id", "align": "right"},
+    {
+        "name": "actions",
+        "label": "Actions",
+        "field": "id",
+        "align": "right",
+        "headerClasses": "sr-only",
+    },
 ]
 
 

@@ -1173,7 +1173,13 @@ def _roster_columns(room: TeamRoom) -> list[dict]:
         )
     if room.can_manage:
         columns.append(
-            {"name": "actions", "label": "", "field": "id", "align": "right"}
+            {
+                "name": "actions",
+                "label": "Actions",
+                "field": "id",
+                "align": "right",
+                "headerClasses": "sr-only",
+            }
         )
     return columns
 

@@ -36,8 +36,8 @@ What failed, and the fix:
 `tests/test_theme_contrast.py` reads the tokens and brand colours out of the
 source and asserts every pair above. So a re-tint that drops one under the
 line fails the suite. `tests/e2e/test_browser_a11y.py` runs axe-core over
-the main pages in both modes and fails on any *serious* or *critical*
-finding.
+the main pages and the team, event and proposal pages, in both modes. Any
+*moderate*, *serious* or *critical* finding fails it.
 
 ## The rest of AA that cost little
 
@@ -135,8 +135,6 @@ component, and why:
 - Drag-to-reorder for table columns has no keyboard path. It is a
   preference, not a function: every column stays visible and sortable
   without it.
-- Quasar's `ui.menu_item`s announce as list items, not links, in the
-  narrow-screen menu.
 - Ministry home pages are Google Docs that the parish writes; the contrast
   inside them is whatever the document has.
 - The graph's grey nodes sit at 2.5:1 against the page. Their labels read at

@@ -116,9 +116,14 @@ def workload_badge(
     tooltip: str = "Workload score: team weights × role multipliers, all ministries",
 ) -> ui.badge:
     """A band in its own colour, with whichever label reads on it (the
-    contrast rule the admin page enforces when the colour is chosen)."""
+    contrast rule the admin page enforces when the colour is chosen).
+
+    color=None: ui.badge's default is "primary", a Quasar bg-* class with
+    !important behind it, which beat the inline band colour -- every
+    workload badge painted terracotta, and its ink label read at 3.4:1
+    (axe found it on the proposal page)."""
     return (
-        ui.badge(f"{prefix}{band.label} · {float(score):g}")
+        ui.badge(f"{prefix}{band.label} · {float(score):g}", color=None)
         .style(
             f"background-color: {band.color}; "
             f"color: {workload_service.text_colour(band.color)}"

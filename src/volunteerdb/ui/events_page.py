@@ -50,7 +50,7 @@ from ..services import users as user_service
 from ..services.events import CalendarEntry, ClaimableSub, EventSummary, MyDuty
 from ..services.readmodels import EventWorkroom
 from . import calendar_grid, column_order
-from .a11y import heading
+from .a11y import heading, icon_button
 from .calendar_panel import subscribe_panel
 from .context import (
     Kind,
@@ -1533,7 +1533,7 @@ def _collaboration_card(
     Manager-only, upcoming events only — the caller gates that."""
     with ui.card().classes("w-full gap-2 p-3"):
         with ui.row().classes("w-full items-center gap-2"):
-            heading("Collaboration", level=3)
+            heading("Collaboration", level=2)
             if tf_view is not None:
                 ui.badge("task force", color="secondary")
             ui.space()
@@ -1590,7 +1590,7 @@ def _availability_card(event_id: int, my_rsvp: EventRsvp | None) -> None:
     """ "Can you serve?" — an answer, not a commitment; the assignment is that."""
     with ui.card().classes("w-full gap-2 p-3"):
         with ui.row().classes("w-full items-center gap-2 vdb-fields"):
-            heading("Can you serve at this event?", level=3)
+            heading("Can you serve at this event?", level=2)
             if my_rsvp is not None:
                 ui.badge(
                     "you said: available"
@@ -1705,22 +1705,19 @@ def _slot_card(
                     ),
                 ).props("dense outline")
             if room.can_manage and room.upcoming:
-                ui.button(
-                    icon="edit",
+                icon_button(
+                    "edit",
+                    f"Edit the slot {slot.name}",
                     on_click=lambda _, s=slot: _edit_slot_dialog(s, refresh),
-                ).props("dense flat").mark(f"slot-edit-{slot.id}").tooltip(
-                    "Rename this slot, change how many it holds, or "
-                    "reword its description"
-                )
+                ).props("dense flat").mark(f"slot-edit-{slot.id}")
             if room.can_manage and room.upcoming and not sv.entries:
-                ui.button(
-                    icon="delete",
+                icon_button(
+                    "delete",
+                    f"Delete the empty slot {slot.name}",
                     on_click=lambda _, sid=slot.id, sn=slot.name: _delete_slot(
                         sid, sn, refresh
                     ),
-                ).props("dense flat").mark(f"slot-delete-{slot.id}").tooltip(
-                    "Remove this empty slot"
-                )
+                ).props("dense flat").mark(f"slot-delete-{slot.id}")
         if slot.description:
             ui.label(slot.description).classes("text-sm text-gray-600")
         for assignment, volunteer in sv.entries:
