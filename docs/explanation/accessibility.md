@@ -67,6 +67,7 @@ finding.
 - **2.3.3** `prefers-reduced-motion` switches transitions off.
 - **2.5.8** the date picker's trigger is a real 32px button, not a 20px icon
   with a click handler.
+- **2.5.8** again, on a touch screen. Under `(pointer: coarse)` the dense buttons and the name buttons grow to a 44px target, the AAA and iOS figure. A mouse keeps the compact layout.
 - **3.3.8** the sign-in already qualifies: no cognitive test, password
   managers work (`autocomplete` on every field), an emailed code as the
   fallback.

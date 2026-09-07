@@ -350,7 +350,7 @@ screens that changed, and ends with the full suite green in its own commit.
   it a small outlined "Invite" / "Re-invite" button appears where `invitable()` says
   so. `.vdb-invite-swap` and its 60 lines of CSS go; the tutorial's "move the mouse
   over the badge" and its touch apology go with them.
-- [ ] **28. Targets are 44 px on touch.** `@media (pointer: coarse)` gives dense icon
+- [x] **28. Targets are 44 px on touch.** `@media (pointer: coarse)` gives dense icon
   buttons and the role badge/button the padding to reach 44 px (WCAG 2.5.8 at AA is
   24 px; 44 px is the AAA and iOS figure, and the readers are not all young).
 - [ ] **29. Dialog field rows stack below 40 rem.** The date/start/end row

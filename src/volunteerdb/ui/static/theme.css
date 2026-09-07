@@ -977,6 +977,25 @@ body.body--dark .q-badge.bg-muted {
   }
 }
 
+/* ---------- touch targets ----------
+   WCAG 2.5.8 asks 24px at AA; 44px is the AAA and the iOS figure, and the
+   readers are not all young. A pointer that is a finger gets it on the
+   dense buttons (the icon buttons, the roster's role button, a row's Save)
+   and the name buttons that open the panel; a mouse keeps the compact
+   layout. Same specificity as Quasar's own .q-btn--dense rules, and later
+   in the cascade, so the box grows and a round button stays round. */
+@media (pointer: coarse) {
+  .q-btn.q-btn--dense,
+  .vdb-rowbtn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .q-btn.q-btn--dense.q-btn--round {
+    padding: 0;
+  }
+}
+
 /* ---------- narrow screens ----------
    Two breakpoints, both already in use above: Quasar's md (1024px), under
    which the header trades its row of links for a menu button (ui/layout.py),

@@ -142,3 +142,30 @@ async def test_a_phone_sees_the_columns_it_can_show(seeded, page):
     await expect(
         page.locator(".vdb-phone-only", has_text="maria@example.org")
     ).to_be_hidden()
+
+
+async def test_a_finger_gets_44px_targets(seeded, browser, base_url):
+    """theme.css `(pointer: coarse)`: a touch device's dense buttons grow to
+    the 44px target; only a browser with touch emulation matches that media
+    query. A mouse keeps the compact layout."""
+    context = await browser.new_context(
+        base_url=base_url, has_touch=True, viewport={"width": 390, "height": 844}
+    )
+    page = await context.new_page()
+    try:
+        assert await page.evaluate("matchMedia('(pointer: coarse)').matches") or (
+            await page.goto("/login")
+            and await page.evaluate("matchMedia('(pointer: coarse)').matches")
+        ), "touch emulation did not make the pointer coarse"
+        await sign_in(page, "admin@example.org", "secret-pass-phrase")
+        await ready(page)
+        await page.goto("/teams/%d" % seeded["team_id"])
+        await ready(page)
+        remove = page.get_by_role("button", name=re.compile("^Remove .* from the team"))
+        box = await remove.first.bounding_box()
+        assert box and box["width"] >= 44 and box["height"] >= 44, box
+        name = page.locator(".vdb-rowbtn").first
+        box = await name.bounding_box()
+        assert box and box["height"] >= 44, box
+    finally:
+        await context.close()

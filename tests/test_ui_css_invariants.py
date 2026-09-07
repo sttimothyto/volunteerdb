@@ -183,3 +183,15 @@ def test_dates_and_times_are_words_not_format_strings():
         "a page formats a date or time itself; use timefmt (words) or, for a "
         "field's value, date_input.iso_date/iso_time:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_touch_targets_reach_44px():
+    """uiux-improvement.md step 28: under `(pointer: coarse)` the dense
+    buttons and the row buttons reach the 44px WCAG AAA / iOS target. The
+    cascade itself is a browser's to prove (tests/e2e/test_browser_layout.py);
+    this holds the source to the rule."""
+    css = THEME_CSS.read_text()
+    start = css.index("@media (pointer: coarse)")
+    block = css[start : css.index("\n}\n", start)]
+    assert ".q-btn.q-btn--dense" in block and ".vdb-rowbtn" in block
+    assert "min-height: 44px" in block and "min-width: 44px" in block
