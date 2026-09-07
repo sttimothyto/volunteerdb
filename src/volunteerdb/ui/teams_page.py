@@ -1,5 +1,5 @@
+from datetime import datetime
 from decimal import Decimal
-from functools import partial
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -9,7 +9,7 @@ from .. import query_lang, timefmt
 from ..env import current as current_env
 from ..errors import not_found
 from ..fp import Err, Ok
-from ..models import ROLE_LABELS, Membership, Team, TeamRole, TeamSheet, Volunteer
+from ..models import ROLE_LABELS, Team, TeamRole, TeamSheet
 from ..services import events as event_service
 from ..services import memberships as membership_service
 from ..services import pages as page_service
@@ -22,14 +22,14 @@ from ..sheets import importer
 from ..sheets.common import sheet_url
 from . import column_order, invites
 from .a11y import heading
-from .account_status import roster_account
+from .account_status import account_state
 from .asof import parse_as_of
 from .context import PageCtx, flash, page_ctx, run_command, success, toast
 from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
 from .tables import count_text, wire_search
-from .volunteer_panel import VolunteerPanel, volunteer_link
-from .widgets import ROLE_OPTIONS, busy, denied, empty_state, inactive_badge, role_badge
+from .volunteer_panel import VolunteerPanel
+from .widgets import ROLE_OPTIONS, busy, denied, empty_state, inactive_badge
 
 
 def _hierarchy_rows(tree, coverage, actor) -> list[dict]:
@@ -940,68 +940,277 @@ def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> ui.selec
     return who
 
 
-def _roster_row(
+# The roster's rows sort by role first (the order the service lists them in)
+_ROLE_RANK = {role: rank for rank, role in enumerate(TeamRole)}
+
+# Every cell that is not plain text: the name is a real button (the row is
+# reachable by keyboard, and its click bubbles to the row, which opens the
+# panel); the role is a button for a manager and a badge for everyone else;
+# the account cell carries the badge, the last-login line and the invite
+# button; the last cell is the manager's Remove. Each control emits an event
+# with its row, which the handlers below take by id (NiceGUI's table idiom).
+_NAME_CELL = """
+<q-td key="name" :props="props">
+    <button type="button" class="vdb-rowbtn">{{ props.row.name }}</button>
+</q-td>
+"""
+_ROLE_CELL = """
+<q-td key="role" :props="props">
+    <q-btn v-if="props.row.can_manage" flat dense no-caps padding="none xs"
+           :aria-label="'Change the role of ' + props.row.name"
+           @click.stop="$parent.$emit('role', props.row)">
+        <q-badge>{{ props.row.role_label }}</q-badge>
+        <q-icon name="expand_more" size="xs" class="q-ml-xs" />
+    </q-btn>
+    <q-badge v-else>{{ props.row.role_label }}</q-badge>
+</q-td>
+"""
+_ACCOUNT_CELL = """
+<q-td key="account" :props="props">
+    <div class="flex no-wrap items-center gap-2">
+        <q-badge :color="props.row.account_color" :outline="props.row.account_outline">
+            {{ props.row.account }}
+            <q-tooltip>{{ props.row.account_tooltip }}</q-tooltip>
+        </q-badge>
+        <span v-if="props.row.last_login" class="text-xs text-gray-500 no-wrap">
+            {{ props.row.last_login }}
+            <q-tooltip v-if="props.row.last_login_tooltip">{{ props.row.last_login_tooltip }}</q-tooltip>
+        </span>
+        <q-btn v-if="props.row.invite" outline dense no-caps size="sm" icon="mail"
+               :label="props.row.invite"
+               @click.stop="$parent.$emit('invite', props.row)" />
+    </div>
+</q-td>
+"""
+_ACTIONS_CELL = """
+<q-td key="actions" :props="props">
+    <q-btn flat dense round icon="person_remove" color="negative"
+           :aria-label="'Remove ' + props.row.name + ' from the team'"
+           @click.stop="$parent.$emit('remove', props.row)">
+        <q-tooltip>Remove from team</q-tooltip>
+    </q-btn>
+</q-td>
+"""
+
+
+def _roster_rows(room: TeamRoom, *, now: datetime, tz: ZoneInfo) -> list[dict]:
+    """One row per member. Contact details ride only for full-roster
+    viewers -- a column the browser does not draw still receives its data
+    -- and the invite button only where the reader may send one."""
+    rows: list[dict] = []
+    for membership, volunteer in room.roster:
+        account = room.accounts.get(volunteer.id)
+        state = account_state(account, now=now, tz=tz)
+        offer = (
+            invites.invite_offer(volunteer.email, account, now=now)
+            if room.can_invite and volunteer.is_active
+            else None
+        )
+        started = room.since.get(volunteer.id)
+        row = {
+            "id": membership.id,
+            "volunteer_id": volunteer.id,
+            "name": volunteer.full_name,
+            "role": membership.role.value,
+            "role_label": ROLE_LABELS[membership.role],
+            "role_rank": _ROLE_RANK[membership.role],
+            "account": state.label,
+            "account_color": state.color,
+            "account_outline": state.outline,
+            "account_tooltip": state.tooltip,
+            "last_login": state.last_login,
+            "last_login_tooltip": state.last_login_tooltip,
+            "invite": offer.label if offer else "",
+            "invite_mode": offer.mode if offer else "",
+            "invite_address": offer.address if offer else "",
+            "invite_until": (offer.until.isoformat() if offer and offer.until else ""),
+            "since": timefmt.day(started, tz) if started else "",
+            "since_iso": started.isoformat() if started else "",
+            "can_manage": room.can_manage,
+        }
+        if room.can_full:
+            row["email"] = volunteer.email or ""
+            row["phone"] = volunteer.phone or ""
+        rows.append(row)
+    return rows
+
+
+def _roster_columns(room: TeamRoom) -> list[dict]:
+    columns = [
+        {
+            "name": "name",
+            "label": "Name",
+            "field": "name",
+            "align": "left",
+            "sortable": True,
+        },
+        {
+            "name": "role",
+            "label": "Role",
+            "field": "role_rank",  # leader first, not alphabetical
+            "align": "left",
+            "sortable": True,
+        },
+    ]
+    if room.can_full:
+        # hidden below 40rem (theme.css .vdb-col-wide): the panel has them
+        for name, label in (("email", "Email"), ("phone", "Phone")):
+            columns.append(
+                {
+                    "name": name,
+                    "label": label,
+                    "field": name,
+                    "align": "left",
+                    "sortable": True,
+                    "classes": "vdb-col-wide",
+                    "headerClasses": "vdb-col-wide",
+                }
+            )
+    columns.append(
+        {
+            "name": "account",
+            "label": "Account",
+            "field": "account",
+            "align": "left",
+            "sortable": True,
+        }
+    )
+    if room.live:
+        columns.append(
+            {
+                "name": "since",
+                "label": "Since",
+                "field": "since_iso",
+                "align": "left",
+                "sortable": True,
+            }
+        )
+    if room.can_manage:
+        columns.append(
+            {"name": "actions", "label": "", "field": "id", "align": "right"}
+        )
+    return columns
+
+
+def _matching_members(rows: list[dict], text: str) -> list[dict]:
+    """The rows whose name, role, contact details or account state contain
+    `text`."""
+    return [
+        r
+        for r in rows
+        if any(
+            text in (r.get(key) or "").lower()
+            for key in ("name", "role_label", "email", "phone", "account", "since")
+        )
+    ]
+
+
+def _roster_table(
     room: TeamRoom,
-    membership: Membership,
-    volunteer: Volunteer,
     panel: VolunteerPanel,
     base_url: str,
     *,
     reveal: bool,
+    now: datetime,
+    tz: ZoneInfo,
 ) -> None:
-    """One member: the name, the role (a picker for a manager), contact
-    details for full-roster viewers, the sign-in status with the invite
-    control for those who may send one, and the manager's Remove."""
-    # the column widths live in theme.css (.vdb-roster-name,
-    # .vdb-roster-email), which lets a phone drop them and stack
-    # the row as a block under the name
-    account = room.accounts.get(volunteer.id)
-    with ui.row().classes("w-full items-center gap-3 p-2 rounded hover:bg-gray-100"):
-        volunteer_link(
-            volunteer.full_name, volunteer.id, panel, classes="vdb-roster-name"
+    """The roster as a table: sortable, searchable, 25 rows a page. At
+    parish scale a roster is the site's longest page (a 59-member team was
+    5,289 px tall as one row of widgets per member); a table shows what a
+    screen can show and builds one control per row instead of a select."""
+    rows = _roster_rows(room, now=now, tz=tz)
+    team = room.team.name
+    with ui.row().classes("items-center gap-2 w-full"):
+        search = (
+            ui.input("Search the roster…")
+            .props("outlined dense clearable debounce=200")
+            .classes("grow")
+            .mark("roster-search")
         )
-        if room.can_manage:
-            role_select = ui.select(ROLE_OPTIONS, value=membership.role.value).props(
-                "dense outlined"
-            )
-            role_select.on_value_change(
-                lambda e, mid=membership.id: _change_role(mid, e.value)
-            )
-        else:
-            role_badge(membership.role)
-        if room.can_full:
-            ui.label(volunteer.email or "").classes(
-                "text-sm text-gray-600 vdb-roster-email"
-            )
-            ui.label(volunteer.phone or "").classes("text-sm text-gray-600")
-        ui.space()
-        # every member sees this, not just full-roster viewers; the
-        # invite control rides along for leaders/seconds/core only
-        roster_account(
-            account,
-            action=(
-                partial(
-                    invites.invite_control,
-                    volunteer.id,
-                    volunteer.full_name,
-                    volunteer.email,
-                    account,
-                    base_url,
-                    reveal=reveal,
+    table = (
+        ui.table(
+            columns=_roster_columns(room),
+            rows=rows,
+            row_key="id",
+            pagination={"rowsPerPage": 25},
+        )
+        .props('rows-per-page-options="[25, 50, 100, 0]" hide-no-data')
+        .classes("w-full vdb-clickable-rows")
+        .mark("roster")
+    )
+    table.add_slot("body-cell-name", _NAME_CELL)
+    table.add_slot("body-cell-role", _ROLE_CELL)
+    table.add_slot("body-cell-account", _ACCOUNT_CELL)
+    table.add_slot(
+        "body-cell-since",
+        '<q-td key="since" :props="props">{{ props.row.since }}</q-td>',
+    )
+    if room.can_manage:
+        table.add_slot("body-cell-actions", _ACTIONS_CELL)
+    table.on("rowClick", lambda e: panel.open(e.args[1]["volunteer_id"]))
+    table.on(
+        "role",
+        lambda e: _role_dialog(e.args["id"], e.args["name"], e.args["role"]),
+    )
+    table.on(
+        "invite",
+        lambda e: _invite_from_row(e.args, base_url, reveal=reveal, tz=tz),
+    )
+    table.on("remove", lambda e: _remove_member(e.args["id"], e.args["name"], team))
+    count = ui.label(count_text(len(rows), None, "member")).classes(
+        "text-sm text-gray-500"
+    )
+    wire_search(
+        search,
+        count,
+        table,
+        rows,
+        noun="member",
+        compile=query_lang.compile_roster,
+        text_filter=_matching_members,
+    )
+
+
+async def _invite_from_row(
+    row: dict, base_url: str, *, reveal: bool, tz: ZoneInfo
+) -> None:
+    """The row's invite button: the offer the row carries, acted on."""
+    until = row.get("invite_until") or ""
+    offer = invites.InviteOffer(
+        label=row["invite"],
+        mode=row["invite_mode"],
+        address=row["invite_address"],
+        until=datetime.fromisoformat(until) if until else None,
+    )
+    await invites.act_on_offer(
+        row["volunteer_id"], row["name"], offer, base_url, reveal=reveal, tz=tz
+    )
+
+
+def _role_dialog(membership_id: int, name: str, current: str) -> None:
+    """One small dialog on demand, instead of a select on every row."""
+    with dialog_card(f"Change the role of {name}") as dialog:
+        role = (
+            ui.select(ROLE_OPTIONS, label="Role", value=current)
+            .props("outlined dense")
+            .classes("w-full")
+            .mark("role-pick")
+        )
+
+        async def save() -> None:
+            async def command(ctx: PageCtx):
+                return await membership_service.set_role(
+                    ctx.session, ctx.actor, membership_id, TeamRole(role.value)
                 )
-                if room.can_invite and volunteer.is_active
-                else None
-            ),
-        )
-        if room.can_manage:
-            ui.button(
-                icon="person_remove",
-                on_click=lambda _, mid=membership.id, who=volunteer.full_name: (
-                    _remove_member(mid, who, room.team.name)
-                ),
-            ).props("dense flat color=negative").mark(
-                f"remove-member-{membership.id}"
-            ).tooltip("Remove from team")
+
+            await run_command(
+                command,
+                on_ok=lambda _v, _e, _r: dialog.close(),
+                success="Role updated",
+            )
+
+        actions(dialog, "Save", save, marker="role-save")
+    dialog.open()
 
 
 def _roster_section(
@@ -1010,6 +1219,8 @@ def _roster_section(
     base_url: str,
     *,
     reveal: bool,
+    now: datetime,
+    tz: ZoneInfo,
     picker: ui.select | None = None,
 ) -> None:
     """`picker` is the add-member row's Volunteer box, when the reader has
@@ -1026,8 +1237,8 @@ def _roster_section(
             action="Add the first member" if picker is not None else None,
             on_click=lambda: picker.run_method("focus") if picker else None,
         )
-    for membership, volunteer in room.roster:
-        _roster_row(room, membership, volunteer, panel, base_url, reveal=reveal)
+    else:
+        _roster_table(room, panel, base_url, reveal=reveal, now=now, tz=tz)
 
 
 def _upcoming_events_section(
@@ -1101,7 +1312,15 @@ async def team_detail(team_id: int, as_of: str = ""):
             if room.can_manage
             else None
         )
-        _roster_section(room, panel, ctx.base_url, reveal=actor.is_admin, picker=picker)
+        _roster_section(
+            room,
+            panel,
+            ctx.base_url,
+            reveal=actor.is_admin,
+            now=ctx.now,
+            tz=tz,
+            picker=picker,
+        )
         if room.can_manage:
             _sheet_section(room.sheet, team_id, actor.is_admin, tz=tz)
         if room.upcoming_events:
@@ -1118,15 +1337,6 @@ async def _add_member(team_id: int, volunteer_id: int | None, role_value: str) -
         )
 
     await run_command(command, reload=True, success="Added to the roster")
-
-
-async def _change_role(membership_id: int, role_value: str) -> None:
-    async def command(ctx: PageCtx):
-        return await membership_service.set_role(
-            ctx.session, ctx.actor, membership_id, TeamRole(role_value)
-        )
-
-    await run_command(command, reload=False, success="Role updated")
 
 
 async def _remove_member(membership_id: int, name: str, team: str) -> None:

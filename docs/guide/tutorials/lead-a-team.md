@@ -15,7 +15,7 @@ In this tutorial you lead a team: you add a member, change a role, and invite a 
 3. Find the sections that only a leader or a second sees: *Add member* and *Roster spreadsheet*.
 4. Find the section *Volunteer home page*. Core team members see this one too.
 
-You see the team page with these extra sections, and a role box on every row of the *Roster*. At the top are the buttons *Export roster (.csv)*, *Copy email list* and *Email all (BCC)*.
+You see the team page with these extra sections, and a role button on every row of the *Roster*. At the top are the buttons *Export roster (.csv)*, *Copy email list* and *Email all (BCC)*.
 
 ## 2. Add a member
 
@@ -32,25 +32,23 @@ You see the page again, with the message *Added to the roster* and the new name 
 ## 3. Change a role
 
 1. In the *Roster*, find the row of the new member.
-2. Click the role box on that row. It says *Member*.
-3. Click *Core team member*.
+2. Click the role badge on that row. It says *Member*.
+3. Choose *Core team member* in *Role*, then click *Save*.
 
 You see the message *Role updated*. A core team member now sees the full roster with contact details, and can invite teammates to create an account. To take someone off the team, click the icon at the right end of their row. A tooltip says *Remove from team*. The site asks first.
 
 ## 4. Invite a member to create an account
 
 1. In the *Roster*, find a row with the badge *no account*.
-2. Move the mouse over the badge. It changes to *invite to create account*.
-3. Click it.
-4. Read the dialog. It says *Send an invite to*, the name, and the address the link goes to.
-5. Click *Send an invite*.
-6. Read the dialog *Invite link for*, followed by the address. The link itself is not shown to you.
-7. Click *Close*.
+2. Click *Invite*, beside the badge.
+3. Read the dialog. It says *Send an invite to*, the name, and the address the link goes to.
+4. Click *Send an invite*.
+5. Read the dialog *Invite link for*, followed by the address. The link itself is not shown to you.
+6. Click *Close*.
 
-You see the badge *invite sent* on that row. The link went to the mailbox of the volunteer. It works once, and for 7 days. When the volunteer opens it, the badge becomes *account*. If the link runs out, the badge becomes *invite expired*, and the control returns as *send a new invite*.
+You see the badge *invite sent* on that row. The link went to the mailbox of the volunteer. It works once, and for 7 days. When the volunteer opens it, the badge becomes *account*. If the link runs out, the badge becomes *invite expired*, and the button returns as *Re-invite*.
 
-- If the tooltip on *no account* says *No email address on file*, add the address first. Follow [Edit the contact details of a member](../how-to/edit-a-members-contact-details.md).
-- A small mail icon next to the badge marks it as a button. On a touch screen, tap it.
+- If a row shows *no account* and no *Invite* button, the person has no email address on file. Add it first: follow [Edit the contact details of a member](../how-to/edit-a-members-contact-details.md).
 
 ## 5. Link the roster spreadsheet
 
@@ -95,8 +93,8 @@ You see the page of your team as anyone in the world sees it, with no sign-in. B
 
 ## What you learned
 
-- *Add member* puts a volunteer on your roster. The role box on each row changes the role.
-- The badge *no account* becomes *invite to create account* under the mouse. The link goes to the volunteer, not to you.
+- *Add member* puts a volunteer on your roster. The role badge on each row opens the dialog that changes the role.
+- *Invite*, beside the badge *no account*, sends the link. It goes to the volunteer, not to you.
 - *Link a spreadsheet* connects a Google Sheet to your roster. The site syncs it every night at 2:30, and never removes anybody.
 - *Set home page doc* and *Fetch now* publish a Google Doc as the public page of your team.
 

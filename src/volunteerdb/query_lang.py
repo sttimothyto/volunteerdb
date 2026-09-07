@@ -604,6 +604,28 @@ _EVENT_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
 }
 
 
+# --- a team's roster: the same backend over the roster table's rows ----------
+
+_ROSTER_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
+    "name": (FieldType.text, _text_of("name")),
+    "role": (FieldType.text, _text_of("role_label")),
+    "email": (FieldType.text, _text_of("email")),
+    "phone": (FieldType.text, _text_of("phone")),
+    "account": (FieldType.text, _text_of("account")),
+    "since": (
+        FieldType.date,
+        lambda row: (
+            date.fromisoformat(row["since_iso"][:10]) if row.get("since_iso") else None
+        ),
+    ),
+}
+
+
+def compile_roster(ast: exp.Expression) -> Result[Callable[[dict], bool], QueryError]:
+    """`role = 'Member' AND since < '2024-01-01'` over a roster's rows."""
+    return _compile(ast, False, _PyBackend(_ROSTER_FIELDS))
+
+
 def compile_events(ast: exp.Expression) -> Result[Callable[[dict], bool], QueryError]:
     """A Python predicate over events-page row dicts, or the QueryError.
 

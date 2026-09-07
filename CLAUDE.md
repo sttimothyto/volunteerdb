@@ -54,7 +54,7 @@ Read capabilities with `eglot--capabilities`, not `eglot--server-capabilities`
 ### Known standing diagnostics, and the ceiling over them
 
 `ty check src/` reports exactly the number `CEILING` in `scripts/typecheck.py`
-holds it to (70 on 2026-09-06), and `make types` (CI's lint job runs the same
+holds it to (68 on 2026-09-07), and `make types` (CI's lint job runs the same
 script) fails the build above that number. So a diagnostic
 in a file you edited is **not** automatically pre-existing: check it against the
 ceiling before assuming it was already there, and if your change adds one, fix

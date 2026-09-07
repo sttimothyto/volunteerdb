@@ -20,13 +20,13 @@ The rights of a leader, a second and a core member reach into the sub-teams. The
 
 1. Open *Teams* and click the team.
 2. Under *Roster*, find the person.
-3. Click the role box on their row. It shows the current role.
-4. Click the new role.
+3. Click the role badge on their row. The dialog *Change the role of …* opens.
+4. Choose the new role in *Role*.
+5. Click *Save*.
 
 ## What you see
 
-- The page shows the message *Role updated*. The change is saved at once; there is no *Save* button.
-- The row keeps its place until you reload the page. Then the roster sorts by role again.
+- The page shows the message *Role updated*. The roster sorts by role again.
 - If the team now has no leader or no second, the *Teams* page shows a *no leader* or *no second* badge under *Gaps*. The team also appears under *Vacancies* on *Elections*.
 - The old role is kept as history. An as-of view of an earlier date still shows it.
 - Nobody is emailed.

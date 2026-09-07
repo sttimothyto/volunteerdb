@@ -13,8 +13,8 @@ Email a member of your team a link to set up their own account on the site.
 ## Steps
 
 1. Click *Teams* in the header, then click your team.
-2. In the *Roster*, find the row of the volunteer. It shows the badge *no account*.
-3. Point at the badge. It changes to *invite to create account*. Click it.
+2. In the *Roster*, find the row of the volunteer. It shows the badge *no account* and the button *Invite*.
+3. Click *Invite*.
 4. Read the dialog. It says *Send an invite to* followed by the name.
 5. Click *Send an invite*.
 6. Read the dialog *Invite link for* followed by the address. It says *Invite email sent to* and the address.
@@ -32,8 +32,8 @@ Email a member of your team a link to set up their own account on the site.
 ## If something goes wrong
 
 - If the badge stays *no account* and its tooltip says *No email address on file*, add an address first. A leader or a second can. See [Edit the contact details of a member](edit-a-members-contact-details.md).
-- If the row shows *invite sent*, an invite is already out. Click the badge, then *Send again* to send a fresh link. The old link no longer works.
-- If the row shows *invite expired*, point at it and click *send a new invite*.
+- If the row shows *invite sent*, an invite is already out. Click *Re-invite*, then *Send again* to send a fresh link. The old link no longer works.
+- If the row shows *invite expired*, click *Re-invite*.
 - If the page says that the invite email could not be sent, check the address, then send again. Or ask an administrator for the link.
 - If the row shows *disabled*, the account is switched off. Only an administrator can turn it on again.
 - You cannot invite anyone from a past date. Click *Back to now* first.

@@ -924,16 +924,13 @@ body.body--dark .q-badge.bg-muted {
   text-shadow: none;
 }
 
-/* ---------- team roster rows (ui/teams_page.py) ----------
-   Fixed column widths so the rows read as a table on a wide screen; the
-   phone block below releases them. */
-
-.vdb-roster-name {
-  width: 12rem;
-}
-
-.vdb-roster-email {
-  width: 14rem;
+/* ---------- columns a phone cannot show (ui/teams_page.py roster) ----------
+   Marked on the column (classes + headerClasses); the side panel has what
+   they held, a tap away. */
+@media (max-width: 40rem) {
+  .q-table .vdb-col-wide {
+    display: none;
+  }
 }
 
 /* ---------- narrow screens ----------
@@ -1018,16 +1015,6 @@ body.body--dark .q-badge.bg-muted {
      for the hover face only pushed the badge onto a line of its own */
   .vdb-invite-swap {
     min-width: 0;
-  }
-
-  /* a roster row becomes a block headed by the name */
-  .vdb-roster-name {
-    width: 100%;
-  }
-
-  .vdb-roster-email {
-    width: auto;
-    max-width: 100%;
   }
 }
 

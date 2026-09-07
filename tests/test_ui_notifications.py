@@ -72,12 +72,14 @@ async def test_an_in_place_action_says_it_at_once(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
-        # the roster's role boxes carry no label; the add-member row's does
-        roles = [
-            s
-            for s in user.find(kind=ui.select).elements
-            if s.value == "member" and not s.props.get("label")
-        ]
-        assert len(roles) == 1, "one role box: Mia's"
-        roles[0].set_value("core")
+        # the role badge on Mia's row opens one small dialog
+        row = next(
+            r
+            for r in only(user.find(marker="roster")).rows
+            if r["name"] == "Mia Member"
+        )
+        user.find(marker="roster").trigger("role", row)
+        await user.should_see("Change the role of Mia Member", retries=SLOW)
+        only(user.find(marker="role-pick")).set_value("core")
+        user.find(marker="role-save").click()
         await user.should_see("Role updated", retries=SLOW)

@@ -92,9 +92,11 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, sim_sent):
         await user.open(f"/login-dev/{admin_id}")
         await user.should_see("dev-login ok")
 
-        # team roster: clicking a member's name fills and opens the panel
+        # team roster: a click on a member's row fills and opens the panel
         await user.open(f"/teams/{team_id}")
-        user.find("Maria Alvarez", kind=ui.label).trigger("click")
+        user.find(marker="roster").trigger(
+            "rowClick", args=[None, {"volunteer_id": maria_id}, 0]
+        )
         await user.should_see("Email: maria@example.org")
         await user.should_see("Phone: 555-1234")
         await user.should_see("Serves on")
@@ -147,14 +149,16 @@ async def test_photo_dialog_disclaimer_gates_upload(database):
                 actor=SYSTEM,
             )
         )
-        team_id, admin_id = liturgy.id, admin.id
+        team_id, admin_id, maria_id = liturgy.id, admin.id, maria.id
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin_id}")
         await user.should_see("dev-login ok")
 
         await user.open(f"/teams/{team_id}")
-        user.find("Maria Alvarez", kind=ui.label).trigger("click")
+        user.find(marker="roster").trigger(
+            "rowClick", args=[None, {"volunteer_id": maria_id}, 0]
+        )
         await user.should_see("Serves on")
 
         # the person icon in the panel header opens the upload dialog

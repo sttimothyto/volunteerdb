@@ -229,6 +229,7 @@ class TeamRoom:
     can_invite: bool
     roster: list[tuple[Membership, Volunteer]]
     accounts: dict[int, AppUser]  # volunteer id -> sign-in account
+    since: dict[int, datetime]  # volunteer id -> start of their current spell
     volunteer_options: dict[int, str]  # for the add-member picker
     page: TeamPage | None  # the public page's fetch status, for editors
     has_public_page: bool
@@ -275,6 +276,13 @@ async def team_room(
     accounts = await user_service.accounts_by_volunteer(
         session, [v.id for _, v in roster]
     )
+    # the roster's Since column, live only: on a snapshot the run that
+    # reaches the live row is not the run the snapshot shows
+    since = (
+        await volunteer_service.team_spell_starts(session, team_id)
+        if (roster and live)
+        else {}
+    )
     page = None
     if can_full and live:
         status = await page_service.page_status(session, actor, team_id)
@@ -300,6 +308,7 @@ async def team_room(
             can_invite=can_full and live,
             roster=roster,
             accounts=accounts,
+            since=since,
             volunteer_options=(
                 await volunteer_service.name_map(session) if can_manage else {}
             ),

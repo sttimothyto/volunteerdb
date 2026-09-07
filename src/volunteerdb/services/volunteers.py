@@ -509,24 +509,13 @@ class Anniversary:
     since: date  # start of the current continuous spell on this team
 
 
-async def team_anniversaries(
-    session: AsyncSession,
-    team_id: int,
-    today: date,
-    *,
-    tz: ZoneInfo,
-    ahead_days: int = 30,
-    behind_days: int = 7,
-) -> list[Anniversary]:
-    """Current roster members whose whole-year anniversary (≥ 1 year) of
-    continuous service on THIS team falls inside the window around `today`.
-
-    The team-scoped sibling of timeline()'s spell stitching — one pass over
-    the team's audit trail instead of one query per roster member. Spell
-    starts are system times (see timeline()): members imported at first
-    deployment read as joining at import, not their real-world join date —
-    the banner says so.
-    """
+async def team_spell_starts(session: AsyncSession, team_id: int) -> dict[int, datetime]:
+    """Each current member's start of continuous service on this team: the
+    system time of the first version in the unbroken run of memberships
+    that reaches their live row. Members imported at first deployment read
+    as joining at import (the anniversaries banner says so). One pass over
+    the team's audit trail, shared by the banner and the roster's Since
+    column."""
     mh = membership_history
     cols = ("id", "volunteer_id", "sys_period")
     hist = sa.select(*[mh.c[n] for n in cols], mh.c.op).where(mh.c.team_id == team_id)
@@ -549,14 +538,37 @@ async def team_anniversaries(
         runs[-1].append(row)
         prev_key = (row.volunteer_id, row.sys_period.upper)
 
+    # an ended spell (op set on the last version) is not on the roster today
+    return {
+        run[-1].volunteer_id: run[0].sys_period.lower
+        for run in runs
+        if run[-1].op is None
+    }
+
+
+async def team_anniversaries(
+    session: AsyncSession,
+    team_id: int,
+    today: date,
+    *,
+    tz: ZoneInfo,
+    ahead_days: int = 30,
+    behind_days: int = 7,
+) -> list[Anniversary]:
+    """Current roster members whose whole-year anniversary (≥ 1 year) of
+    continuous service on THIS team falls inside the window around `today`.
+
+    The team-scoped sibling of timeline()'s spell stitching — one pass over
+    the team's audit trail instead of one query per roster member. Spell
+    starts are system times (see timeline()): members imported at first
+    deployment read as joining at import, not their real-world join date —
+    the banner says so.
+    """
     window_lo = today - timedelta(days=behind_days)
     window_hi = today + timedelta(days=ahead_days)
     hits: dict[int, tuple[int, date, date]] = {}
-    for run in runs:
-        last = run[-1]
-        if last.op is not None:  # ended spell — not on the roster today
-            continue
-        since = run[0].sys_period.lower.astimezone(tz).date()
+    for vid, started in (await team_spell_starts(session, team_id)).items():
+        since = started.astimezone(tz).date()
         # y-1 covers early-January windows reaching back into December
         for y in (today.year - 1, today.year, today.year + 1):
             years = y - since.year
@@ -567,7 +579,7 @@ async def team_anniversaries(
             except ValueError:  # Feb 29 start in a non-leap year
                 anniv = date(y, 3, 1)
             if window_lo <= anniv <= window_hi:
-                hits[last.volunteer_id] = (years, anniv, since)
+                hits[vid] = (years, anniv, since)
 
     if not hits:
         return []

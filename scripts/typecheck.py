@@ -29,14 +29,15 @@ import sys
 
 # What `uv run ty check src/` reported on 2026-09-06: 93 after fp.py's variance
 # and raise_http's union were fixed (778aa47's Result idiom, typed properly),
-# 70 once every service took an `Actor` and nothing else (permissions.SYSTEM).
+# 70 once every service took an `Actor` and nothing else (permissions.SYSTEM),
+# 68 when the roster became a table and its badge-drawing went (2026-09-07).
 # What is left is mostly the checker's blind spots, not bugs: `dict(rows.all())`
 # over SQLAlchemy `Row`s (nine; `rows.tuples().all()` is the fix), enum columns
 # assigned `.value` strings, guards it cannot correlate (`x = a is not None and
 # ...` and then `a.attr`), SQL `IS NOT NULL` filters it cannot see, and a
 # handful of library stubs (DeclarativeBase.__table__ as FromClause, Starlette
 # add_middleware, NiceGUI async handlers, PIL getpixel).
-CEILING = 70
+CEILING = 68
 
 TARGET = "src/"
 # Warnings count too: an `unused-ignore-comment` is a suppression that has

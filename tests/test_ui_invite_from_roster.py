@@ -5,9 +5,11 @@ itself is shown to everyone (test_ui_account_status.py); the *control* belongs t
 the people who run the ministry — leaders, seconds and core members — and to
 nobody else, on no snapshot, and for nobody there is no address to write to.
 
-Markers rather than text for every click: /teams/{id} renders the roster and the
-volunteer drawer on one page, and NiceGUI's should_see finds text inside a closed
-drawer, so asserting on labels alone would pass on things no human can reach.
+The roster is a table whose rows carry the invite button's words ("Invite",
+"Re-invite", or none) and whose button emits an `invite` event with its row,
+so the tests read the rows and fire the event -- /teams/{id} also renders the
+volunteer drawer, and NiceGUI's should_see finds text inside a closed drawer,
+so asserting on labels alone would pass on things no human can reach.
 """
 
 import hashlib
@@ -21,7 +23,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
-from .conftest import SIM_MAIN, SLOW, mail_to
+from .conftest import SIM_MAIN, SLOW, mail_to, only
 from tests import mint
 from tests.conftest import db_session
 from tests.fakes import SIM_MAILER
@@ -33,6 +35,18 @@ def sent(sim_sent) -> list[tuple[str, str, str]]:
     """What the simulated app mailed: conftest's sim_sent, under this module's
     older name."""
     return sim_sent
+
+
+def _row(user, name: str) -> dict:
+    """One member's row of the roster table."""
+    return next(r for r in only(user.find(marker="roster")).rows if r["name"] == name)
+
+
+def _invite(user, name: str) -> None:
+    """Click the row's Invite / Re-invite button."""
+    row = _row(user, name)
+    assert row["invite"], f"{name} has no invite button"
+    user.find(marker="roster").trigger("invite", row)
 
 
 async def _parish(session) -> dict[str, int]:
@@ -112,9 +126,9 @@ async def test_leader_invites_a_member_and_the_row_catches_up(database, sent):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
-        await user.should_see("no account")  # Nils, at rest
+        assert _row(user, "Nils Nobody")["account"] == "no account"  # at rest
 
-        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        _invite(user, "Nils Nobody")
         await user.should_see("Send an invite to Nils Nobody?", retries=SLOW)
         await user.should_see("nils@example.org")  # the dialog names the address
 
@@ -146,7 +160,7 @@ async def test_cancelling_the_confirmation_creates_nothing(database, sent):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
-        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        _invite(user, "Nils Nobody")
         await user.should_see("Send an invite to Nils Nobody?", retries=SLOW)
         user.find(marker="invite-cancel").click()
         await user.should_see("Roster")
@@ -164,13 +178,13 @@ async def test_core_may_invite_and_a_plain_member_may_not(database, sent):
         await user.open(f"/login-dev/{ids['cora_u']}")
         await user.open(f"/teams/{ids['music']}")
         # a core member reads the whole roster and may close its gaps
-        await user.should_see(marker=f"invite-roster-{ids['nils']}")
+        assert _row(user, "Nils Nobody")["invite"]
 
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open(f"/teams/{ids['music']}")
-        await user.should_see("no account")  # she still sees the status...
-        await user.should_not_see("invite to create account")  # ...not the action
-        await user.should_not_see(marker=f"invite-roster-{ids['nils']}")
+        # she still sees the status, not the action
+        assert _row(user, "Nils Nobody")["account"] == "no account"
+        assert _row(user, "Nils Nobody")["invite"] == ""
 
 
 async def test_a_lapsed_invite_may_be_resent_but_a_live_one_is_not_reoffered(
@@ -183,14 +197,14 @@ async def test_a_lapsed_invite_may_be_resent_but_a_live_one_is_not_reoffered(
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
 
-        await user.should_see("invite expired")  # Stale
+        assert _row(user, "Stale Sender")["account"] == "invite expired"
         # a link nobody used may be replaced — there is no password to lose
-        await user.should_see(marker=f"invite-roster-{ids['stale']}")
+        assert _row(user, "Stale Sender")["invite"]
         # A live invite reports itself and offers to REPLACE the link, never to
         # show it: only its digest is stored, so no reader can recover one
         # already sent (services.users._issue_invite).
-        await user.should_see("invite sent")  # Live
-        user.find(marker=f"invite-roster-{ids['live']}").click()
+        assert _row(user, "Live Link")["account"] == "invite sent"
+        _invite(user, "Live Link")
         await user.should_see(
             "An invite is already out to live@example.org", retries=SLOW
         )
@@ -206,7 +220,7 @@ async def test_a_volunteer_with_no_email_gets_no_control(database, sent):
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
         # there is nowhere to send a link
-        await user.should_not_see(marker=f"invite-roster-{ids['void']}")
+        assert _row(user, "Void Nomail")["invite"] == ""
 
 
 async def test_a_snapshot_reports_but_never_invites(database, sent):
@@ -220,8 +234,8 @@ async def test_a_snapshot_reports_but_never_invites(database, sent):
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}?as_of={today}")
         await user.should_see("Read-only snapshot")
-        await user.should_see("no account")  # the badge still reports
-        await user.should_not_see(marker=f"invite-roster-{ids['nils']}")
+        assert _row(user, "Nils Nobody")["account"] == "no account"  # reports
+        assert _row(user, "Nils Nobody")["invite"] == ""
 
 
 async def test_the_profile_page_offers_the_same_control(database, sent):
@@ -264,7 +278,7 @@ async def test_only_an_admin_is_shown_the_link_itself(database, sent):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
-        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        _invite(user, "Nils Nobody")
         await user.should_see("Send an invite to Nils Nobody?", retries=SLOW)
         user.find(marker="invite-confirm").click()
         await user.should_see("Invite link for nils@example.org", retries=SLOW)
@@ -277,7 +291,7 @@ async def test_only_an_admin_is_shown_the_link_itself(database, sent):
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
         # the live invite reopens as a resend dialog, carrying no link at all
-        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        _invite(user, "Nils Nobody")
         await user.should_see(
             "An invite is already out to nils@example.org", retries=SLOW
         )
@@ -288,7 +302,7 @@ async def test_only_an_admin_is_shown_the_link_itself(database, sent):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin_id}")
         await user.open(f"/teams/{ids['music']}")
-        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        _invite(user, "Nils Nobody")
         await user.should_see(
             "An invite is already out to nils@example.org", retries=SLOW
         )
@@ -314,7 +328,7 @@ async def test_an_invite_the_mail_could_not_carry_is_still_created(database, sim
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
-        user.find(marker=f"invite-roster-{ids['nils']}").click()
+        _invite(user, "Nils Nobody")
         await user.should_see("Send an invite to Nils Nobody?", retries=SLOW)
         user.find(marker="invite-confirm").click()
         await user.should_see("Invite created for", retries=SLOW)

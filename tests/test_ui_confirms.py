@@ -11,6 +11,7 @@ Every question carries the same two markers (forms.confirm), so a test
 answers it without knowing the button's words.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 
@@ -30,6 +31,26 @@ from tests.conftest import SIM_MAIN, SLOW, db_session, mail_to, only
 from tests.fp_helpers import ok
 
 YES, NO = "confirm-yes", "confirm-no"
+
+
+def _names(user) -> set[str]:
+    return {r["name"] for r in only(user.find(marker="roster")).rows}
+
+
+async def _until(holds) -> None:
+    """Wait for the reloaded page to catch up (the simulation reloads in a
+    background task)."""
+    for _ in range(SLOW):
+        if holds():
+            return
+        await asyncio.sleep(0.1)
+    raise AssertionError("the page did not catch up")
+
+
+def _remove(user, name: str) -> None:
+    """The roster table's Remove icon on one member's row."""
+    row = next(r for r in only(user.find(marker="roster")).rows if r["name"] == name)
+    user.find(marker="roster").trigger("remove", row)
 
 
 async def _parish(session) -> dict[str, int]:
@@ -128,7 +149,7 @@ async def test_removing_from_the_roster_asks_and_cancel_keeps_them(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
-        user.find(marker=f"remove-member-{ids['mia_m']}").click()
+        _remove(user, "Mia Member")
         await user.should_see("Remove Mia Member from the Music roster?", retries=SLOW)
         await user.should_see("The history keeps the membership.")
         user.find(marker=NO).click()
@@ -142,13 +163,16 @@ async def test_removing_from_the_roster_asks_and_cancel_keeps_them(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['music']}")
-        user.find(marker=f"remove-member-{ids['mia_m']}").click()
+        _remove(user, "Mia Member")
         await user.should_see("Remove Mia Member from the Music roster?", retries=SLOW)
         # the affirmative names the verb and the object
         yes = only(user.find(marker=YES))
         assert yes.text == "Remove Mia Member from Music"
         user.find(marker=YES).click()
-        await user.should_not_see(marker=f"remove-member-{ids['mia_m']}", retries=SLOW)
+        await user.should_see("Removed from Music", retries=SLOW)
+        # the line is flashed while the reloaded page is still being built;
+        # the table it lands on arrives a moment later
+        await _until(lambda: "Mia Member" not in _names(user))
 
     async with db_session() as session:
         assert await memberships.get(session, ids["mia_m"]) is None

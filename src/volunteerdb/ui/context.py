@@ -8,14 +8,13 @@ with the process Env filled in, since a ``@ui.page`` function has no
 dependency injection to hand one over.
 """
 
-import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-from nicegui import app, context, ui
+from nicegui import app, context, helpers, ui
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -238,7 +237,11 @@ async def run_command[T](
     report = await effects.run(planned, env)
     if on_ok is not None:
         outcome = on_ok(value, planned, report)
-        if inspect.isawaitable(outcome):  # a tail that refreshes a widget
+        # a tail that refreshes a widget is awaited; a dialog is not, though
+        # it is awaitable -- `on_ok=lambda *_: dialog.close()` returns the
+        # dialog, and awaiting it would reopen it and wait for an answer
+        # that never comes (NiceGUI's handlers make the same distinction)
+        if helpers.should_await(outcome):
             await outcome
     if reload:
         if success is not None:

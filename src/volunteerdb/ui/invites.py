@@ -21,6 +21,7 @@ events_page.
 """
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -33,6 +34,7 @@ from ..errors import require
 from ..models import AppUser
 from ..permissions import volunteer_team_ids
 from ..services import users as user_service
+from .account_status import invitable
 from .context import PageCtx, info, run_command, success, warn
 from .forms import WIDE, actions, confirm, dialog_card
 
@@ -222,6 +224,68 @@ async def send_invite(
         show_invite(base_url, token, addr, sent, reveal=reveal, reload_on_close=True)
 
     await run_command(command, on_ok=done, reload=False)
+
+
+@dataclass(frozen=True)
+class InviteOffer:
+    """What the roster's invite button says for one person, and what a
+    click does: send a first link, send another after one lapsed, or show
+    the one already out and offer to replace it."""
+
+    label: str  # "Invite" or "Re-invite"
+    mode: str  # "new", "again" or "pending"
+    address: str
+    until: datetime | None  # the outstanding link's expiry, for "pending"
+
+
+def invite_offer(
+    email: str | None, account: AppUser | None, *, now: datetime
+) -> InviteOffer | None:
+    """The button for somebody who could be invited, or None when nothing
+    can be sent: no address on file, or an account that is in use (the
+    guards of services/users.invite_volunteer, see account_status.invitable).
+    Calls with the caller's own judgement of who may invite already made."""
+    if not invitable(account):
+        return None
+    # An existing account's login IS its address, and it can differ from what
+    # the volunteer record says after a relink -- invite the address in use.
+    address = (account.email if account is not None else email) or ""
+    if not address:
+        return None
+    if account is not None and user_service.invite_live(account, now=now):
+        return InviteOffer("Re-invite", "pending", address, account.invite_expires_at)
+    if account is not None:
+        return InviteOffer("Re-invite", "again", address, None)
+    return InviteOffer("Invite", "new", address, None)
+
+
+async def act_on_offer(
+    volunteer_id: int,
+    name: str,
+    offer: InviteOffer,
+    base_url: str,
+    *,
+    reveal: bool,
+    tz: ZoneInfo,
+) -> None:
+    """The click on the roster's invite button."""
+
+    async def go() -> None:
+        await send_invite(
+            volunteer_id,
+            name,
+            offer.address,
+            base_url,
+            again=offer.mode != "new",
+            reveal=reveal,
+        )
+
+    if offer.mode == "pending":
+        # only its digest is stored: the dialog can offer to replace the
+        # link, never to show it again
+        show_outstanding_invite(offer.address, offer.until, tz=tz, on_resend=go)
+        return
+    await go()
 
 
 def invite_control(

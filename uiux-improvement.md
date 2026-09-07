@@ -277,7 +277,7 @@ screens that changed, and ends with the full suite green in its own commit.
 
 ### Phase 4 — The long pages
 
-- [ ] **16. The roster is a table.** `ui.table` with Name (the panel button, as on
+- [x] **16. The roster is a table.** `ui.table` with Name (the panel button, as on
   `/volunteers`), Role (a badge; for leaders a click opens one small role dialog —
   one component on demand instead of a `QSelect` per row), Email, Phone, Account
   (the `account_status` badge), Since; sortable; `wire_search` over it; 25 per page

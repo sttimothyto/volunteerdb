@@ -15,7 +15,7 @@ from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
-from tests.conftest import SIM_MAIN, db_session
+from tests.conftest import SIM_MAIN, db_session, only
 from tests.fp_helpers import ok
 
 # late morning in Toronto, so the rendered date is the same day in any
@@ -113,19 +113,21 @@ async def test_roster_shows_who_has_an_account_to_plain_members(database):
         await user.open(f"/login-dev/{ids['mia_u']}")
         await user.open(f"/teams/{ids['music']}")
         await user.should_see("Roster")
-        # Mia is a plain member: names but no contact details...
-        await user.should_not_see("opal@example.org")
+        rows = {r["name"]: r for r in only(user.find(marker="roster")).rows}
+        # Mia is a plain member: names but no contact details (the column's
+        # data never reaches her browser)...
+        assert "email" not in rows["Opal Online"]
         # ...and yet the whole account column
-        await user.should_see("no account")  # Nils
-        await user.should_see("invite sent")  # Mia herself, link still unused
-        await user.should_see("never signed in")  # and the line beneath it
-        await user.should_see("account")  # Opal, settled
-        await user.should_see("last login Mar 1, 2026")  # Opal
-        await user.should_see("disabled")  # Quin
+        assert rows["Nils Nobody"]["account"] == "no account"
+        assert rows["Mia Member"]["account"] == "invite sent"  # herself, unused
+        assert rows["Mia Member"]["last_login"] == "never signed in"
+        assert rows["Opal Online"]["account"] == "account"  # settled
+        assert rows["Opal Online"]["last_login"] == "last login Mar 1, 2026"
+        assert rows["Quin Quiet"]["account"] == "disabled"
 
         # reporting only: a plain member is offered no way to act on any of it
+        assert all(r["invite"] == "" for r in rows.values())
         await user.should_not_see("invite to create account")
-        await user.should_not_see("send a new invite")
 
 
 async def test_last_login_shows_on_a_profile_the_viewer_cannot_read(database):
