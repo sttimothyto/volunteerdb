@@ -1004,10 +1004,13 @@ def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> ui.selec
     in it."""
     heading("Add member", level=2)
     with ui.row().classes("items-center gap-2"):
+        # vdb-inline: no space held under the box for its "Required" line,
+        # or the box stands 20px taller than Role and the row centres the
+        # two on different lines (theme.css)
         who = (
             required(ui.select(volunteer_options, label="Volunteer", with_input=True))
             .props("outlined dense")
-            .classes("w-64")
+            .classes("w-64 vdb-inline")
         )
         role = (
             ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)

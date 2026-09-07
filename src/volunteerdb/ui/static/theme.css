@@ -554,6 +554,58 @@ a.vdb-quiet .vdb-stat-chip:hover {
   min-height: 0;
 }
 
+/* ---------- a required field in a row of controls ----------
+   Quasar holds 20px under a field that has rules, for the "Required" line,
+   so the Volunteer picker in "Add member" stood 60px tall beside a 40px
+   Role and the row centred them on different lines (teams_page,
+   volunteers_page). The message is positioned absolutely inside that
+   padding, so dropping the padding leaves the message where it was, now
+   overhanging the gap below the row instead of holding a blank strip
+   open. Three classes deep to outrank Quasar's own .q-field--with-bottom. */
+.q-field.vdb-inline.q-field--with-bottom {
+  padding-bottom: 0;
+}
+
+/* ---------- two columns, both left-aligned ----------
+   The volunteer page's "Serves on" and "If they leave" lists: a team and
+   its role, then something about it -- the Remove button, the badge that
+   says what its leadership becomes. Not a table, but read like one: the
+   second thing starts at one x for every row, just past the longest first
+   thing, rather than at the far edge of the page (ui/volunteers_page.py).
+   Each row is a subgrid of the list, which is what lines the rows up with
+   each other; a browser without subgrid gives each row its own two columns,
+   still left-aligned. The first column gives way at 70% of the width so a
+   long team path wraps rather than pushing the second column off the page;
+   on a phone the second thing goes under the first. */
+.vdb-two-col {
+  display: grid;
+  grid-template-columns: fit-content(70%) minmax(0, 1fr);
+  column-gap: 2rem;
+  row-gap: 0.25rem;
+}
+
+.vdb-two-col-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+@supports not (grid-template-columns: subgrid) {
+  .vdb-two-col-row {
+    grid-template-columns: fit-content(70%) minmax(0, 1fr);
+    column-gap: 2rem;
+  }
+}
+
+@media (max-width: 40rem) {
+  .vdb-two-col,
+  .vdb-two-col-row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.25rem;
+  }
+}
+
 /* the suggestion the keyboard is on (ui/search_box.py) */
 .vdb-suggest .vdb-active {
   background-color: var(--vdb-row-hover);
