@@ -11,7 +11,7 @@ Needs a browser, which is the admission rule for this package.
 
 import pytest
 from axe_playwright_python.async_playwright import Axe
-from playwright.async_api import Page
+from playwright.async_api import Page, expect
 
 from .conftest import icon_button, ready, sign_in
 
@@ -79,8 +79,9 @@ async def test_the_skip_link_is_first_and_lands_on_main(seeded, page: Page, base
 async def test_icon_buttons_have_names(seeded, page: Page, base_url):
     await sign_in(page, "admin@example.org", "secret-pass-phrase")
     await ready(page)
+    # expect() waits for the header to be there; a plain count() is instant
     for name in ("Settings", "Your account"):
-        assert await page.get_by_role("button", name=name).count() == 1, name
+        await expect(page.get_by_role("button", name=name)).to_have_count(1)
     # and the way out, under the account menu, is a named button too
     await page.get_by_role("button", name="Your account", exact=True).click()
-    assert await page.get_by_role("button", name="Sign out").count() == 1
+    await expect(page.get_by_role("button", name="Sign out")).to_have_count(1)

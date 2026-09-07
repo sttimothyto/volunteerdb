@@ -18,6 +18,7 @@ A dialog with fields in it stays open until you click *Cancel* or its own button
 
 - The header sits at the top of every page. On a narrow screen the page names fold into 1 *Menu* button.
 - The first link, *Skip to content*, appears when you press the Tab key. It jumps past the header.
+- Beside every page title, the button *?* (*Help for this page*) opens the page of this manual about that screen, in a new tab.
 
 | Control | What it does | Who |
 |---|---|---|

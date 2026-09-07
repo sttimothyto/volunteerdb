@@ -133,3 +133,13 @@ def test_titles_match_the_pages_they_open():
                     f"{link.path}: dashboard says {link.title!r}, page says {heading!r}"
                 )
     assert not wrong, wrong
+
+
+def test_every_screen_help_lands_on_a_page_of_the_guide():
+    """The "?" beside a page title (layout.frame) opens PAGE_HELP[slug]; a
+    slug pointing at a page that was renamed would open a 404 in a new tab,
+    which is worse than no button."""
+    for slug, path in help_links.PAGE_HELP.items():
+        assert not path.startswith("/"), f"{slug}: a path under the guide"
+        source = GUIDE / path.replace(".html", ".md")
+        assert source.is_file(), f"{slug}: {path} is not a page of the guide"

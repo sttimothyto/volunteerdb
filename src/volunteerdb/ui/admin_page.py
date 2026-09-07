@@ -319,10 +319,10 @@ async def users_page():
             if actor.is_admin
             else {}
         )
-    if deny_unless_admin(actor, "Accounts"):
+    if deny_unless_admin(actor, "Accounts", help="accounts"):
         return
 
-    with frame("Accounts", actor):
+    with frame("Accounts", actor, help="accounts"):
         with ui.row().classes("gap-2"):
             # busy through the question and the work: the page button is
             # what the reader watches while forty invites go out

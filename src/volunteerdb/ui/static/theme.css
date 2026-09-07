@@ -203,6 +203,20 @@ a.vdb-quiet {
   letter-spacing: 0.06em;
 }
 
+/* the "?" beside the page title (layout.frame): sits on the title's first
+   line, clear of the meander under it */
+.vdb-help {
+  color: var(--vdb-heading);
+  opacity: 0.7;
+  align-self: flex-start;
+  margin-top: 0.15rem;
+}
+
+.vdb-help:hover,
+.vdb-help:focus-visible {
+  opacity: 1;
+}
+
 /* ---------- section headings (ui/a11y.py heading) ----------
    Real <h2>/<h3>, sized here: Quasar's sheet gives every h2 3.75rem and every
    h3 3rem with margins of their own, and the utilities that would cut them

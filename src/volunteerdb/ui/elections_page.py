@@ -220,7 +220,7 @@ async def elections_page():
             await volunteer_service.name_map(session) if can_create else {}
         )
     if not allowed:
-        with frame("Elections", actor):
+        with frame("Elections", actor, help="elections"):
             denied(
                 "Elections are available to admins, team leaders/seconds, "
                 "and the voting members of a proposal.",
@@ -234,7 +234,9 @@ async def elections_page():
     ]
     proposal_team_ids = {s.proposal.team_id for s in open_rows}
 
-    with frame("Elections", actor):
+    with frame(
+        "Elections", actor, help="elections-leader" if can_create else "elections"
+    ):
         if open_rows:
             heading("Open proposals", level=2)
             with ui.column().classes("w-full gap-1"):
@@ -721,7 +723,7 @@ async def proposal_detail(proposal_id: int):
         )
     match shown:
         case Err(NotFound()):
-            with frame("Proposal not found", actor):
+            with frame("Proposal not found", actor, help="elections"):
                 denied(
                     f"No proposal with id {proposal_id}.",
                     back=("Elections", "/elections"),
@@ -730,7 +732,7 @@ async def proposal_detail(proposal_id: int):
         case Err():
             # the service decides; the page only chooses how to say it, and
             # a whole page reads better than a toast on an empty frame
-            with frame("Elections", actor):
+            with frame("Elections", actor, help="elections"):
                 denied(
                     "This proposal is visible to its voting members and to "
                     "the team's managers.",
@@ -742,7 +744,11 @@ async def proposal_detail(proposal_id: int):
     nominating = room.phase is Phase.nominating
     voting = room.phase is Phase.voting
 
-    with frame(f"{room.view.path}: {ROLE_LABELS[TeamRole(p.role)]}", actor):
+    with frame(
+        f"{room.view.path}: {ROLE_LABELS[TeamRole(p.role)]}",
+        actor,
+        help="elections-leader" if room.can_manage else "elections",
+    ):
         _proposal_header(room)
         _candidates_section(room)
         if nominating and (room.can_manage or room.is_voter):

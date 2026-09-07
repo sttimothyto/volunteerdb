@@ -79,7 +79,7 @@ async def volunteers_page(q: str = "", band: str = ""):
         found = [v for v in found if v.id in wl and wl[v.id][1].label == band]
 
     panel = VolunteerPanel("", ctx.base_url)
-    with frame("Volunteers", actor):
+    with frame("Volunteers", actor, help="volunteers"):
         if query_error:
             warn(query_error)
         with ui.row().classes("items-center gap-2 w-full"):
@@ -513,7 +513,7 @@ async def volunteer_detail(volunteer_id: int):
             ctx.session, actor, volunteer_id, now=ctx.now, tz=tz
         )
     if isinstance(shown, Err):
-        with frame("Volunteer not found", actor):
+        with frame("Volunteer not found", actor, help="volunteers"):
             denied(
                 f"No volunteer with id {volunteer_id}.",
                 back=("Volunteers", "/volunteers"),
@@ -521,7 +521,13 @@ async def volunteer_detail(volunteer_id: int):
         return
     profile = shown.value
 
-    with frame(profile.volunteer.full_name, actor):
+    # the leader's how-to when this is somebody else's record they may edit
+    own = actor.volunteer_id == profile.volunteer.id
+    with frame(
+        profile.volunteer.full_name,
+        actor,
+        help="volunteer-leader" if profile.can_edit and not own else "volunteer",
+    ):
         _profile_card(profile, actor, ctx.base_url)
         _serves_on_section(profile, actor)
         if profile.assignable:

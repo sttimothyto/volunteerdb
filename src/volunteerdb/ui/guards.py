@@ -10,12 +10,13 @@ from .layout import frame
 from .widgets import denied
 
 
-def deny_unless_admin(actor: Actor, title: str) -> bool:
+def deny_unless_admin(actor: Actor, title: str, *, help: str) -> bool:
     """True, with the refusal page already drawn, when `actor` is not an
-    admin -- so a page reads `if deny_unless_admin(actor, "Accounts"): return`.
-    The refusal carries the way back (widgets.denied)."""
+    admin -- so a page reads `if deny_unless_admin(actor, "Accounts",
+    help="accounts"): return`. The refusal carries the way back
+    (widgets.denied) and the page's own help."""
     if actor.is_admin:
         return False
-    with frame(title, actor):
+    with frame(title, actor, help=help):
         denied("Admins only.", back=("Dashboard", "/"))
     return True

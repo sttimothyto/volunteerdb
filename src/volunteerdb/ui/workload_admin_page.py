@@ -42,10 +42,10 @@ async def workload_page():
         config = await workload_service.read_config(session)
         tree = await team_service.tree(session)
         all_teams, paths = tree.teams, tree.paths
-    if deny_unless_admin(actor, "Workload"):
+    if deny_unless_admin(actor, "Workload", help="workload"):
         return
 
-    with frame("Workload", actor):
+    with frame("Workload", actor, help="workload"):
         ui.label(
             "A volunteer's workload score is the sum, over every team they serve on, of the "
             "team's workload weight × their role's multiplier. Bands colour-code the score on "

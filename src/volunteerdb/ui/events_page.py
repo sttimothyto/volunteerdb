@@ -862,7 +862,7 @@ async def events_page(past: str = "", team: str = "", view: str = "", month: str
     # drawers must be direct children of page content, so build it before
     # entering frame (see ui/volunteer_panel.py)
     panel = VolunteerPanel("", ctx.base_url)
-    with frame("Events", actor):
+    with frame("Events", actor, help="events"):
         if duties:
             _duties_section(duties, tz)
         if claimable:
@@ -1658,13 +1658,13 @@ async def event_detail_page(event_id: int):
         )
     match shown:
         case Err(NotFound()):
-            with frame("Event not found", actor):
+            with frame("Event not found", actor, help="events"):
                 denied(f"No event with id {event_id}.", back=("Events", "/events"))
             return
         case Err():
             # the service decides; the page only chooses how to say it, and
             # a whole page reads better than a toast on an empty frame
-            with frame("Events", actor):
+            with frame("Events", actor, help="events"):
                 denied(
                     "This event is visible to the members of its team.",
                     back=("Events", "/events"),
@@ -1673,7 +1673,9 @@ async def event_detail_page(event_id: int):
     room = shown.value
 
     panel = VolunteerPanel("", ctx.base_url)
-    with frame(room.event.title, actor):
+    with frame(
+        room.event.title, actor, help="event-leader" if room.can_manage else "event"
+    ):
         _event_header(room, ctx.base_url, now=ctx.now, tz=tz)
         if room.can_manage and room.upcoming:
             _collaboration_card(

@@ -7,7 +7,8 @@ from ..env import current as current_env
 from ..permissions import Actor
 from ..services import mail_quota
 from ..services import photos as photo_service
-from .a11y import heading
+from . import help_links
+from .a11y import heading, icon_button
 from .asof import asof_banner, asof_picker
 from .context import clear_session, flash, show_flashed
 from .logo_dialog import site_logo
@@ -20,11 +21,17 @@ def frame(
     title: str,
     actor: Actor,
     *,
+    help: str | None = None,
     as_of: datetime | None = None,
     asof_path: str | None = None,
 ):
     """Header + page column. Pages that can time-travel pass asof_path (the URL
     the picker navigates back to) and the as_of they were rendered at.
+
+    `help` names the manual page for this screen (help_links.PAGE_HELP): a
+    small "?" at the end of the title row opens it in a new tab, so the
+    guide is one click from the screen it describes rather than forty links
+    at the foot of the dashboard.
 
     Every framed page gets the whole window: one width for the whole app, so
     moving between pages never shifts where the content starts. Running text
@@ -101,7 +108,13 @@ def frame(
         ui.element("div").props('id="main" tabindex="-1"').classes("w-full"),
         ui.column().classes("w-full p-4 gap-4 vdb-page"),
     ):
-        heading(title).classes("vdb-page-title")
+        with ui.row().classes("items-center gap-2 w-full no-wrap"):
+            heading(title).classes("vdb-page-title")
+            if help is not None:
+                icon_button("help_outline", "Help for this page").props(
+                    f'flat dense round href="{help_links.page_help_href(help)}" '
+                    'target="_blank" rel="noopener"'
+                ).classes("vdb-help").mark("page-help")
         if as_of is not None and asof_path is not None:
             asof_banner(as_of, asof_path)
         _mail_quota_banner(actor)

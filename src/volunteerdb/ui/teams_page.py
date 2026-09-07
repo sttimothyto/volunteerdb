@@ -138,7 +138,7 @@ async def teams_page(as_of: str = ""):
         # bound as row data, not interpolated into the slot template: as_of is
         # a raw query param and must never reach Vue's template compiler
         row["href"] = f"/teams/{row['id']}{suffix}"
-    with frame("Teams", actor, as_of=at, asof_path="/teams"):
+    with frame("Teams", actor, help="teams", as_of=at, asof_path="/teams"):
         with ui.row().classes("items-center gap-2 w-full"):
             search = (
                 ui.input("Search teams…")
@@ -1054,7 +1054,13 @@ async def team_detail(team_id: int, as_of: str = ""):
             ctx.session, actor, team_id, now=ctx.now, tz=tz, at=at
         )
     if isinstance(shown, Err):
-        with frame("Team not found", actor, as_of=at, asof_path=f"/teams/{team_id}"):
+        with frame(
+            "Team not found",
+            actor,
+            help="teams",
+            as_of=at,
+            asof_path=f"/teams/{team_id}",
+        ):
             denied(
                 f"No team with id {team_id} at this time.",
                 back=("Teams", f"/teams?as_of={as_of}" if as_of else "/teams"),
@@ -1063,7 +1069,13 @@ async def team_detail(team_id: int, as_of: str = ""):
     room = shown.value
 
     panel = VolunteerPanel(as_of, ctx.base_url)
-    with frame(room.path, actor, as_of=at, asof_path=f"/teams/{team_id}"):
+    with frame(
+        room.path,
+        actor,
+        help="team-leader" if room.can_manage else "team",
+        as_of=at,
+        asof_path=f"/teams/{team_id}",
+    ):
         if room.team.description:
             ui.label(room.team.description).classes("text-gray-600")
         if not room.team.is_active:

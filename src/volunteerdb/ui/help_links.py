@@ -161,6 +161,35 @@ ADMINS = HelpGroup(
 )
 
 
+# The manual page for each screen, behind the "?" beside the page title
+# (layout.frame): the page a reader on that screen most likely came for. A
+# screen with two readers -- a team page for a member and for its leader --
+# has two slugs, and the page picks by the actor.
+PAGE_HELP: dict[str, str] = {
+    "dashboard": "tutorials/first-sign-in.html",
+    "teams": "how-to/find-a-volunteer-or-a-team.html",
+    "team": "tutorials/your-teams-and-your-service.html",
+    "team-leader": "tutorials/lead-a-team.html",
+    "volunteers": "how-to/find-a-volunteer-or-a-team.html",
+    "volunteer": "how-to/update-your-contact-details.html",
+    "volunteer-leader": "how-to/edit-a-members-contact-details.html",
+    "events": "tutorials/your-first-shift.html",
+    "event": "how-to/hand-over-or-withdraw-a-shift.html",
+    "event-leader": "how-to/create-an-event.html",
+    "elections": "how-to/vote-in-an-election.html",
+    "elections-leader": "how-to/run-an-election.html",
+    "account": "how-to/change-your-password.html",
+    "accounts": "how-to/manage-accounts.html",
+    "fields": "how-to/add-a-custom-field.html",
+    "workload": "how-to/set-workload-bands.html",
+}
+
+
+def page_help_href(slug: str) -> str:
+    """The manual address behind a screen's "?"."""
+    return GUIDE + PAGE_HELP[slug]
+
+
 def groups_for(actor: Actor) -> list[HelpGroup]:
     """The groups this reader can act on, widest audience first -- the order
     the dashboard's own statistics run in."""

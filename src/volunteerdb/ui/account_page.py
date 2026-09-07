@@ -359,7 +359,7 @@ async def account_page():
             )
         )
 
-    with frame("Your account", actor):
+    with frame("Your account", actor, help="account"):
         _signin_card(user.email, user.password_hash is not None)
         _calendar_card(ctx.base_url, feed_token)
         _email_card(

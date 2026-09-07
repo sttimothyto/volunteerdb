@@ -245,7 +245,7 @@ screens that changed, and ends with the full suite green in its own commit.
 - [x] **10. Section titles are headings.** `a11y.heading(text, level=2)` (and 3 in
   cards) replaces the 35 `text-lg font-medium` labels; the login and invite pages get
   an `h1`. A source sweep forbids the class pair on a `ui.label` outside `forms.py`.
-- [ ] **11. Help for this page.** `frame(title, actor, help="lead-a-team")` draws a
+- [x] **11. Help for this page.** `frame(title, actor, help="lead-a-team")` draws a
   small `?` icon button at the end of the title row that opens the manual page for
   this screen in a new tab (`help_links.py` already maps topics). Every framed page
   passes a slug. The dashboard's Guides band shrinks in step 25 because of this.

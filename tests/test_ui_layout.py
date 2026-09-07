@@ -11,9 +11,16 @@ from nicegui.testing.user_simulation import user_simulation
 from PIL import Image
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from volunteerdb.models import MailQuota
+from volunteerdb.models import MailQuota, TeamRole
 from volunteerdb.permissions import SYSTEM
-from volunteerdb.services import mail_quota, photos, teams, users, volunteers
+from volunteerdb.services import (
+    mail_quota,
+    memberships,
+    photos,
+    teams,
+    users,
+    volunteers,
+)
 
 from .conftest import SIM_MAIN, SLOW, only
 from tests import mint
@@ -333,3 +340,61 @@ async def test_the_header_marks_the_page_you_are_on(database):
         assert current(user) == set(), "on the dashboard the brand word is marked"
         home = only(user.find(kind=ui.link, content="Dashboard"))
         assert home.props.get("aria-current") == "page"
+
+
+async def test_every_framed_page_offers_its_own_help(database):
+    """The "?" at the end of the title row: the manual page for this screen,
+    in a new tab, chosen for the reader -- a leader on their team page gets
+    the leading tutorial, a member the reading one."""
+    async with db_session() as session:
+        music = ok(await teams.create(session, SYSTEM, "Music"))
+        lena = ok(
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
+            )
+        )
+        mia = ok(
+            await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, lena.id, music.id, TeamRole.leader
+            )
+        )
+        ok(await memberships.assign(session, SYSTEM, mia.id, music.id, TeamRole.member))
+        lena_u, _ = ok(
+            await users.create(
+                session,
+                "lena@example.org",
+                volunteer_id=lena.id,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
+            )
+        )
+        mia_u, _ = ok(
+            await users.create(
+                session,
+                "mia@example.org",
+                volunteer_id=mia.id,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
+            )
+        )
+
+    def help_href(user) -> str:
+        button = only(user.find(marker="page-help"))
+        assert button.props.get("target") == "_blank"
+        return button.props["href"]
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{lena_u.id}")
+        await user.open(f"/teams/{music.id}")
+        assert help_href(user) == "/manual/guide/tutorials/lead-a-team.html"
+        await user.open("/account")
+        assert help_href(user) == "/manual/guide/how-to/change-your-password.html"
+
+        await user.open(f"/login-dev/{mia_u.id}")
+        await user.open(f"/teams/{music.id}")
+        assert help_href(user).endswith("your-teams-and-your-service.html")
+        await user.open("/admin/users")  # the refusal page has it too
+        assert help_href(user).endswith("manage-accounts.html")

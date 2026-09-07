@@ -22,10 +22,10 @@ async def fields_page():
             if actor.is_admin
             else []
         )
-    if deny_unless_admin(actor, "Custom fields"):
+    if deny_unless_admin(actor, "Custom fields", help="fields"):
         return
 
-    with frame("Custom fields", actor):
+    with frame("Custom fields", actor, help="fields"):
         ui.label(
             "Extra volunteer properties. Values are edited on each volunteer's page and "
             "are visible to whoever may see that volunteer's contact details."

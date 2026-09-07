@@ -110,7 +110,7 @@ async def dashboard(as_of: str = "", q: str = ""):
             return
         ui.navigate.to(_dashboard_href(as_of=as_of, q=text))
 
-    with frame("Dashboard", actor, as_of=at, asof_path="/"):
+    with frame("Dashboard", actor, help="dashboard", as_of=at, asof_path="/"):
         with ui.row().classes("items-center gap-2 w-full"):
             search_box(
                 "Find volunteers or teams…",
