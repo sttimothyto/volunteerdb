@@ -362,7 +362,7 @@ screens that changed, and ends with the full suite green in its own commit.
 
 ### Phase 8 — Theme and print
 
-- [ ] **31. Dark follows the OS until the reader chooses.** `theme.py:8` stores
+- [x] **31. Dark follows the OS until the reader chooses.** `theme.py:8` stores
   `None` until the switch is used; `ui.dark_mode(None)` is Quasar's auto mode. The
   anti-FOUC style adapts; `test_browser_session`'s "persists across sign-out" keeps
   passing for an explicit choice.

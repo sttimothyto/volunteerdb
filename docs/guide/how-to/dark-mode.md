@@ -5,6 +5,7 @@ Show the site as light text on a dark background.
 ## Before you start
 
 - You are signed in.
+- Until you choose, the site follows the setting of your device: dark when the device is dark, light when it is light.
 - The choice is kept on this device, in this browser. It is not part of your account.
 
 ## Steps

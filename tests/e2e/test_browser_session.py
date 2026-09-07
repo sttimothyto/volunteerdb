@@ -74,3 +74,32 @@ async def test_dark_mode_is_kept_by_the_browser_across_a_sign_out(seeded, page):
     await sign_out(page)
     await expect(page).to_have_url(re.compile(r"/login$"))
     await expect(body).to_have_class(re.compile(r"body--dark"))
+
+
+async def test_dark_follows_the_device_until_the_reader_chooses(
+    seeded, browser, base_url
+):
+    """ui/theme.py: no choice yet means Quasar's auto mode, so a browser that
+    prefers dark gets dark without touching the switch; a choice, once
+    made, holds against the device. Only a browser can say what
+    prefers-color-scheme resolves to."""
+    context = await browser.new_context(base_url=base_url, color_scheme="dark")
+    page = await context.new_page()
+    try:
+        await sign_in(page, "admin@example.org", "secret-pass-phrase")
+        await ready(page)
+        body = page.locator("body")
+        await expect(body).to_have_class(re.compile(r"body--dark"))
+
+        # the switch reads as off (nothing chosen); on, then off again, is
+        # the explicit choice of light -- against the device
+        await icon_button(page, "settings").click()
+        await page.get_by_text("Dark mode", exact=True).click()
+        await expect(body).to_have_class(re.compile(r"body--dark"))
+        await page.get_by_text("Dark mode", exact=True).click()
+        await expect(body).not_to_have_class(re.compile(r"body--dark"))
+        await page.goto("/volunteers")
+        await ready(page)
+        await expect(body).not_to_have_class(re.compile(r"body--dark"))
+    finally:
+        await context.close()
