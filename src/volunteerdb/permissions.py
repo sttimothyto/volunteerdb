@@ -12,6 +12,10 @@ Rules (team roles cascade down to sub-teams):
                           proper stays admin-only)
 - member of T           — view roster names of T (no contact details)
 - any signed-in user    — browse the team directory, see/edit own profile
+- SYSTEM                — the app acting for itself (the nightly jobs, the
+                          roster sync, the seed): an admin's rights and
+                          nobody's identity, so everything an admin may do
+                          and nothing a person does for themselves
 """
 
 from dataclasses import dataclass
@@ -34,7 +38,7 @@ if TYPE_CHECKING:  # the shape belongs to services.mail_quota; importing it here
 
 @dataclass(frozen=True)
 class Actor:
-    user: AppUser
+    user: AppUser | None  # the signed-in account; None only for SYSTEM
     volunteer_id: int | None
     # Two managing scopes, and the difference is the whole point. A task-force
     # team is a temporary roster copied from several real teams so they can
@@ -58,10 +62,30 @@ class Actor:
     # it before a sign-in code silently fails to send. Same reason it rides
     # here as the two fields above — frame() is sync and holds no session.
     mail_quota: "Projection | None" = None
+    # The app acting for itself. Every service takes an Actor and nothing
+    # else, so a caller with no signed-in user -- a nightly job, the roster
+    # sync, the seed -- says so by passing SYSTEM, and a forgotten actor is a
+    # type error rather than a silent bypass. SYSTEM has an admin's rights
+    # and nobody's identity: `volunteer_id` is None, so the things a person
+    # does for themselves (sign up, RSVP, cast a ballot) are refused to it.
+    system: bool = False
 
     @property
     def is_admin(self) -> bool:
-        return self.user.is_admin
+        return self.system or (self.user is not None and self.user.is_admin)
+
+    @property
+    def user_id(self) -> int | None:
+        """The account id for a row that records who acted, or None: SYSTEM did."""
+        return None if self.user is None else self.user.id
+
+    @property
+    def account(self) -> AppUser:
+        """The signed-in account, for the front doors and the audit columns.
+        SYSTEM has none, and nothing that renders a page or signs a row for a
+        person ever runs as SYSTEM."""
+        assert self.user is not None, "SYSTEM has no account"
+        return self.user
 
     def can_manage_team(self, team_id: int) -> bool:
         return self.is_admin or team_id in self.managed_team_ids
@@ -138,6 +162,29 @@ class Actor:
         volunteer themself — workload is a leadership planning signal.
         people_team_ids, so a task force never reveals a borrowed member's."""
         return self.is_admin or bool(self.people_team_ids & volunteer_team_ids)
+
+
+SYSTEM = Actor(
+    user=None,
+    volunteer_id=None,
+    managed_team_ids=set(),
+    people_team_ids=set(),
+    full_view_team_ids=set(),
+    names_view_team_ids=set(),
+    system=True,
+)
+
+# Nobody at all: the public parish feed (ui/calendar_routes.py). No rights and
+# no identity, so a read scoped by the actor shows what anyone may see -- for
+# the feed, that an event exists, and nothing a signed-in member could not.
+ANONYMOUS = Actor(
+    user=None,
+    volunteer_id=None,
+    managed_team_ids=set(),
+    people_team_ids=set(),
+    full_view_team_ids=set(),
+    names_view_team_ids=set(),
+)
 
 
 async def team_ids_map(

@@ -11,6 +11,7 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
@@ -26,17 +27,19 @@ PERSONAL_TILE = "Hours served"
 
 
 async def _parish(session):
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    music = ok(await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id))
 
-    lea = ok(await volunteers.create(session, None, "Lea", "Der", "lea@example.org"))
+    lea = ok(await volunteers.create(session, SYSTEM, "Lea", "Der", "lea@example.org"))
     cora = ok(
-        await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+        await volunteers.create(session, SYSTEM, "Cora", "Core", "cora@example.org")
     )
-    mel = ok(await volunteers.create(session, None, "Mel", "Ember", "mel@example.org"))
-    ok(await memberships.assign(session, None, lea.id, liturgy.id, TeamRole.leader))
-    ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
-    ok(await memberships.assign(session, None, mel.id, music.id, TeamRole.member))
+    mel = ok(
+        await volunteers.create(session, SYSTEM, "Mel", "Ember", "mel@example.org")
+    )
+    ok(await memberships.assign(session, SYSTEM, lea.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, SYSTEM, cora.id, liturgy.id, TeamRole.core))
+    ok(await memberships.assign(session, SYSTEM, mel.id, music.id, TeamRole.member))
 
     admin, _ = ok(
         await users.create(
@@ -45,6 +48,7 @@ async def _parish(session):
             is_admin=True,
             password="test-pass-phrase",
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     accounts = {"admin": admin.id}
@@ -56,6 +60,7 @@ async def _parish(session):
                 volunteer_id=volunteer.id,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         accounts[name] = user.id

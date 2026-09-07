@@ -7,6 +7,7 @@ its phases by PATCHing deadlines relative to today (the API cannot inject
 
 from datetime import timedelta
 
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import volunteers
 
 from tests import mint
@@ -20,7 +21,7 @@ def _days(n: int) -> str:
 
 async def _walter_id() -> int:
     async with db_session() as session:
-        walter = ok(await volunteers.create(session, None, "Walter", "Willing"))
+        walter = ok(await volunteers.create(session, SYSTEM, "Walter", "Willing"))
         return walter.id
 
 

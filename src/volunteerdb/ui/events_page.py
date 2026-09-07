@@ -223,7 +223,7 @@ async def _sub_request_dialog(assignment_id: int) -> None:
                     ctx.session,
                     ctx.actor,
                     assignment_id=assignment_id,
-                    requested_by=ctx.actor.user.id,
+                    requested_by=ctx.actor.account.id,
                     note=note.value,
                     now=ctx.now,
                 )
@@ -283,7 +283,7 @@ async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> Non
                     ctx.actor,
                     assignment_id=assignment_id,
                     new_volunteer_id=pick.value,
-                    acted_by=ctx.actor.user.id,
+                    acted_by=ctx.actor.account.id,
                     notify=ctx.env.notify,  # direct: the policy mails the incoming volunteer
                     now=ctx.now,
                 )
@@ -499,7 +499,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
                     location=location.value,
                     slots=slots,
                     repeat_weekly_until=until,
-                    created_by=ctx.actor.user.id,
+                    created_by=ctx.actor.account.id,
                     tz=ctx.env.tz,
                     series_id=ctx.env.rng.uuid(),
                 )
@@ -847,7 +847,7 @@ async def events_page(past: str = "", team: str = "", view: str = "", month: str
         feed_token = (
             (
                 await user_service.ensure_calendar_token(
-                    session, actor.user.id, token=ctx.env.rng.token()
+                    session, actor.account.id, token=ctx.env.rng.token()
                 )
             ).unwrap_or([])
             if listing.view == "mine"
@@ -1151,7 +1151,7 @@ async def _assign(slot_id: int, volunteer_id: int | None) -> None:
             ctx.actor,
             slot_id=slot_id,
             volunteer_id=volunteer_id,
-            assigned_by=ctx.actor.user.id,
+            assigned_by=ctx.actor.account.id,
             now=ctx.now,
         )
 
@@ -1188,7 +1188,7 @@ async def _do_cancel(event_id: int) -> None:
             ctx.session,
             ctx.actor,
             event_id,
-            cancelled_by=ctx.actor.user.id,
+            cancelled_by=ctx.actor.account.id,
             now=ctx.now,
         )
 
@@ -1221,7 +1221,7 @@ async def _add_collaborator(event_id: int, team_id: int | None, label: str) -> N
             ctx.actor,
             event_id=event_id,
             source_team_id=team_id,
-            created_by=ctx.actor.user.id,
+            created_by=ctx.actor.account.id,
             now=ctx.now,
             tz=ctx.env.tz,
         )

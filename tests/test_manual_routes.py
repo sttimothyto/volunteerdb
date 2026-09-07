@@ -7,6 +7,7 @@ import pytest
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.config import settings
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import users
 
 from tests import mint
@@ -55,7 +56,9 @@ async def manual_client(database, tmp_path, monkeypatch):
 async def _signed_in(client) -> None:
     async with db_session() as session:
         user, _ = ok(
-            await users.create(session, "mia@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "mia@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )
     await client.get(f"/login-dev/{user.id}")
 

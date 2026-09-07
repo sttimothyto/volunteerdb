@@ -22,7 +22,7 @@ from ..services import events as event_service
 from ..services import readmodels
 from ..services import task_force as task_force_service
 from ..services import teams as team_service
-from .deps import CtxDep, dispatch, gate, raise_http
+from .deps import CtxDep, dispatch, gate, own_volunteer, raise_http
 from .schemas import (
     AttendanceIn,
     AttendanceRowOut,
@@ -83,9 +83,8 @@ async def my_duties(ctx: CtxDep) -> list[MyDutyOut]:
     """The caller's upcoming commitments, soonest first — the GUI's "My duties"
     list, which had no endpoint. `GET /reports/dashboard` counts them; this
     names them."""
-    gate(ctx.actor.volunteer_id is not None, "see your own duties")
     duties = await event_service.my_upcoming(
-        ctx.session, ctx.actor.volunteer_id, now=ctx.now
+        ctx.session, own_volunteer(ctx.actor, "see your own duties"), now=ctx.now
     )
     return [MyDutyOut.of(d) for d in duties]
 
@@ -148,7 +147,7 @@ async def create_event(ctx: CtxDep, data: EventCreateIn) -> list[EventOut]:
                 for s in data.slots
             ],
             repeat_weekly_until=data.repeat_weekly_until,
-            created_by=ctx.actor.user.id,
+            created_by=ctx.actor.account.id,
             tz=ctx.env.tz,
             series_id=ctx.env.rng.uuid(),
         )
@@ -191,7 +190,7 @@ async def cancel_event(
             ctx.session,
             ctx.actor,
             event_id,
-            cancelled_by=ctx.actor.user.id,
+            cancelled_by=ctx.actor.account.id,
             now=ctx.now,
         ),
     )
@@ -311,7 +310,7 @@ async def create_assignment(
                 ctx.actor,
                 slot_id=slot_id,
                 volunteer_id=data.volunteer_id,
-                assigned_by=ctx.actor.user.id,
+                assigned_by=ctx.actor.account.id,
                 now=ctx.now,
             )
         )
@@ -359,7 +358,7 @@ async def request_sub(
             ctx.session,
             ctx.actor,
             assignment_id=assignment_id,
-            requested_by=ctx.actor.user.id,
+            requested_by=ctx.actor.account.id,
             note=data.note,
             now=ctx.now,
         ),
@@ -469,7 +468,7 @@ async def add_collaborator(
             ctx.actor,
             event_id=event_id,
             source_team_id=data.team_id,
-            created_by=ctx.actor.user.id,
+            created_by=ctx.actor.account.id,
             now=ctx.now,
             tz=ctx.env.tz,
         ),
@@ -512,7 +511,7 @@ async def substitute(
             ctx.actor,
             assignment_id=assignment_id,
             new_volunteer_id=data.volunteer_id,
-            acted_by=ctx.actor.user.id,
+            acted_by=ctx.actor.account.id,
             now=ctx.now,
             notify=ctx.notify,
         ),

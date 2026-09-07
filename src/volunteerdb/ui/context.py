@@ -175,7 +175,9 @@ async def page_ctx(as_of: datetime | None = None) -> AsyncIterator[PageCtx]:
                 raise NotSignedIn()
             ip = _client_ip()
             stack.enter_context(
-                bind_actor(f"{actor.user.id}:{actor.user.email}", ip=ip, via="gui")
+                bind_actor(
+                    f"{actor.account.id}:{actor.account.email}", ip=ip, via="gui"
+                )
             )
             yield PageCtx(
                 session=session,

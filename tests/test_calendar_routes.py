@@ -7,10 +7,12 @@ from zoneinfo import ZoneInfo
 
 from volunteerdb.main import redact_path
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
+from tests.actors import as_volunteer
 from tests.conftest import db_session
 from tests.fp_helpers import ok
 
@@ -23,18 +25,23 @@ def _at(days: int, hour: int) -> datetime:
 
 async def _seed() -> dict:
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
-        choir = ok(await teams.create(session, None, "Choir"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+        choir = ok(await teams.create(session, SYSTEM, "Choir"))
         mia = ok(
-            await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+            await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
         )
-        ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, mia.id, liturgy.id, TeamRole.member
+            )
+        )
         mia_u, _ = ok(
             await users.create(
                 session,
                 "mia@example.org",
                 volunteer_id=mia.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
 
@@ -42,7 +49,7 @@ async def _seed() -> dict:
             created = ok(
                 await event_service.create_event(
                     session,
-                    None,
+                    SYSTEM,
                     team_id=team_id,
                     title=title,
                     starts_at=_at(day, 10),
@@ -61,14 +68,14 @@ async def _seed() -> dict:
         cancelled = await event(liturgy.id, "Cancelled thing", 10)
         ok(
             await event_service.cancel_event(
-                session, None, cancelled, cancelled_by=None, now=mint.now()
+                session, SYSTEM, cancelled, cancelled_by=None, now=mint.now()
             )
         )
-        detail = ok(await event_service.detail(session, None, mass))
+        detail = ok(await event_service.detail(session, SYSTEM, mass))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(mia.id),
                 slot_id=detail.slots[0].slot.id,
                 volunteer_id=mia.id,
                 now=mint.now(),

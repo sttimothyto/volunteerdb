@@ -459,9 +459,7 @@ async def proposal_workroom(
     )
     my_scores: dict[int, int] = {}
     if is_voter:
-        mine = await elections_service.my_scores(
-            session, actor, proposal_id, actor.volunteer_id
-        )
+        mine = await elections_service.my_scores(session, actor, proposal_id)
         if isinstance(mine, Err):
             return mine
         my_scores = mine.value

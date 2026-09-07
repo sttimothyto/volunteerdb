@@ -12,6 +12,7 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamPage, TeamRole, TeamSheet
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, pages, teams, users, volunteers
 
 from tests import mint
@@ -24,28 +25,34 @@ SEARCH_BOX = "Search teams…"
 
 async def _parish(session) -> dict[str, int]:
     """Liturgy (Lena leads) > Music, plus Hospitality and a retired team."""
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
-    hospitality = ok(await teams.create(session, None, "Hospitality"))
-    retired = ok(await teams.create(session, None, "Retired Guild"))
-    ok(await teams.update(session, None, retired.id, is_active=False))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    music = ok(await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id))
+    hospitality = ok(await teams.create(session, SYSTEM, "Hospitality"))
+    retired = ok(await teams.create(session, SYSTEM, "Retired Guild"))
+    ok(await teams.update(session, SYSTEM, retired.id, is_active=False))
 
     lena = ok(
-        await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+        await volunteers.create(session, SYSTEM, "Lena", "Leader", "lena@example.org")
     )
-    mia = ok(await volunteers.create(session, None, "Mia", "Member", "mia@example.org"))
-    hank = ok(await volunteers.create(session, None, "Hank", "Host"))
-    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
-    ok(await memberships.assign(session, None, mia.id, music.id, TeamRole.member))
+    mia = ok(
+        await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
+    )
+    hank = ok(await volunteers.create(session, SYSTEM, "Hank", "Host"))
+    ok(await memberships.assign(session, SYSTEM, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, SYSTEM, mia.id, music.id, TeamRole.member))
     ok(
         await memberships.assign(
-            session, None, hank.id, hospitality.id, TeamRole.member
+            session, SYSTEM, hank.id, hospitality.id, TeamRole.member
         )
     )
 
     admin, _ = ok(
         await users.create(
-            session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            session,
+            "admin@example.org",
+            is_admin=True,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     lena_u, _ = ok(
@@ -54,11 +61,16 @@ async def _parish(session) -> dict[str, int]:
             "lena@example.org",
             volunteer_id=lena.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     mia_u, _ = ok(
         await users.create(
-            session, "mia@example.org", volunteer_id=mia.id, invite=mint.fresh_invite()
+            session,
+            "mia@example.org",
+            volunteer_id=mia.id,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     return {
@@ -223,7 +235,7 @@ async def _publish(session, team_id: int) -> None:
     """Give a team a live public page: a doc link plus cached html."""
     ok(
         await pages.set_home_doc_url(
-            session, None, team_id, f"https://docs.google.com/document/d/x{team_id}"
+            session, SYSTEM, team_id, f"https://docs.google.com/document/d/x{team_id}"
         )
     )
     session.add(TeamPage(team_id=team_id, html="<p>hello</p>", status="ok"))
@@ -305,7 +317,10 @@ async def test_published_page_link_and_qr_use_the_path_slug(database):
         ids = await _parish(session)
         ok(
             await page_service.set_home_doc_url(
-                session, None, ids["music"], "https://docs.google.com/document/d/abc123"
+                session,
+                SYSTEM,
+                ids["music"],
+                "https://docs.google.com/document/d/abc123",
             )
         )
         session.add(
@@ -498,11 +513,11 @@ async def test_a_core_member_may_export_their_teams(database):
     async with db_session() as session:
         ids = await _parish(session)
         cora = ok(
-            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+            await volunteers.create(session, SYSTEM, "Cora", "Core", "cora@example.org")
         )
         ok(
             await memberships.assign(
-                session, None, cora.id, ids["hospitality"], TeamRole.core
+                session, SYSTEM, cora.id, ids["hospitality"], TeamRole.core
             )
         )
         cora_u, _ = ok(
@@ -511,6 +526,7 @@ async def test_a_core_member_may_export_their_teams(database):
                 "cora@example.org",
                 volunteer_id=cora.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         ids["cora_u"] = cora_u.id

@@ -14,6 +14,7 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
@@ -27,15 +28,15 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, sim_sent):
     sent = sim_sent
 
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
         maria = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+                session, SYSTEM, "Maria", "Alvarez", "maria@example.org", "555-1234"
             )
         )
         ok(
             await memberships.assign(
-                session, None, maria.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, maria.id, liturgy.id, TeamRole.leader
             )
         )
         admin, _ = ok(
@@ -45,10 +46,13 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, sim_sent):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         ok(
-            await users.create(session, "felix@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "felix@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )  # passwordless -> email-code login
         team_id, maria_id, admin_id = liturgy.id, maria.id, admin.id
 
@@ -122,15 +126,15 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, sim_sent):
 
 async def test_photo_dialog_disclaimer_gates_upload(database):
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
         maria = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "maria@example.org"
+                session, SYSTEM, "Maria", "Alvarez", "maria@example.org"
             )
         )
         ok(
             await memberships.assign(
-                session, None, maria.id, liturgy.id, TeamRole.member
+                session, SYSTEM, maria.id, liturgy.id, TeamRole.member
             )
         )
         admin, _ = ok(
@@ -140,6 +144,7 @@ async def test_photo_dialog_disclaimer_gates_upload(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         team_id, admin_id = liturgy.id, admin.id

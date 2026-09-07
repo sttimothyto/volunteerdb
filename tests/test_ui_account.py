@@ -13,6 +13,7 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import SIM_MAIN, SLOW, mail_to
@@ -31,6 +32,7 @@ async def test_otp_session_sets_a_password_without_the_old_one(database, sim_sen
                 "forgetful@example.org",
                 password="cedar lamp figs",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         user_id = user.id
@@ -82,6 +84,7 @@ async def test_password_session_must_retype_the_current_password(database):
                 "careful@example.org",
                 password="cedar lamp figs",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         user_id = user.id
@@ -123,13 +126,13 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
     async with db_session() as session:
         maria = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", email="maria@example.org"
+                session, SYSTEM, "Maria", "Alvarez", email="maria@example.org"
             )
         )
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
         ok(
             await memberships.assign(
-                session, None, maria.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, maria.id, liturgy.id, TeamRole.leader
             )
         )
         account, _ = ok(
@@ -138,6 +141,7 @@ async def test_changing_your_own_address_waits_for_the_new_one_to_confirm(
                 "maria@example.org",
                 volunteer_id=maria.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         volunteer_id, user_id = maria.id, account.id
@@ -209,7 +213,7 @@ async def test_a_pending_address_change_can_be_called_off(database):
     async with db_session() as session:
         user, _ = ok(
             await users.create(
-                session, "unsure@example.org", invite=mint.fresh_invite()
+                session, "unsure@example.org", invite=mint.fresh_invite(), actor=SYSTEM
             )
         )
         user_id = user.id
@@ -233,12 +237,15 @@ async def test_the_address_change_form_refuses_a_typo_and_a_taken_address(databa
     async with db_session() as session:
         user, _ = ok(
             await users.create(
-                session, "hopeful@example.org", invite=mint.fresh_invite()
+                session, "hopeful@example.org", invite=mint.fresh_invite(), actor=SYSTEM
             )
         )
         ok(
             await users.create(
-                session, "spoken.for@example.org", invite=mint.fresh_invite()
+                session,
+                "spoken.for@example.org",
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         user_id = user.id

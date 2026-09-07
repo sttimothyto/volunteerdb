@@ -3,6 +3,7 @@
 from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import users
 from volunteerdb.ui.context import clear_session
 
@@ -21,6 +22,7 @@ async def test_anonymous_redirect_and_login_guards(database):
                 is_admin=True,
                 password="correct-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
 
@@ -72,7 +74,7 @@ async def test_a_signed_in_browser_is_sent_on_from_the_login_page(real_app_clien
     async with db_session() as session:
         user, _ = ok(
             await users.create(
-                session, "cantor@example.org", invite=mint.fresh_invite()
+                session, "cantor@example.org", invite=mint.fresh_invite(), actor=SYSTEM
             )
         )
         user_id = user.id
@@ -104,7 +106,9 @@ async def test_invite_redemption_flow(database, sim_sent):
 
     async with db_session() as session:
         invitee, token = ok(
-            await users.create(session, "new@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "new@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )
 
     async with user_simulation(main_file=SIM_MAIN) as user:

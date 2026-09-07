@@ -11,25 +11,31 @@ from volunteerdb import errors
 from volunteerdb.fp import Err, Ok
 from volunteerdb.jobs import job_lock
 from volunteerdb.models import MailQuota, TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, volunteers
 
 from tests import mint
+from tests.actors import as_volunteer
 from tests.conftest import db_session
 from tests.fp_helpers import ok
 
 
 async def _team_with_members(n: int) -> tuple[int, list[int]]:
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Liturgy"))
+        team = ok(await teams.create(session, SYSTEM, "Liturgy"))
         vids = []
         for i in range(n):
             v = ok(
                 await volunteers.create(
-                    session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
+                    session, SYSTEM, f"Vol{i}", "Server", f"vol{i}@example.org"
                 )
             )
-            ok(await memberships.assign(session, None, v.id, team.id, TeamRole.member))
+            ok(
+                await memberships.assign(
+                    session, SYSTEM, v.id, team.id, TeamRole.member
+                )
+            )
             vids.append(v.id)
         return team.id, vids
 
@@ -42,7 +48,7 @@ async def _event_with_one_seat(team_id: int) -> int:
         created = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Mass",
                 starts_at=start,
@@ -53,7 +59,7 @@ async def _event_with_one_seat(team_id: int) -> int:
                 series_id=mint.uuid(),
             )
         )
-        view = ok(await event_service.detail(session, None, created[0].id))
+        view = ok(await event_service.detail(session, SYSTEM, created[0].id))
         return view.slots[0].slot.id
 
 
@@ -70,7 +76,7 @@ async def test_two_sign_ups_for_the_last_seat_serialize_on_the_slot_lock(databas
             await started.wait()  # both hold a connection before either locks
             return await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(volunteer_id),
                 slot_id=slot_id,
                 volunteer_id=volunteer_id,
                 now=mint.now(),
@@ -132,7 +138,7 @@ async def test_a_double_submitted_nomination_is_one_201_and_one_409(
     """The same candidate put forward twice at once: the unique constraint
     is the arbiter, and the API turns the loser into a 409 rather than a 500."""
     async with db_session() as session:
-        walter = ok(await volunteers.create(session, None, "Walter", "Willing"))
+        walter = ok(await volunteers.create(session, SYSTEM, "Walter", "Willing"))
         walter_id = walter.id
     r = await client.post(
         "/api/elections/proposals",

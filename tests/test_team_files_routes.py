@@ -3,6 +3,7 @@ filename each answers with, and that an anonymous browser is sent to sign
 in rather than served."""
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
@@ -12,23 +13,29 @@ from tests.fp_helpers import ok
 
 async def _seed() -> dict:
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy Team"))
-        choir = ok(await teams.create(session, None, "Choir"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy Team"))
+        choir = ok(await teams.create(session, SYSTEM, "Choir"))
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
+            )
         )
         mia = ok(
-            await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+            await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
         )
         ok(
             await memberships.assign(
-                session, None, lena.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, lena.id, liturgy.id, TeamRole.leader
             )
         )
-        ok(await memberships.assign(session, None, mia.id, choir.id, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, mia.id, choir.id, TeamRole.member))
         admin, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         lena_u, _ = ok(
@@ -37,6 +44,7 @@ async def _seed() -> dict:
                 "lena@example.org",
                 volunteer_id=lena.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         mia_u, _ = ok(
@@ -45,6 +53,7 @@ async def _seed() -> dict:
                 "mia@example.org",
                 volunteer_id=mia.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         return {

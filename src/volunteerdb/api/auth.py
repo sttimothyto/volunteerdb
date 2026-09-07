@@ -75,7 +75,7 @@ async def login(data: LoginIn, request: Request) -> TokenOut:
 
 @router.get("/me")
 async def me(ctx: CtxDep) -> UserOut:
-    return UserOut.own(ctx.actor.user)
+    return UserOut.own(ctx.actor.account)
 
 
 # --- the caller's own account -------------------------------------------------
@@ -102,7 +102,7 @@ async def set_own_password(
     (SP 800-63B §3.2.2), and the new one is held to the policy in the service.
     A notice goes to the account's address afterwards — the change is worth
     hearing about on a channel the caller does not control."""
-    user = ctx.actor.user
+    user = ctx.actor.account
     email = user.email
     ip = ctx.ip
     # both buckets, exactly as POST /auth/login charges them: the per-account
@@ -141,7 +141,7 @@ async def clear_own_password(ctx: CtxDep, background: BackgroundTasks) -> None:
     This also revokes the API token making the call — it was issued against the
     password being removed — so it is the last request that token serves."""
     dispatch(
-        ctx, background, await service.clear_password(ctx.session, ctx.actor.user.id)
+        ctx, background, await service.clear_password(ctx.session, ctx.actor.account.id)
     )
 
 
@@ -156,7 +156,7 @@ async def request_email_change(
     goes to the address being replaced, while that one can still call it off.
     The throttle is on *sends*: what is worth abusing here is the parish's
     sender, one address at a time."""
-    user = ctx.actor.user
+    user = ctx.actor.account
     env, now = ctx.env, ctx.now
     if denied := rate_limit(
         env, f"email-change:{user.id}", now=now, what="change your email address"
@@ -183,7 +183,7 @@ async def cancel_email_change(ctx: CtxDep, background: BackgroundTasks) -> None:
     dispatch(
         ctx,
         background,
-        await service.cancel_email_change(ctx.session, ctx.actor.user.id),
+        await service.cancel_email_change(ctx.session, ctx.actor.account.id),
     )
 
 

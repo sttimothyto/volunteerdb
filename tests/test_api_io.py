@@ -4,6 +4,7 @@ import csv
 from io import StringIO
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, volunteers
 from volunteerdb.sheets.common import ROSTER_HEADERS
 
@@ -60,18 +61,18 @@ async def test_team_export_permission_matrix(client, seeded, token_admin, token_
         # promote the member's volunteer to core: full-roster rights incl. sub-teams
         ok(
             await memberships.assign(
-                session, None, seeded["volunteer_id"], team_id, TeamRole.core
+                session, SYSTEM, seeded["volunteer_id"], team_id, TeamRole.core
             )
         )
-        music = ok(await teams.create(session, None, "Music", parent_team_id=team_id))
+        music = ok(await teams.create(session, SYSTEM, "Music", parent_team_id=team_id))
         singer = ok(
             await volunteers.create(
-                session, None, "Sally", "Singer", "sally@example.org"
+                session, SYSTEM, "Sally", "Singer", "sally@example.org"
             )
         )
         ok(
             await memberships.assign(
-                session, None, singer.id, music.id, TeamRole.member
+                session, SYSTEM, singer.id, music.id, TeamRole.member
             )
         )
 
@@ -109,7 +110,7 @@ async def test_leader_import_scoped_over_http(client, seeded, token_leader):
 
     # out of scope: a team the leader does not manage → row error, nothing applied
     async with db_session() as session:
-        ok(await teams.create(session, None, "Hospitality"))
+        ok(await teams.create(session, SYSTEM, "Hospitality"))
     content = _csv_bytes(
         [["", "Maria", "Alvarez", "maria@example.org", "", "", "Hospitality", "member"]]
     )
@@ -157,13 +158,15 @@ async def test_import_dry_run_then_apply_over_http(
     assert report["applied"] is False
     assert report["volunteers_created"] == 1 and report["memberships_created"] == 1
     async with db_session() as session:
-        assert await volunteers.search(session, "Eve") == [], "dry run wrote nothing"
+        assert await volunteers.search(session, "Eve", actor=SYSTEM) == [], (
+            "dry run wrote nothing"
+        )
 
     r = await client.post("/api/import", files=_upload(content), headers=token_admin)
     assert r.status_code == 200
     assert r.json()["applied"] is True
     async with db_session() as session:
-        (eve,) = await volunteers.search(session, "Eve")
+        (eve,) = await volunteers.search(session, "Eve", actor=SYSTEM)
         assert eve.email == "eve@example.org"
 
 

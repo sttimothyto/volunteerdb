@@ -17,6 +17,7 @@ from PIL import Image
 
 import volunteerdb.ui.logo_route
 from volunteerdb import main
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import branding
 
 from tests import mint
@@ -198,7 +199,7 @@ async def test_the_logo_revalidates_so_an_upload_is_seen_at_once(real_app_client
     assert revalidated.status_code == 304, "an unchanged logo costs no body"
 
     async with db_session() as session:
-        ok(await branding.set_logo(session, None, _logo_png(), now=datetime.now(UTC)))
+        ok(await branding.set_logo(session, SYSTEM, _logo_png(), now=datetime.now(UTC)))
 
     after = await real_app_client.get(
         "/logo", headers={"If-None-Match": placeholder_etag}
@@ -208,7 +209,7 @@ async def test_the_logo_revalidates_so_an_upload_is_seen_at_once(real_app_client
     assert after.headers["content-type"] == "image/png"
 
     async with db_session() as session:
-        ok(await branding.delete_logo(session, None))
+        ok(await branding.delete_logo(session, SYSTEM))
     back = await real_app_client.get("/logo")
     assert back.headers["etag"] == placeholder_etag, "removal restores the placeholder"
 
@@ -262,7 +263,9 @@ async def test_a_signed_in_browser_is_not_rotated_off_its_own_session(
 
     async with db_session() as session:
         user, _ = ok(
-            await users.create(session, "stays@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "stays@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )
         user_id = user.id
 

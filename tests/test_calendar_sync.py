@@ -12,6 +12,7 @@ import pytest
 
 from volunteerdb.jobs import calendar_sync
 from volunteerdb.models import Event
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import events as event_service
 from volunteerdb.services import gcal, teams
 
@@ -30,12 +31,12 @@ def _at(day: date, hour: int) -> datetime:
 
 async def _team_and_event(title: str = "Sunday Mass") -> tuple[int, int]:
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Altar Servers"))
+        team = ok(await teams.create(session, SYSTEM, "Altar Servers"))
         start = _at(mint.today() + timedelta(days=7), 10)
         created = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team.id,
                 title=title,
                 starts_at=start,
@@ -225,7 +226,7 @@ async def test_edit_patches_and_cancel_deletes(database, google, genv):
     async with db_session() as session:
         ok(
             await event_service.update_event(
-                session, None, event_id, location="Parish Hall"
+                session, SYSTEM, event_id, location="Parish Hall"
             )
         )
     await calendar_sync.main(genv)
@@ -236,7 +237,7 @@ async def test_edit_patches_and_cancel_deletes(database, google, genv):
     async with db_session() as session:
         ok(
             await event_service.cancel_event(
-                session, None, event_id, cancelled_by=None, now=mint.now()
+                session, SYSTEM, event_id, cancelled_by=None, now=mint.now()
             )
         )
     await calendar_sync.main(genv)

@@ -5,6 +5,7 @@ import pytest
 
 from volunteerdb import throttle
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, volunteers
 
 from tests.conftest import _token, api_client_for, db_session
@@ -289,11 +290,13 @@ async def test_a_mailer_that_fails_never_fails_the_request(
     in the effect report, not an error to the caller."""
     async with db_session() as session:  # somebody with no account yet
         fresh = ok(
-            await volunteers.create(session, None, "Fresh", "Face", "fresh@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Fresh", "Face", "fresh@example.org"
+            )
         )
         ok(
             await memberships.assign(
-                session, None, fresh.id, seeded["team_id"], TeamRole.member
+                session, SYSTEM, fresh.id, seeded["team_id"], TeamRole.member
             )
         )
     passwords = {

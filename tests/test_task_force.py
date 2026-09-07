@@ -10,11 +10,12 @@ from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.jobs import task_force_cleanup
 from volunteerdb.models import Event, TeamRole
-from volunteerdb.permissions import volunteer_team_ids
+from volunteerdb.permissions import SYSTEM, volunteer_team_ids
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, task_force, teams, users, volunteers
 
 from tests import mint
+from tests.actors import as_volunteer
 from tests.conftest import db_session
 from tests.fp_helpers import done, ok, refused
 
@@ -29,8 +30,8 @@ async def _parish() -> dict:
     """Liturgy (Lena leads, Mia member) and Choir (Carl leads, Oda member;
     Mia sings in the choir too — the dedupe case)."""
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
-        choir = ok(await teams.create(session, None, "Choir"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+        choir = ok(await teams.create(session, SYSTEM, "Choir"))
         ids = {"liturgy": liturgy.id, "choir": choir.id}
         for key, first, team_id, role in (
             ("lena", "Lena", liturgy.id, TeamRole.leader),
@@ -40,14 +41,18 @@ async def _parish() -> dict:
         ):
             v = ok(
                 await volunteers.create(
-                    session, None, first, "Volunteer", f"{key}@example.org"
+                    session, SYSTEM, first, "Volunteer", f"{key}@example.org"
                 )
             )
-            ok(await memberships.assign(session, None, v.id, team_id, role))
+            ok(await memberships.assign(session, SYSTEM, v.id, team_id, role))
             ids[key] = v.id
         # Mia is also a Choir core member: the union must keep her ONE row
         # in the task force, at her strongest role
-        ok(await memberships.assign(session, None, ids["mia"], choir.id, TeamRole.core))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, ids["mia"], choir.id, TeamRole.core
+            )
+        )
         return ids
 
 
@@ -56,7 +61,7 @@ async def _event(team_id: int, *, days_ahead: int = 7) -> int:
         created = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Parish Picnic",
                 starts_at=_at(days_ahead, 10),
@@ -77,7 +82,7 @@ async def test_collaboration_builds_the_task_force(database):
         meta = done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -96,7 +101,7 @@ async def test_collaboration_builds_the_task_force(database):
         view = await task_force.get_for_event(session, event_id)
         assert {t.id for t in view.sources} == {ids["liturgy"], ids["choir"]}
 
-        roster = ok(await teams.roster(session, None, meta.id))
+        roster = ok(await teams.roster(session, SYSTEM, meta.id))
         by_vid = {v.id: m.role for m, v in roster}
         assert by_vid == {
             ids["lena"]: TeamRole.leader,
@@ -110,11 +115,11 @@ async def test_collaborator_members_can_sign_up(database):
     ids = await _parish()
     event_id = await _event(ids["liturgy"])
     async with db_session() as session:
-        detail = ok(await event_service.detail(session, None, event_id))
+        detail = ok(await event_service.detail(session, SYSTEM, event_id))
         refused(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(ids["oda"]),
                 slot_id=detail.slots[0].slot.id,
                 volunteer_id=ids["oda"],
                 now=mint.now(),
@@ -126,7 +131,7 @@ async def test_collaborator_members_can_sign_up(database):
         done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -134,11 +139,11 @@ async def test_collaborator_members_can_sign_up(database):
                 tz=mint.tz(),
             )
         )
-        detail = ok(await event_service.detail(session, None, event_id))
+        detail = ok(await event_service.detail(session, SYSTEM, event_id))
         a = ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(ids["oda"]),
                 slot_id=detail.slots[0].slot.id,
                 volunteer_id=ids["oda"],
                 now=mint.now(),
@@ -154,7 +159,7 @@ async def test_duplicate_and_self_sources_are_refused(database):
         refused(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["liturgy"],
                 created_by=None,
@@ -167,7 +172,7 @@ async def test_duplicate_and_self_sources_are_refused(database):
         done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -178,7 +183,7 @@ async def test_duplicate_and_self_sources_are_refused(database):
         refused(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -197,7 +202,7 @@ async def test_refresh_picks_up_source_drift_without_downgrades(database):
         meta = done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -209,19 +214,23 @@ async def test_refresh_picks_up_source_drift_without_downgrades(database):
         # a newcomer joins Choir after the copy; Oda gets promoted INSIDE
         # the task force (a per-event decision the refresh must not undo)
         newbie = ok(
-            await volunteers.create(session, None, "Nina", "New", "nina@example.org")
+            await volunteers.create(session, SYSTEM, "Nina", "New", "nina@example.org")
         )
         ok(
             await memberships.assign(
-                session, None, newbie.id, ids["choir"], TeamRole.member
+                session, SYSTEM, newbie.id, ids["choir"], TeamRole.member
             )
         )
-        ok(await memberships.assign(session, None, ids["oda"], meta_id, TeamRole.core))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, ids["oda"], meta_id, TeamRole.core
+            )
+        )
         newbie_id = newbie.id
     async with db_session() as session:
-        added = ok(await task_force.refresh_rosters(session, None, event_id))
+        added = ok(await task_force.refresh_rosters(session, SYSTEM, event_id))
         assert added == 1
-        roster = ok(await teams.roster(session, None, meta_id))
+        roster = ok(await teams.roster(session, SYSTEM, meta_id))
         by_vid = {v.id: m.role for m, v in roster}
         assert by_vid[newbie_id] == TeamRole.member
         assert by_vid[ids["oda"]] == TeamRole.core, "never downgraded"
@@ -234,7 +243,7 @@ async def test_teardown_restores_the_event_and_keeps_history(database, env):
         meta = done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -243,11 +252,11 @@ async def test_teardown_restores_the_event_and_keeps_history(database, env):
             )
         ).value
         meta_id = meta.id
-        detail = ok(await event_service.detail(session, None, event_id))
+        detail = ok(await event_service.detail(session, SYSTEM, event_id))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(ids["oda"]),
                 slot_id=detail.slots[0].slot.id,
                 volunteer_id=ids["oda"],
                 now=mint.now(),
@@ -260,7 +269,7 @@ async def test_teardown_restores_the_event_and_keeps_history(database, env):
         ok(
             await event_service.update_event(
                 session,
-                None,
+                SYSTEM,
                 event_id,
                 starts_at=past,
                 ends_at=past + timedelta(hours=2),
@@ -275,7 +284,7 @@ async def test_teardown_restores_the_event_and_keeps_history(database, env):
         assert await teams.get(session, meta_id) is None, "the meta team is gone"
         assert await task_force.get_for_event(session, event_id) is None
 
-        detail = ok(await event_service.detail(session, None, event_id))
+        detail = ok(await event_service.detail(session, SYSTEM, event_id))
         assert [v.id for sv in detail.slots for _, v in sv.entries] == [ids["oda"]], (
             "the attendance record survived the teardown"
         )
@@ -290,7 +299,7 @@ async def test_cancelled_events_tear_down_too(database, env):
         done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -300,7 +309,7 @@ async def test_cancelled_events_tear_down_too(database, env):
         )
         ok(
             await event_service.cancel_event(
-                session, None, event_id, cancelled_by=None, now=mint.now()
+                session, SYSTEM, event_id, cancelled_by=None, now=mint.now()
             )
         )
     assert await task_force_cleanup.main(env) == 0
@@ -317,7 +326,7 @@ async def test_live_task_force_team_cannot_be_deleted_directly(database):
         meta = done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -326,7 +335,7 @@ async def test_live_task_force_team_cannot_be_deleted_directly(database):
             )
         ).value
         refused(
-            await teams.delete(session, None, meta.id),
+            await teams.delete(session, SYSTEM, meta.id),
             errors.Invalid,
             match="task force",
         )
@@ -340,7 +349,7 @@ async def test_adding_to_a_finished_event_is_refused(database):
         ok(
             await event_service.update_event(
                 session,
-                None,
+                SYSTEM,
                 event_id,
                 starts_at=past,
                 ends_at=past + timedelta(hours=2),
@@ -349,7 +358,7 @@ async def test_adding_to_a_finished_event_is_refused(database):
         refused(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -377,7 +386,7 @@ async def test_a_task_force_lends_a_roster_it_does_not_hand_over_its_people(data
         meta = done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event_id,
                 source_team_id=ids["choir"],
                 created_by=None,
@@ -391,6 +400,7 @@ async def test_a_task_force_lends_a_roster_it_does_not_hand_over_its_people(data
                 "lena@example.org",
                 volunteer_id=ids["lena"],
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await load_actor(session, lena)

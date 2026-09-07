@@ -39,7 +39,7 @@ from ..models import (
     Team,
     TeamRole,
 )
-from ..permissions import Actor
+from ..permissions import SYSTEM, Actor
 from . import memberships
 from . import teams as team_service
 
@@ -111,10 +111,10 @@ async def _create_meta_team(
         "from the event page; removed automatically after the event ends."
     )
     return await team_service.create(
-        # None: the caller already holds manage rights on the event whose task
-        # force this is, and the meta team exists only to carry its roster
+        # SYSTEM: the caller already holds manage rights on the event whose
+        # task force this is, and the meta team exists only to carry its roster
         session,
-        None,
+        SYSTEM,
         name,
         parent_team_id=owner_team_id,
         description=description,
@@ -123,7 +123,7 @@ async def _create_meta_team(
 
 async def add_collaborating_team(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     event_id: int,
     source_team_id: int,
@@ -150,7 +150,7 @@ async def add_collaborating_team(
     if event is None:
         return not_found("event", event_id)
     if denied := require(
-        actor is None or actor.can_manage_team(event.team_id),
+        actor.can_manage_team(event.team_id),
         "manage this event",
     ):
         return denied
@@ -188,7 +188,7 @@ async def add_collaborating_team(
             return invalid("that team already staffs this event")
         session.add(EventTaskForceSource(event_id=event_id, team_id=source_team_id))
         await session.flush()
-    refreshed = await refresh_rosters(session, None, event_id)  # authorized above
+    refreshed = await refresh_rosters(session, SYSTEM, event_id)  # authorized above
     if isinstance(refreshed, Err):
         return refreshed
     meta_team = await session.get(Team, event.task_force_team_id)
@@ -202,7 +202,7 @@ async def add_collaborating_team(
 
 
 async def refresh_rosters(
-    session: AsyncSession, actor: Actor | None, event_id: int
+    session: AsyncSession, actor: Actor, event_id: int
 ) -> Result[int, DomainError]:
     """Copy the union of the source rosters into the meta team, additively:
     highest role wins per person, an existing meta role is never downgraded,
@@ -213,7 +213,7 @@ async def refresh_rosters(
         return not_found("task force for event", event_id)
     meta_team_id = event.task_force_team_id
     if denied := require(
-        actor is None or actor.can_manage_team(meta_team_id),
+        actor.can_manage_team(meta_team_id),
         "manage this event",
     ):
         return denied
@@ -242,14 +242,14 @@ async def refresh_rosters(
         current = existing.get(volunteer_id)
         if current is None:
             put = await memberships.assign(
-                session, None, volunteer_id, meta_team_id, role, existing=None
+                session, SYSTEM, volunteer_id, meta_team_id, role, existing=None
             )
             if isinstance(put, Err):
                 return put
             added += 1
         elif ROLE_RANK[role] < ROLE_RANK[current.role]:
             put = await memberships.assign(
-                session, None, volunteer_id, meta_team_id, role, existing=current
+                session, SYSTEM, volunteer_id, meta_team_id, role, existing=current
             )
             if isinstance(put, Err):
                 return put
@@ -303,5 +303,5 @@ async def teardown(session: AsyncSession, event_id: int) -> Result[None, DomainE
     )
     await session.flush()
     return await team_service.delete(
-        session, None, meta_team_id
+        session, SYSTEM, meta_team_id
     )  # teardown, not a user act

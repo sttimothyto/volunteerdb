@@ -2,6 +2,7 @@
 
 from volunteerdb.api.deps import as_of_param
 from volunteerdb.models import TeamRole, Volunteer
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import custom_fields as custom_fields_service
 from volunteerdb.services import memberships, users, volunteers
 from volunteerdb.ui.context import parse_as_of
@@ -188,11 +189,11 @@ async def test_volunteer_timeline(client, seeded):
     # leave and rejoin so the timeline has one closed and one open spell
     async with db_session() as session:
         m = await memberships.find(session, vid, seeded["team_id"])
-        ok(await memberships.remove(session, None, m.id))
+        ok(await memberships.remove(session, SYSTEM, m.id))
     async with db_session() as session:
         ok(
             await memberships.assign(
-                session, None, vid, seeded["team_id"], TeamRole.core
+                session, SYSTEM, vid, seeded["team_id"], TeamRole.core
             )
         )
 
@@ -248,14 +249,14 @@ async def test_custom_fields_flow(client, seeded):
 
     # a plain member sees another volunteer's name but not their custom values
     async with db_session() as session:
-        other = ok(await volunteers.create(session, None, "Other", "Person"))
+        other = ok(await volunteers.create(session, SYSTEM, "Other", "Person"))
         ok(
             await memberships.assign(
-                session, None, other.id, seeded["team_id"], TeamRole.member
+                session, SYSTEM, other.id, seeded["team_id"], TeamRole.member
             )
         )
         await custom_fields_service.set_values(
-            session, None, other.id, {"preferred_contact": "Phone"}
+            session, SYSTEM, other.id, {"preferred_contact": "Phone"}
         )
     r = await client.get(f"/api/volunteers/{other.id}", headers=member)
     assert r.status_code == 200

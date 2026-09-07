@@ -13,6 +13,7 @@ the email cell is blank.
 import csv
 from io import StringIO
 
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import teams, volunteers
 from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import ROSTER_HEADERS, ROSTER_SHEET
@@ -34,7 +35,7 @@ async def test_unmatched_email_does_not_fall_back_to_name(database, env):
     supplies an address, yields two records. Intentional — see
     docs/reference/spreadsheets.md — but it is the July duplicate in miniature."""
     async with db_session() as session:
-        ok(await volunteers.create(session, None, "Andrea", "Smart"))
+        ok(await volunteers.create(session, SYSTEM, "Andrea", "Smart"))
 
     content = _csv_bytes(
         [["", "Andrea", "Smart", "a.smart705@outlook.com", "", "", "", ""]]
@@ -44,7 +45,7 @@ async def test_unmatched_email_does_not_fall_back_to_name(database, env):
     assert report.volunteers_updated == 0
 
     async with db_session() as session:
-        found = await volunteers.search(session, "Andrea Smart")
+        found = await volunteers.search(session, "Andrea Smart", actor=SYSTEM)
     assert len(found) == 2, "email-first matching never falls back to the name index"
     assert sorted(v.email or "" for v in found) == ["", "a.smart705@outlook.com"]
 
@@ -53,7 +54,7 @@ async def test_a_blank_email_still_matches_by_name(database, env):
     """The contrast that makes the rule comprehensible: with no email in the
     cell, an exact full-name match updates the existing volunteer."""
     async with db_session() as session:
-        ok(await volunteers.create(session, None, "Andrea", "Smart"))
+        ok(await volunteers.create(session, SYSTEM, "Andrea", "Smart"))
 
     content = _csv_bytes([["", "Andrea", "Smart", "", "555-0143", "", "", ""]])
     report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
@@ -61,7 +62,7 @@ async def test_a_blank_email_still_matches_by_name(database, env):
     assert report.volunteers_created == 0 and report.volunteers_updated == 1
 
     async with db_session() as session:
-        (found,) = await volunteers.search(session, "Andrea Smart")
+        (found,) = await volunteers.search(session, "Andrea Smart", actor=SYSTEM)
     assert found.phone == "555-0143"
 
 
@@ -69,8 +70,8 @@ async def test_new_email_on_an_existing_name_warns_before_duplicating(database, 
     """Creating the duplicate is the documented behaviour; doing it silently is
     what cost a day of cleanup. The report must say so."""
     async with db_session() as session:
-        ok(await volunteers.create(session, None, "Andrea", "Smart"))
-        ok(await volunteers.create(session, None, "Bruno", "Newcomer"))
+        ok(await volunteers.create(session, SYSTEM, "Andrea", "Smart"))
+        ok(await volunteers.create(session, SYSTEM, "Bruno", "Newcomer"))
 
     content = _csv_bytes(
         [
@@ -95,15 +96,15 @@ async def test_family_shared_email_is_disambiguated_by_name(database, env):
     """Two people on one address is normal in a parish. The name breaks the tie;
     without a usable name the row is an error rather than a coin flip."""
     async with db_session() as session:
-        ok(await teams.create(session, None, "Liturgy"))
+        ok(await teams.create(session, SYSTEM, "Liturgy"))
         ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "family@example.org"
+                session, SYSTEM, "Maria", "Alvarez", "family@example.org"
             )
         )
         ok(
             await volunteers.create(
-                session, None, "Jose", "Alvarez", "family@example.org"
+                session, SYSTEM, "Jose", "Alvarez", "family@example.org"
             )
         )
 
@@ -116,7 +117,8 @@ async def test_family_shared_email_is_disambiguated_by_name(database, env):
 
     async with db_session() as session:
         found = {
-            v.first_name: v.phone for v in await volunteers.search(session, "Alvarez")
+            v.first_name: v.phone
+            for v in await volunteers.search(session, "Alvarez", actor=SYSTEM)
         }
     assert found == {"Maria": "555-0100", "Jose": None}, "only the named spouse changed"
 
@@ -126,7 +128,7 @@ async def test_family_shared_email_is_disambiguated_by_name(database, env):
     async with db_session() as session:
         ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "family@example.org"
+                session, SYSTEM, "Maria", "Alvarez", "family@example.org"
             )
         )
     ambiguous = _csv_bytes(
@@ -144,7 +146,7 @@ async def test_id_pins_the_row_and_makes_email_edits_safe(database, env):
     async with db_session() as session:
         maria = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "maria.old@example.org"
+                session, SYSTEM, "Maria", "Alvarez", "maria.old@example.org"
             )
         )
         maria_id = maria.id
@@ -170,7 +172,7 @@ async def test_id_pins_the_row_and_makes_email_edits_safe(database, env):
     assert report.volunteers_updated == 2, "both rows landed on the same record"
 
     async with db_session() as session:
-        found = await volunteers.search(session, "Maria Alvarez")
+        found = await volunteers.search(session, "Maria Alvarez", actor=SYSTEM)
     assert len(found) == 1
     assert found[0].email == "maria.new@example.org" and found[0].phone == "555-0177"
 
@@ -179,12 +181,12 @@ async def test_id_takes_precedence_over_a_conflicting_email(database, env):
     async with db_session() as session:
         maria = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "maria@example.org"
+                session, SYSTEM, "Maria", "Alvarez", "maria@example.org"
             )
         )
         ok(
             await volunteers.create(
-                session, None, "Jose", "Alvarez", "jose@example.org"
+                session, SYSTEM, "Jose", "Alvarez", "jose@example.org"
             )
         )
         maria_id = maria.id
@@ -198,7 +200,8 @@ async def test_id_takes_precedence_over_a_conflicting_email(database, env):
 
     async with db_session() as session:
         found = {
-            v.first_name: v.email for v in await volunteers.search(session, "Alvarez")
+            v.first_name: v.email
+            for v in await volunteers.search(session, "Alvarez", actor=SYSTEM)
         }
     assert found["Maria"] == "jose@example.org", "Maria's record took the row"
     assert found["Jose"] == "jose@example.org", "Jose untouched"
@@ -218,7 +221,7 @@ async def test_unknown_or_malformed_id_is_a_row_error(database, env):
     assert any("is not a number" in m for m in messages)
 
     async with db_session() as session:
-        assert await volunteers.search(session, "Ghost") == [], (
+        assert await volunteers.search(session, "Ghost", actor=SYSTEM) == [], (
             "an unknown ID never creates a volunteer"
         )
 
@@ -230,7 +233,7 @@ async def test_stale_id_with_a_different_name_warns(database, env):
     async with db_session() as session:
         maria = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "maria@example.org"
+                session, SYSTEM, "Maria", "Alvarez", "maria@example.org"
             )
         )
         maria_id = maria.id

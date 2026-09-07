@@ -30,6 +30,7 @@ from ..api.deps import RequestFacts, raise_http
 from ..db import transaction
 from ..env import Env
 from ..env import current as current_env
+from ..permissions import ANONYMOUS
 from ..services import events as event_service
 from ..services import gcal, ics
 from ..services import users as user_service
@@ -93,9 +94,11 @@ async def parish_feed(request: Request) -> Response:
     env, facts, now = _at_the_door(request)
     from_, to = _window(now)
     async with transaction(env, None) as session:
+        # ANONYMOUS: the feed is public, so it shows what nobody in particular
+        # may see -- never SYSTEM, whose scope is the whole parish
         entries = raise_http(
             await event_service.calendar_entries(
-                session, None, scope="parish", from_=from_, to=to
+                session, ANONYMOUS, scope="parish", from_=from_, to=to
             )
         )
     return _feed(
@@ -161,7 +164,7 @@ async def reset_personal(request: Request) -> Response:
             raise HTTPException(401, "sign in to reset your calendar address")
         raise_http(
             await user_service.reset_calendar_token(
-                session, actor.user.id, token=env.rng.token()
+                session, actor.account.id, token=env.rng.token()
             )
         )
     # back to the page the form was on — same origin only, or /events

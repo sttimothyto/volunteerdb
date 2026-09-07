@@ -7,6 +7,7 @@ import pytest
 from volunteerdb import errors
 from volunteerdb.config import Settings
 from volunteerdb.env import LoggingMailer
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import mail, users
 from volunteerdb.ui.context import session_expired
 
@@ -25,9 +26,11 @@ async def test_start_otp_login_unknown_or_inactive(database):
             errors.NotFound,
         )
         u, _ = ok(
-            await users.create(session, "off@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "off@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )
-        ok(await users.set_flags(session, u.id, is_active=False))
+        ok(await users.set_flags(session, u.id, is_active=False, actor=SYSTEM))
         refused(
             await users.start_otp_login(
                 session, "off@example.org", now=mint.now(), code=mint.code()
@@ -39,7 +42,9 @@ async def test_start_otp_login_unknown_or_inactive(database):
 async def test_otp_round_trip_throttle_and_invite_clear(database):
     async with db_session() as session:
         ok(
-            await users.create(session, "otp@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "otp@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )  # no password -> invite token
         user, code = otp_started(
             await users.start_otp_login(
@@ -90,7 +95,11 @@ async def test_otp_round_trip_throttle_and_invite_clear(database):
 
 async def test_otp_lockout_then_fresh_code(database):
     async with db_session() as session:
-        ok(await users.create(session, "lock@example.org", invite=mint.fresh_invite()))
+        ok(
+            await users.create(
+                session, "lock@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
+        )
         user, code = otp_started(
             await users.start_otp_login(
                 session, "lock@example.org", now=mint.now(), code=mint.code()
@@ -130,7 +139,11 @@ async def test_otp_lockout_then_fresh_code(database):
 
 async def test_otp_expired_code_rejected(database, clock):
     async with db_session() as session:
-        ok(await users.create(session, "exp@example.org", invite=mint.fresh_invite()))
+        ok(
+            await users.create(
+                session, "exp@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
+        )
         user, code = otp_started(
             await users.start_otp_login(
                 session, "exp@example.org", now=clock.now(), code=mint.code()
@@ -145,11 +158,13 @@ async def test_otp_expired_code_rejected(database, clock):
 async def test_redeem_invite_password_optional(database):
     async with db_session() as session:
         a, a_token = ok(
-            await users.create(session, "nopw@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "nopw@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )
         b, b_token = ok(
             await users.create(
-                session, "withpw@example.org", invite=mint.fresh_invite()
+                session, "withpw@example.org", invite=mint.fresh_invite(), actor=SYSTEM
             )
         )
 
@@ -246,7 +261,11 @@ def test_a_session_is_dead_at_the_instant_it_names(delta, expired):
 @pytest.mark.parametrize(("delta", "live"), EDGE, ids=EDGE_IDS)
 async def test_a_code_is_dead_at_the_instant_it_names(database, clock, delta, live):
     async with db_session() as session:
-        ok(await users.create(session, "edge@example.org", invite=mint.fresh_invite()))
+        ok(
+            await users.create(
+                session, "edge@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
+        )
         _user, code = otp_started(
             await users.start_otp_login(
                 session, "edge@example.org", now=clock.now(), code=mint.code()
@@ -275,7 +294,11 @@ async def test_a_second_code_is_issued_once_the_resend_interval_has_passed(
     """A live code asked for again within the minute is not re-sent -- each
     one is a message spent -- and at the minute it is."""
     async with db_session() as session:
-        ok(await users.create(session, "again@example.org", invite=mint.fresh_invite()))
+        ok(
+            await users.create(
+                session, "again@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
+        )
         otp_started(
             await users.start_otp_login(
                 session, "again@example.org", now=clock.now(), code=mint.code()

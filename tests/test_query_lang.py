@@ -15,7 +15,7 @@ from volunteerdb.models import (
     Team,
     Volunteer,
 )
-from volunteerdb.permissions import Actor
+from volunteerdb.permissions import SYSTEM, Actor
 
 from tests.fp_helpers import ok, refused
 
@@ -28,7 +28,7 @@ DEFS = {
 }
 
 
-def compile_v(text, actor=None):
+def compile_v(text, actor=SYSTEM):
     ast = query_lang.parse(text)
     assert ast is not None, f"expected a query: {text!r}"
     return query_lang.compile_volunteers(

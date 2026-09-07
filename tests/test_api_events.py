@@ -9,6 +9,7 @@ nothing patches mail: a send attempt in dev mode would only print.
 from datetime import UTC, datetime, time, timedelta
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import _token
@@ -38,11 +39,13 @@ async def _second_member(client, seeded) -> tuple[int, dict]:
     """Another Liturgy member with an account; returns (volunteer_id, header)."""
     async with db_session() as session:
         v = ok(
-            await volunteers.create(session, None, "Noor", "Reader", "noor@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Noor", "Reader", "noor@example.org"
+            )
         )
         ok(
             await memberships.assign(
-                session, None, v.id, seeded["team_id"], TeamRole.member
+                session, SYSTEM, v.id, seeded["team_id"], TeamRole.member
             )
         )
         ok(
@@ -52,6 +55,7 @@ async def _second_member(client, seeded) -> tuple[int, dict]:
                 volunteer_id=v.id,
                 password="noor-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
     return v.id, await _token(client, "noor@example.org", "noor-pass-phrase")
@@ -80,7 +84,7 @@ async def test_listing_is_scoped_and_detail_is_gated(
         "/api/events", json=_payload(seeded["team_id"]), headers=token_leader
     )
     async with db_session() as session:
-        other = ok(await teams.create(session, None, "Garden Guild"))
+        other = ok(await teams.create(session, SYSTEM, "Garden Guild"))
     r = await client.post(
         "/api/events",
         json=_payload(other.id, title="Weeding bee"),
@@ -129,11 +133,13 @@ async def test_rsvp_signup_capacity_and_withdraw(
     # capacity 1: the leader cannot add a second lector
     async with db_session() as session:
         extra = ok(
-            await volunteers.create(session, None, "Iris", "Extra", "iris@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Iris", "Extra", "iris@example.org"
+            )
         )
         ok(
             await memberships.assign(
-                session, None, extra.id, seeded["team_id"], TeamRole.member
+                session, SYSTEM, extra.id, seeded["team_id"], TeamRole.member
             )
         )
     r = await client.post(
@@ -270,6 +276,7 @@ async def test_attendance_flow_and_hours(client, seeded, token_leader, token_mem
                 "stranger@example.org",
                 password="stranger-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
     token_stranger = await _token(

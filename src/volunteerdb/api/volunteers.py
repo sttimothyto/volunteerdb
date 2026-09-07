@@ -146,7 +146,7 @@ async def put_photo(ctx: CtxDep, volunteer_id: int, file: UploadFile) -> PhotoMe
             ctx.session,
             volunteer_id,
             content,
-            uploaded_by=ctx.actor.user.id,
+            uploaded_by=ctx.actor.account.id,
             now=ctx.now,
         )
     )

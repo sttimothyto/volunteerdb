@@ -363,7 +363,11 @@ def run() -> None:
         port=s.port,
         title="VolunteerDB",
         favicon="⛪",
-        language="en",  # <html lang="en"> on every page (WCAG 3.1.1)
+        # <html lang> on every page (WCAG 3.1.1). en-GB, not en: NiceGUI ships
+        # Quasar's en-GB and en-US packs and nothing plainer, and requests
+        # static/lang/<language>.umd.prod.js on every page load -- so "en"
+        # was a 404 per page. GB is how the copy is spelled.
+        language="en-GB",
         storage_secret=secret,
         session_middleware_kwargs={
             "max_age": SESSION_COOKIE_MAX_AGE,

@@ -7,6 +7,7 @@ import pytest
 
 from volunteerdb import errors
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
@@ -21,33 +22,39 @@ async def parish(database):
     """Liturgy > Music; separate Hospitality. Lena leads Liturgy; Mia is a
     Liturgy member; Otto belongs to Hospitality only."""
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
         music = ok(
-            await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+            await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id)
         )
-        hospitality = ok(await teams.create(session, None, "Hospitality"))
+        hospitality = ok(await teams.create(session, SYSTEM, "Hospitality"))
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
+            )
         )
         mia = ok(
             await volunteers.create(
-                session, None, "Mia", "Member", "mia@example.org", phone="555-1"
+                session, SYSTEM, "Mia", "Member", "mia@example.org", phone="555-1"
             )
         )
         otto = ok(
             await volunteers.create(
-                session, None, "Otto", "Out", "otto@example.org", phone="555-2"
+                session, SYSTEM, "Otto", "Out", "otto@example.org", phone="555-2"
             )
         )
         ok(
             await memberships.assign(
-                session, None, lena.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, lena.id, liturgy.id, TeamRole.leader
             )
         )
-        ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
         ok(
             await memberships.assign(
-                session, None, otto.id, hospitality.id, TeamRole.member
+                session, SYSTEM, mia.id, liturgy.id, TeamRole.member
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, otto.id, hospitality.id, TeamRole.member
             )
         )
         leader, _ = ok(
@@ -57,6 +64,7 @@ async def parish(database):
                 volunteer_id=lena.id,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         member, _ = ok(
@@ -66,6 +74,7 @@ async def parish(database):
                 volunteer_id=mia.id,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         return {
@@ -183,7 +192,7 @@ async def test_contact_update_of_managed_volunteer_applied(parish, env):
     assert not report.has_errors, report.errors
     assert report.applied and report.volunteers_updated == 1
     async with db_session() as session:
-        (mia,) = await volunteers.search(session, "Mia")
+        (mia,) = await volunteers.search(session, "Mia", actor=SYSTEM)
         assert mia.phone == "555-99"
 
 
@@ -272,14 +281,14 @@ async def test_update_ok_when_same_row_adds_them_to_managed_team(parish, env):
         and report.memberships_created == 1
     )
     async with db_session() as session:
-        (otto,) = await volunteers.search(session, "Otto")
+        (otto,) = await volunteers.search(session, "Otto", actor=SYSTEM)
         assert otto.phone == "555-77"
 
 
 async def test_scoped_export_reimports_as_noop(parish, env):
     async with db_session() as session:
         content = ok(
-            await exporter.export_csv(session, None, team_ids={parish["liturgy"]})
+            await exporter.export_csv(session, SYSTEM, team_ids={parish["liturgy"]})
         )
     report = ok(
         await importer.run_import(

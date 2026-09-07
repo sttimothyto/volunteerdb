@@ -175,7 +175,7 @@ async def build_roster_rows(
 
 async def export_csv(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     team_id: int | None = None,
     team_ids: set[int] | None = None,
@@ -192,36 +192,35 @@ async def export_csv(
     same actor — blank unless they may read notes — so no caller has to work
     that out, and the audit line is written once.
 
-    `actor=None` is a trusted internal caller: the nightly Drive sync, which
+    SYSTEM is the trusted internal caller: the nightly Drive sync, which
     writes each team's own sheet.
     """
     if team_ids is None and team_id is not None:
         team_ids = {team_id}
     include_notes = True
-    if actor is not None:
-        if team_ids is None:
-            if denied := require(actor.is_admin, "export the whole parish"):
+    if team_ids is None:
+        if denied := require(actor.is_admin, "export the whole parish"):
+            return denied
+    else:
+        for scope_id in team_ids:
+            if denied := require(
+                actor.can_view_full_roster(scope_id), "export this team"
+            ):
                 return denied
-        else:
-            for scope_id in team_ids:
-                if denied := require(
-                    actor.can_view_full_roster(scope_id), "export this team"
-                ):
-                    return denied
-            # Notes need edit rights everywhere else in the app, so a core
-            # member — who may read the roster but not the notes on it — gets
-            # the column blank. It stays in place because the file has to
-            # round-trip: a blank cell parses to None and the importer leaves a
-            # None field alone.
-            include_notes = actor.is_admin or all(
-                actor.can_manage_team(scope_id) for scope_id in team_ids
-            )
-        audit_log(
-            "export.roster",
-            scope="parish" if team_ids is None else sorted(team_ids),
-            as_of=at.isoformat() if at else None,
-            notes_included=include_notes,
+        # Notes need edit rights everywhere else in the app, so a core
+        # member — who may read the roster but not the notes on it — gets
+        # the column blank. It stays in place because the file has to
+        # round-trip: a blank cell parses to None and the importer leaves a
+        # None field alone.
+        include_notes = actor.is_admin or all(
+            actor.can_manage_team(scope_id) for scope_id in team_ids
         )
+    audit_log(
+        "export.roster",
+        scope="parish" if team_ids is None else sorted(team_ids),
+        as_of=at.isoformat() if at else None,
+        notes_included=include_notes,
+    )
     data = await build_roster_rows(
         session,
         team_ids=team_ids,

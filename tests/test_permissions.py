@@ -6,7 +6,7 @@ import pytest
 
 from volunteerdb.actors import load_actor
 from volunteerdb.models import TeamRole
-from volunteerdb.permissions import volunteer_team_ids
+from volunteerdb.permissions import SYSTEM, volunteer_team_ids
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
@@ -18,11 +18,11 @@ from tests.fp_helpers import ok
 async def parish(database):
     """Liturgy > Music; separate Hospitality. One volunteer per role on Liturgy."""
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
         music = ok(
-            await teams.create(session, None, "Music", parent_team_id=liturgy.id)
+            await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id)
         )
-        hospitality = ok(await teams.create(session, None, "Hospitality"))
+        hospitality = ok(await teams.create(session, SYSTEM, "Hospitality"))
 
         people = {}
         for name, role in [
@@ -33,18 +33,18 @@ async def parish(database):
         ]:
             v = ok(
                 await volunteers.create(
-                    session, None, name.title(), "Person", f"{name}@example.org"
+                    session, SYSTEM, name.title(), "Person", f"{name}@example.org"
                 )
             )
-            ok(await memberships.assign(session, None, v.id, liturgy.id, role))
+            ok(await memberships.assign(session, SYSTEM, v.id, liturgy.id, role))
             people[name] = v
 
         outsider = ok(
-            await volunteers.create(session, None, "Out", "Sider", "out@example.org")
+            await volunteers.create(session, SYSTEM, "Out", "Sider", "out@example.org")
         )
         ok(
             await memberships.assign(
-                session, None, outsider.id, hospitality.id, TeamRole.member
+                session, SYSTEM, outsider.id, hospitality.id, TeamRole.member
             )
         )
         people["outsider"] = outsider
@@ -58,6 +58,7 @@ async def parish(database):
                         volunteer_id=v.id,
                         password="test-pass-phrase",
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0]
@@ -70,6 +71,7 @@ async def parish(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         ids = {
@@ -178,12 +180,12 @@ async def test_invite_rights_reach_core_but_stop_at_plain_members(parish):
     async with db_session() as session:
         singer = ok(
             await volunteers.create(
-                session, None, "Singer", "Person", "sing@example.org"
+                session, SYSTEM, "Singer", "Person", "sing@example.org"
             )
         )
         ok(
             await memberships.assign(
-                session, None, singer.id, ids["music"], TeamRole.member
+                session, SYSTEM, singer.id, ids["music"], TeamRole.member
             )
         )
         music_teams = await volunteer_team_ids(session, singer.id)
@@ -245,7 +247,7 @@ async def test_voting_roll_grants_elections_access(parish):
         proposal = ok(
             await elections.create_proposal(
                 session,
-                None,
+                SYSTEM,
                 team_id=ids["liturgy"],
                 role=TeamRole.leader,
                 nomination_deadline=date(2026, 8, 15),

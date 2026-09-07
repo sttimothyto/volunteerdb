@@ -17,6 +17,7 @@ from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb import errors
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import SIM_MAIN, SLOW, mail_to
@@ -26,10 +27,16 @@ from tests.fp_helpers import done, ok, otp_started, refused
 
 
 async def _volunteer_with_account(session, first="Maria", addr="maria@example.org"):
-    volunteer = ok(await volunteers.create(session, None, first, "Alvarez", email=addr))
+    volunteer = ok(
+        await volunteers.create(session, SYSTEM, first, "Alvarez", email=addr)
+    )
     account, _ = ok(
         await users.create(
-            session, addr, volunteer_id=volunteer.id, invite=mint.fresh_invite()
+            session,
+            addr,
+            volunteer_id=volunteer.id,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     return volunteer, account
@@ -84,10 +91,10 @@ async def test_the_address_reaches_every_active_membership(database):
     async with db_session() as session:
         volunteer, account = await _volunteer_with_account(session)
         for name in ("Liturgy", "Hospitality"):
-            team = ok(await teams.create(session, None, name))
+            team = ok(await teams.create(session, SYSTEM, name))
             ok(
                 await memberships.assign(
-                    session, None, volunteer.id, team.id, TeamRole.member
+                    session, SYSTEM, volunteer.id, team.id, TeamRole.member
                 )
             )
         user_id = account.id
@@ -108,7 +115,7 @@ async def test_the_address_reaches_every_active_membership(database):
         ).is_ok()
 
     async with db_session() as session:
-        volunteer = (await volunteers.search(session, "Alvarez"))[0]
+        volunteer = (await volunteers.search(session, "Alvarez", actor=SYSTEM))[0]
         rows = await volunteers.assignments(session, volunteer.id)
         assert len(rows) == 2
         assert volunteer.email == "moved@example.org"
@@ -218,7 +225,11 @@ async def test_an_address_another_account_signs_in_with_is_refused_up_front(data
     would only tell a stranger their address is in the database."""
     async with db_session() as session:
         _v, account = await _volunteer_with_account(session)
-        ok(await users.create(session, "taken@example.org", invite=mint.fresh_invite()))
+        ok(
+            await users.create(
+                session, "taken@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
+        )
         user_id = account.id
 
     async with db_session() as session:
@@ -255,7 +266,10 @@ async def test_an_address_claimed_between_request_and_confirmation_is_refused(da
     async with db_session() as session:
         ok(
             await users.create(
-                session, "contested@example.org", invite=mint.fresh_invite()
+                session,
+                "contested@example.org",
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
 
@@ -353,7 +367,7 @@ async def test_a_deactivated_account_cannot_confirm(database):
                 token=mint.token(),
             )
         ).value
-        ok(await users.set_flags(session, user_id, is_active=False))
+        ok(await users.set_flags(session, user_id, is_active=False, actor=SYSTEM))
     async with db_session() as session:
         assert (
             await users.confirm_email_change(session, token, now=mint.now())
@@ -395,7 +409,11 @@ async def test_an_account_with_no_volunteer_record_still_changes_its_login(datab
     async with db_session() as session:
         account, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         user_id = account.id
@@ -463,21 +481,26 @@ async def test_a_leader_correcting_someone_elses_address_applies_at_once(databas
     because the volunteer cannot read their mail, so waiting on them to
     confirm would make the correction impossible."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Liturgy"))
+        team = ok(await teams.create(session, SYSTEM, "Liturgy"))
         member = ok(
             await volunteers.create(
-                session, None, "Felix", "Garcia", email="typo@example.org"
+                session, SYSTEM, "Felix", "Garcia", email="typo@example.org"
             )
         )
-        ok(await memberships.assign(session, None, member.id, team.id, TeamRole.member))
-        lena = ok(await volunteers.create(session, None, "Lena", "Leader"))
-        ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, member.id, team.id, TeamRole.member
+            )
+        )
+        lena = ok(await volunteers.create(session, SYSTEM, "Lena", "Leader"))
+        ok(await memberships.assign(session, SYSTEM, lena.id, team.id, TeamRole.leader))
         leader_account, _ = ok(
             await users.create(
                 session,
                 "lena@example.org",
                 volunteer_id=lena.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         member_id, leader_user_id = member.id, leader_account.id

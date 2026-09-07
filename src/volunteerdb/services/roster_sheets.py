@@ -36,6 +36,7 @@ from ..errors import DomainError, External, NotFound, invalid, message, require
 from ..fp import Err, Ok, Result, expect
 from ..log import audit_log
 from ..models import AppUser, SyncStatus, TeamSheet
+from ..permissions import SYSTEM
 from ..services import gsheets
 from ..services import pages as page_service
 from ..services import teams as team_service
@@ -91,6 +92,7 @@ async def ensure_sync_user(env: Env) -> int:
                 await user_service.create(
                     session,
                     email,
+                    actor=SYSTEM,  # the sync bot minting its own login
                     password=env.rng.token(),
                     link_by_email=False,  # a bot, never a volunteer's login
                 )
@@ -212,13 +214,13 @@ async def export_sheet(
 ) -> Result[bool, DomainError]:
     """Database → sheet; True if anything was actually written.
 
-    subtree=False: a team's sheet is its own direct memberships. actor=None
+    subtree=False: a team's sheet is its own direct memberships. SYSTEM,
     because the sync is a trusted internal caller — it must see the contact
     columns it is about to write back.
     """
     async with transaction(env, None) as session:
         exported = await exporter.export_csv(
-            session, None, team_id=team_id, subtree=False
+            session, SYSTEM, team_id=team_id, subtree=False
         )
     if isinstance(exported, Err):
         return exported
@@ -279,13 +281,13 @@ async def sync_team(
         return invalid(f"unknown sync direction {direction!r}")
 
     async with transaction(env, user_id) as session:
-        actor = None
+        actor = SYSTEM
         if user_id is not None:
             user = await session.get(AppUser, user_id)
             assert user is not None, f"unknown user {user_id}"
             actor = await load_actor(session, user)
         if denied := require(
-            actor is None or actor.can_manage_team(team_id),
+            actor.can_manage_team(team_id),
             "sync this team's roster spreadsheet",
         ):
             return denied

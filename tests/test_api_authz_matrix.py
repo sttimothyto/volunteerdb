@@ -18,6 +18,7 @@ import httpx
 import pytest
 
 from volunteerdb.models import FieldType, TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import (
     custom_fields,
     elections,
@@ -55,21 +56,25 @@ async def world(
     async with db_session() as session:
         ok(
             await pages.set_home_doc_url(
-                session, None, team_id, "https://docs.google.com/document/d/doc1"
+                session, SYSTEM, team_id, "https://docs.google.com/document/d/doc1"
             )
         )
-        ushers = ok(await teams.create(session, None, "Ushers"))
-        walter = ok(await volunteers.create(session, None, "Walter", "Willing"))
-        ok(await memberships.assign(session, None, walter.id, team_id, TeamRole.member))
+        ushers = ok(await teams.create(session, SYSTEM, "Ushers"))
+        walter = ok(await volunteers.create(session, SYSTEM, "Walter", "Willing"))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, walter.id, team_id, TeamRole.member
+            )
+        )
         membership = await memberships.find(session, walter.id, team_id)
         field = ok(
-            await custom_fields.create_def(session, None, "Shirt", FieldType.text)
+            await custom_fields.create_def(session, SYSTEM, "Shirt", FieldType.text)
         )
         start = mint.now() + timedelta(days=7)
         (event,) = ok(
             await events.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Mass",
                 starts_at=start,
@@ -80,14 +85,14 @@ async def world(
                 series_id=mint.uuid(),
             )
         )
-        view = ok(await events.detail(session, None, event.id))
+        view = ok(await events.detail(session, SYSTEM, event.id))
         slot_id = view.slots[0].slot.id
         # a second event, staffed by a task force with the Ushers, for the
         # task-force routes -- which look the task force up before deciding
         (tf_event,) = ok(
             await events.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Picnic",
                 starts_at=start,
@@ -100,7 +105,7 @@ async def world(
         done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=tf_event.id,
                 source_team_id=ushers.id,
                 created_by=None,
@@ -111,7 +116,7 @@ async def world(
         assignment = ok(
             await events.assign(
                 session,
-                None,
+                SYSTEM,
                 slot_id=slot_id,
                 volunteer_id=walter.id,
                 assigned_by=None,
@@ -122,7 +127,7 @@ async def world(
         proposal = ok(
             await elections.create_proposal(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 role=TeamRole.second,
                 nomination_deadline=mint.today() + timedelta(days=3),

@@ -4,6 +4,7 @@ import httpx
 
 from volunteerdb.jobs import fetch_pages
 from volunteerdb.models import TeamPage
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import pages, teams
 
 from tests.conftest import db_session
@@ -21,18 +22,18 @@ def _mock_transport(env, handler):
 
 async def _team(name: str, doc_id: str | None, active: bool = True) -> int:
     async with db_session() as session:
-        team = ok(await teams.create(session, None, name))
+        team = ok(await teams.create(session, SYSTEM, name))
         if doc_id is not None:
             ok(
                 await pages.set_home_doc_url(
                     session,
-                    None,
+                    SYSTEM,
                     team.id,
                     f"https://docs.google.com/document/d/{doc_id}",
                 )
             )
         if not active:
-            ok(await teams.update(session, None, team.id, is_active=False))
+            ok(await teams.update(session, SYSTEM, team.id, is_active=False))
         return team.id
 
 

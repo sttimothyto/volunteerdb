@@ -39,6 +39,7 @@ from volunteerdb.api.deps import install_exception_handlers
 from volunteerdb.config import settings
 from volunteerdb.log import shared_processors
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
@@ -394,13 +395,13 @@ def debug_logging(monkeypatch):
 @pytest.fixture
 async def seeded(database):
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Liturgy"))
+        team = ok(await teams.create(session, SYSTEM, "Liturgy"))
         v = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "maria@example.org"
+                session, SYSTEM, "Maria", "Alvarez", "maria@example.org"
             )
         )
-        ok(await memberships.assign(session, None, v.id, team.id, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, v.id, team.id, TeamRole.member))
         ok(
             await users.create(
                 session,
@@ -408,6 +409,7 @@ async def seeded(database):
                 is_admin=True,
                 password="secret-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         ok(
@@ -417,6 +419,7 @@ async def seeded(database):
                 volunteer_id=v.id,
                 password="member-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         return {"team_id": team.id, "volunteer_id": v.id}
@@ -446,11 +449,13 @@ async def token_leader(client, seeded) -> dict:
     """A leader of the seeded Liturgy team (not an admin)."""
     async with db_session() as session:
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
+            )
         )
         ok(
             await memberships.assign(
-                session, None, lena.id, seeded["team_id"], TeamRole.leader
+                session, SYSTEM, lena.id, seeded["team_id"], TeamRole.leader
             )
         )
         ok(
@@ -460,6 +465,7 @@ async def token_leader(client, seeded) -> dict:
                 volunteer_id=lena.id,
                 password="leader-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
     return await _token(client, "lena@example.org", "leader-pass-phrase")
@@ -471,11 +477,11 @@ async def token_core(client, seeded) -> dict:
     management rights — the boundary most permission tests care about."""
     async with db_session() as session:
         cora = ok(
-            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+            await volunteers.create(session, SYSTEM, "Cora", "Core", "cora@example.org")
         )
         ok(
             await memberships.assign(
-                session, None, cora.id, seeded["team_id"], TeamRole.core
+                session, SYSTEM, cora.id, seeded["team_id"], TeamRole.core
             )
         )
         ok(
@@ -485,6 +491,7 @@ async def token_core(client, seeded) -> dict:
                 volunteer_id=cora.id,
                 password="core-pass-phrase-1",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
     return await _token(client, "cora@example.org", "core-pass-phrase-1")

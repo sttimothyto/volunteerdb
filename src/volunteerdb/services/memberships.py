@@ -6,10 +6,10 @@ once, in the one place both of them pass through — which is the invariant
 docs/explanation/architecture.md describes and the reason a permission cannot
 be enforced on one surface and forgotten on the other.
 
-`actor=None` means a trusted internal caller: the nightly jobs, the seed
-script, and the roster sync, which have no signed-in user to speak for and are
-already bounded by what they were asked to do. It is spelled out at every such
-call site rather than defaulted, so skipping the check is always visible.
+`SYSTEM` (permissions.SYSTEM) is the trusted internal caller: the nightly jobs,
+the seed script, and the roster sync, which have no signed-in user to speak for
+and are already bounded by what they were asked to do. It is spelled out at
+every such call site, so skipping the check is always visible in the diff.
 """
 
 import sqlalchemy as sa
@@ -21,10 +21,8 @@ from ..models import Membership, TeamRole
 from ..permissions import Actor
 
 
-def _may_manage(actor: Actor | None, team_id: int) -> Err[Forbidden] | None:
-    return require(
-        actor is None or actor.can_manage_team(team_id), "manage this team's roster"
-    )
+def _may_manage(actor: Actor, team_id: int) -> Err[Forbidden] | None:
+    return require(actor.can_manage_team(team_id), "manage this team's roster")
 
 
 async def get(session: AsyncSession, membership_id: int) -> Membership | None:
@@ -32,7 +30,7 @@ async def get(session: AsyncSession, membership_id: int) -> Membership | None:
 
 
 async def get_managed(
-    session: AsyncSession, actor: Actor | None, membership_id: int
+    session: AsyncSession, actor: Actor, membership_id: int
 ) -> Result[Membership, DomainError]:
     """The membership, for a caller entitled to manage its team.
 
@@ -61,7 +59,7 @@ async def find(
 
 async def assign(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     volunteer_id: int,
     team_id: int,
     role: TeamRole,
@@ -103,7 +101,7 @@ async def assign(
 
 
 async def set_role(
-    session: AsyncSession, actor: Actor | None, membership_id: int, role: TeamRole
+    session: AsyncSession, actor: Actor, membership_id: int, role: TeamRole
 ) -> Result[Membership, DomainError]:
     """Change the role somebody holds on a team.
 
@@ -121,7 +119,7 @@ async def set_role(
 
 
 async def remove(
-    session: AsyncSession, actor: Actor | None, membership_id: int
+    session: AsyncSession, actor: Actor, membership_id: int
 ) -> Result[None, DomainError]:
     managed = await get_managed(session, actor, membership_id)
     if isinstance(managed, Err):

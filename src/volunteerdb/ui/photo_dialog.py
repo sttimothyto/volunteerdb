@@ -74,7 +74,7 @@ def open_photo_dialog(
                     ctx.session,
                     volunteer_id,
                     image,
-                    uploaded_by=ctx.actor.user.id,
+                    uploaded_by=ctx.actor.account.id,
                     normalized=True,
                     now=ctx.now,
                 )

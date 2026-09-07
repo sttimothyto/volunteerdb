@@ -243,7 +243,7 @@ def _occurrences(
 
 async def create_event(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     team_id: int,
     title: str,
@@ -263,7 +263,7 @@ async def create_event(
     edge minted for a weekly series; it is required exactly when
     repeat_weekly_until is given."""
     if denied := require(
-        actor is None or actor.can_manage_team(team_id),
+        actor.can_manage_team(team_id),
         "manage this team's events",
     ):
         return denied
@@ -319,7 +319,7 @@ async def create_event(
 
 async def update_event(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     event_id: int,
     *,
     title: str | object = UNSET,
@@ -358,7 +358,7 @@ async def update_event(
 
 async def cancel_event(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     event_id: int,
     *,
     cancelled_by: int | None,
@@ -438,7 +438,7 @@ async def _get(session: AsyncSession, event_id: int) -> Result[Event, NotFound]:
 
 
 async def _managed(
-    session: AsyncSession, actor: Actor | None, event_id: int
+    session: AsyncSession, actor: Actor, event_id: int
 ) -> Result[Event, DomainError]:
     """The event, for a caller who runs its team.
 
@@ -451,7 +451,7 @@ async def _managed(
     if isinstance(found, Err):
         return found
     if denied := require(
-        actor is None or actor.can_manage_team(found.value.team_id),
+        actor.can_manage_team(found.value.team_id),
         "manage this team's events",
     ):
         return denied
@@ -459,7 +459,7 @@ async def _managed(
 
 
 async def _visible(
-    session: AsyncSession, actor: Actor | None, event_id: int
+    session: AsyncSession, actor: Actor, event_id: int
 ) -> Result[Event, DomainError]:
     """The event, for a caller who may see the owning team's roster names —
     the documented visibility domain for an event and its assignee list.
@@ -471,7 +471,7 @@ async def _visible(
     if isinstance(found, Err):
         return found
     if denied := require(
-        actor is None or actor.can_view_roster_names(found.value.team_id),
+        actor.can_view_roster_names(found.value.team_id),
         "view this team's events",
     ):
         return denied
@@ -479,7 +479,7 @@ async def _visible(
 
 
 async def visible(
-    session: AsyncSession, actor: Actor | None, event_id: int
+    session: AsyncSession, actor: Actor, event_id: int
 ) -> Result[Event, DomainError]:
     """Authorize that `actor` may see this event and return it — the light gate
     for endpoints (e.g. the task-force view) that need the event visible but not
@@ -496,7 +496,7 @@ def _clean_description(text: str | None) -> str | None:
 
 async def add_slot(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     event_id: int,
     *,
     name: str,
@@ -533,7 +533,7 @@ async def add_slot(
 
 async def update_slot(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     slot_id: int,
     *,
     name: str | object = UNSET,
@@ -578,7 +578,7 @@ async def update_slot(
 
 
 async def delete_slot(
-    session: AsyncSession, actor: Actor | None, slot_id: int, *, now: datetime
+    session: AsyncSession, actor: Actor, slot_id: int, *, now: datetime
 ) -> Result[Event, DomainError]:
     slot = await session.get(EventSlot, slot_id)
     if slot is None:
@@ -715,7 +715,7 @@ class CalendarEntry:
 
 async def calendar_entries(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     scope: str,
     from_: datetime,
@@ -738,7 +738,7 @@ async def calendar_entries(
     )
     paths = (await team_service.tree(session)).paths
     if scope == "mine":
-        if actor is None or actor.volunteer_id is None:
+        if actor.volunteer_id is None:
             return Ok([])
         rows = (
             await session.execute(
@@ -764,7 +764,7 @@ async def calendar_entries(
     events = await session.scalars(
         sa.select(Event).where(*window).order_by(Event.starts_at, Event.id)
     )
-    visible = visible_team_ids(actor) if actor is not None else set()
+    visible = visible_team_ids(actor)
     return Ok(
         [
             CalendarEntry(
@@ -879,7 +879,7 @@ async def similar_events(
 
 
 async def detail(
-    session: AsyncSession, actor: Actor | None, event_id: int
+    session: AsyncSession, actor: Actor, event_id: int
 ) -> Result[EventDetail, DomainError]:
     """One event with its slots, entries, RSVPs and open substitution calls.
 
@@ -1052,7 +1052,7 @@ async def is_member(session: AsyncSession, volunteer_id: int, team_id: int) -> b
 
 
 def _require_own_or_managed(
-    actor: Actor | None, assignment: EventAssignment, event: Event, what: str
+    actor: Actor, assignment: EventAssignment, event: Event, what: str
 ) -> Err[Forbidden] | None:
     """Your own slot, or a slot on an event you manage.
 
@@ -1060,15 +1060,14 @@ def _require_own_or_managed(
     things an assignee does for themselves and a manager may do for anyone on
     their team's event."""
     return require(
-        actor is None
-        or actor.volunteer_id == assignment.volunteer_id
+        actor.volunteer_id == assignment.volunteer_id
         or actor.can_manage_team(event.team_id),
         what,
     )
 
 
 def _require_self(
-    actor: Actor | None, volunteer_id: int | None, what: str
+    actor: Actor, volunteer_id: int | None, what: str
 ) -> Err[Forbidden] | None:
     """Taking part is something you do for yourself.
 
@@ -1078,9 +1077,7 @@ def _require_self(
     Scheduling another person is a different function (assign), with a
     manager's check on it."""
     return require(
-        actor is None
-        or (volunteer_id is not None and actor.volunteer_id == volunteer_id),
-        what,
+        volunteer_id is not None and actor.volunteer_id == volunteer_id, what
     )
 
 
@@ -1127,7 +1124,7 @@ async def assigned_volunteer_ids(session: AsyncSession, event_id: int) -> set[in
 
 async def set_rsvp(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     event_id: int,
     volunteer_id: int | None,
@@ -1251,7 +1248,7 @@ async def _join_slot(
 
 async def sign_up(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     slot_id: int,
     volunteer_id: int | None,
@@ -1286,7 +1283,7 @@ class SeriesSignupResult:
 
 async def sign_up_series(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     slot_id: int,
     volunteer_id: int | None,
@@ -1362,7 +1359,7 @@ async def sign_up_series(
 
 async def assign(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     slot_id: int,
     volunteer_id: int,
@@ -1394,7 +1391,7 @@ async def get_assignment(
 
 async def remove_assignment(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     assignment_id: int,
     *,
     now: datetime,
@@ -1450,7 +1447,7 @@ async def remove_assignment(
 
 async def request_sub(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     assignment_id: int,
     requested_by: int | None,
@@ -1524,7 +1521,7 @@ async def request_sub(
 
 async def claim_sub(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     sub_request_id: int,
     volunteer_id: int | None,
@@ -1613,7 +1610,7 @@ async def claim_sub(
 
 async def substitute(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     assignment_id: int,
     new_volunteer_id: int,
@@ -1709,7 +1706,7 @@ async def substitute(
 
 
 async def cancel_sub(
-    session: AsyncSession, actor: Actor | None, sub_request_id: int, *, now: datetime
+    session: AsyncSession, actor: Actor, sub_request_id: int, *, now: datetime
 ) -> Result[EventSubRequest, DomainError]:
     """Withdraw an open substitution call — the assignee who opened it, or a
     manager of the event's team."""
@@ -1739,7 +1736,7 @@ async def cancel_sub(
 
 async def set_attendance(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     assignment_id: int,
     attended: bool | None,
@@ -1781,7 +1778,7 @@ async def attendance_entry(
 
 
 async def attendance_rows(
-    session: AsyncSession, actor: Actor | None, event_id: int
+    session: AsyncSession, actor: Actor, event_id: int
 ) -> Result[list[tuple[EventAssignment, EventSlot, Volunteer]], DomainError]:
     """The attendance sheet — a manager's view of who turned up."""
     managed = await _managed(session, actor, event_id)
@@ -1805,12 +1802,11 @@ async def attendance_rows(
 
 
 async def hours_for_volunteer(
-    session: AsyncSession, actor: Actor | None, volunteer_id: int, *, now: datetime
+    session: AsyncSession, actor: Actor, volunteer_id: int, *, now: datetime
 ) -> Result[HoursSummary, DomainError]:
     """Derived service record over past, non-cancelled events."""
     if denied := require(
-        actor is None
-        or actor.can_view_volunteer(
+        actor.can_view_volunteer(
             volunteer_id, await volunteer_team_ids(session, volunteer_id)
         ),
         "view this volunteer's service record",

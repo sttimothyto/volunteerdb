@@ -6,6 +6,7 @@ from io import StringIO
 import pytest
 
 from volunteerdb.models import FieldType, TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import custom_fields, memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
@@ -27,16 +28,18 @@ def _rows(content: bytes) -> list[list[str]]:
 
 
 async def _setup(session):
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    music = ok(await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id))
     anna = ok(
         await volunteers.create(
-            session, None, "Anna", "Smith", "anna@example.org", phone="555-1"
+            session, SYSTEM, "Anna", "Smith", "anna@example.org", phone="555-1"
         )
     )
-    ben = ok(await volunteers.create(session, None, "Ben", "Jones", "ben@example.org"))
-    ok(await memberships.assign(session, None, anna.id, liturgy.id, TeamRole.leader))
-    ok(await memberships.assign(session, None, ben.id, music.id, TeamRole.member))
+    ben = ok(
+        await volunteers.create(session, SYSTEM, "Ben", "Jones", "ben@example.org")
+    )
+    ok(await memberships.assign(session, SYSTEM, anna.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, SYSTEM, ben.id, music.id, TeamRole.member))
     return liturgy, music, anna, ben
 
 
@@ -52,10 +55,10 @@ async def test_roundtrip_reimport_is_a_noop(database, env):
         # an unassigned volunteer exercises the blank-Team parish rows too
         ok(
             await volunteers.create(
-                session, None, "Ursula", "Unassigned", "u@example.org"
+                session, SYSTEM, "Ursula", "Unassigned", "u@example.org"
             )
         )
-        content = ok(await exporter.export_csv(session, None))
+        content = ok(await exporter.export_csv(session, SYSTEM))
 
     assert _rows(content)[0] == ROSTER_HEADERS
     report = ok(await importer.run_import(env, content, dry_run=False, user_id=None))
@@ -70,7 +73,7 @@ async def test_roundtrip_reimport_is_a_noop(database, env):
 async def test_import_applies_edits_and_additions(database, env):
     async with db_session() as session:
         await _setup(session)
-        content = ok(await exporter.export_csv(session, None))
+        content = ok(await exporter.export_csv(session, SYSTEM))
 
     rows = _rows(content)
     # promote Ben to Music leader (Role is the last column of his row)
@@ -103,9 +106,9 @@ async def test_import_applies_edits_and_additions(database, env):
     assert report.memberships_updated == 1
 
     async with db_session() as session:
-        cara = (await volunteers.search(session, "Cara"))[0]
+        cara = (await volunteers.search(session, "Cara", actor=SYSTEM))[0]
         assert cara.email == "cara@example.org"
-        found = await volunteers.search(session, "Ben")
+        found = await volunteers.search(session, "Ben", actor=SYSTEM)
         ben_assignments = await volunteers.assignments(session, found[0].id)
         assert ben_assignments[0][0].role == TeamRole.leader
 
@@ -115,10 +118,10 @@ async def test_parish_export_lists_unassigned_after_memberships(database):
         await _setup(session)
         ok(
             await volunteers.create(
-                session, None, "Ursula", "Unassigned", "u@example.org"
+                session, SYSTEM, "Ursula", "Unassigned", "u@example.org"
             )
         )
-        content = ok(await exporter.export_csv(session, None))
+        content = ok(await exporter.export_csv(session, SYSTEM))
 
     rows = _rows(content)[1:]
     assert rows[-1][1] == "Ursula" and rows[-1][6] == "", (
@@ -137,14 +140,14 @@ async def test_parish_export_omits_archived_unassigned_but_keeps_members(databas
         _, _, anna, _ = await _setup(session)
         gone = ok(
             await volunteers.create(
-                session, None, "Gone", "Quietly", "gone@example.org"
+                session, SYSTEM, "Gone", "Quietly", "gone@example.org"
             )
         )
-        done(await volunteers.update(session, None, gone.id, is_active=False))
+        done(await volunteers.update(session, SYSTEM, gone.id, is_active=False))
         done(
-            await volunteers.update(session, None, anna.id, is_active=False)
+            await volunteers.update(session, SYSTEM, anna.id, is_active=False)
         )  # keeps membership
-        content = ok(await exporter.export_csv(session, None))
+        content = ok(await exporter.export_csv(session, SYSTEM))
 
     body = content.decode("utf-8-sig")
     assert "gone@example.org" not in body, "archived + membership-less: omitted"
@@ -175,14 +178,14 @@ async def test_unknown_team_blocks_everything(database, env):
     assert "No Such Team" in report.errors[0].message
 
     async with db_session() as session:
-        assert await volunteers.search(session, "Dave") == [], (
+        assert await volunteers.search(session, "Dave", actor=SYSTEM) == [], (
             "all-or-nothing: Dave not created"
         )
 
 
 async def test_dry_run_writes_nothing(database, env):
     async with db_session() as session:
-        ok(await teams.create(session, None, "Liturgy"))
+        ok(await teams.create(session, SYSTEM, "Liturgy"))
 
     content = _csv_bytes(
         [
@@ -204,7 +207,7 @@ async def test_dry_run_writes_nothing(database, env):
     assert report.volunteers_created == 1  # would be created
 
     async with db_session() as session:
-        assert await volunteers.search(session, "Eve") == []
+        assert await volunteers.search(session, "Eve", actor=SYSTEM) == []
 
 
 async def test_volunteer_only_row_needs_no_team(database, env):
@@ -239,18 +242,26 @@ async def test_a_file_that_is_not_a_roster_csv_is_refused_whole(
 async def test_export_includes_custom_columns_and_reimport_ignores_them(database, env):
     async with db_session() as session:
         _, _, anna, _ = await _setup(session)
-        ok(await custom_fields.create_def(session, None, "Shirt size", FieldType.text))
-        ok(await custom_fields.create_def(session, None, "Trained", FieldType.checkbox))
-        ok(await custom_fields.create_def(session, None, "Term", FieldType.interval))
+        ok(
+            await custom_fields.create_def(
+                session, SYSTEM, "Shirt size", FieldType.text
+            )
+        )
+        ok(
+            await custom_fields.create_def(
+                session, SYSTEM, "Trained", FieldType.checkbox
+            )
+        )
+        ok(await custom_fields.create_def(session, SYSTEM, "Term", FieldType.interval))
         ok(
             await custom_fields.set_values(
                 session,
-                None,
+                SYSTEM,
                 anna.id,
                 {"shirt_size": "M", "trained": True, "term": "P1DT2H"},
             )
         )
-        content = ok(await exporter.export_csv(session, None))
+        content = ok(await exporter.export_csv(session, SYSTEM))
 
     rows = _rows(content)
     assert rows[0][-3:] == ["Shirt size", "Term", "Trained"]
@@ -265,7 +276,7 @@ async def test_export_includes_custom_columns_and_reimport_ignores_them(database
     assert any("custom" in w.message for w in report.warnings)
 
     async with db_session() as session:
-        (found,) = await volunteers.search(session, "Anna")
+        (found,) = await volunteers.search(session, "Anna", actor=SYSTEM)
         assert found.custom == {
             "shirt_size": "M",
             "trained": True,

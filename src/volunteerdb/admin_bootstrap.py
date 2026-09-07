@@ -20,6 +20,7 @@ from volunteerdb.errors import message
 from volunteerdb.fp import Err
 from volunteerdb.log import init_logging
 from volunteerdb.passwords import check as check_password
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import users
 
 
@@ -42,7 +43,12 @@ async def main() -> int:
             )
             return 0
         made = await users.create(
-            session, email, is_admin=True, password=password, site_terms=terms
+            session,
+            email,
+            actor=SYSTEM,  # the deploy's own bootstrap, before any admin exists
+            is_admin=True,
+            password=password,
+            site_terms=terms,
         )
         if isinstance(made, Err):
             print(f"admin not created: {message(made.error)}", file=sys.stderr)

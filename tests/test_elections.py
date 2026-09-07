@@ -14,9 +14,11 @@ from sqlalchemy.exc import IntegrityError
 from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.models import AppUser, ProposalStatus, TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
+from tests.actors import as_volunteer
 from tests.conftest import db_session
 from tests.fp_helpers import ok, refused
 
@@ -47,27 +49,28 @@ class Parish:
 async def _parish(session) -> Parish:
     """Liturgy has a leader but no second; Garden has nobody; Clergy is the
     team the roll builder finds by name."""
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    garden = ok(await teams.create(session, None, "Garden"))
-    clergy = ok(await teams.create(session, None, "Clergy"))
-    lena = ok(await volunteers.create(session, None, "Lena", "Leader"))
-    cora = ok(await volunteers.create(session, None, "Cora", "Core"))
-    mia = ok(await volunteers.create(session, None, "Mia", "Member"))
-    pete = ok(await volunteers.create(session, None, "Pete", "Priest"))
-    dan = ok(await volunteers.create(session, None, "Dan", "Deacon"))
-    vera = ok(await volunteers.create(session, None, "Vera", "Volunteer"))
-    victor = ok(await volunteers.create(session, None, "Victor", "Volunteer"))
-    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
-    ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
-    ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
-    ok(await memberships.assign(session, None, pete.id, clergy.id, TeamRole.member))
-    ok(await memberships.assign(session, None, dan.id, clergy.id, TeamRole.member))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    garden = ok(await teams.create(session, SYSTEM, "Garden"))
+    clergy = ok(await teams.create(session, SYSTEM, "Clergy"))
+    lena = ok(await volunteers.create(session, SYSTEM, "Lena", "Leader"))
+    cora = ok(await volunteers.create(session, SYSTEM, "Cora", "Core"))
+    mia = ok(await volunteers.create(session, SYSTEM, "Mia", "Member"))
+    pete = ok(await volunteers.create(session, SYSTEM, "Pete", "Priest"))
+    dan = ok(await volunteers.create(session, SYSTEM, "Dan", "Deacon"))
+    vera = ok(await volunteers.create(session, SYSTEM, "Vera", "Volunteer"))
+    victor = ok(await volunteers.create(session, SYSTEM, "Victor", "Volunteer"))
+    ok(await memberships.assign(session, SYSTEM, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, SYSTEM, cora.id, liturgy.id, TeamRole.core))
+    ok(await memberships.assign(session, SYSTEM, mia.id, liturgy.id, TeamRole.member))
+    ok(await memberships.assign(session, SYSTEM, pete.id, clergy.id, TeamRole.member))
+    ok(await memberships.assign(session, SYSTEM, dan.id, clergy.id, TeamRole.member))
     lena_user, _ = ok(
         await users.create(
             session,
             "lena@example.org",
             volunteer_id=lena.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     ok(
@@ -76,6 +79,7 @@ async def _parish(session) -> Parish:
             "cora@example.org",
             volunteer_id=cora.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     pete_user, _ = ok(
@@ -84,11 +88,16 @@ async def _parish(session) -> Parish:
             "pete@example.org",
             volunteer_id=pete.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     admin_user, _ = ok(
         await users.create(
-            session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            session,
+            "admin@example.org",
+            is_admin=True,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     return Parish(
@@ -112,7 +121,7 @@ async def _open_proposal(session, p: Parish, *, team_id=None, candidates=None):
     return ok(
         await elections.create_proposal(
             session,
-            None,
+            SYSTEM,
             team_id=team_id or p.liturgy_id,
             role=TeamRole.second,
             nomination_deadline=D1,
@@ -136,7 +145,7 @@ async def test_default_roll_leadership_core_plus_clergy(database):
     async with db_session() as session:
         p = await _parish(session)
         proposal = await _open_proposal(session, p)
-        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
+        view = ok(await elections.detail(session, SYSTEM, proposal.id, today=TODAY))
         roll = {v.volunteer.id for v in view.voters}
         assert roll == {p.lena_id, p.cora_id, p.pete_id, p.dan_id}, (
             "leader + core of the target team plus all clergy; plain members excluded"
@@ -154,9 +163,9 @@ async def test_default_roll_without_a_clergy_team(database):
     team's own leadership and core members."""
     async with db_session() as session:
         p = await _parish(session)
-        ok(await teams.delete(session, None, p.clergy_id))
+        ok(await teams.delete(session, SYSTEM, p.clergy_id))
         proposal = await _open_proposal(session, p)
-        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
+        view = ok(await elections.detail(session, SYSTEM, proposal.id, today=TODAY))
         assert {v.volunteer.id for v in view.voters} == {p.lena_id, p.cora_id}
 
 
@@ -165,11 +174,11 @@ async def test_roll_dedupes_clergy_who_also_lead(database):
         p = await _parish(session)
         ok(
             await memberships.assign(
-                session, None, p.pete_id, p.liturgy_id, TeamRole.core
+                session, SYSTEM, p.pete_id, p.liturgy_id, TeamRole.core
             )
         )
         proposal = await _open_proposal(session, p)
-        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
+        view = ok(await elections.detail(session, SYSTEM, proposal.id, today=TODAY))
         assert [v.volunteer.id for v in view.voters].count(p.pete_id) == 1
 
 
@@ -185,14 +194,18 @@ async def test_renaming_the_clergy_team_retires_the_standing(database):
     async with db_session() as session:
         p = await _parish(session)
         before = await _open_proposal(session, p)
-        ok(await teams.update(session, None, p.clergy_id, name="Presbyterate"))
+        ok(await teams.update(session, SYSTEM, p.clergy_id, name="Presbyterate"))
         after = await _open_proposal(session, p, team_id=p.garden_id)
 
         rolls = {
             proposal.id: {
                 v.volunteer.id
                 for v in (
-                    ok(await elections.detail(session, None, proposal.id, today=TODAY))
+                    ok(
+                        await elections.detail(
+                            session, SYSTEM, proposal.id, today=TODAY
+                        )
+                    )
                 ).voters
             }
             for proposal in (before, after)
@@ -207,10 +220,10 @@ async def test_a_team_renamed_to_clergy_takes_up_the_standing(database):
     """Nothing registers the clergy team, so the name alone confers it."""
     async with db_session() as session:
         p = await _parish(session)
-        ok(await teams.delete(session, None, p.clergy_id))
-        ok(await teams.update(session, None, p.liturgy_id, name="Clergy"))
+        ok(await teams.delete(session, SYSTEM, p.clergy_id))
+        ok(await teams.update(session, SYSTEM, p.liturgy_id, name="Clergy"))
         proposal = await _open_proposal(session, p, team_id=p.garden_id)
-        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
+        view = ok(await elections.detail(session, SYSTEM, proposal.id, today=TODAY))
         assert {v.volunteer.id for v in view.voters} == {
             p.lena_id,
             p.cora_id,
@@ -230,7 +243,7 @@ async def test_create_validations(database):
         refused(
             await elections.create_proposal(
                 session,
-                None,
+                SYSTEM,
                 nomination_deadline=D1,
                 voting_deadline=D2,
                 candidates=[],
@@ -242,7 +255,7 @@ async def test_create_validations(database):
         refused(
             await elections.create_proposal(
                 session,
-                None,
+                SYSTEM,
                 nomination_deadline=D1,
                 voting_deadline=D2,
                 candidates=[
@@ -257,7 +270,7 @@ async def test_create_validations(database):
         refused(
             await elections.create_proposal(
                 session,
-                None,
+                SYSTEM,
                 nomination_deadline=date(2026, 8, 1),
                 voting_deadline=D2,
                 candidates=[elections.CandidateInput(p.vera_id)],
@@ -269,7 +282,7 @@ async def test_create_validations(database):
         refused(
             await elections.create_proposal(
                 session,
-                None,
+                SYSTEM,
                 nomination_deadline=D1,
                 voting_deadline=D1,
                 candidates=[elections.CandidateInput(p.vera_id)],
@@ -293,7 +306,7 @@ async def test_one_open_proposal_per_seat(database):
     async with db_session() as session:
         ok(
             await elections.cancel(
-                session, None, first_id, decided_by=p.admin_user_id, now=mint.now()
+                session, SYSTEM, first_id, decided_by=p.admin_user_id, now=mint.now()
             )
         )
         again = await _open_proposal(session, p)
@@ -310,7 +323,7 @@ async def test_nomination_window(database):
         c = ok(
             await elections.add_candidate(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 volunteer_id=p.victor_id,
                 nominated_by=p.pete_user_id,
@@ -322,7 +335,7 @@ async def test_nomination_window(database):
         refused(
             await elections.add_candidate(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 volunteer_id=p.mia_id,
                 nominated_by=p.pete_user_id,
@@ -335,7 +348,7 @@ async def test_nomination_window(database):
             ok(
                 await elections.add_candidate(
                     session,
-                    None,
+                    SYSTEM,
                     proposal.id,
                     volunteer_id=p.victor_id,
                     nominated_by=p.admin_user_id,
@@ -351,7 +364,7 @@ async def test_candidate_removal_only_while_nominating(database):
         extra = ok(
             await elections.add_candidate(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 volunteer_id=p.victor_id,
                 nominated_by=p.admin_user_id,
@@ -360,17 +373,17 @@ async def test_candidate_removal_only_while_nominating(database):
         )
         refused(
             await elections.remove_candidate(
-                session, None, proposal.id, extra.id, today=VOTING_DAY
+                session, SYSTEM, proposal.id, extra.id, today=VOTING_DAY
             ),
             errors.Invalid,
             match="cannot remove a candidate",
         )
         ok(
             await elections.remove_candidate(
-                session, None, proposal.id, extra.id, today=TODAY
+                session, SYSTEM, proposal.id, extra.id, today=TODAY
             )
         )
-        view = ok(await elections.detail(session, None, proposal.id, today=TODAY))
+        view = ok(await elections.detail(session, SYSTEM, proposal.id, today=TODAY))
         assert [c.volunteer.id for c in view.candidates] == [p.vera_id]
 
 
@@ -381,7 +394,7 @@ async def test_roll_freezes_when_voting_begins(database):
         added = ok(
             await elections.add_voter(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 volunteer_id=p.mia_id,
                 added_by=p.admin_user_id,
@@ -390,13 +403,13 @@ async def test_roll_freezes_when_voting_begins(database):
         )
         ok(
             await elections.remove_voter(
-                session, None, proposal.id, added.id, today=TODAY
+                session, SYSTEM, proposal.id, added.id, today=TODAY
             )
         )
         refused(
             await elections.add_voter(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 volunteer_id=p.mia_id,
                 added_by=p.admin_user_id,
@@ -412,7 +425,7 @@ async def test_roll_freezes_when_voting_begins(database):
 
 async def _candidate_ids(session, proposal_id) -> dict[int, int]:
     """volunteer id -> candidate id"""
-    view = ok(await elections.detail(session, None, proposal_id, today=AFTER))
+    view = ok(await elections.detail(session, SYSTEM, proposal_id, today=AFTER))
     return {c.volunteer.id: c.candidate.id for c in view.candidates}
 
 
@@ -426,9 +439,8 @@ async def test_cast_ballot_phase_and_validation(database):
         refused(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(p.lena_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=p.lena_id,
                 scores={vera_c: 5},
                 today=TODAY,
                 now=mint.now(),
@@ -439,9 +451,8 @@ async def test_cast_ballot_phase_and_validation(database):
         refused(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(p.lena_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=p.lena_id,
                 scores={vera_c: 5},
                 today=AFTER,
                 now=mint.now(),
@@ -452,9 +463,8 @@ async def test_cast_ballot_phase_and_validation(database):
         refused(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(p.lena_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=p.lena_id,
                 scores={vera_c: 6},
                 today=VOTING_DAY,
                 now=mint.now(),
@@ -465,9 +475,8 @@ async def test_cast_ballot_phase_and_validation(database):
         refused(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(p.lena_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=p.lena_id,
                 scores={424242: 3},
                 today=VOTING_DAY,
                 now=mint.now(),
@@ -478,9 +487,8 @@ async def test_cast_ballot_phase_and_validation(database):
         refused(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(p.mia_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=p.mia_id,
                 scores={vera_c: 3},
                 today=VOTING_DAY,
                 now=mint.now(),
@@ -497,7 +505,7 @@ async def test_ballot_revision_and_zero_defaults(database):
         ok(
             await elections.add_candidate(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 volunteer_id=p.victor_id,
                 nominated_by=p.admin_user_id,
@@ -510,19 +518,24 @@ async def test_ballot_revision_and_zero_defaults(database):
         ok(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(p.lena_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=p.lena_id,
                 scores={},
                 today=VOTING_DAY,
                 now=mint.now(),
             )
         )
-        assert ok(await elections.my_scores(session, None, proposal.id, p.lena_id)) == {
+        assert ok(
+            await elections.my_scores(
+                session, as_volunteer(p.lena_id, proposals=[proposal.id]), proposal.id
+            )
+        ) == {
             cand[p.vera_id]: 0,
             cand[p.victor_id]: 0,
         }
-        view = ok(await elections.detail(session, None, proposal.id, today=VOTING_DAY))
+        view = ok(
+            await elections.detail(session, SYSTEM, proposal.id, today=VOTING_DAY)
+        )
         by_vol = {v.volunteer.id: v for v in view.voters}
         assert by_vol[p.lena_id].has_voted
         assert not by_vol[p.cora_id].has_voted
@@ -532,15 +545,18 @@ async def test_ballot_revision_and_zero_defaults(database):
         ok(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(p.lena_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=p.lena_id,
                 scores={cand[p.vera_id]: 5, cand[p.victor_id]: 2},
                 today=VOTING_DAY,
                 now=mint.now(),
             )
         )
-        assert ok(await elections.my_scores(session, None, proposal.id, p.lena_id)) == {
+        assert ok(
+            await elections.my_scores(
+                session, as_volunteer(p.lena_id, proposals=[proposal.id]), proposal.id
+            )
+        ) == {
             cand[p.vera_id]: 5,
             cand[p.victor_id]: 2,
         }
@@ -553,7 +569,7 @@ async def test_tally_gated_then_correct(database):
         ok(
             await elections.add_candidate(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 volunteer_id=p.victor_id,
                 nominated_by=p.admin_user_id,
@@ -571,9 +587,8 @@ async def test_tally_gated_then_correct(database):
             ok(
                 await elections.cast_ballot(
                     session,
-                    None,
+                    as_volunteer(voter_id, proposals=[proposal.id]),
                     proposal.id,
-                    voter_volunteer_id=voter_id,
                     scores=scores,
                     today=VOTING_DAY,
                     now=mint.now(),
@@ -582,12 +597,12 @@ async def test_tally_gated_then_correct(database):
 
         # aggregates stay hidden while ballots may still change
         during = ok(
-            await elections.detail(session, None, proposal.id, today=VOTING_DAY)
+            await elections.detail(session, SYSTEM, proposal.id, today=VOTING_DAY)
         )
         assert during.tally is None
 
         result = (
-            ok(await elections.detail(session, None, proposal.id, today=AFTER))
+            ok(await elections.detail(session, SYSTEM, proposal.id, today=AFTER))
         ).tally
         assert result is not None
         assert result.ballot_count == 3
@@ -606,7 +621,7 @@ async def test_appoint_concluded_only_and_creates_membership(database):
         # Vera is already a plain member: appointment upgrades her role
         ok(
             await memberships.assign(
-                session, None, p.vera_id, p.liturgy_id, TeamRole.member
+                session, SYSTEM, p.vera_id, p.liturgy_id, TeamRole.member
             )
         )
         proposal = await _open_proposal(session, p)
@@ -615,7 +630,7 @@ async def test_appoint_concluded_only_and_creates_membership(database):
         refused(
             await elections.appoint(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 cand[p.vera_id],
                 decided_by=p.admin_user_id,
@@ -629,7 +644,7 @@ async def test_appoint_concluded_only_and_creates_membership(database):
         appointed = ok(
             await elections.appoint(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 cand[p.vera_id],
                 decided_by=p.admin_user_id,
@@ -646,7 +661,7 @@ async def test_appoint_concluded_only_and_creates_membership(database):
         refused(
             await elections.appoint(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 cand[p.vera_id],
                 decided_by=p.admin_user_id,
@@ -667,7 +682,7 @@ async def test_appoint_foreign_candidate_refused(database):
         refused(
             await elections.appoint(
                 session,
-                None,
+                SYSTEM,
                 liturgy_p.id,
                 garden_cand,
                 decided_by=p.admin_user_id,
@@ -685,13 +700,13 @@ async def test_cancel(database):
         proposal = await _open_proposal(session, p)
         cancelled = ok(
             await elections.cancel(
-                session, None, proposal.id, decided_by=p.admin_user_id, now=mint.now()
+                session, SYSTEM, proposal.id, decided_by=p.admin_user_id, now=mint.now()
             )
         )
         assert cancelled.status == ProposalStatus.cancelled.value
         refused(
             await elections.cancel(
-                session, None, proposal.id, decided_by=p.admin_user_id, now=mint.now()
+                session, SYSTEM, proposal.id, decided_by=p.admin_user_id, now=mint.now()
             ),
             errors.Invalid,
             match="already cancelled",
@@ -706,9 +721,8 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
         ok(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(p.lena_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=p.lena_id,
                 scores={cand[p.vera_id]: 4},
                 today=VOTING_DAY,
                 now=mint.now(),
@@ -718,7 +732,7 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
         refused(
             await elections.new_round(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 created_by=p.admin_user_id,
                 nomination_deadline=date(2026, 9, 5),
@@ -733,7 +747,7 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
         fresh = ok(
             await elections.new_round(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 created_by=p.admin_user_id,
                 nomination_deadline=date(2026, 9, 5),
@@ -747,7 +761,7 @@ async def test_new_round_clones_candidates_and_roll_not_ballots(database):
         source = await elections.get(session, proposal.id)
         assert source.status == ProposalStatus.cancelled.value
 
-        view = ok(await elections.detail(session, None, fresh.id, today=AFTER))
+        view = ok(await elections.detail(session, SYSTEM, fresh.id, today=AFTER))
         assert [c.volunteer.id for c in view.candidates] == [p.vera_id]
         assert view.candidates[0].candidate.note == "steady hands"
         assert {v.volunteer.id for v in view.voters} == {
@@ -766,7 +780,7 @@ async def test_update_proposal_guards(database):
         updated = ok(
             await elections.update_proposal(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 nomination_deadline=date(2026, 8, 18),
                 notes="take our time",
@@ -779,7 +793,7 @@ async def test_update_proposal_guards(database):
         refused(
             await elections.update_proposal(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 voting_deadline=date(2026, 8, 17),
                 today=TODAY,
@@ -792,9 +806,8 @@ async def test_update_proposal_guards(database):
         ok(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(p.lena_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=p.lena_id,
                 scores={cand[p.vera_id]: 4},
                 today=date(2026, 8, 20),
                 now=mint.now(),
@@ -803,7 +816,7 @@ async def test_update_proposal_guards(database):
         refused(
             await elections.update_proposal(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 nomination_deadline=date(2026, 8, 22),
                 today=date(2026, 8, 21),
@@ -815,7 +828,7 @@ async def test_update_proposal_guards(database):
         ok(
             await elections.update_proposal(
                 session,
-                None,
+                SYSTEM,
                 proposal.id,
                 voting_deadline=date(2026, 8, 28),
                 today=date(2026, 8, 21),
@@ -824,12 +837,12 @@ async def test_update_proposal_guards(database):
 
         ok(
             await elections.cancel(
-                session, None, proposal.id, decided_by=p.admin_user_id, now=mint.now()
+                session, SYSTEM, proposal.id, decided_by=p.admin_user_id, now=mint.now()
             )
         )
         refused(
             await elections.update_proposal(
-                session, None, proposal.id, notes="too late", today=TODAY
+                session, SYSTEM, proposal.id, notes="too late", today=TODAY
             ),
             errors.Invalid,
             match="already cancelled",
@@ -868,7 +881,7 @@ async def test_list_proposals_scoping(database):
 
         ok(
             await elections.cancel(
-                session, None, garden_p.id, decided_by=p.admin_user_id, now=mint.now()
+                session, SYSTEM, garden_p.id, decided_by=p.admin_user_id, now=mint.now()
             )
         )
         open_only = await elections.list_proposals(
@@ -911,6 +924,7 @@ async def test_involving_flags_and_scoping(database):
                 "mia@example.org",
                 volunteer_id=p.mia_id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         mia = await _actor(session, mia_user.id)
@@ -921,7 +935,7 @@ async def test_involving_flags_and_scoping(database):
         ok(
             await elections.appoint(
                 session,
-                None,
+                SYSTEM,
                 liturgy_p.id,
                 cand[p.vera_id],
                 decided_by=p.admin_user_id,

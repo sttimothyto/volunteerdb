@@ -52,14 +52,14 @@ async def get_def(session: AsyncSession, field_id: int) -> CustomFieldDef | None
 
 async def create_def(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     label: str,
     field_type: FieldType | str,
     options: list | None = None,
     show_in_list: bool = False,
     position: int = 0,
 ) -> Result[CustomFieldDef, DomainError]:
-    if denied := require(actor is None or actor.is_admin, "manage custom fields"):
+    if denied := require(actor.is_admin, "manage custom fields"):
         return denied
     label = (label or "").strip()
     if not label:
@@ -89,7 +89,7 @@ async def create_def(
 
 async def update_def(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     field_id: int,
     *,
     label: str | None = None,
@@ -99,7 +99,7 @@ async def update_def(
     is_active: bool | None = None,
 ) -> Result[CustomFieldDef, DomainError]:
     """key and field_type are immutable — stored values are keyed/typed by them."""
-    if denied := require(actor is None or actor.is_admin, "manage custom fields"):
+    if denied := require(actor.is_admin, "manage custom fields"):
         return denied
     defn = await get_def(session, field_id)
     if defn is None:
@@ -127,10 +127,10 @@ async def update_def(
 
 
 async def delete_def(
-    session: AsyncSession, actor: Actor | None, field_id: int
+    session: AsyncSession, actor: Actor, field_id: int
 ) -> Result[None, DomainError]:
     """Hard delete; orphaned keys in Volunteer.custom simply stop being rendered."""
-    if denied := require(actor is None or actor.is_admin, "manage custom fields"):
+    if denied := require(actor.is_admin, "manage custom fields"):
         return denied
     defn = await get_def(session, field_id)
     if defn is None:
@@ -159,7 +159,7 @@ def validate_value(defn: CustomFieldDef, value: Any) -> Result[Any, Invalid]:
 
 async def set_values(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     volunteer_id: int,
     values: dict[str, Any],
 ) -> Result[Volunteer, DomainError]:
@@ -171,14 +171,13 @@ async def set_values(
     volunteer = await volunteer_service.get(session, volunteer_id)
     if volunteer is None:
         return not_found("volunteer", volunteer_id)
-    if actor is not None:
-        if denied := require(
-            actor.can_edit_volunteer(
-                volunteer_id, await volunteer_team_ids(session, volunteer_id)
-            ),
-            "edit this volunteer",
-        ):
-            return denied
+    if denied := require(
+        actor.can_edit_volunteer(
+            volunteer_id, await volunteer_team_ids(session, volunteer_id)
+        ),
+        "edit this volunteer",
+    ):
+        return denied
     defs = {d.key: d for d in await list_defs(session)}
     # always build a fresh dict: plain JSONB columns don't track in-place mutation
     merged = dict(volunteer.custom or {})

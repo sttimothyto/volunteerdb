@@ -45,7 +45,7 @@ from ..errors import (
 from ..fp import Err, Ok, Result
 from ..models import AppUser, Volunteer
 from ..passwords import check as check_password
-from ..permissions import Actor
+from ..permissions import SYSTEM, Actor
 from . import volunteers as volunteer_service
 
 OTP_TTL = timedelta(minutes=10)
@@ -135,22 +135,22 @@ async def get_by_email(session: AsyncSession, email: str) -> AppUser | None:
     ).scalar_one_or_none()
 
 
-def _require_admin(actor: Actor | None):
+def _require_admin(actor: Actor):
     """Account management is admin-only, and this is where that is decided.
 
     The one exception is invite_volunteer below, which a team's leaders,
     seconds and core members may use for one of their own people — it carries
     its own check and says why.
 
-    `actor=None` is a trusted internal caller: the deploy bootstrap, the seed
+    SYSTEM is the trusted internal caller: the deploy bootstrap, the seed
     script, the Drive-sync bot creating its own login, and the self-service
     paths on /account, which act on the signed-in account by construction.
     """
-    return require(actor is None or actor.is_admin, "manage accounts")
+    return require(actor.is_admin, "manage accounts")
 
 
 async def list_all(
-    session: AsyncSession, actor: Actor | None = None
+    session: AsyncSession, actor: Actor
 ) -> Result[list[AppUser], DomainError]:
     """Every account. Admin-only — the list is the parish's sign-in surface."""
     if denied := _require_admin(actor):
@@ -237,7 +237,7 @@ async def create(
     session: AsyncSession,
     email: str,
     *,
-    actor: Actor | None = None,
+    actor: Actor,
     volunteer_id: int | None = None,
     is_admin: bool = False,
     password: str | None = None,
@@ -329,7 +329,7 @@ async def reissue_invite(
     user_id: int,
     *,
     invite: Invite,
-    actor: Actor | None = None,
+    actor: Actor,
 ) -> Result[Outcome[str], DomainError]:
     """New invite link for a user who lost their password. Invalidates the old
     password — this is also how an admin forces a change on an account believed
@@ -393,10 +393,12 @@ async def invite_volunteer(
                 f"{addr} already signs in to another account — a shared address "
                 "can only hold one. Ask a parish admin to sort out the link."
             )
-        # actor=None: this function's own check (can_invite_volunteer, in the
+        # SYSTEM: this function's own check (can_invite_volunteer, in the
         # caller) is deliberately wider than account management, and the account
         # it mints is always non-admin and linked to that one volunteer
-        made = await create(session, addr, volunteer_id=volunteer_id, invite=invite)
+        made = await create(
+            session, addr, actor=SYSTEM, volunteer_id=volunteer_id, invite=invite
+        )
         if isinstance(made, Err):
             return made
         user, token = made.value
@@ -645,6 +647,9 @@ async def confirm_email_change(
         return not_found("confirmation link")
     previous = user.email  # the mailbox being moved away from
     addr = user.pending_email
+    # staged together with email_change_token and cleared together with it
+    # (_clear_email_change), so a live token means a pending address
+    assert addr is not None
     taken = await get_by_email(session, addr)
     if taken is not None and taken.id != user.id:
         # somebody else confirmed the same address inside the window
@@ -723,7 +728,7 @@ async def set_flags(
     session: AsyncSession,
     user_id: int,
     *,
-    actor: Actor | None = None,
+    actor: Actor,
     is_admin: bool | None = None,
     is_active: bool | None = None,
 ) -> Result[AppUser, DomainError]:
@@ -747,7 +752,7 @@ async def set_volunteer(
     user_id: int,
     volunteer_id: int | None,
     *,
-    actor: Actor | None = None,
+    actor: Actor,
 ) -> Result[AppUser, DomainError]:
     """Point an account at a volunteer record, or at none.
 
@@ -792,7 +797,7 @@ class ProvisionReport:
 
 async def bulk_provision(
     session: AsyncSession,
-    actor: Actor | None = None,
+    actor: Actor,
     *,
     mint: Callable[[], Invite],
 ) -> Result[Outcome[ProvisionReport], DomainError]:

@@ -72,7 +72,7 @@ async def _request_email_change(address: str, *, user_id: int, base_url: str) ->
     async def command(ctx: PageCtx):
         return await user_service.start_email_change(
             ctx.session,
-            ctx.actor.user.id,
+            ctx.actor.account.id,
             addr,
             now=ctx.now,
             token=ctx.env.rng.token(),
@@ -93,7 +93,7 @@ async def _request_email_change(address: str, *, user_id: int, base_url: str) ->
 
 async def _drop_email_change() -> None:
     async def command(ctx: PageCtx):
-        return await user_service.cancel_email_change(ctx.session, ctx.actor.user.id)
+        return await user_service.cancel_email_change(ctx.session, ctx.actor.account.id)
 
     await run_command(
         command,
@@ -124,6 +124,16 @@ async def _save_password(
         ui.notify("The two passwords don't match", color="negative")
         return
     if must_retype:
+        if stored_hash is None:
+            # The page was drawn for an account that had a password, and an
+            # admin's reissue_invite (services.users) has since cleared it:
+            # the retyped one can prove nothing now, and the link they were
+            # mailed is the way back in.
+            ui.notify(
+                "Your password was reset. Use the link you were sent to set a new one.",
+                color="negative",
+            )
+            return
         # Failed attempts here count against the same budgets as failed
         # sign-ins for this account (SP 800-63B §3.2.2): the per-account
         # bucket AND the per-IP flood bucket, exactly as the login page does.
@@ -146,7 +156,7 @@ async def _save_password(
 
     async def command(ctx: PageCtx):
         return await user_service.set_password(
-            ctx.session, ctx.actor.user.id, new, site_terms=ctx.env.password_terms
+            ctx.session, ctx.actor.account.id, new, site_terms=ctx.env.password_terms
         )
 
     await run_command(
@@ -169,7 +179,7 @@ async def _remove_password() -> None:
         return
 
     async def command(ctx: PageCtx):
-        return await user_service.clear_password(ctx.session, ctx.actor.user.id)
+        return await user_service.clear_password(ctx.session, ctx.actor.account.id)
 
     await run_command(
         command,
@@ -330,7 +340,7 @@ def _password_card(
 async def account_page():
     async with page_ctx() as ctx:
         actor = ctx.actor
-        user = actor.user
+        user = actor.account
         pending = (
             user.pending_email
             if user_service.email_change_live(user, ctx.now)

@@ -11,32 +11,35 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
+from tests.actors import as_volunteer
 from tests.conftest import SIM_MAIN, SLOW, db_session, only
 from tests.fp_helpers import ok
 
 
 async def _parish(session):
     """Liturgy (Lena leads, Cora core, Mia member) + Clergy (Dan, no account)."""
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    clergy = ok(await teams.create(session, None, "Clergy"))
-    lena = ok(await volunteers.create(session, None, "Lena", "Leader"))
-    cora = ok(await volunteers.create(session, None, "Cora", "Core"))
-    mia = ok(await volunteers.create(session, None, "Mia", "Member"))
-    dan = ok(await volunteers.create(session, None, "Dan", "Deacon"))
-    vera = ok(await volunteers.create(session, None, "Vera", "Volunteer"))
-    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
-    ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
-    ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
-    ok(await memberships.assign(session, None, dan.id, clergy.id, TeamRole.member))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    clergy = ok(await teams.create(session, SYSTEM, "Clergy"))
+    lena = ok(await volunteers.create(session, SYSTEM, "Lena", "Leader"))
+    cora = ok(await volunteers.create(session, SYSTEM, "Cora", "Core"))
+    mia = ok(await volunteers.create(session, SYSTEM, "Mia", "Member"))
+    dan = ok(await volunteers.create(session, SYSTEM, "Dan", "Deacon"))
+    vera = ok(await volunteers.create(session, SYSTEM, "Vera", "Volunteer"))
+    ok(await memberships.assign(session, SYSTEM, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, SYSTEM, cora.id, liturgy.id, TeamRole.core))
+    ok(await memberships.assign(session, SYSTEM, mia.id, liturgy.id, TeamRole.member))
+    ok(await memberships.assign(session, SYSTEM, dan.id, clergy.id, TeamRole.member))
     lena_u, _ = ok(
         await users.create(
             session,
             "lena@example.org",
             volunteer_id=lena.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     cora_u, _ = ok(
@@ -45,16 +48,25 @@ async def _parish(session):
             "cora@example.org",
             volunteer_id=cora.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     mia_u, _ = ok(
         await users.create(
-            session, "mia@example.org", volunteer_id=mia.id, invite=mint.fresh_invite()
+            session,
+            "mia@example.org",
+            volunteer_id=mia.id,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     admin_u, _ = ok(
         await users.create(
-            session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+            session,
+            "admin@example.org",
+            is_admin=True,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     return {
@@ -78,7 +90,7 @@ async def _seed_proposal(ids, *, d1_offset: int, d2_offset: int, ballots=None):
         proposal = ok(
             await elections.create_proposal(
                 session,
-                None,
+                SYSTEM,
                 team_id=ids["liturgy"],
                 role=TeamRole.second,
                 nomination_deadline=today + timedelta(days=d1_offset),
@@ -89,14 +101,13 @@ async def _seed_proposal(ids, *, d1_offset: int, d2_offset: int, ballots=None):
             )
         )
         for voter_vol_id, score in (ballots or {}).items():
-            view = ok(await elections.detail(session, None, proposal.id, today=today))
+            view = ok(await elections.detail(session, SYSTEM, proposal.id, today=today))
             cand_id = view.candidates[0].candidate.id
             ok(
                 await elections.cast_ballot(
                     session,
-                    None,
+                    as_volunteer(voter_vol_id, proposals=[proposal.id]),
                     proposal.id,
-                    voter_volunteer_id=voter_vol_id,
                     scores={cand_id: score},
                     today=today + timedelta(days=d1_offset + 1),
                     now=mint.now(),
@@ -135,7 +146,7 @@ async def test_leader_creates_proposal_from_vacancy(database):
 async def test_voter_access_and_nomination(database):
     async with db_session() as session:
         ids = await _parish(session)
-        victor = ok(await volunteers.create(session, None, "Victor", "Volunteer"))
+        victor = ok(await volunteers.create(session, SYSTEM, "Victor", "Volunteer"))
         victor_id = victor.id
     pid = await _seed_proposal(ids, d1_offset=5, d2_offset=15)
 
@@ -224,11 +235,11 @@ async def test_profile_lists_proposals_involving_the_volunteer(database):
     # and as the newly appointed second she sits on the fresh round's roll
     pid_done = await _seed_proposal(ids, d1_offset=-10, d2_offset=-5)
     async with db_session() as session:
-        view = ok(await elections.detail(session, None, pid_done, today=mint.today()))
+        view = ok(await elections.detail(session, SYSTEM, pid_done, today=mint.today()))
         ok(
             await elections.appoint(
                 session,
-                None,
+                SYSTEM,
                 pid_done,
                 view.candidates[0].candidate.id,
                 decided_by=ids["admin_u"],
@@ -268,7 +279,7 @@ async def test_nominating_the_same_person_twice_is_a_conflict_toast(database):
     turns that into the one Conflict toast rather than a stack trace."""
     async with db_session() as session:
         ids = await _parish(session)
-        victor = ok(await volunteers.create(session, None, "Victor", "Volunteer"))
+        victor = ok(await volunteers.create(session, SYSTEM, "Victor", "Volunteer"))
         victor_id = victor.id
     pid = await _seed_proposal(ids, d1_offset=5, d2_offset=15)
 

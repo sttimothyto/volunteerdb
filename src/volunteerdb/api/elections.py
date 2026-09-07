@@ -54,7 +54,7 @@ async def create_proposal(ctx: CtxDep, data: ProposalCreateIn) -> ProposalOut:
             role=data.role,
             nomination_deadline=data.nomination_deadline,
             voting_deadline=data.voting_deadline,
-            created_by=ctx.actor.user.id,
+            created_by=ctx.actor.account.id,
             candidates=[
                 service.CandidateInput(c.volunteer_id, c.note) for c in data.candidates
             ],
@@ -104,7 +104,7 @@ async def add_candidate(
             ctx.actor,
             proposal_id,
             volunteer_id=data.volunteer_id,
-            nominated_by=ctx.actor.user.id,
+            nominated_by=ctx.actor.account.id,
             note=data.note,
             today=ctx.env.today(),
         )
@@ -130,7 +130,7 @@ async def add_voter(ctx: CtxDep, proposal_id: int, data: VoterIn) -> VoterOut:
             ctx.actor,
             proposal_id,
             volunteer_id=data.volunteer_id,
-            added_by=ctx.actor.user.id,
+            added_by=ctx.actor.account.id,
             today=ctx.env.today(),
         )
     )
@@ -166,25 +166,18 @@ async def get_own_ballot(ctx: CtxDep, proposal_id: int) -> BallotOut:
     overwritten blind. A ballot is secret from everyone else — including the
     team's managers — so this only ever answers for the caller themselves.
     Empty until they vote."""
-    gate(ctx.actor.volunteer_id is not None, "vote on this proposal")
-    scores = raise_http(
-        await service.my_scores(
-            ctx.session, ctx.actor, proposal_id, ctx.actor.volunteer_id
-        )
-    )
+    scores = raise_http(await service.my_scores(ctx.session, ctx.actor, proposal_id))
     return BallotOut(scores=scores)
 
 
 @router.put("/proposals/{proposal_id}/ballot", status_code=204)
 async def cast_ballot(ctx: CtxDep, proposal_id: int, data: BallotIn) -> None:
     """Cast or revise the caller's whole ballot (PUT: idempotent overwrite)."""
-    gate(ctx.actor.volunteer_id is not None, "vote on this proposal")
     raise_http(
         await service.cast_ballot(
             ctx.session,
             ctx.actor,
             proposal_id,
-            voter_volunteer_id=ctx.actor.volunteer_id,
             scores=data.scores,
             today=ctx.env.today(),
             now=ctx.now,
@@ -215,7 +208,7 @@ async def appoint(ctx: CtxDep, proposal_id: int, data: AppointIn) -> ProposalOut
                 ctx.actor,
                 proposal_id,
                 data.candidate_id,
-                decided_by=ctx.actor.user.id,
+                decided_by=ctx.actor.account.id,
                 today=ctx.env.today(),
                 now=ctx.now,
             )
@@ -232,7 +225,7 @@ async def cancel(ctx: CtxDep, proposal_id: int) -> ProposalOut:
                 ctx.session,
                 ctx.actor,
                 proposal_id,
-                decided_by=ctx.actor.user.id,
+                decided_by=ctx.actor.account.id,
                 now=ctx.now,
             )
         ),
@@ -250,7 +243,7 @@ async def new_round(ctx: CtxDep, proposal_id: int, data: NewRoundIn) -> Proposal
                 ctx.session,
                 ctx.actor,
                 proposal_id,
-                created_by=ctx.actor.user.id,
+                created_by=ctx.actor.account.id,
                 nomination_deadline=data.nomination_deadline,
                 voting_deadline=data.voting_deadline,
                 today=ctx.env.today(),

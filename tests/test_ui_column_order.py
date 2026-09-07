@@ -15,6 +15,7 @@ from nicegui import app, ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import FieldType
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import custom_fields as custom_field_service
 from volunteerdb.ui import column_order
 from volunteerdb.ui.context import clear_session
@@ -233,7 +234,7 @@ async def test_a_custom_field_added_since_the_drag_still_appears(database):
         async with db_session() as session:
             ok(
                 await custom_field_service.create_def(
-                    session, None, "Diocese", FieldType.text, show_in_list=True
+                    session, SYSTEM, "Diocese", FieldType.text, show_in_list=True
                 )
             )
 

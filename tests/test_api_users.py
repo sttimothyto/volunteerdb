@@ -10,6 +10,7 @@ import pytest
 
 from volunteerdb.config import settings
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, users, volunteers
 
 from tests.conftest import _token, db_session
@@ -89,11 +90,11 @@ async def test_create_links_by_email_and_patch_relinks(client, seeded):
     async with db_session() as session:
         bruno = ok(
             await volunteers.create(
-                session, None, "Bruno", "Cordeiro", "bc@example.org"
+                session, SYSTEM, "Bruno", "Cordeiro", "bc@example.org"
             )
         )
         pedro = ok(
-            await volunteers.create(session, None, "Pedro", "Sousa", "ps@example.org")
+            await volunteers.create(session, SYSTEM, "Pedro", "Sousa", "ps@example.org")
         )
 
     r = await client.post("/api/users", json={"email": "bc@example.org"}, headers=admin)
@@ -132,7 +133,7 @@ async def test_provision_endpoint_adopts_an_unlinked_account(client, seeded):
     async with db_session() as session:
         late = ok(
             await volunteers.create(
-                session, None, "Late", "Arrival", "late@example.org"
+                session, SYSTEM, "Late", "Arrival", "late@example.org"
             )
         )
 
@@ -209,12 +210,12 @@ async def test_provision_endpoint_reports_created_and_skipped(client, seeded):
     async with db_session() as session:
         ok(
             await volunteers.create(
-                session, None, "Ana", "Family", "family@example.org"
+                session, SYSTEM, "Ana", "Family", "family@example.org"
             )
         )
         shared = ok(
             await volunteers.create(
-                session, None, "Bob", "Family", "family@example.org"
+                session, SYSTEM, "Bob", "Family", "family@example.org"
             )
         )
 
@@ -241,11 +242,13 @@ async def rostered(seeded):
     exactly what a leader finds on their roster and wants to fix."""
     async with db_session() as session:
         nils = ok(
-            await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Nils", "Nobody", "nils@example.org"
+            )
         )
         ok(
             await memberships.assign(
-                session, None, nils.id, seeded["team_id"], TeamRole.member
+                session, SYSTEM, nils.id, seeded["team_id"], TeamRole.member
             )
         )
         return nils.id
@@ -295,7 +298,7 @@ async def test_volunteer_invite_maps_service_refusals(client, seeded, token_admi
     assert r.status_code == 404
 
     async with db_session() as session:
-        quiet = ok(await volunteers.create(session, None, "Hank", "Host"))  # no email
+        quiet = ok(await volunteers.create(session, SYSTEM, "Hank", "Host"))  # no email
     r = await client.post(f"/api/volunteers/{quiet.id}/invite", headers=token_admin)
     assert r.status_code == 422
     assert "no email address" in r.json()["detail"]

@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.models import SiteLogo
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import branding, users
 
 from tests import mint
@@ -74,7 +75,9 @@ def _opened(data: bytes) -> Image.Image:
 
 async def _actor(session, email: str, *, admin: bool):
     user, _ = ok(
-        await users.create(session, email, is_admin=admin, invite=mint.fresh_invite())
+        await users.create(
+            session, email, is_admin=admin, invite=mint.fresh_invite(), actor=SYSTEM
+        )
     )
     return await load_actor(session, user)
 
@@ -195,7 +198,7 @@ async def test_set_replaces_rather_than_accumulates(database):
 
         ok(
             await branding.set_logo(
-                session, None, _png(400, 400), now=datetime.now(UTC)
+                session, SYSTEM, _png(400, 400), now=datetime.now(UTC)
             )
         )
         first = await branding.get(session)
@@ -207,7 +210,7 @@ async def test_set_replaces_rather_than_accumulates(database):
 
         ok(
             await branding.set_logo(
-                session, None, _png(600, 200), now=datetime.now(UTC)
+                session, SYSTEM, _png(600, 200), now=datetime.now(UTC)
             )
         )
         # Core select, straight past the identity map, to see what is stored
@@ -215,9 +218,9 @@ async def test_set_replaces_rather_than_accumulates(database):
         assert len(stored) == 1, "one logo, replaced in place — not a pile of versions"
         assert stored[0].image != first_bytes, "the upsert replaced the bytes"
 
-        ok(await branding.delete_logo(session, None))
+        ok(await branding.delete_logo(session, SYSTEM))
         assert await branding.get(session) is None
-        ok(await branding.delete_logo(session, None))  # idempotent
+        ok(await branding.delete_logo(session, SYSTEM))  # idempotent
 
 
 async def test_normalized_bytes_are_stored_verbatim(database):
@@ -227,7 +230,7 @@ async def test_normalized_bytes_are_stored_verbatim(database):
         pre = ok(branding.normalize(_png(500, 500)))
         ok(
             await branding.set_logo(
-                session, None, pre, normalized=True, now=datetime.now(UTC)
+                session, SYSTEM, pre, normalized=True, now=datetime.now(UTC)
             )
         )
         assert (await branding.get(session)).image == pre

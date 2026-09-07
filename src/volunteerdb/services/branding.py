@@ -308,7 +308,7 @@ async def stamp(session: AsyncSession) -> datetime | None:
 
 async def set_logo(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     image: bytes,
     *,
     now: datetime,
@@ -317,7 +317,7 @@ async def set_logo(
     """Replace the site logo. `normalized=True` is the web dialog saying it
     already ran normalize() to build its preview, so the bytes shown are
     exactly the bytes stored."""
-    if denied := require(actor is None or actor.is_admin, "set the site logo"):
+    if denied := require(actor.is_admin, "set the site logo"):
         return denied
     if normalized:
         stored = image
@@ -330,7 +330,7 @@ async def set_logo(
         id=ROW_ID,
         image=stored,
         content_type=CONTENT_TYPE,
-        uploaded_by=actor.user.id if actor is not None else None,
+        uploaded_by=actor.user_id,
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=[SiteLogo.id],
@@ -345,11 +345,9 @@ async def set_logo(
     return Ok(None)
 
 
-async def delete_logo(
-    session: AsyncSession, actor: Actor | None
-) -> Result[None, DomainError]:
+async def delete_logo(session: AsyncSession, actor: Actor) -> Result[None, DomainError]:
     """Back to the shipped placeholder (ui/static/logo-placeholder.svg)."""
-    if denied := require(actor is None or actor.is_admin, "set the site logo"):
+    if denied := require(actor.is_admin, "set the site logo"):
         return denied
     await session.execute(sa.delete(SiteLogo).where(SiteLogo.id == ROW_ID))
     return Ok(None)

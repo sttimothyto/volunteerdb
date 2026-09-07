@@ -19,10 +19,12 @@ from volunteerdb.models import (
     SubRequestStatus,
     TeamRole,
 )
+from volunteerdb.permissions import ANONYMOUS, SYSTEM
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
+from tests.actors import as_volunteer
 from tests.conftest import db_session
 from tests.fp_helpers import done, ok, refused
 
@@ -38,16 +40,16 @@ def _at(day: date, hour: int, minute: int = 0) -> datetime:
 async def _team_with_members(n: int = 2) -> tuple[int, list[int]]:
     """A team with volunteer 0 as leader and the rest as members."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Altar Servers"))
+        team = ok(await teams.create(session, SYSTEM, "Altar Servers"))
         vids = []
         for i in range(n):
             v = ok(
                 await volunteers.create(
-                    session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
+                    session, SYSTEM, f"Vol{i}", "Server", f"vol{i}@example.org"
                 )
             )
             role = TeamRole.leader if i == 0 else TeamRole.member
-            ok(await memberships.assign(session, None, v.id, team.id, role))
+            ok(await memberships.assign(session, SYSTEM, v.id, team.id, role))
             vids.append(v.id)
         return team.id, vids
 
@@ -60,7 +62,7 @@ async def _one_event(
         created = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Sunday Mass",
                 starts_at=start,
@@ -76,7 +78,7 @@ async def _one_event(
 
 async def _first_slot(event_id: int) -> int:
     async with db_session() as session:
-        d = ok(await event_service.detail(session, None, event_id))
+        d = ok(await event_service.detail(session, SYSTEM, event_id))
         return d.slots[0].slot.id
 
 
@@ -91,7 +93,7 @@ async def _past_event(team_id: int, vid: int | None = None) -> tuple[int, int | 
             a = ok(
                 await event_service.sign_up(
                     session,
-                    None,
+                    as_volunteer(vid),
                     slot_id=await _first_slot(event_id),
                     volunteer_id=vid,
                     now=mint.now(),
@@ -103,7 +105,7 @@ async def _past_event(team_id: int, vid: int | None = None) -> tuple[int, int | 
         ok(
             await event_service.update_event(
                 session,
-                None,
+                SYSTEM,
                 event_id,
                 starts_at=past,
                 ends_at=past + timedelta(hours=2),
@@ -119,7 +121,7 @@ async def test_create_defaults_to_one_unlimited_volunteers_slot(database):
     team_id, _ = await _team_with_members()
     event_id = await _one_event(team_id)
     async with db_session() as session:
-        d = ok(await event_service.detail(session, None, event_id))
+        d = ok(await event_service.detail(session, SYSTEM, event_id))
         assert [s.slot.name for s in d.slots] == ["Volunteers"]
         assert d.slots[0].slot.capacity is None
         assert d.slots[0].open_spots is None
@@ -133,7 +135,7 @@ async def test_create_with_explicit_slots_and_validation(database):
     ]
     event_id = await _one_event(team_id, slots=slots)
     async with db_session() as session:
-        d = ok(await event_service.detail(session, None, event_id))
+        d = ok(await event_service.detail(session, SYSTEM, event_id))
         assert [(s.slot.name, s.slot.capacity) for s in d.slots] == [
             ("Lector", 2),
             ("Greeter", None),
@@ -151,7 +153,7 @@ async def test_create_with_explicit_slots_and_validation(database):
             refused(
                 await event_service.create_event(
                     session,
-                    None,
+                    SYSTEM,
                     team_id=team_id,
                     title="X",
                     starts_at=_at(mint.today() + timedelta(days=1), 10),
@@ -166,7 +168,7 @@ async def test_create_with_explicit_slots_and_validation(database):
         refused(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="X",
                 starts_at=_at(mint.today() + timedelta(days=1), 11),
@@ -188,7 +190,7 @@ async def test_slot_descriptions_are_added_edited_and_cleared(database):
         slot = ok(
             await event_service.add_slot(
                 session,
-                None,
+                SYSTEM,
                 event_id,
                 name="Greeter",
                 description="  Main door, from 10:00  ",
@@ -199,7 +201,12 @@ async def test_slot_descriptions_are_added_edited_and_cleared(database):
 
         blank = ok(
             await event_service.add_slot(
-                session, None, event_id, name="Usher", description="   ", now=mint.now()
+                session,
+                SYSTEM,
+                event_id,
+                name="Usher",
+                description="   ",
+                now=mint.now(),
             )
         )
         assert blank.description is None
@@ -207,7 +214,7 @@ async def test_slot_descriptions_are_added_edited_and_cleared(database):
         refused(
             await event_service.add_slot(
                 session,
-                None,
+                SYSTEM,
                 event_id,
                 name="Cantor",
                 description="x" * 301,
@@ -219,7 +226,11 @@ async def test_slot_descriptions_are_added_edited_and_cleared(database):
     async with db_session() as session:
         edited = ok(
             await event_service.update_slot(
-                session, None, slot.id, description="Side door instead", now=mint.now()
+                session,
+                SYSTEM,
+                slot.id,
+                description="Side door instead",
+                now=mint.now(),
             )
         )
         assert edited.description == "Side door instead"
@@ -229,14 +240,14 @@ async def test_slot_descriptions_are_added_edited_and_cleared(database):
 
         cleared = ok(
             await event_service.update_slot(
-                session, None, slot.id, description="", now=mint.now()
+                session, SYSTEM, slot.id, description="", now=mint.now()
             )
         )
         assert cleared.description is None
 
         refused(
             await event_service.update_slot(
-                session, None, slot.id, description="x" * 301, now=mint.now()
+                session, SYSTEM, slot.id, description="x" * 301, now=mint.now()
             ),
             errors.Invalid,
         )
@@ -249,7 +260,7 @@ async def test_repeat_weekly_is_inclusive_and_copies_slots(database):
         created = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Sunday Mass",
                 starts_at=start,
@@ -267,7 +278,7 @@ async def test_repeat_weekly_is_inclusive_and_copies_slots(database):
         )
         assert len(created) == 3, "day 0, 7 and 14 — until is inclusive"
         for e in created:
-            d = ok(await event_service.detail(session, None, e.id))
+            d = ok(await event_service.detail(session, SYSTEM, e.id))
             assert [(s.slot.name, s.slot.capacity) for s in d.slots] == [("Lector", 2)]
             # written once at creation, carried onto every occurrence — the
             # reason a description belongs on the slot rather than in its name
@@ -283,7 +294,7 @@ async def test_repeat_keeps_wall_clock_time_across_dst(database):
         created = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Sunday Mass",
                 starts_at=start,
@@ -314,7 +325,7 @@ async def test_repeat_is_capped_at_a_year(database):
         refused(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Forever Mass",
                 starts_at=start,
@@ -339,12 +350,20 @@ async def test_capacity_fills_and_unlimited_never_does(database):
     async with db_session() as session:
         ok(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[1], now=mint.now()
+                session,
+                as_volunteer(vids[1]),
+                slot_id=slot_id,
+                volunteer_id=vids[1],
+                now=mint.now(),
             )
         )
         refused(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[2], now=mint.now()
+                session,
+                as_volunteer(vids[2]),
+                slot_id=slot_id,
+                volunteer_id=vids[2],
+                now=mint.now(),
             ),
             errors.Invalid,
             match="full",
@@ -356,7 +375,11 @@ async def test_capacity_fills_and_unlimited_never_does(database):
         for vid in vids:
             ok(
                 await event_service.sign_up(
-                    session, None, slot_id=open_slot, volunteer_id=vid, now=mint.now()
+                    session,
+                    as_volunteer(vid),
+                    slot_id=open_slot,
+                    volunteer_id=vid,
+                    now=mint.now(),
                 )
             )
 
@@ -371,16 +394,24 @@ async def test_one_slot_per_person_per_event(database):
         ],
     )
     async with db_session() as session:
-        d = ok(await event_service.detail(session, None, event_id))
+        d = ok(await event_service.detail(session, SYSTEM, event_id))
         lector, greeter = (s.slot.id for s in d.slots)
         ok(
             await event_service.sign_up(
-                session, None, slot_id=lector, volunteer_id=vids[1], now=mint.now()
+                session,
+                as_volunteer(vids[1]),
+                slot_id=lector,
+                volunteer_id=vids[1],
+                now=mint.now(),
             )
         )
         refused(
             await event_service.sign_up(
-                session, None, slot_id=greeter, volunteer_id=vids[1], now=mint.now()
+                session,
+                as_volunteer(vids[1]),
+                slot_id=greeter,
+                volunteer_id=vids[1],
+                now=mint.now(),
             ),
             errors.Invalid,
             match="already serve",
@@ -391,14 +422,18 @@ async def test_participation_requires_membership(database):
     team_id, _ = await _team_with_members(1)
     async with db_session() as session:
         outsider = ok(
-            await volunteers.create(session, None, "Out", "Sider", "out@example.org")
+            await volunteers.create(session, SYSTEM, "Out", "Sider", "out@example.org")
         )
     event_id = await _one_event(team_id)
     slot_id = await _first_slot(event_id)
     async with db_session() as session:
         refused(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=outsider.id, now=mint.now()
+                session,
+                as_volunteer(outsider.id),
+                slot_id=slot_id,
+                volunteer_id=outsider.id,
+                now=mint.now(),
             ),
             errors.Invalid,
             match="members",
@@ -406,7 +441,7 @@ async def test_participation_requires_membership(database):
         refused(
             await event_service.set_rsvp(
                 session,
-                None,
+                as_volunteer(outsider.id),
                 event_id=event_id,
                 volunteer_id=outsider.id,
                 available=True,
@@ -424,7 +459,7 @@ async def test_rsvp_upserts_and_flips(database):
         ok(
             await event_service.set_rsvp(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 event_id=event_id,
                 volunteer_id=vids[1],
                 available=True,
@@ -434,7 +469,7 @@ async def test_rsvp_upserts_and_flips(database):
         ok(
             await event_service.set_rsvp(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 event_id=event_id,
                 volunteer_id=vids[1],
                 available=False,
@@ -442,7 +477,7 @@ async def test_rsvp_upserts_and_flips(database):
                 now=mint.now(),
             )
         )
-        d = ok(await event_service.detail(session, None, event_id))
+        d = ok(await event_service.detail(session, SYSTEM, event_id))
         assert len(d.rsvps) == 1, "upsert, not a second row"
         rsvp, volunteer = d.rsvps[0]
         assert volunteer.id == vids[1]
@@ -459,7 +494,11 @@ async def test_roster_mutations_freeze_after_the_event(database):
     async with db_session() as session:
         refused(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[2], now=mint.now()
+                session,
+                as_volunteer(vids[2]),
+                slot_id=slot_id,
+                volunteer_id=vids[2],
+                now=mint.now(),
             ),
             errors.Invalid,
             match="ended",
@@ -467,7 +506,7 @@ async def test_roster_mutations_freeze_after_the_event(database):
         refused(
             await event_service.assign(
                 session,
-                None,
+                SYSTEM,
                 slot_id=slot_id,
                 volunteer_id=vids[2],
                 assigned_by=None,
@@ -478,7 +517,7 @@ async def test_roster_mutations_freeze_after_the_event(database):
         )
         refused(
             await event_service.remove_assignment(
-                session, None, assignment_id, now=mint.now()
+                session, SYSTEM, assignment_id, now=mint.now()
             ),
             errors.Invalid,
             match="ended",
@@ -486,7 +525,7 @@ async def test_roster_mutations_freeze_after_the_event(database):
         refused(
             await event_service.request_sub(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 requested_by=None,
                 now=mint.now(),
@@ -497,7 +536,7 @@ async def test_roster_mutations_freeze_after_the_event(database):
         refused(
             await event_service.set_rsvp(
                 session,
-                None,
+                as_volunteer(vids[2]),
                 event_id=event_id,
                 volunteer_id=vids[2],
                 available=True,
@@ -518,19 +557,23 @@ async def test_cancel_resolves_open_subs_and_returns_assignee_emails(database):
     async with db_session() as session:
         a = ok(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[1], now=mint.now()
+                session,
+                as_volunteer(vids[1]),
+                slot_id=slot_id,
+                volunteer_id=vids[1],
+                now=mint.now(),
             )
         )
         sub = done(
             await event_service.request_sub(
-                session, None, assignment_id=a.id, requested_by=None, now=mint.now()
+                session, SYSTEM, assignment_id=a.id, requested_by=None, now=mint.now()
             )
         ).value
         sub_id = sub.id
     async with db_session() as session:
         cancelled = done(
             await event_service.cancel_event(
-                session, None, event_id, cancelled_by=None, now=mint.now()
+                session, SYSTEM, event_id, cancelled_by=None, now=mint.now()
             )
         )
         event, (notice,) = cancelled.value, cancelled.events
@@ -542,14 +585,18 @@ async def test_cancel_resolves_open_subs_and_returns_assignee_emails(database):
         assert resolved.resolved_at is not None
         refused(
             await event_service.cancel_event(
-                session, None, event_id, cancelled_by=None, now=mint.now()
+                session, SYSTEM, event_id, cancelled_by=None, now=mint.now()
             ),
             errors.Invalid,
             match="already cancelled",
         )
         refused(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[2], now=mint.now()
+                session,
+                as_volunteer(vids[2]),
+                slot_id=slot_id,
+                volunteer_id=vids[2],
+                now=mint.now(),
             ),
             errors.Invalid,
             match="cancelled",
@@ -589,13 +636,17 @@ async def test_claim_moves_the_assignment_and_records_who(database):
     async with db_session() as session:
         a = ok(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[1], now=mint.now()
+                session,
+                as_volunteer(vids[1]),
+                slot_id=slot_id,
+                volunteer_id=vids[1],
+                now=mint.now(),
             )
         )
         sub = done(
             await event_service.request_sub(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=a.id,
                 requested_by=None,
                 note="out of town",
@@ -604,7 +655,7 @@ async def test_claim_moves_the_assignment_and_records_who(database):
         ).value
         refused(
             await event_service.request_sub(
-                session, None, assignment_id=a.id, requested_by=None, now=mint.now()
+                session, SYSTEM, assignment_id=a.id, requested_by=None, now=mint.now()
             ),
             errors.Invalid,
             match="already open",
@@ -613,7 +664,7 @@ async def test_claim_moves_the_assignment_and_records_who(database):
         claimed, assignment, asker = done(
             await event_service.claim_sub(
                 session,
-                None,
+                as_volunteer(vids[2]),
                 sub_request_id=sub.id,
                 volunteer_id=vids[2],
                 now=mint.now(),
@@ -635,7 +686,7 @@ async def test_claim_moves_the_assignment_and_records_who(database):
         refused(
             await event_service.claim_sub(
                 session,
-                None,
+                as_volunteer(vids[0]),
                 sub_request_id=sub.id,
                 volunteer_id=vids[0],
                 now=mint.now(),
@@ -655,27 +706,35 @@ async def test_claim_rejects_own_slot_and_double_booking(database):
         ],
     )
     async with db_session() as session:
-        d = ok(await event_service.detail(session, None, event_id))
+        d = ok(await event_service.detail(session, SYSTEM, event_id))
         lector, greeter = (s.slot.id for s in d.slots)
         a1 = ok(
             await event_service.sign_up(
-                session, None, slot_id=lector, volunteer_id=vids[1], now=mint.now()
+                session,
+                as_volunteer(vids[1]),
+                slot_id=lector,
+                volunteer_id=vids[1],
+                now=mint.now(),
             )
         )
         ok(
             await event_service.sign_up(
-                session, None, slot_id=greeter, volunteer_id=vids[2], now=mint.now()
+                session,
+                as_volunteer(vids[2]),
+                slot_id=greeter,
+                volunteer_id=vids[2],
+                now=mint.now(),
             )
         )
         sub = done(
             await event_service.request_sub(
-                session, None, assignment_id=a1.id, requested_by=None, now=mint.now()
+                session, SYSTEM, assignment_id=a1.id, requested_by=None, now=mint.now()
             )
         ).value
         refused(
             await event_service.claim_sub(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 sub_request_id=sub.id,
                 volunteer_id=vids[1],
                 now=mint.now(),
@@ -686,7 +745,7 @@ async def test_claim_rejects_own_slot_and_double_booking(database):
         refused(
             await event_service.claim_sub(
                 session,
-                None,
+                as_volunteer(vids[2]),
                 sub_request_id=sub.id,
                 volunteer_id=vids[2],
                 now=mint.now(),
@@ -703,12 +762,16 @@ async def test_cancel_sub_and_claimable_visibility(database):
     async with db_session() as session:
         a = ok(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[1], now=mint.now()
+                session,
+                as_volunteer(vids[1]),
+                slot_id=slot_id,
+                volunteer_id=vids[1],
+                now=mint.now(),
             )
         )
         sub = done(
             await event_service.request_sub(
-                session, None, assignment_id=a.id, requested_by=None, now=mint.now()
+                session, SYSTEM, assignment_id=a.id, requested_by=None, now=mint.now()
             )
         ).value
         user2, _ = ok(
@@ -717,6 +780,7 @@ async def test_cancel_sub_and_claimable_visibility(database):
                 "vol2@example.org",
                 volunteer_id=vids[2],
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor2 = await load_actor(session, user2)
@@ -730,6 +794,7 @@ async def test_cancel_sub_and_claimable_visibility(database):
                 "vol1@example.org",
                 volunteer_id=vids[1],
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor1 = await load_actor(session, user1)
@@ -737,10 +802,10 @@ async def test_cancel_sub_and_claimable_visibility(database):
             await event_service.claimable_subs(session, actor1, now=mint.now()) == []
         ), "your own request is not claimable by you"
 
-        ok(await event_service.cancel_sub(session, None, sub.id, now=mint.now()))
+        ok(await event_service.cancel_sub(session, SYSTEM, sub.id, now=mint.now()))
         assert await event_service.claimable_subs(session, actor2, now=mint.now()) == []
         refused(
-            await event_service.cancel_sub(session, None, sub.id, now=mint.now()),
+            await event_service.cancel_sub(session, SYSTEM, sub.id, now=mint.now()),
             errors.Invalid,
             match="already cancelled",
         )
@@ -762,7 +827,7 @@ async def test_attendance_derives_and_overrides(database):
         ok(
             await event_service.set_attendance(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 attended=False,
                 hours=None,
@@ -774,7 +839,7 @@ async def test_attendance_derives_and_overrides(database):
         ok(
             await event_service.set_attendance(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 attended=True,
                 hours=Decimal("3.5"),
@@ -786,7 +851,7 @@ async def test_attendance_derives_and_overrides(database):
         ok(
             await event_service.set_attendance(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 attended=None,
                 hours=None,
@@ -799,7 +864,7 @@ async def test_attendance_derives_and_overrides(database):
         refused(
             await event_service.set_attendance(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 attended=True,
                 hours=Decimal("-1"),
@@ -817,13 +882,17 @@ async def test_attendance_needs_a_finished_uncancelled_event(database):
     async with db_session() as session:
         a = ok(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[1], now=mint.now()
+                session,
+                as_volunteer(vids[1]),
+                slot_id=slot_id,
+                volunteer_id=vids[1],
+                now=mint.now(),
             )
         )
         refused(
             await event_service.set_attendance(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=a.id,
                 attended=False,
                 hours=None,
@@ -844,7 +913,7 @@ async def test_hours_sum_past_uncancelled_events_only(database):
         ok(
             await event_service.set_attendance(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=a2,
                 attended=True,
                 hours=Decimal("1.25"),
@@ -854,7 +923,7 @@ async def test_hours_sum_past_uncancelled_events_only(database):
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 slot_id=await _first_slot(future),
                 volunteer_id=vids[1],
                 now=mint.now(),
@@ -863,13 +932,13 @@ async def test_hours_sum_past_uncancelled_events_only(database):
     async with db_session() as session:
         done(
             await event_service.cancel_event(
-                session, None, cancelled, cancelled_by=None, now=mint.now()
+                session, SYSTEM, cancelled, cancelled_by=None, now=mint.now()
             )
         )
     async with db_session() as session:
         summary = ok(
             await event_service.hours_for_volunteer(
-                session, None, vids[1], now=mint.now()
+                session, SYSTEM, vids[1], now=mint.now()
             )
         )
         assert summary.events_attended == 2
@@ -882,18 +951,22 @@ async def test_hours_sum_past_uncancelled_events_only(database):
 async def test_list_events_scopes_to_the_actors_teams(database):
     team_a, vids_a = await _team_with_members(2)
     async with db_session() as session:
-        team_b = ok(await teams.create(session, None, "Choir"))
+        team_b = ok(await teams.create(session, SYSTEM, "Choir"))
         other = ok(
-            await volunteers.create(session, None, "Oda", "Choir", "oda@example.org")
+            await volunteers.create(session, SYSTEM, "Oda", "Choir", "oda@example.org")
         )
         ok(
             await memberships.assign(
-                session, None, other.id, team_b.id, TeamRole.member
+                session, SYSTEM, other.id, team_b.id, TeamRole.member
             )
         )
         admin, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
     await _one_event(team_a)
@@ -902,7 +975,7 @@ async def test_list_events_scopes_to_the_actors_teams(database):
         ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_b.id,
                 title="Choir practice",
                 starts_at=b_start,
@@ -919,6 +992,7 @@ async def test_list_events_scopes_to_the_actors_teams(database):
                 "vol1@example.org",
                 volunteer_id=vids_a[1],
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         member_actor = await load_actor(session, member)
@@ -943,7 +1017,7 @@ async def test_summary_counts_fill_and_capacity(database):
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 slot_id=await _first_slot(event_id),
                 volunteer_id=vids[1],
                 now=mint.now(),
@@ -955,6 +1029,7 @@ async def test_summary_counts_fill_and_capacity(database):
                 "vol0@example.org",
                 volunteer_id=vids[0],
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await load_actor(session, leader)
@@ -973,7 +1048,11 @@ async def test_summary_counts_fill_and_capacity(database):
 async def _admin_actor(session):
     admin, _ = ok(
         await users.create(
-            session, "checker@example.org", is_admin=True, invite=mint.fresh_invite()
+            session,
+            "checker@example.org",
+            is_admin=True,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     return await load_actor(session, admin)
@@ -1039,11 +1118,11 @@ async def test_similar_events_masks_titles_outside_the_actors_scope(database):
     team_id, vids = await _team_with_members()
     day = mint.today() + timedelta(days=7)
     async with db_session() as session:
-        other = ok(await teams.create(session, None, "Garden Guild"))
+        other = ok(await teams.create(session, SYSTEM, "Garden Guild"))
         ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=other.id,
                 title="Secret planning",
                 starts_at=_at(day, 10),
@@ -1061,6 +1140,7 @@ async def test_similar_events_masks_titles_outside_the_actors_scope(database):
                 "vol1@example.org",
                 volunteer_id=vids[1],
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await load_actor(session, member)
@@ -1110,7 +1190,7 @@ async def test_substitute_hands_the_slot_over(database):
         a = ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 slot_id=await _first_slot(event_id),
                 volunteer_id=vids[1],
                 now=mint.now(),
@@ -1118,7 +1198,7 @@ async def test_substitute_hands_the_slot_over(database):
         )
         sub = done(
             await event_service.request_sub(
-                session, None, assignment_id=a.id, requested_by=None, now=mint.now()
+                session, SYSTEM, assignment_id=a.id, requested_by=None, now=mint.now()
             )
         ).value
         assignment_id, sub_id = a.id, sub.id
@@ -1126,7 +1206,7 @@ async def test_substitute_hands_the_slot_over(database):
         assignment, outgoing, incoming = done(
             await event_service.substitute(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 new_volunteer_id=vids[2],
                 acted_by=None,
@@ -1170,7 +1250,7 @@ async def test_substitute_default_lets_the_digest_reach_the_new_person(database)
         a = ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 slot_id=await _first_slot(event_id),
                 volunteer_id=vids[1],
                 now=mint.now(),
@@ -1183,7 +1263,7 @@ async def test_substitute_default_lets_the_digest_reach_the_new_person(database)
         assignment, _outgoing, _incoming = done(
             await event_service.substitute(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 new_volunteer_id=vids[2],
                 acted_by=None,
@@ -1206,23 +1286,31 @@ async def test_substitute_rejects_bad_targets(database):
         slot_id = await _first_slot(event_id)
         a = ok(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[1], now=mint.now()
+                session,
+                as_volunteer(vids[1]),
+                slot_id=slot_id,
+                volunteer_id=vids[1],
+                now=mint.now(),
             )
         )
         ok(
             await event_service.sign_up(
-                session, None, slot_id=slot_id, volunteer_id=vids[2], now=mint.now()
+                session,
+                as_volunteer(vids[2]),
+                slot_id=slot_id,
+                volunteer_id=vids[2],
+                now=mint.now(),
             )
         )
         outsider = ok(
-            await volunteers.create(session, None, "Out", "Sider", "out@example.org")
+            await volunteers.create(session, SYSTEM, "Out", "Sider", "out@example.org")
         )
         assignment_id, outsider_id = a.id, outsider.id
     async with db_session() as session:
         refused(
             await event_service.substitute(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 new_volunteer_id=vids[1],
                 acted_by=None,
@@ -1235,7 +1323,7 @@ async def test_substitute_rejects_bad_targets(database):
         refused(
             await event_service.substitute(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 new_volunteer_id=vids[2],
                 acted_by=None,
@@ -1248,7 +1336,7 @@ async def test_substitute_rejects_bad_targets(database):
         refused(
             await event_service.substitute(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 new_volunteer_id=outsider_id,
                 acted_by=None,
@@ -1267,7 +1355,7 @@ async def test_substitute_refuses_once_the_event_ended(database):
         refused(
             await event_service.substitute(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=assignment_id,
                 new_volunteer_id=vids[2],
                 acted_by=None,
@@ -1289,7 +1377,7 @@ async def test_weekly_repeats_share_a_series_id_and_singles_do_not(database):
         series = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Sunday Mass",
                 starts_at=start,
@@ -1303,7 +1391,7 @@ async def test_weekly_repeats_share_a_series_id_and_singles_do_not(database):
         single = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Bake sale",
                 starts_at=start,
@@ -1325,7 +1413,7 @@ async def test_sign_up_series_copies_forward_and_skips_gracefully(database):
         weeks = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title="Sunday Mass",
                 starts_at=start,
@@ -1342,29 +1430,29 @@ async def test_sign_up_series_copies_forward_and_skips_gracefully(database):
 
     async with db_session() as session:
         # week 3's Lector is taken; week 4's slot gets renamed
-        d3 = ok(await event_service.detail(session, None, week_ids[2]))
+        d3 = ok(await event_service.detail(session, SYSTEM, week_ids[2]))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(vids[2]),
                 slot_id=d3.slots[0].slot.id,
                 volunteer_id=vids[2],
                 now=mint.now(),
             )
         )
-        d4 = ok(await event_service.detail(session, None, week_ids[3]))
+        d4 = ok(await event_service.detail(session, SYSTEM, week_ids[3]))
         ok(
             await event_service.update_slot(
-                session, None, d4.slots[0].slot.id, name="Cantor", now=mint.now()
+                session, SYSTEM, d4.slots[0].slot.id, name="Cantor", now=mint.now()
             )
         )
 
     async with db_session() as session:
-        d1 = ok(await event_service.detail(session, None, week_ids[0]))
+        d1 = ok(await event_service.detail(session, SYSTEM, week_ids[0]))
         first, result = ok(
             await event_service.sign_up_series(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 slot_id=d1.slots[0].slot.id,
                 volunteer_id=vids[1],
                 now=mint.now(),
@@ -1381,7 +1469,7 @@ async def test_sign_up_series_copies_forward_and_skips_gracefully(database):
         for week_id, expect in zip(
             week_ids, [True, True, False, False, True], strict=True
         ):
-            d = ok(await event_service.detail(session, None, week_id))
+            d = ok(await event_service.detail(session, SYSTEM, week_id))
             names = {v.id for sv in d.slots for _, v in sv.entries}
             assert (vids[1] in names) is expect, f"week {week_id}"
 
@@ -1393,7 +1481,7 @@ async def test_sign_up_series_on_a_standalone_event_is_just_a_sign_up(database):
         first, result = ok(
             await event_service.sign_up_series(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 slot_id=await _first_slot(event_id),
                 volunteer_id=vids[1],
                 now=mint.now(),
@@ -1409,7 +1497,7 @@ async def test_sign_up_series_on_a_standalone_event_is_just_a_sign_up(database):
 async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
     team_id, vids = await _team_with_members(2)
     async with db_session() as session:
-        other_team = (ok(await teams.create(session, None, "Choir"))).id
+        other_team = (ok(await teams.create(session, SYSTEM, "Choir"))).id
     start = _at(mint.today() + timedelta(days=7), 10)
     mine = await _one_event(team_id, start=start)
     theirs = await _one_event(team_id, start=start + timedelta(days=1))
@@ -1418,7 +1506,7 @@ async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 slot_id=await _first_slot(mine),
                 volunteer_id=vids[1],
                 now=mint.now(),
@@ -1426,7 +1514,7 @@ async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
         )
         done(
             await event_service.cancel_event(
-                session, None, elsewhere, cancelled_by=None, now=mint.now()
+                session, SYSTEM, elsewhere, cancelled_by=None, now=mint.now()
             )
         )
     async with db_session() as session:
@@ -1436,6 +1524,7 @@ async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
                 "m@example.org",
                 volunteer_id=vids[1],
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await load_actor(session, member)
@@ -1460,7 +1549,7 @@ async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
         ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=other_team,
                 title="Vespers",
                 starts_at=start + timedelta(days=3),
@@ -1480,14 +1569,14 @@ async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
         # anonymous (the public feed): everything listed, nothing linkable
         public = ok(
             await event_service.calendar_entries(
-                session, None, scope="parish", **window
+                session, ANONYMOUS, scope="parish", **window
             )
         )
         assert len(public) == 3 and not any(e.visible for e in public)
         assert (
             ok(
                 await event_service.calendar_entries(
-                    session, None, scope="mine", **window
+                    session, SYSTEM, scope="mine", **window
                 )
             )
             == []
@@ -1507,7 +1596,7 @@ async def test_calendar_entries_mine_is_what_i_hold_a_slot_at(database):
     async with db_session() as session:
         refused(
             await event_service.calendar_entries(
-                session, None, scope="everything", **window
+                session, SYSTEM, scope="everything", **window
             ),
             errors.Invalid,
         )

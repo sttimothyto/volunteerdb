@@ -179,7 +179,7 @@ def _check_workload_weight(workload_weight: Decimal | None) -> Err[Invalid] | No
 
 async def create(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     name: str,
     parent_team_id: int | None = None,
     description: str | None = None,
@@ -188,10 +188,10 @@ async def create(
     """Create a ministry. Admin-only — a team is the unit permissions hang off,
     so minting one is not a roster operation.
 
-    `actor=None` is the trusted internal caller (the seed script, and
+    SYSTEM is the trusted internal caller (the seed script, and
     services.task_force, which creates the meta team on behalf of whoever was
     already allowed to manage the event)."""
-    if denied := require(actor is None or actor.is_admin, "only admins create teams"):
+    if denied := require(actor.is_admin, "only admins create teams"):
         return denied
     if bad := _check_workload_weight(workload_weight):
         return bad
@@ -208,7 +208,7 @@ async def create(
 
 async def update(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     team_id: int,
     *,
     name: str | None = None,
@@ -217,7 +217,7 @@ async def update(
     is_active: bool | None = None,
     workload_weight: Decimal | None | object = UNSET,
 ) -> Result[Team, DomainError]:
-    if denied := require(actor is None or actor.is_admin, "only admins edit teams"):
+    if denied := require(actor.is_admin, "only admins edit teams"):
         return denied
     team = await get(session, team_id)
     if team is None:
@@ -270,12 +270,12 @@ async def _sheet_row(session: AsyncSession, team_id: int) -> TeamSheet:
 
 
 async def roster_sheet(
-    session: AsyncSession, actor: Actor | None, team_id: int
+    session: AsyncSession, actor: Actor, team_id: int
 ) -> Result[TeamSheet | None, DomainError]:
     """The team's Drive roster sheet record, or None if the sync has not made
     one yet. Management rights, matching what the team page already shows."""
     if denied := require(
-        actor is None or actor.can_manage_team(team_id),
+        actor.can_manage_team(team_id),
         "see this team's roster spreadsheet",
     ):
         return denied
@@ -283,7 +283,7 @@ async def roster_sheet(
 
 
 async def set_roster_sheet(
-    session: AsyncSession, actor: Actor | None, team_id: int, url: str
+    session: AsyncSession, actor: Actor, team_id: int, url: str
 ) -> Result[TeamSheet, DomainError]:
     """Point the team at the roster spreadsheet behind `url`.
 
@@ -304,7 +304,7 @@ async def set_roster_sheet(
     caller is expected to sync afterwards — this function touches no network.
     """
     if denied := require(
-        actor is None or actor.can_manage_team(team_id),
+        actor.can_manage_team(team_id),
         "change this team's roster spreadsheet",
     ):
         return denied
@@ -362,9 +362,9 @@ async def leader_emails(session: AsyncSession, team_id: int) -> list[str]:
 
 
 async def delete(
-    session: AsyncSession, actor: Actor | None, team_id: int
+    session: AsyncSession, actor: Actor, team_id: int
 ) -> Result[None, DomainError]:
-    if denied := require(actor is None or actor.is_admin, "only admins delete teams"):
+    if denied := require(actor.is_admin, "only admins delete teams"):
         return denied
     team = await get(session, team_id)
     if team is None:
@@ -395,7 +395,7 @@ async def delete(
 
 async def roster(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     team_id: int,
     at: datetime | None = None,
 ) -> Result[list[tuple[Membership, Volunteer]], DomainError]:
@@ -406,7 +406,7 @@ async def roster(
     (api.volunteers.redacted, and the tiers the team page renders). The check
     here is the one that decides whether the roster exists for you at all."""
     if denied := require(
-        actor is None or actor.can_view_roster_names(team_id),
+        actor.can_view_roster_names(team_id),
         "view this team's roster",
     ):
         return denied

@@ -5,6 +5,7 @@ from decimal import Decimal
 from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import graph as graph_service
 from volunteerdb.services import memberships, teams, users, volunteers, workload
 
@@ -33,13 +34,13 @@ async def test_config_default_and_roundtrip(database):
         ]
     )
     async with db_session() as session:
-        ok(await workload.set_config(session, None, custom, now=mint.now()))
+        ok(await workload.set_config(session, SYSTEM, custom, now=mint.now()))
     async with db_session() as session:
         loaded = await workload.read_config(session)
         assert loaded == custom
         ok(
             await workload.set_config(
-                session, None, workload.DEFAULT_CONFIG, now=mint.now()
+                session, SYSTEM, workload.DEFAULT_CONFIG, now=mint.now()
             )
         )  # upsert overwrites
     async with db_session() as session:
@@ -74,7 +75,7 @@ async def test_config_validation(database):
     for bad in bad_configs:
         async with db_session() as session:
             refused(
-                await workload.set_config(session, None, bad, now=mint.now()),
+                await workload.set_config(session, SYSTEM, bad, now=mint.now()),
                 errors.Invalid,
             )
 
@@ -93,32 +94,36 @@ def test_band_for_boundaries():
 async def test_scores_role_multiplied_and_null_weights(database):
     async with db_session() as session:
         liturgy = ok(
-            await teams.create(session, None, "Liturgy", workload_weight=Decimal("3"))
+            await teams.create(session, SYSTEM, "Liturgy", workload_weight=Decimal("3"))
         )
         choir = ok(
-            await teams.create(session, None, "Choir", workload_weight=Decimal("2"))
+            await teams.create(session, SYSTEM, "Choir", workload_weight=Decimal("2"))
         )
         social = ok(
-            await teams.create(session, None, "Social")
+            await teams.create(session, SYSTEM, "Social")
         )  # unweighted -> contributes 0
 
-        busy = ok(await volunteers.create(session, None, "Busy", "Bee"))
-        light = ok(await volunteers.create(session, None, "Light", "Load"))
-        idle = ok(await volunteers.create(session, None, "Idle", "Hands"))
+        busy = ok(await volunteers.create(session, SYSTEM, "Busy", "Bee"))
+        light = ok(await volunteers.create(session, SYSTEM, "Light", "Load"))
+        idle = ok(await volunteers.create(session, SYSTEM, "Idle", "Hands"))
 
         ok(
             await memberships.assign(
-                session, None, busy.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, busy.id, liturgy.id, TeamRole.leader
             )
         )  # 3 × 3 = 9
         ok(
-            await memberships.assign(session, None, busy.id, choir.id, TeamRole.core)
+            await memberships.assign(session, SYSTEM, busy.id, choir.id, TeamRole.core)
         )  # 2 × 1.5 = 3
         ok(
-            await memberships.assign(session, None, busy.id, social.id, TeamRole.leader)
+            await memberships.assign(
+                session, SYSTEM, busy.id, social.id, TeamRole.leader
+            )
         )  # NULL -> 0
         ok(
-            await memberships.assign(session, None, light.id, choir.id, TeamRole.member)
+            await memberships.assign(
+                session, SYSTEM, light.id, choir.id, TeamRole.member
+            )
         )  # 2 × 1 = 2
         ids = {"busy": busy.id, "light": light.id, "idle": idle.id}
 
@@ -139,35 +144,35 @@ async def test_scores_role_multiplied_and_null_weights(database):
 async def test_visible_scores_respects_permissions(database):
     async with db_session() as session:
         liturgy = ok(
-            await teams.create(session, None, "Liturgy", workload_weight=Decimal("2"))
+            await teams.create(session, SYSTEM, "Liturgy", workload_weight=Decimal("2"))
         )
         garden = ok(
-            await teams.create(session, None, "Garden", workload_weight=Decimal("1"))
+            await teams.create(session, SYSTEM, "Garden", workload_weight=Decimal("1"))
         )
 
-        lead = ok(await volunteers.create(session, None, "Lead", "Er"))
-        follower = ok(await volunteers.create(session, None, "Fol", "Lower"))
-        outsider = ok(await volunteers.create(session, None, "Out", "Sider"))
+        lead = ok(await volunteers.create(session, SYSTEM, "Lead", "Er"))
+        follower = ok(await volunteers.create(session, SYSTEM, "Fol", "Lower"))
+        outsider = ok(await volunteers.create(session, SYSTEM, "Out", "Sider"))
         ok(
             await memberships.assign(
-                session, None, lead.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, lead.id, liturgy.id, TeamRole.leader
             )
         )
         ok(
             await memberships.assign(
-                session, None, follower.id, liturgy.id, TeamRole.member
+                session, SYSTEM, follower.id, liturgy.id, TeamRole.member
             )
         )
         # follower also serves elsewhere: global score must include the team
         # the leader cannot even see
         ok(
             await memberships.assign(
-                session, None, follower.id, garden.id, TeamRole.leader
+                session, SYSTEM, follower.id, garden.id, TeamRole.leader
             )
         )
         ok(
             await memberships.assign(
-                session, None, outsider.id, garden.id, TeamRole.member
+                session, SYSTEM, outsider.id, garden.id, TeamRole.member
             )
         )
 
@@ -180,6 +185,7 @@ async def test_visible_scores_respects_permissions(database):
                         "lead@example.org",
                         volunteer_id=lead.id,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -193,6 +199,7 @@ async def test_visible_scores_respects_permissions(database):
                         "admin@example.org",
                         is_admin=True,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -219,33 +226,33 @@ async def test_visible_scores_respects_permissions(database):
 async def test_graph_colors_only_permitted_nodes(database):
     async with db_session() as session:
         liturgy = ok(
-            await teams.create(session, None, "Liturgy", workload_weight=Decimal("2"))
+            await teams.create(session, SYSTEM, "Liturgy", workload_weight=Decimal("2"))
         )
         garden = ok(
-            await teams.create(session, None, "Garden", workload_weight=Decimal("1"))
+            await teams.create(session, SYSTEM, "Garden", workload_weight=Decimal("1"))
         )
 
-        lead = ok(await volunteers.create(session, None, "Lead", "Er"))
-        follower = ok(await volunteers.create(session, None, "Fol", "Lower"))
-        watcher = ok(await volunteers.create(session, None, "Core", "Watcher"))
+        lead = ok(await volunteers.create(session, SYSTEM, "Lead", "Er"))
+        follower = ok(await volunteers.create(session, SYSTEM, "Fol", "Lower"))
+        watcher = ok(await volunteers.create(session, SYSTEM, "Core", "Watcher"))
         ok(
             await memberships.assign(
-                session, None, lead.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, lead.id, liturgy.id, TeamRole.leader
             )
         )
         ok(
             await memberships.assign(
-                session, None, follower.id, liturgy.id, TeamRole.member
+                session, SYSTEM, follower.id, liturgy.id, TeamRole.member
             )
         )
         ok(
             await memberships.assign(
-                session, None, follower.id, garden.id, TeamRole.leader
+                session, SYSTEM, follower.id, garden.id, TeamRole.leader
             )
         )
         ok(
             await memberships.assign(
-                session, None, watcher.id, liturgy.id, TeamRole.core
+                session, SYSTEM, watcher.id, liturgy.id, TeamRole.core
             )
         )
 
@@ -258,6 +265,7 @@ async def test_graph_colors_only_permitted_nodes(database):
                         "lead@example.org",
                         volunteer_id=lead.id,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -271,6 +279,7 @@ async def test_graph_colors_only_permitted_nodes(database):
                         "core@example.org",
                         volunteer_id=watcher.id,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -284,6 +293,7 @@ async def test_graph_colors_only_permitted_nodes(database):
                         "admin@example.org",
                         is_admin=True,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],

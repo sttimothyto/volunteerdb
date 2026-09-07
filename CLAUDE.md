@@ -53,16 +53,21 @@ Read capabilities with `eglot--capabilities`, not `eglot--server-capabilities`
 
 ### Known standing diagnostics, and the ceiling over them
 
-`ty check src/` reports 95 diagnostics, and `make types` (CI's lint job runs the
-same `scripts/typecheck.py`) fails the build above that number. So a diagnostic
+`ty check src/` reports exactly the number `CEILING` in `scripts/typecheck.py`
+holds it to (70 on 2026-09-06), and `make types` (CI's lint job runs the same
+script) fails the build above that number. So a diagnostic
 in a file you edited is **not** automatically pre-existing: check it against the
 ceiling before assuming it was already there, and if your change adds one, fix
 the type rather than raising the ceiling. Fewer is a ratchet — lower `CEILING`
 in the same commit.
 
-The remainder is roughly half SQLAlchemy's declarative surface (model `__init__`
-overloads, Enum column descriptors) and half real `X | None` narrowing gaps in
-`query_lang.py` and `services/elections.py`.
+The remainder is mostly the checker's blind spots rather than bugs:
+`dict(rows.all())` over SQLAlchemy `Row`s (nine; `rows.tuples().all()` fixes
+each), enum columns assigned `.value` strings, guards it cannot correlate
+(`linked = sheet is not None and ...` followed by `sheet.file_id`), SQL
+`IS NOT NULL` filters it cannot see, and a handful of library stubs. A `None`
+passed where an `Actor` is required is a real error: every service takes an
+`Actor`, and `permissions.SYSTEM` is the trusted caller.
 
 The three in `src/volunteerdb/models.py` on `Volunteer.__table__`,
 `Team.__table__` and `Membership.__table__` — `Argument to function

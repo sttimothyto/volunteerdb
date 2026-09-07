@@ -12,6 +12,7 @@ from volunteerdb.actors import load_actor
 from volunteerdb.errors import Forbidden, NotFound
 from volunteerdb.fp import Err
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import (
     elections,
     events,
@@ -23,6 +24,7 @@ from volunteerdb.services import (
 )
 
 from tests import mint
+from tests.actors import as_volunteer
 from tests.conftest import db_session
 from tests.fp_helpers import ok
 
@@ -32,8 +34,8 @@ TZ = mint.tz()
 async def _parish(session) -> dict[str, int]:
     """Liturgy (Lena leads, Mia member) and Choir (Oda member), each with an
     account."""
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    choir = ok(await teams.create(session, None, "Choir"))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    choir = ok(await teams.create(session, SYSTEM, "Choir"))
     people = {}
     for key, first, last, team, role in (
         ("lena", "Lena", "Leader", liturgy, TeamRole.leader),
@@ -41,11 +43,15 @@ async def _parish(session) -> dict[str, int]:
         ("oda", "Oda", "Chorister", choir, TeamRole.member),
     ):
         email = f"{key}@example.org"
-        v = ok(await volunteers.create(session, None, first, last, email))
-        ok(await memberships.assign(session, None, v.id, team.id, role))
+        v = ok(await volunteers.create(session, SYSTEM, first, last, email))
+        ok(await memberships.assign(session, SYSTEM, v.id, team.id, role))
         u, _ = ok(
             await users.create(
-                session, email, volunteer_id=v.id, invite=mint.fresh_invite()
+                session,
+                email,
+                volunteer_id=v.id,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         people[key], people[f"{key}_u"] = v.id, u.id
@@ -64,7 +70,7 @@ async def _seed_event(session, team_id: int) -> int:
     created = ok(
         await events.create_event(
             session,
-            None,
+            SYSTEM,
             team_id=team_id,
             title="Sunday Mass",
             starts_at=_at(7, 10),
@@ -170,11 +176,11 @@ async def test_event_workroom_hands_the_manager_the_sheet_after_the_event(databa
     async with db_session() as session:
         ids = await _parish(session)
         event_id = await _seed_event(session, ids["liturgy"])
-        view = ok(await events.detail(session, None, event_id))
+        view = ok(await events.detail(session, SYSTEM, event_id))
         ok(
             await events.sign_up(
                 session,
-                None,
+                as_volunteer(ids["mia"]),
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=ids["mia"],
                 now=mint.now(),
@@ -182,7 +188,7 @@ async def test_event_workroom_hands_the_manager_the_sheet_after_the_event(databa
         )
         ok(
             await events.update_event(
-                session, None, event_id, starts_at=_at(-2, 9), ends_at=_at(-2, 11)
+                session, SYSTEM, event_id, starts_at=_at(-2, 9), ends_at=_at(-2, 11)
             )
         )
     async with db_session() as session:
@@ -307,7 +313,7 @@ async def test_proposal_workroom_knows_the_manager_from_the_voter(database):
         proposal = ok(
             await elections.create_proposal(
                 session,
-                None,
+                SYSTEM,
                 team_id=ids["liturgy"],
                 role=TeamRole.second,
                 nomination_deadline=today - timedelta(days=1),
@@ -337,7 +343,6 @@ async def test_proposal_workroom_knows_the_manager_from_the_voter(database):
                 session,
                 lena,
                 proposal.id,
-                voter_volunteer_id=ids["lena"],
                 scores={candidate_id: 4},
                 today=today,
                 now=mint.now(),

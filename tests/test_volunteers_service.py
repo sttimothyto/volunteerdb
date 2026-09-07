@@ -2,6 +2,7 @@
 
 from volunteerdb import errors
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, volunteers
 
 from tests import mint
@@ -13,13 +14,13 @@ async def test_create_normalizes_fields(database):
     async with db_session() as session:
         v = ok(
             await volunteers.create(
-                session, None, "  Maria ", " Alvarez  ", "  Maria@Example.ORG "
+                session, SYSTEM, "  Maria ", " Alvarez  ", "  Maria@Example.ORG "
             )
         )
         assert (v.first_name, v.last_name) == ("Maria", "Alvarez")
         assert v.email == "maria@example.org"
 
-        no_email = ok(await volunteers.create(session, None, "Nadia", "Noemail"))
+        no_email = ok(await volunteers.create(session, SYSTEM, "Nadia", "Noemail"))
         assert no_email.email is None
 
 
@@ -27,25 +28,31 @@ async def test_update_unset_vs_none_semantics(database):
     async with db_session() as session:
         v = ok(
             await volunteers.create(
-                session, None, "Ann", "Baker", "ann@example.org", "555-1", "some notes"
+                session,
+                SYSTEM,
+                "Ann",
+                "Baker",
+                "ann@example.org",
+                "555-1",
+                "some notes",
             )
         )
 
         renamed = done(
-            await volunteers.update(session, None, v.id, first_name="Anne")
+            await volunteers.update(session, SYSTEM, v.id, first_name="Anne")
         ).value
         assert renamed.email == "ann@example.org", "omitted fields stay untouched"
         assert renamed.phone == "555-1" and renamed.notes == "some notes"
 
         cleared = done(
             await volunteers.update(
-                session, None, v.id, email=None, phone=None, notes=None
+                session, SYSTEM, v.id, email=None, phone=None, notes=None
             )
         ).value
         assert cleared.email is None and cleared.phone is None and cleared.notes is None
 
         recased = done(
-            await volunteers.update(session, None, v.id, email="  NEW@Example.ORG ")
+            await volunteers.update(session, SYSTEM, v.id, email="  NEW@Example.ORG ")
         ).value
         assert recased.email == "new@example.org"
 
@@ -54,10 +61,10 @@ async def test_name_map_orders_and_filters(database):
     """The dropdown helper: matches search()'s ordering and active-only
     default without hydrating full entities."""
     async with db_session() as session:
-        z = ok(await volunteers.create(session, None, "Ann", "Zed"))
-        a = ok(await volunteers.create(session, None, "Bea", "Able"))
-        gone = ok(await volunteers.create(session, None, "Faded", "Ghost"))
-        done(await volunteers.update(session, None, gone.id, is_active=False))
+        z = ok(await volunteers.create(session, SYSTEM, "Ann", "Zed"))
+        a = ok(await volunteers.create(session, SYSTEM, "Bea", "Able"))
+        gone = ok(await volunteers.create(session, SYSTEM, "Faded", "Ghost"))
+        done(await volunteers.update(session, SYSTEM, gone.id, is_active=False))
 
         active = await volunteers.name_map(session)
         assert list(active.items()) == [(a.id, "Bea Able"), (z.id, "Ann Zed")], (
@@ -69,20 +76,24 @@ async def test_name_map_orders_and_filters(database):
 async def test_search_by_name_email_and_inactive_flag(database):
     async with db_session() as session:
         a = ok(
-            await volunteers.create(session, None, "Maria", "Alvarez", "maria@one.org")
+            await volunteers.create(
+                session, SYSTEM, "Maria", "Alvarez", "maria@one.org"
+            )
         )
-        ok(await volunteers.create(session, None, "Bruno", "Costa", "bruno@two.org"))
-        gone = ok(await volunteers.create(session, None, "Faded", "Ghost"))
-        done(await volunteers.update(session, None, gone.id, is_active=False))
+        ok(await volunteers.create(session, SYSTEM, "Bruno", "Costa", "bruno@two.org"))
+        gone = ok(await volunteers.create(session, SYSTEM, "Faded", "Ghost"))
+        done(await volunteers.update(session, SYSTEM, gone.id, is_active=False))
 
-        hits = await volunteers.search(session, "ria Alv")
+        hits = await volunteers.search(session, "ria Alv", actor=SYSTEM)
         assert [v.id for v in hits] == [a.id], "matches across first+last name"
 
-        hits = await volunteers.search(session, "two.org")
+        hits = await volunteers.search(session, "two.org", actor=SYSTEM)
         assert [v.email for v in hits] == ["bruno@two.org"]
 
-        assert "Ghost" not in {v.last_name for v in await volunteers.search(session)}
-        withall = await volunteers.search(session, include_inactive=True)
+        assert "Ghost" not in {
+            v.last_name for v in await volunteers.search(session, actor=SYSTEM)
+        }
+        withall = await volunteers.search(session, include_inactive=True, actor=SYSTEM)
         assert "Ghost" in {v.last_name for v in withall}
 
 
@@ -91,13 +102,15 @@ async def test_search_limit_caps_rows_in_name_order(database):
         for last in ("Delta", "Alpha", "Charlie", "Bravo"):
             ok(
                 await volunteers.create(
-                    session, None, "Sam", last, f"sam.{last}@example.org"
+                    session, SYSTEM, "Sam", last, f"sam.{last}@example.org"
                 )
             )
 
-        assert len(await volunteers.search(session, "Sam")) == 4, "unlimited by default"
+        assert len(await volunteers.search(session, "Sam", actor=SYSTEM)) == 4, (
+            "unlimited by default"
+        )
 
-        capped = await volunteers.search(session, "Sam", limit=2)
+        capped = await volunteers.search(session, "Sam", limit=2, actor=SYSTEM)
         assert [v.last_name for v in capped] == ["Alpha", "Bravo"]
 
 
@@ -106,15 +119,15 @@ async def test_search_private_fields_are_scope_aware(database):
     from volunteerdb.services import custom_fields, users
 
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
-        garden = ok(await teams.create(session, None, "Garden"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+        garden = ok(await teams.create(session, SYSTEM, "Garden"))
         insider = ok(
-            await volunteers.create(session, None, "Inne", "Sider", None, "555-0100")
+            await volunteers.create(session, SYSTEM, "Inne", "Sider", None, "555-0100")
         )
         outsider = ok(
             await volunteers.create(
                 session,
-                None,
+                SYSTEM,
                 "Outt",
                 "Sider",
                 None,
@@ -123,34 +136,36 @@ async def test_search_private_fields_are_scope_aware(database):
             )
         )
         plain = ok(
-            await volunteers.create(session, None, "Plain", "Member", None, "555-0300")
-        )
-        ok(
-            await memberships.assign(
-                session, None, insider.id, liturgy.id, TeamRole.member
+            await volunteers.create(
+                session, SYSTEM, "Plain", "Member", None, "555-0300"
             )
         )
         ok(
             await memberships.assign(
-                session, None, outsider.id, garden.id, TeamRole.member
+                session, SYSTEM, insider.id, liturgy.id, TeamRole.member
             )
         )
         ok(
             await memberships.assign(
-                session, None, plain.id, liturgy.id, TeamRole.member
+                session, SYSTEM, outsider.id, garden.id, TeamRole.member
             )
         )
-        ok(await custom_fields.create_def(session, None, "Training", "text"))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, plain.id, liturgy.id, TeamRole.member
+            )
+        )
+        ok(await custom_fields.create_def(session, SYSTEM, "Training", "text"))
         ok(
             await custom_fields.set_values(
-                session, None, insider.id, {"training": "lector-certified"}
+                session, SYSTEM, insider.id, {"training": "lector-certified"}
             )
         )
 
-        leader_v = ok(await volunteers.create(session, None, "Lena", "Leader"))
+        leader_v = ok(await volunteers.create(session, SYSTEM, "Lena", "Leader"))
         ok(
             await memberships.assign(
-                session, None, leader_v.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, leader_v.id, liturgy.id, TeamRole.leader
             )
         )
         leader = await load_actor(
@@ -162,6 +177,7 @@ async def test_search_private_fields_are_scope_aware(database):
                         "lena@example.org",
                         volunteer_id=leader_v.id,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -175,6 +191,7 @@ async def test_search_private_fields_are_scope_aware(database):
                         "admin@example.org",
                         is_admin=True,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -188,18 +205,20 @@ async def test_search_private_fields_are_scope_aware(database):
                         "plain@example.org",
                         volunteer_id=plain.id,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
         )
 
-        # admins (and trusted internal callers, actor=None) match every column
+        # admins (and trusted internal callers, actor=SYSTEM) match every column
         assert [
             v.id for v in await volunteers.search(session, "555-0200", actor=admin)
         ] == [outsider.id]
-        assert [v.id for v in await volunteers.search(session, "secret recipe")] == [
-            outsider.id
-        ]
+        assert [
+            v.id
+            for v in await volunteers.search(session, "secret recipe", actor=SYSTEM)
+        ] == [outsider.id]
         assert [
             v.id
             for v in await volunteers.search(session, "lector-certified", actor=admin)
@@ -232,7 +251,7 @@ async def test_search_private_fields_are_scope_aware(database):
         # the query language walk it out a character at a time.
         done(
             await volunteers.update(
-                session, None, outsider.id, email="outt@example.org"
+                session, SYSTEM, outsider.id, email="outt@example.org"
             )
         )
         assert await volunteers.search(session, "outt@example", actor=member) == [], (
@@ -246,7 +265,7 @@ async def test_search_private_fields_are_scope_aware(database):
         ] == [outsider.id], "admins still match every column"
         done(
             await volunteers.update(
-                session, None, plain.id, email="plain.v@example.org"
+                session, SYSTEM, plain.id, email="plain.v@example.org"
             )
         )
         assert [
@@ -259,34 +278,34 @@ async def test_missing_volunteer_raises_lookup(database):
     async with db_session() as session:
         assert await volunteers.get(session, 424242) is None
         refused(
-            await volunteers.update(session, None, 424242, first_name="X"),
+            await volunteers.update(session, SYSTEM, 424242, first_name="X"),
             errors.NotFound,
         )
-        refused(await volunteers.delete(session, None, 424242), errors.NotFound)
+        refused(await volunteers.delete(session, SYSTEM, 424242), errors.NotFound)
 
 
 async def test_impact_counts_and_critical_first_ordering(database):
     async with db_session() as session:
-        solo = ok(await teams.create(session, None, "Solo-led"))
-        backed = ok(await teams.create(session, None, "Well-backed"))
-        v = ok(await volunteers.create(session, None, "Key", "Person"))
-        other_lead = ok(await volunteers.create(session, None, "Other", "Leader"))
-        other_second = ok(await volunteers.create(session, None, "Other", "Second"))
+        solo = ok(await teams.create(session, SYSTEM, "Solo-led"))
+        backed = ok(await teams.create(session, SYSTEM, "Well-backed"))
+        v = ok(await volunteers.create(session, SYSTEM, "Key", "Person"))
+        other_lead = ok(await volunteers.create(session, SYSTEM, "Other", "Leader"))
+        other_second = ok(await volunteers.create(session, SYSTEM, "Other", "Second"))
 
-        ok(await memberships.assign(session, None, v.id, solo.id, TeamRole.leader))
-        ok(await memberships.assign(session, None, v.id, backed.id, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, v.id, solo.id, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, v.id, backed.id, TeamRole.member))
         ok(
             await memberships.assign(
-                session, None, other_lead.id, backed.id, TeamRole.leader
+                session, SYSTEM, other_lead.id, backed.id, TeamRole.leader
             )
         )
         ok(
             await memberships.assign(
-                session, None, other_second.id, backed.id, TeamRole.second
+                session, SYSTEM, other_second.id, backed.id, TeamRole.second
             )
         )
 
-        rows = ok(await volunteers.impact(session, None, v.id))
+        rows = ok(await volunteers.impact(session, SYSTEM, v.id))
         assert [r.team.name for r in rows] == ["Solo-led", "Well-backed"], (
             "most critical first"
         )
@@ -303,15 +322,15 @@ async def test_search_or_query_scopes_rows_per_role(database):
     from volunteerdb.services import custom_fields, users
 
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
-        garden = ok(await teams.create(session, None, "Garden"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+        garden = ok(await teams.create(session, SYSTEM, "Garden"))
         insider = ok(
-            await volunteers.create(session, None, "Inne", "Sider", None, "555-0100")
+            await volunteers.create(session, SYSTEM, "Inne", "Sider", None, "555-0100")
         )
         gardener = ok(
             await volunteers.create(
                 session,
-                None,
+                SYSTEM,
                 "Gard",
                 "Ener",
                 None,
@@ -320,35 +339,41 @@ async def test_search_or_query_scopes_rows_per_role(database):
             )
         )
         plain = ok(
-            await volunteers.create(session, None, "Plain", "Member", None, "555-0300")
-        )
-        ok(
-            await memberships.assign(
-                session, None, insider.id, liturgy.id, TeamRole.member
+            await volunteers.create(
+                session, SYSTEM, "Plain", "Member", None, "555-0300"
             )
         )
         ok(
             await memberships.assign(
-                session, None, gardener.id, garden.id, TeamRole.leader
+                session, SYSTEM, insider.id, liturgy.id, TeamRole.member
             )
         )
         ok(
             await memberships.assign(
-                session, None, plain.id, liturgy.id, TeamRole.member
+                session, SYSTEM, gardener.id, garden.id, TeamRole.leader
             )
         )
-        ok(await custom_fields.create_def(session, None, "Years served", "integer"))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, plain.id, liturgy.id, TeamRole.member
+            )
+        )
+        ok(await custom_fields.create_def(session, SYSTEM, "Years served", "integer"))
         ok(
             await custom_fields.set_values(
-                session, None, insider.id, {"years_served": 10}
+                session, SYSTEM, insider.id, {"years_served": 10}
             )
         )
-        ok(await custom_fields.set_values(session, None, plain.id, {"years_served": 9}))
+        ok(
+            await custom_fields.set_values(
+                session, SYSTEM, plain.id, {"years_served": 9}
+            )
+        )
 
-        leader_v = ok(await volunteers.create(session, None, "Lena", "Leader"))
+        leader_v = ok(await volunteers.create(session, SYSTEM, "Lena", "Leader"))
         ok(
             await memberships.assign(
-                session, None, leader_v.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, leader_v.id, liturgy.id, TeamRole.leader
             )
         )
         leader = await load_actor(
@@ -360,6 +385,7 @@ async def test_search_or_query_scopes_rows_per_role(database):
                         "lena@example.org",
                         volunteer_id=leader_v.id,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -373,6 +399,7 @@ async def test_search_or_query_scopes_rows_per_role(database):
                         "admin@example.org",
                         is_admin=True,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -386,6 +413,7 @@ async def test_search_or_query_scopes_rows_per_role(database):
                         "plain@example.org",
                         volunteer_id=plain.id,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -399,6 +427,7 @@ async def test_search_or_query_scopes_rows_per_role(database):
                         "gard@example.org",
                         volunteer_id=gardener.id,
                         invite=mint.fresh_invite(),
+                        actor=SYSTEM,
                     )
                 )
             )[0],
@@ -413,7 +442,7 @@ async def test_search_or_query_scopes_rows_per_role(database):
             }
 
         # public fields answer identically for every role
-        for actor in (admin, leader, member, None):
+        for actor in (admin, leader, member, SYSTEM):
             assert await ids("first_name = 'Inne'", actor) == {insider.id}
 
         # private leaves: false outside the actor's visibility...
@@ -485,37 +514,60 @@ async def test_search_or_query_inactive_and_as_of(database):
 
     async with db_session() as session:
         v = ok(
-            await volunteers.create(session, None, "Before", "Rename", "b@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Before", "Rename", "b@example.org"
+            )
         )
-        gone = ok(await volunteers.create(session, None, "Faded", "Ghost"))
-        done(await volunteers.update(session, None, gone.id, is_active=False))
+        gone = ok(await volunteers.create(session, SYSTEM, "Faded", "Ghost"))
+        done(await volunteers.update(session, SYSTEM, gone.id, is_active=False))
         vid, gone_id = v.id, gone.id
 
     when = datetime.now(UTC)
     async with db_session() as session:
-        done(await volunteers.update(session, None, vid, first_name="After"))
+        done(await volunteers.update(session, SYSTEM, vid, first_name="After"))
 
     async with db_session() as session:
-        found = ok(await volunteers.search_or_query(session, "first_name = 'After'"))
+        found = ok(
+            await volunteers.search_or_query(
+                session, "first_name = 'After'", actor=SYSTEM
+            )
+        )
         assert [x.id for x in found] == [vid]
         assert (
-            ok(await volunteers.search_or_query(session, "first_name = 'Before'")) == []
+            ok(
+                await volunteers.search_or_query(
+                    session, "first_name = 'Before'", actor=SYSTEM
+                )
+            )
+            == []
         )
 
         past = ok(
-            await volunteers.search_or_query(session, "first_name = 'Before'", at=when)
+            await volunteers.search_or_query(
+                session, "first_name = 'Before'", at=when, actor=SYSTEM
+            )
         )
         assert [x.id for x in past] == [vid], "queries respect as-of"
 
         assert (
-            ok(await volunteers.search_or_query(session, "last_name = 'Ghost'")) == []
+            ok(
+                await volunteers.search_or_query(
+                    session, "last_name = 'Ghost'", actor=SYSTEM
+                )
+            )
+            == []
         )
         withall = ok(
             await volunteers.search_or_query(
-                session, "last_name = 'Ghost'", include_inactive=True
+                session, "last_name = 'Ghost'", include_inactive=True, actor=SYSTEM
             )
         )
         assert [x.id for x in withall] == [gone_id]
         assert (
-            ok(await volunteers.search_or_query(session, "is_active = false")) == []
+            ok(
+                await volunteers.search_or_query(
+                    session, "is_active = false", actor=SYSTEM
+                )
+            )
+            == []
         ), "is_active cannot widen what include_inactive gates"

@@ -30,8 +30,8 @@ positive form can leak by presence. Membership fields (team, role) are
 view, and negation applies at the EXISTS (``team != 'X'`` means "holds no
 such visible membership"), so invisible memberships never influence the
 result either way. Public fields (names, id, created, is_active) compile
-bare. Admins and trusted internal callers (actor None) skip the wraps. Tables outside the
-registry (accounts, history, ballots…) simply cannot be named.
+bare. Admins, SYSTEM among them, skip the wraps. Tables outside the registry
+(accounts, history, ballots…) simply cannot be named.
 """
 
 import re
@@ -349,10 +349,10 @@ class _SqlBackend:
     conj = staticmethod(sa.and_)
     disj = staticmethod(sa.or_)
 
-    def __init__(self, V, M, T, defs: dict[str, CustomFieldDef], actor: Actor | None):
+    def __init__(self, V, M, T, defs: dict[str, CustomFieldDef], actor: Actor):
         self.V, self.M, self.T = V, M, T
         self.defs = defs
-        self.scoped = actor is not None and not actor.is_admin
+        self.scoped = not actor.is_admin
         self.actor = actor
         self.roster_scope = (
             actor.full_view_team_ids | actor.names_view_team_ids
@@ -467,7 +467,7 @@ def compile_volunteers(
     M,
     T,
     defs: dict[str, CustomFieldDef],
-    actor: Actor | None,
+    actor: Actor,
 ) -> Result[Any, QueryError]:
     """A SQLAlchemy predicate over the as-of entities, or the QueryError."""
     return _compile(ast, False, _SqlBackend(V, M, T, defs, actor))

@@ -18,6 +18,7 @@ from volunteerdb.errors import External
 from volunteerdb.fp import Err, Ok
 from volunteerdb.jobs import roster_sync
 from volunteerdb.models import SyncStatus, TeamRole, TeamSheet
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import events as event_service
 from volunteerdb.services import (
     gsheets,
@@ -102,21 +103,24 @@ def fake(monkeypatch):
 async def choir(database):
     """Choir with Lena (leader) and Mia (member), already linked to a sheet."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
+            )
         )
         mia = ok(
-            await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+            await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
         )
-        ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
-        ok(await memberships.assign(session, None, mia.id, team.id, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, lena.id, team.id, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, mia.id, team.id, TeamRole.member))
         lena_u, _ = ok(
             await users.create(
                 session,
                 "lena@example.org",
                 volunteer_id=lena.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         session.add(TeamSheet(team_id=team.id, file_id="f123"))
@@ -130,7 +134,7 @@ async def choir(database):
 
 async def _roster_names(team_id: int) -> set[str]:
     async with db_session() as session:
-        roster = ok(await teams.roster(session, None, team_id))
+        roster = ok(await teams.roster(session, SYSTEM, team_id))
     return {v.first_name for _m, v in roster}
 
 
@@ -221,7 +225,7 @@ async def test_a_bad_row_fails_the_team_whole_and_leaves_the_sheet_alone(
 
 async def test_a_team_with_no_sheet_cannot_be_synced(database, fake, env):
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
     refused(
         await service.sync_team(
             env, team.id, direction=service.EXPORT, user_id=None, now=mint.now()
@@ -251,6 +255,7 @@ async def test_a_plain_member_may_not_sync(choir, fake, database, env):
                 "mia2@example.org",
                 volunteer_id=choir["mia"],
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         mia_user_id = mia_u.id
@@ -285,11 +290,13 @@ async def test_the_leader_may_sync(choir, fake, env):
 
 async def test_the_job_creates_a_sheet_for_a_team_that_has_none(database, fake, env):
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
+            )
         )
-        ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, lena.id, team.id, TeamRole.leader))
         team_id = team.id
 
     assert await roster_sync.main(env) == 0
@@ -306,13 +313,13 @@ async def test_the_job_never_gives_a_task_force_a_sheet(database, fake, env):
     real one -- built by the service that builds them -- so the rule that
     keeps it off the sheets is the real rule, not a stand-in."""
     async with db_session() as session:
-        choir = ok(await teams.create(session, None, "Choir"))
-        ushers = ok(await teams.create(session, None, "Ushers"))
+        choir = ok(await teams.create(session, SYSTEM, "Choir"))
+        ushers = ok(await teams.create(session, SYSTEM, "Ushers"))
         start = mint.now() + timedelta(days=7)
         (event,) = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=choir.id,
                 title="Parish Picnic",
                 starts_at=start,
@@ -325,7 +332,7 @@ async def test_the_job_never_gives_a_task_force_a_sheet(database, fake, env):
         meta = done(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=event.id,
                 source_team_id=ushers.id,
                 created_by=None,
@@ -355,8 +362,8 @@ async def test_the_job_is_a_noop_when_unconfigured(database, env):
 
 async def test_one_broken_sheet_does_not_stop_the_others(database, fake, env):
     async with db_session() as session:
-        good = ok(await teams.create(session, None, "Choir"))
-        bad = ok(await teams.create(session, None, "Altar"))
+        good = ok(await teams.create(session, SYSTEM, "Choir"))
+        bad = ok(await teams.create(session, SYSTEM, "Altar"))
         session.add(TeamSheet(team_id=good.id, file_id="good1"))
         session.add(TeamSheet(team_id=bad.id, file_id="bad1"))
         good_id, bad_id = good.id, bad.id

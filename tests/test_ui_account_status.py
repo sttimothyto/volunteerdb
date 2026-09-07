@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
@@ -29,25 +30,27 @@ async def _parish(session) -> dict[str, int]:
     Note that users.create with no password arms an invite link, so Mia — who
     has never used hers — reads as "invite sent" rather than "account". Opal is
     given a password to make her the plain settled case."""
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    music = ok(await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id))
 
     lena = ok(
-        await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+        await volunteers.create(session, SYSTEM, "Lena", "Leader", "lena@example.org")
     )
-    mia = ok(await volunteers.create(session, None, "Mia", "Member", "mia@example.org"))
+    mia = ok(
+        await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
+    )
     nils = ok(
-        await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
+        await volunteers.create(session, SYSTEM, "Nils", "Nobody", "nils@example.org")
     )
     opal = ok(
-        await volunteers.create(session, None, "Opal", "Online", "opal@example.org")
+        await volunteers.create(session, SYSTEM, "Opal", "Online", "opal@example.org")
     )
     quin = ok(
-        await volunteers.create(session, None, "Quin", "Quiet", "quin@example.org")
+        await volunteers.create(session, SYSTEM, "Quin", "Quiet", "quin@example.org")
     )
-    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, SYSTEM, lena.id, liturgy.id, TeamRole.leader))
     for v in (mia, nils, opal, quin):
-        ok(await memberships.assign(session, None, v.id, music.id, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, v.id, music.id, TeamRole.member))
 
     lena_u, _ = ok(
         await users.create(
@@ -55,11 +58,16 @@ async def _parish(session) -> dict[str, int]:
             "lena@example.org",
             volunteer_id=lena.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     mia_u, _ = ok(
         await users.create(
-            session, "mia@example.org", volunteer_id=mia.id, invite=mint.fresh_invite()
+            session,
+            "mia@example.org",
+            volunteer_id=mia.id,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     opal_u, _ = ok(
@@ -68,6 +76,7 @@ async def _parish(session) -> dict[str, int]:
             "opal@example.org",
             volunteer_id=opal.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     quin_u, _ = ok(
@@ -76,6 +85,7 @@ async def _parish(session) -> dict[str, int]:
             "quin@example.org",
             volunteer_id=quin.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     opal_u.last_login_at = LOGGED_IN_AT

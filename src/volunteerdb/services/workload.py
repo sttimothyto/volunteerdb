@@ -174,13 +174,13 @@ async def read_config(session: AsyncSession) -> WorkloadConfig:
 
 
 async def get_config(
-    session: AsyncSession, actor: Actor | None
+    session: AsyncSession, actor: Actor
 ) -> Result[WorkloadConfig, DomainError]:
     """The config as the *subject* of a request rather than a lookup behind
     one — GET /api/workload/config and the admin page — so the actor is
     checked; everything else calls read_config."""
     if denied := require(
-        actor is None or actor.is_admin or bool(actor.managed_team_ids),
+        actor.is_admin or bool(actor.managed_team_ids),
         "view the workload configuration",
     ):
         return denied
@@ -189,14 +189,12 @@ async def get_config(
 
 async def set_config(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     config: WorkloadConfig,
     *,
     now: datetime,
 ) -> Result[None, DomainError]:
-    if denied := require(
-        actor is None or actor.is_admin, "set the workload configuration"
-    ):
+    if denied := require(actor.is_admin, "set the workload configuration"):
         return denied
     if bad := validate_config(config):
         return bad

@@ -84,6 +84,10 @@ class Job:
     # and the daily jobs' positional construction stays untouched.
     every: timedelta | None = None
 
+    def __post_init__(self) -> None:
+        if (self.at_setting is None) == (self.every is None):
+            raise ValueError(f"job {self.name!r}: exactly one of at_setting/every")
+
 
 # Registry order is execution order when several jobs are due at once (e.g.
 # startup catch-up), preserving the sync -> fetch -> digest -> reminders chain
@@ -149,6 +153,7 @@ def is_due_every(every: timedelta, state: JobState, now: datetime) -> bool:
 def job_due(job: Job, state: JobState, now: datetime, settings: Settings) -> bool:
     if job.every is not None:
         return is_due_every(job.every, state, now)
+    assert job.at_setting is not None  # Job.__post_init__: one of the two is set
     return is_due(getattr(settings, job.at_setting), state, now)
 
 

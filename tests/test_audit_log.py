@@ -7,6 +7,7 @@ the structlog events emitted by the audit listeners in volunteerdb/audit.py.
 import csv
 from io import StringIO
 
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import users, volunteers, workload
 from volunteerdb.sheets import importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
@@ -30,7 +31,7 @@ def _csv_bytes(header, rows) -> bytes:
 
 async def test_insert_logged_with_user_and_commit(database, log_records):
     async with db_session(user_id=42) as session:
-        v = ok(await volunteers.create(session, None, "Ada", "Lovelace"))
+        v = ok(await volunteers.create(session, SYSTEM, "Ada", "Lovelace"))
     inserts = _by_event(log_records, "db.insert")
     assert len(inserts) == 1
     record = inserts[0]
@@ -46,9 +47,9 @@ async def test_insert_logged_with_user_and_commit(database, log_records):
 
 async def test_update_logs_old_to_new_diff(database, log_records):
     async with db_session() as session:
-        v = ok(await volunteers.create(session, None, "Ada", "Lovelace"))
+        v = ok(await volunteers.create(session, SYSTEM, "Ada", "Lovelace"))
     async with db_session(user_id=7) as session:
-        done(await volunteers.update(session, None, v.id, phone="555-0100"))
+        done(await volunteers.update(session, SYSTEM, v.id, phone="555-0100"))
     updates = _by_event(log_records, "db.update")
     assert len(updates) == 1
     record = updates[0]
@@ -61,9 +62,9 @@ async def test_update_logs_old_to_new_diff(database, log_records):
 
 async def test_delete_logs_full_row(database, log_records):
     async with db_session() as session:
-        v = ok(await volunteers.create(session, None, "Ada", "Lovelace"))
+        v = ok(await volunteers.create(session, SYSTEM, "Ada", "Lovelace"))
     async with db_session(user_id=7) as session:
-        ok(await volunteers.delete(session, None, v.id))
+        ok(await volunteers.delete(session, SYSTEM, v.id))
     deletes = _by_event(log_records, "db.delete")
     assert len(deletes) == 1
     assert deletes[0]["was"]["first_name"] == "'Ada'"
@@ -83,6 +84,7 @@ async def test_debug_level_reads_do_not_log_bound_parameters(
                 "dbg@example.org",
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
     async with db_session() as session:
@@ -111,6 +113,7 @@ async def test_secrets_never_logged(database, log_records):
                 "sec@example.org",
                 password="hunter2-secret-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
     async with db_session() as session:
@@ -190,7 +193,7 @@ async def test_reads_logged_at_info(database, log_records, debug_logging):
     default AUDIT level — _log_execute returns before get_final_froms() for
     a line _ModeFilter would drop anyway."""
     async with db_session() as session:
-        await volunteers.search(session)
+        await volunteers.search(session, actor=SYSTEM)
     reads = _by_event(log_records, "db.read")
     assert any("volunteer" in r["table"] for r in reads)
     assert all(r["level"] == "info" for r in reads)
@@ -199,7 +202,7 @@ async def test_reads_logged_at_info(database, log_records, debug_logging):
 async def test_reads_skipped_below_info(database, log_records):
     """The default level is AUDIT: no db.read event is built at all."""
     async with db_session() as session:
-        await volunteers.search(session)
+        await volunteers.search(session, actor=SYSTEM)
     assert _by_event(log_records, "db.read") == []
 
 
@@ -207,7 +210,7 @@ async def test_core_upsert_logged(database, log_records):
     async with db_session(user_id=3) as session:
         ok(
             await workload.set_config(
-                session, None, workload.DEFAULT_CONFIG, now=mint.now()
+                session, SYSTEM, workload.DEFAULT_CONFIG, now=mint.now()
             )
         )
     core_writes = [r for r in _by_event(log_records, "db.insert") if r.get("core")]
@@ -217,7 +220,7 @@ async def test_core_upsert_logged(database, log_records):
 
 async def test_anonymous_write_shows_dash_user(database, log_records):
     async with db_session() as session:
-        ok(await volunteers.create(session, None, "Anon", "Ymous"))
+        ok(await volunteers.create(session, SYSTEM, "Anon", "Ymous"))
     record = _by_event(log_records, "db.insert")[0]
     assert record["user"] == "-"
     assert record["via"] == "-"

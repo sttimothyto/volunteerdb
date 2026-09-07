@@ -40,7 +40,7 @@ from ..errors import DomainError, message, require
 from ..fp import Err, Ok, Result
 from ..log import audit_log
 from ..models import AppUser, Membership, Volunteer
-from ..permissions import Actor
+from ..permissions import SYSTEM, Actor
 from ..services import memberships as membership_service
 from ..services import teams as team_service
 from .common import ROSTER_HEADERS, ROSTER_SHEET, clean_cell, parse_role
@@ -152,7 +152,7 @@ async def run_import(
 ) -> Result[ImportReport, DomainError]:
     """Parse and apply a roster CSV. On dry_run or any error, everything rolls
     back. Non-admin users (leaders/seconds) are scoped to the teams they
-    manage; user_id=None runs unrestricted (service-level callers). The only
+    manage; user_id=None runs as SYSTEM, unrestricted (service-level callers). The only
     Err is the refusal to import at all: row problems are in the report."""
     report = ImportReport()
     rows = parse_roster_csv(content, report)
@@ -160,7 +160,7 @@ async def run_import(
         return Ok(report)
 
     async with transaction(env, user_id) as session:
-        actor = None
+        actor = SYSTEM
         if user_id is not None:
             user = await session.get(AppUser, user_id)
             assert user is not None, f"unknown user {user_id}"
@@ -259,14 +259,14 @@ async def apply_rows(
     session: AsyncSession,
     rows: list[RosterRow],
     report: ImportReport,
-    actor=None,
+    actor: Actor,
     *,
     sync_team_id: int | None = None,
 ) -> Result[None, DomainError]:
     """Upsert volunteers and memberships from parsed rows. Row problems go
     into the report; the Err is a membership write the service refused.
 
-    actor None runs unrestricted; a non-admin actor is scoped row-by-row to
+    SYSTEM, like any admin, runs unrestricted; a non-admin actor is scoped row-by-row to
     the teams they manage. sync_team_id switches on sync mode: blank Team cells
     default to that team, and rows naming any other team are errors.
     """
@@ -323,7 +323,7 @@ async def apply_rows(
         name = f"{r.first} {r.last}" if r.first and r.last else None
         return match(r.email, name)
 
-    restricted = actor is not None and not actor.is_admin
+    restricted = not actor.is_admin
 
     # every current membership in one query: the upsert loop and the
     # restricted scope check both read from this map instead of issuing
@@ -559,7 +559,7 @@ async def apply_rows(
         before = existing.role if existing else None
         assigned = await membership_service.assign(
             session,
-            None,  # the row's licence was already checked above
+            SYSTEM,  # the row's licence was already checked above
             target.id,
             team_id,
             role,

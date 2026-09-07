@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from volunteerdb import errors
 from volunteerdb.actors import load_actor
 from volunteerdb.models import Team, TeamRole, TeamSheet
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
@@ -70,17 +71,17 @@ async def test_create_rejects_a_negative_workload_weight(database):
     async with db_session() as session:
         refused(
             await teams.create(
-                session, None, "Negative", workload_weight=Decimal("-2")
+                session, SYSTEM, "Negative", workload_weight=Decimal("-2")
             ),
             errors.Invalid,
         )
 
         fine = ok(
-            await teams.create(session, None, "Fine", workload_weight=Decimal("2.5"))
+            await teams.create(session, SYSTEM, "Fine", workload_weight=Decimal("2.5"))
         )
         assert fine.workload_weight == Decimal("2.5")
 
-        unweighted = ok(await teams.create(session, None, "Unweighted"))
+        unweighted = ok(await teams.create(session, SYSTEM, "Unweighted"))
         assert unweighted.workload_weight == Decimal(0), (
             "a team with no weight given weighs 0 — which is what excluding it "
             "from the scores has always meant (models.Team.workload_weight)"
@@ -89,49 +90,55 @@ async def test_create_rejects_a_negative_workload_weight(database):
 
 async def test_update_reparent_cycle_rejected(database):
     async with db_session() as session:
-        a = ok(await teams.create(session, None, "A"))
-        b = ok(await teams.create(session, None, "B", parent_team_id=a.id))
-        c = ok(await teams.create(session, None, "C", parent_team_id=b.id))
+        a = ok(await teams.create(session, SYSTEM, "A"))
+        b = ok(await teams.create(session, SYSTEM, "B", parent_team_id=a.id))
+        c = ok(await teams.create(session, SYSTEM, "C", parent_team_id=b.id))
 
         refused(
-            await teams.update(session, None, a.id, parent_team_id=c.id), errors.Invalid
+            await teams.update(session, SYSTEM, a.id, parent_team_id=c.id),
+            errors.Invalid,
         )
         refused(
-            await teams.update(session, None, a.id, parent_team_id=a.id), errors.Invalid
+            await teams.update(session, SYSTEM, a.id, parent_team_id=a.id),
+            errors.Invalid,
         )
 
         # a legal reparent within the same tree still works
-        moved = ok(await teams.update(session, None, c.id, parent_team_id=a.id))
+        moved = ok(await teams.update(session, SYSTEM, c.id, parent_team_id=a.id))
         assert moved.parent_team_id == a.id
 
 
 async def test_update_unset_vs_explicit_none_parent(database):
     async with db_session() as session:
-        parent = ok(await teams.create(session, None, "Parent"))
-        child = ok(await teams.create(session, None, "Child", parent_team_id=parent.id))
+        parent = ok(await teams.create(session, SYSTEM, "Parent"))
+        child = ok(
+            await teams.create(session, SYSTEM, "Child", parent_team_id=parent.id)
+        )
 
-        renamed = ok(await teams.update(session, None, child.id, name="Renamed"))
+        renamed = ok(await teams.update(session, SYSTEM, child.id, name="Renamed"))
         assert renamed.parent_team_id == parent.id, "omitted parent stays untouched"
 
-        orphaned = ok(await teams.update(session, None, child.id, parent_team_id=None))
+        orphaned = ok(
+            await teams.update(session, SYSTEM, child.id, parent_team_id=None)
+        )
         assert orphaned.parent_team_id is None, "explicit None detaches"
 
 
 async def test_update_workload_weight_validation(database):
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Weighted"))
+        team = ok(await teams.create(session, SYSTEM, "Weighted"))
 
         refused(
-            await teams.update(session, None, team.id, workload_weight=Decimal("-1")),
+            await teams.update(session, SYSTEM, team.id, workload_weight=Decimal("-1")),
             errors.Invalid,
         )
 
         updated = ok(
-            await teams.update(session, None, team.id, workload_weight=Decimal("2.5"))
+            await teams.update(session, SYSTEM, team.id, workload_weight=Decimal("2.5"))
         )
         assert updated.workload_weight == Decimal("2.5")
 
-        cleared = ok(await teams.update(session, None, team.id, workload_weight=None))
+        cleared = ok(await teams.update(session, SYSTEM, team.id, workload_weight=None))
         assert cleared.workload_weight == Decimal(0), "clearing means 0, not NULL"
 
 
@@ -140,40 +147,40 @@ async def test_two_top_level_teams_cannot_share_a_name(database):
     parentless teams cannot share a name. Without it a duplicate 'Music' would
     make the importer's team-path lookup ambiguous for every future import."""
     async with db_session() as session:
-        ok(await teams.create(session, None, "Music"))
+        ok(await teams.create(session, SYSTEM, "Music"))
         with pytest.raises(IntegrityError):
-            ok(await teams.create(session, None, "Music"))
+            ok(await teams.create(session, SYSTEM, "Music"))
 
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
-        youth = ok(await teams.create(session, None, "Youth"))
-        ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+        youth = ok(await teams.create(session, SYSTEM, "Youth"))
+        ok(await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id))
         ok(
-            await teams.create(session, None, "Music", parent_team_id=youth.id)
+            await teams.create(session, SYSTEM, "Music", parent_team_id=youth.id)
         )  # different parents: fine
 
 
 async def test_missing_team_raises_lookup(database):
     async with db_session() as session:
         assert await teams.get(session, 424242) is None
-        refused(await teams.update(session, None, 424242, name="X"), errors.NotFound)
-        refused(await teams.delete(session, None, 424242), errors.NotFound)
+        refused(await teams.update(session, SYSTEM, 424242, name="X"), errors.NotFound)
+        refused(await teams.delete(session, SYSTEM, 424242), errors.NotFound)
 
 
 async def test_search_matches_name_description_and_path(database):
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
         ok(
             await teams.create(
                 session,
-                None,
+                SYSTEM,
                 "Altar Servers",
                 parent_team_id=liturgy.id,
                 description="robes and candles",
             )
         )
-        retired = ok(await teams.create(session, None, "Old Guild"))
-        ok(await teams.update(session, None, retired.id, is_active=False))
+        retired = ok(await teams.create(session, SYSTEM, "Old Guild"))
+        ok(await teams.update(session, SYSTEM, retired.id, is_active=False))
 
         assert [t.name for t, _ in await teams.search(session, "altar")] == [
             "Altar Servers"
@@ -195,27 +202,33 @@ async def test_leader_emails_covers_leader_and_second_only(database):
     notices go to. Core members are not leadership, and an address a mailer
     cannot use is not an address."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
         team_id = team.id
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
+            )
         )
         sam = ok(
-            await volunteers.create(session, None, "Sam", "Second", "sam@example.org")
+            await volunteers.create(session, SYSTEM, "Sam", "Second", "sam@example.org")
         )
         cora = ok(
-            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+            await volunteers.create(session, SYSTEM, "Cora", "Core", "cora@example.org")
         )
-        noel = ok(await volunteers.create(session, None, "Noel", "NoEmail"))
+        noel = ok(await volunteers.create(session, SYSTEM, "Noel", "NoEmail"))
         # what an import of a roster with an empty Email cell can leave behind:
         # not NULL, but nothing a mailer or a Drive share can use either
-        blank = ok(await volunteers.create(session, None, "Bea", "Blank"))
+        blank = ok(await volunteers.create(session, SYSTEM, "Bea", "Blank"))
         blank.email = "  "
-        ok(await memberships.assign(session, None, lena.id, team_id, TeamRole.leader))
-        ok(await memberships.assign(session, None, sam.id, team_id, TeamRole.second))
-        ok(await memberships.assign(session, None, cora.id, team_id, TeamRole.core))
-        ok(await memberships.assign(session, None, noel.id, team_id, TeamRole.second))
-        ok(await memberships.assign(session, None, blank.id, team_id, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, lena.id, team_id, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, sam.id, team_id, TeamRole.second))
+        ok(await memberships.assign(session, SYSTEM, cora.id, team_id, TeamRole.core))
+        ok(await memberships.assign(session, SYSTEM, noel.id, team_id, TeamRole.second))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, blank.id, team_id, TeamRole.leader
+            )
+        )
         assert await teams.leader_emails(session, team_id) == [
             "lena@example.org",
             "sam@example.org",
@@ -227,16 +240,16 @@ async def test_set_roster_sheet_validates_the_link(database):
     shaped like a roster is the sync's to discover, and it says so in the
     error it records against the team."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
 
         refused(
-            await teams.set_roster_sheet(session, None, team.id, "not a url"),
+            await teams.set_roster_sheet(session, SYSTEM, team.id, "not a url"),
             errors.Invalid,
             match="Google Sheets link",
         )
         refused(
             await teams.set_roster_sheet(
-                session, None, team.id, "https://docs.google.com/document/d/abc123"
+                session, SYSTEM, team.id, "https://docs.google.com/document/d/abc123"
             ),
             errors.Invalid,
             match="Google Sheets link",
@@ -245,7 +258,7 @@ async def test_set_roster_sheet_validates_the_link(database):
         sheet = ok(
             await teams.set_roster_sheet(
                 session,
-                None,
+                SYSTEM,
                 team.id,
                 "https://docs.google.com/spreadsheets/d/abc123/edit#gid=0",
             )
@@ -258,13 +271,17 @@ async def test_a_leader_may_set_the_roster_sheet(database):
     judgement about trust: nothing in the app could reach Drive, so a leader's
     pasted link could not be checked until the next nightly run."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
+            )
         )
-        ok(await memberships.assign(session, None, lena.id, team.id, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, lena.id, team.id, TeamRole.leader))
         user, _ = ok(
-            await users.create(session, "lena@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "lena@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )
         leader = await load_actor(session, user)
 
@@ -285,13 +302,15 @@ async def test_a_core_member_may_not_set_the_roster_sheet(database):
     publishes a page anybody may read, while this carries every member's
     address and phone and grants a bulk write over the roster."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
         cora = ok(
-            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+            await volunteers.create(session, SYSTEM, "Cora", "Core", "cora@example.org")
         )
-        ok(await memberships.assign(session, None, cora.id, team.id, TeamRole.core))
+        ok(await memberships.assign(session, SYSTEM, cora.id, team.id, TeamRole.core))
         user, _ = ok(
-            await users.create(session, "cora@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "cora@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )
         core = await load_actor(session, user)
 
@@ -308,13 +327,13 @@ async def test_one_spreadsheet_belongs_to_one_team(database):
     """Two teams on one sheet would each overwrite the other's roster every
     night, so a sheet already in use is refused."""
     async with db_session() as session:
-        choir = ok(await teams.create(session, None, "Choir"))
-        altar = ok(await teams.create(session, None, "Altar Society"))
+        choir = ok(await teams.create(session, SYSTEM, "Choir"))
+        altar = ok(await teams.create(session, SYSTEM, "Altar Society"))
         url = "https://docs.google.com/spreadsheets/d/abc123"
 
-        ok(await teams.set_roster_sheet(session, None, choir.id, url))
+        ok(await teams.set_roster_sheet(session, SYSTEM, choir.id, url))
         refused(
-            await teams.set_roster_sheet(session, None, altar.id, url),
+            await teams.set_roster_sheet(session, SYSTEM, altar.id, url),
             errors.Invalid,
             match="Choir",
         )
@@ -322,13 +341,16 @@ async def test_one_spreadsheet_belongs_to_one_team(database):
 
 async def test_setting_the_sheet_the_team_already_has_is_refused(database):
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
         session.add(TeamSheet(team_id=team.id, file_id="abc123"))
         await session.flush()
 
         refused(
             await teams.set_roster_sheet(
-                session, None, team.id, "https://docs.google.com/spreadsheets/d/abc123"
+                session,
+                SYSTEM,
+                team.id,
+                "https://docs.google.com/spreadsheets/d/abc123",
             ),
             errors.Invalid,
             match="already syncs",
@@ -339,7 +361,7 @@ async def test_relinking_clears_the_previous_sync_result(database):
     """A stale 'Last sync failed' under a link that has since been replaced
     reads as a problem with the NEW sheet."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
         session.add(
             TeamSheet(
                 team_id=team.id,
@@ -353,7 +375,10 @@ async def test_relinking_clears_the_previous_sync_result(database):
 
         sheet = ok(
             await teams.set_roster_sheet(
-                session, None, team.id, "https://docs.google.com/spreadsheets/d/new456"
+                session,
+                SYSTEM,
+                team.id,
+                "https://docs.google.com/spreadsheets/d/new456",
             )
         )
         assert sheet.file_id == "new456"
@@ -366,16 +391,18 @@ async def test_roster_sheet_needs_management_rights(database):
     """Who may see the link is who may manage the roster: the sheet IS the
     roster, contact details and all."""
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
         mia = ok(
-            await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
+            await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
         )
-        ok(await memberships.assign(session, None, mia.id, team.id, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, mia.id, team.id, TeamRole.member))
         user, _ = ok(
-            await users.create(session, "mia@example.org", invite=mint.fresh_invite())
+            await users.create(
+                session, "mia@example.org", invite=mint.fresh_invite(), actor=SYSTEM
+            )
         )
         member = await load_actor(session, user)
 
     async with db_session() as session:
         refused(await teams.roster_sheet(session, member, team.id), errors.Forbidden)
-        assert ok(await teams.roster_sheet(session, None, team.id)) is None
+        assert ok(await teams.roster_sheet(session, SYSTEM, team.id)) is None

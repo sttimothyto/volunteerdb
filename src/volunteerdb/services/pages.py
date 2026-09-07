@@ -74,7 +74,7 @@ def extract_doc_id(url: str) -> Result[str, Invalid]:
 
 
 async def set_home_doc_url(
-    session: AsyncSession, actor: Actor | None, team_id: int, url: str | None
+    session: AsyncSession, actor: Actor, team_id: int, url: str | None
 ) -> Result[Team, DomainError]:
     """Set or clear the team's home page doc; validates the link shape.
 
@@ -84,7 +84,7 @@ async def set_home_doc_url(
     the URL must live on docs.google.com, so what is at stake is what the page
     says under a name the parish can correct."""
     if denied := require(
-        actor is None or actor.can_view_full_roster(team_id),
+        actor.can_view_full_roster(team_id),
         "manage this team's home page",
     ):
         return denied
@@ -294,7 +294,7 @@ async def fetch_and_store(
     client: httpx.AsyncClient,
     force: bool = False,
     *,
-    actor: Actor | None = None,
+    actor: Actor,
     now: datetime,
 ) -> Result[TeamPage, DomainError]:
     """Fetch the team's doc and upsert its team_page row, downloading embedded
@@ -313,7 +313,7 @@ async def fetch_and_store(
     "Fetch now" button, and the repair path for image rows damaged
     out-of-band."""
     if denied := require(
-        actor is None or actor.can_view_full_roster(team.id),
+        actor.can_view_full_roster(team.id),
         "refresh this team's home page",
     ):
         return denied
@@ -387,7 +387,7 @@ def qr_png(url: str) -> bytes:
 
 
 async def page_status(
-    session: AsyncSession, actor: Actor | None, team_id: int
+    session: AsyncSession, actor: Actor, team_id: int
 ) -> Result[TeamPage | None, DomainError]:
     """The cached page's publishing state, or None when the team has no doc set.
 
@@ -396,7 +396,7 @@ async def page_status(
     the last fetch worked. The HTML itself is not the point here: that is served
     to the world at /ministries/<slug>.html."""
     if denied := require(
-        actor is None or actor.can_view_full_roster(team_id),
+        actor.can_view_full_roster(team_id),
         "see this team's page status",
     ):
         return denied

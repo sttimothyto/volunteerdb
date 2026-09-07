@@ -17,6 +17,7 @@ from PIL import Image
 
 from volunteerdb import errors
 from volunteerdb.models import Team, TeamPage, TeamPageImage
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import pages, teams
 
 from tests import mint
@@ -151,26 +152,29 @@ def test_sanitize_drops_style_block_containing_markup():
 
 async def test_set_home_doc_url_validates_and_clears(database):
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Choir"))
+        team = ok(await teams.create(session, SYSTEM, "Choir"))
         ok(
             await pages.set_home_doc_url(
-                session, None, team.id, "https://docs.google.com/document/d/abc123/edit"
+                session,
+                SYSTEM,
+                team.id,
+                "https://docs.google.com/document/d/abc123/edit",
             )
         )
         assert team.home_doc_url == "https://docs.google.com/document/d/abc123/edit"
 
         refused(
             await pages.set_home_doc_url(
-                session, None, team.id, "https://evil.test/doc"
+                session, SYSTEM, team.id, "https://evil.test/doc"
             ),
             errors.Invalid,
         )
 
-        ok(await pages.set_home_doc_url(session, None, team.id, None))
+        ok(await pages.set_home_doc_url(session, SYSTEM, team.id, None))
         assert team.home_doc_url is None
 
         refused(
-            await pages.set_home_doc_url(session, None, 99999, None), errors.NotFound
+            await pages.set_home_doc_url(session, SYSTEM, 99999, None), errors.NotFound
         )
 
 
@@ -183,11 +187,11 @@ def _doc_client(handler) -> httpx.AsyncClient:
 
 async def _team_with_doc(name="Choir", doc_id="abc123"):
     async with db_session() as session:
-        team = ok(await teams.create(session, None, name))
+        team = ok(await teams.create(session, SYSTEM, name))
         ok(
             await pages.set_home_doc_url(
                 session,
-                None,
+                SYSTEM,
                 team.id,
                 f"https://docs.google.com/document/d/{doc_id}/edit",
             )
@@ -204,7 +208,11 @@ async def test_fetch_and_store_success(database):
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "ok" and page.error is None
         assert page.fetched_at is not None
         assert "Welcome volunteers" in page.html and "script" not in page.html
@@ -218,14 +226,22 @@ async def test_fetch_failure_keeps_last_good_html(database):
         _doc_client(lambda request: httpx.Response(200, text=DOC_HTML)) as client,
     ):
         team = await teams.get(session, team_id)
-        ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
 
     async with (
         db_session() as session,
         _doc_client(lambda request: httpx.Response(404, text="gone")) as client,
     ):
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "error" and "404" in page.error
         assert "Welcome volunteers" in page.html, "a hiccup never blanks the page"
 
@@ -242,7 +258,11 @@ async def test_fetch_detects_private_doc_signin_redirect(database):
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "error"
         assert "not publicly accessible" in page.error
         assert page.html is None, "the sign-in page must never be cached"
@@ -258,7 +278,11 @@ async def test_fetch_rejects_oversized_doc(database):
         ) as client,
     ):
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "error" and "over 30 MB" in page.error
 
 
@@ -273,7 +297,11 @@ async def test_fetch_rejects_oversized_text_after_extraction(database):
         _doc_client(lambda request: httpx.Response(200, text=doc)) as client,
     ):
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "error" and "over 2 MB" in page.error
 
 
@@ -317,7 +345,11 @@ async def test_fetch_localizes_google_images(database):
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "ok", page.error
         assert f'src="/ministries/img/{team_id}/1?v={_v(png)}"' in page.html
         assert 'alt="choir"' in page.html and 'width="624"' in page.html
@@ -350,7 +382,11 @@ async def test_fetch_localizes_inline_data_uri_images(database):
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "ok", page.error
         assert f'src="/ministries/img/{team_id}/1?v={_v(png)}"' in page.html
         assert 'alt="logo"' in page.html
@@ -380,7 +416,11 @@ async def test_unreadable_data_uri_loses_its_src_but_page_publishes(database, pa
         _doc_client(lambda request: httpx.Response(200, text=doc)) as client,
     ):
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "ok"
         assert "data:" not in page.html
         assert 'alt="broken"' in page.html and "<p>hello</p>" in page.html
@@ -394,7 +434,11 @@ async def test_duplicate_image_src_downloads_once(database):
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.html.count(f'src="/ministries/img/{team_id}/1?v=') == 2
         assert len(await _images(session, team_id)) == 1
         assert hosts.count("lh7-rt.googleusercontent.com") == 1
@@ -416,7 +460,11 @@ async def test_failed_image_keeps_remote_src_and_page_ok(database, image_respons
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "ok"
         assert "lh7-rt.googleusercontent.com" in page.html, "remote src kept"
         assert await _images(session, team_id) == []
@@ -430,7 +478,11 @@ async def test_oversized_still_is_downscaled(database):
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         (row,) = await _images(session, team_id)
         assert max(Image.open(BytesIO(row.image)).size) <= pages.IMAGE_MAX_DIM
 
@@ -443,7 +495,11 @@ async def test_refetch_replaces_images_but_failure_keeps_them(database):
     )
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
 
     # refetch with a new image: replaced wholesale
     second = _png(color="blue")
@@ -452,7 +508,11 @@ async def test_refetch_replaces_images_but_failure_keeps_them(database):
     )
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         (row,) = await _images(session, team_id)
         assert row.image == second
 
@@ -462,7 +522,11 @@ async def test_refetch_replaces_images_but_failure_keeps_them(database):
         _doc_client(lambda request: httpx.Response(404, text="gone")) as client,
     ):
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "error"
         (row,) = await _images(session, team_id)
         assert row.image == second
@@ -477,12 +541,20 @@ async def test_refetch_with_unchanged_doc_keeps_image_rows(database, log_records
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        first = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        first = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         first_html, first_fetched = first.html, first.fetched_at
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "ok" and page.html == first_html
         assert page.fetched_at > first_fetched, "the freshness label still advances"
         (row,) = await _images(session, team_id)
@@ -500,13 +572,17 @@ async def test_force_refetch_takes_the_rewrite_path(database, log_records):
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
         page = ok(
             await pages.fetch_and_store(
-                session, team, client, force=True, now=mint.now()
+                session, team, client, force=True, now=mint.now(), actor=SYSTEM
             )
         )
         assert page.status == "ok"
@@ -523,19 +599,31 @@ async def test_error_then_identical_doc_rewrites_and_clears_error(database):
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
 
     async with (
         db_session() as session,
         _doc_client(lambda request: httpx.Response(404, text="gone")) as client,
     ):
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "error"
 
     async with db_session() as session, _doc_client(handler) as client:
         team = await teams.get(session, team_id)
-        page = ok(await pages.fetch_and_store(session, team, client, now=mint.now()))
+        page = ok(
+            await pages.fetch_and_store(
+                session, team, client, now=mint.now(), actor=SYSTEM
+            )
+        )
         assert page.status == "ok" and page.error is None
         (row,) = await _images(session, team_id)
         assert row.image == png
@@ -546,18 +634,18 @@ async def test_error_then_identical_doc_rewrites_and_clears_error(database):
 
 async def _publish(name: str, html: str = "<p>hello</p>", active=True) -> int:
     async with db_session() as session:
-        team = ok(await teams.create(session, None, name))
+        team = ok(await teams.create(session, SYSTEM, name))
         ok(
             await pages.set_home_doc_url(
                 session,
-                None,
+                SYSTEM,
                 team.id,
                 "https://docs.google.com/document/d/x" + str(team.id),
             )
         )
         session.add(TeamPage(team_id=team.id, html=html, status="ok"))
         if not active:
-            ok(await teams.update(session, None, team.id, is_active=False))
+            ok(await teams.update(session, SYSTEM, team.id, is_active=False))
         return team.id
 
 
@@ -565,7 +653,7 @@ async def test_public_index_lists_only_published_active_teams(real_app_client):
     await _publish("Choir")
     await _publish("Closed Ministry", active=False)
     async with db_session() as session:
-        ok(await teams.create(session, None, "No Page Team"))
+        ok(await teams.create(session, SYSTEM, "No Page Team"))
 
     r = await real_app_client.get("/ministries/", follow_redirects=False)
     assert r.status_code == 200, "anonymous — no login redirect"
@@ -606,7 +694,7 @@ async def test_public_team_page_serves_cached_html(real_app_client):
 
 async def test_unpublished_team_page_404s(real_app_client):
     async with db_session() as session:
-        ok(await teams.create(session, None, "Quiet Team"))
+        ok(await teams.create(session, SYSTEM, "Quiet Team"))
     r = await real_app_client.get("/ministries/quiet-team.html")
     assert r.status_code == 404
 
@@ -618,14 +706,14 @@ async def test_published_page_and_teams_share_the_predicate(database):
     published_id = await _publish("Choir")
     inactive_id = await _publish("Closed Ministry", active=False)
     async with db_session() as session:
-        no_html = ok(await teams.create(session, None, "Pending Fetch"))
+        no_html = ok(await teams.create(session, SYSTEM, "Pending Fetch"))
         ok(
             await pages.set_home_doc_url(
-                session, None, no_html.id, "https://docs.google.com/document/d/p1"
+                session, SYSTEM, no_html.id, "https://docs.google.com/document/d/p1"
             )
         )
         session.add(TeamPage(team_id=no_html.id, html=None, status="error"))
-        no_doc = ok(await teams.create(session, None, "Unlinked"))
+        no_doc = ok(await teams.create(session, SYSTEM, "Unlinked"))
         session.add(TeamPage(team_id=no_doc.id, html="<p>orphan</p>", status="ok"))
         no_html_id, no_doc_id = no_html.id, no_doc.id
 
@@ -666,13 +754,13 @@ async def test_ministry_image_route_serves_published_teams_only(real_app_client)
     assert r.status_code == 404, "unknown seq"
 
     async with db_session() as session:
-        ok(await teams.update(session, None, team_id, is_active=False))
+        ok(await teams.update(session, SYSTEM, team_id, is_active=False))
     r = await real_app_client.get(f"/ministries/img/{team_id}/1")
     assert r.status_code == 404, "deactivating a team takes its images offline"
 
     async with db_session() as session:
-        ok(await teams.update(session, None, team_id, is_active=True))
-        ok(await pages.set_home_doc_url(session, None, team_id, None))
+        ok(await teams.update(session, SYSTEM, team_id, is_active=True))
+        ok(await pages.set_home_doc_url(session, SYSTEM, team_id, None))
     r = await real_app_client.get(f"/ministries/img/{team_id}/1")
     assert r.status_code == 404, "unlinking the doc takes its images offline"
 
@@ -719,7 +807,11 @@ async def test_core_member_may_set_home_doc(client, seeded, token_member):
     async with db_session() as session:
         ok(
             await memberships.assign(
-                session, None, seeded["volunteer_id"], seeded["team_id"], TeamRole.core
+                session,
+                SYSTEM,
+                seeded["volunteer_id"],
+                seeded["team_id"],
+                TeamRole.core,
             )
         )
     r = await client.patch(
@@ -745,7 +837,7 @@ async def test_page_rows_cascade_with_their_team(database):
             )
         )
     async with db_session() as session:
-        ok(await teams.delete(session, None, team_id))
+        ok(await teams.delete(session, SYSTEM, team_id))
     async with db_session() as session:
         assert await session.get(TeamPage, team_id) is None
         assert await session.get(TeamPageImage, (team_id, 1)) is None

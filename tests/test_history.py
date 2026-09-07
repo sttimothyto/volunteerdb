@@ -13,6 +13,7 @@ from volunteerdb.models import (
     team_history,
     volunteer_history,
 )
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, volunteers
 
 from tests.conftest import before_latest_write, db_session
@@ -21,11 +22,13 @@ from tests.fp_helpers import done, ok
 
 async def test_update_archives_old_version(database):
     async with db_session(user_id=42) as session:
-        v = ok(await volunteers.create(session, None, "Old", "Name", "old@example.org"))
+        v = ok(
+            await volunteers.create(session, SYSTEM, "Old", "Name", "old@example.org")
+        )
         vid = v.id
 
     async with db_session(user_id=42) as session:
-        done(await volunteers.update(session, None, vid, first_name="New"))
+        done(await volunteers.update(session, SYSTEM, vid, first_name="New"))
 
     async with db_session() as session:
         # the instant before the rename, and the instant of it
@@ -49,7 +52,7 @@ async def test_update_archives_old_version(database):
 
 async def test_delete_is_visible_in_the_past(database):
     async with db_session(user_id=7) as session:
-        v = ok(await volunteers.create(session, None, "Gone", "Tomorrow"))
+        v = ok(await volunteers.create(session, SYSTEM, "Gone", "Tomorrow"))
         vid = v.id
 
     async with db_session() as session:
@@ -59,7 +62,7 @@ async def test_delete_is_visible_in_the_past(database):
         )
 
     async with db_session(user_id=7) as session:
-        ok(await volunteers.delete(session, None, vid))
+        ok(await volunteers.delete(session, SYSTEM, vid))
 
     async with db_session() as session:
         assert await volunteers.get(session, vid) is None
@@ -71,12 +74,12 @@ async def test_delete_is_visible_in_the_past(database):
 
 async def test_rolled_back_changes_leave_no_history(database):
     async with db_session() as session:
-        v = ok(await volunteers.create(session, None, "Keep", "Me"))
+        v = ok(await volunteers.create(session, SYSTEM, "Keep", "Me"))
         vid = v.id
 
     try:
         async with db_session() as session:
-            done(await volunteers.update(session, None, vid, first_name="Doomed"))
+            done(await volunteers.update(session, SYSTEM, vid, first_name="Doomed"))
             raise RuntimeError("boom")
     except RuntimeError:
         pass
@@ -98,13 +101,13 @@ async def test_rolled_back_changes_leave_no_history(database):
 
 async def test_membership_role_changes_are_versioned(database):
     async with db_session(user_id=11) as session:
-        v = ok(await volunteers.create(session, None, "Ada", "Archivist"))
-        t = ok(await teams.create(session, None, "Choir"))
+        v = ok(await volunteers.create(session, SYSTEM, "Ada", "Archivist"))
+        t = ok(await teams.create(session, SYSTEM, "Choir"))
         vid, tid = v.id, t.id
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.member))
 
     async with db_session(user_id=11) as session:
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.leader))
 
     async with db_session() as session:
         row = (await session.execute(sa.select(membership_history))).mappings().one()
@@ -115,7 +118,7 @@ async def test_membership_role_changes_are_versioned(database):
 
 async def test_custom_values_are_versioned(database):
     async with db_session(user_id=42) as session:
-        v = ok(await volunteers.create(session, None, "Custom", "Carrier"))
+        v = ok(await volunteers.create(session, SYSTEM, "Custom", "Carrier"))
         vid = v.id
         v.custom = {"shirt_size": "M"}
 
@@ -150,7 +153,7 @@ async def test_workload_weight_is_versioned(database):
     and coalesced to 0 at every read, so it was a third state with no distinct
     behaviour (models.Team.workload_weight)."""
     async with db_session(user_id=9) as session:
-        t = ok(await teams.create(session, None, "Liturgy"))
+        t = ok(await teams.create(session, SYSTEM, "Liturgy"))
         tid = t.id
         assert t.workload_weight == Decimal(0), "unweighted is 0, not NULL"
 
@@ -173,10 +176,10 @@ async def test_a_snapshot_row_never_enters_the_live_session(database):
     a historical version must never sit in the caller's identity map, where a
     later flush would write the past over the present."""
     async with db_session(user_id=1) as session:
-        v = ok(await volunteers.create(session, None, "Then", "Now"))
+        v = ok(await volunteers.create(session, SYSTEM, "Then", "Now"))
         vid = v.id
     async with db_session(user_id=1) as session:
-        done(await volunteers.update(session, None, vid, first_name="Since"))
+        done(await volunteers.update(session, SYSTEM, vid, first_name="Since"))
     async with db_session() as session:
         before = await before_latest_write(session, Volunteer, vid)
         old = await volunteers.get(session, vid, at=before)

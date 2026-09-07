@@ -136,7 +136,7 @@ def _create_proposal_dialog(
                     role=TeamRole(role.value),
                     nomination_deadline=deadlines[0],
                     voting_deadline=deadlines[1],
-                    created_by=ctx.actor.user.id,
+                    created_by=ctx.actor.account.id,
                     candidates=[elections_service.CandidateInput(who.value, why.value)],
                     notes=notes.value or None,
                     today=ctx.env.today(),
@@ -297,7 +297,7 @@ async def _cancel_proposal(proposal_id: int) -> None:
             ctx.session,
             ctx.actor,
             proposal_id,
-            decided_by=ctx.actor.user.id,
+            decided_by=ctx.actor.account.id,
             now=ctx.now,
         )
 
@@ -320,7 +320,7 @@ async def _appoint(
             ctx.actor,
             proposal_id,
             candidate_id,
-            decided_by=ctx.actor.user.id,
+            decided_by=ctx.actor.account.id,
             today=ctx.env.today(),
             now=ctx.now,
         )
@@ -347,7 +347,7 @@ def _new_round_dialog(proposal_id: int) -> None:
                     ctx.session,
                     ctx.actor,
                     proposal_id,
-                    created_by=ctx.actor.user.id,
+                    created_by=ctx.actor.account.id,
                     nomination_deadline=deadlines[0],
                     voting_deadline=deadlines[1],
                     today=ctx.env.today(),
@@ -375,7 +375,7 @@ async def _nominate(proposal_id: int, volunteer_id: int | None, note: str) -> No
             ctx.actor,
             proposal_id,
             volunteer_id=volunteer_id,
-            nominated_by=ctx.actor.user.id,
+            nominated_by=ctx.actor.account.id,
             note=note,
             today=ctx.env.today(),
         )
@@ -402,7 +402,7 @@ async def _add_voter(proposal_id: int, volunteer_id: int | None) -> None:
             ctx.actor,
             proposal_id,
             volunteer_id=volunteer_id,
-            added_by=ctx.actor.user.id,
+            added_by=ctx.actor.account.id,
             today=ctx.env.today(),
         )
 
@@ -425,7 +425,6 @@ async def _cast_ballot(
             ctx.session,
             ctx.actor,
             proposal_id,
-            voter_volunteer_id=ctx.actor.volunteer_id,
             scores=scores,
             today=ctx.env.today(),
             now=ctx.now,

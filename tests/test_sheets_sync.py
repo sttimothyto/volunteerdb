@@ -18,6 +18,7 @@ import pytest
 import sqlalchemy as sa
 
 from volunteerdb.models import TeamRole, membership_history
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import ROSTER_HEADERS
@@ -39,29 +40,45 @@ async def choir(database):
     """Choir with Lena (leader), Mia and Carl (members); Carl also serves on
     Hospitality. Dora is on Choir only."""
     async with db_session() as session:
-        choir = ok(await teams.create(session, None, "Choir"))
-        hospitality = ok(await teams.create(session, None, "Hospitality"))
+        choir = ok(await teams.create(session, SYSTEM, "Choir"))
+        hospitality = ok(await teams.create(session, SYSTEM, "Hospitality"))
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
-        )
-        mia = ok(
-            await volunteers.create(session, None, "Mia", "Member", "mia@example.org")
-        )
-        carl = ok(
-            await volunteers.create(session, None, "Carl", "Cross", "carl@example.org")
-        )
-        dora = ok(
-            await volunteers.create(session, None, "Dora", "Done", "dora@example.org")
-        )
-        ok(await memberships.assign(session, None, lena.id, choir.id, TeamRole.leader))
-        ok(await memberships.assign(session, None, mia.id, choir.id, TeamRole.member))
-        ok(await memberships.assign(session, None, carl.id, choir.id, TeamRole.member))
-        ok(
-            await memberships.assign(
-                session, None, carl.id, hospitality.id, TeamRole.member
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
             )
         )
-        ok(await memberships.assign(session, None, dora.id, choir.id, TeamRole.member))
+        mia = ok(
+            await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
+        )
+        carl = ok(
+            await volunteers.create(
+                session, SYSTEM, "Carl", "Cross", "carl@example.org"
+            )
+        )
+        dora = ok(
+            await volunteers.create(session, SYSTEM, "Dora", "Done", "dora@example.org")
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, lena.id, choir.id, TeamRole.leader
+            )
+        )
+        ok(await memberships.assign(session, SYSTEM, mia.id, choir.id, TeamRole.member))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, carl.id, choir.id, TeamRole.member
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, carl.id, hospitality.id, TeamRole.member
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, dora.id, choir.id, TeamRole.member
+            )
+        )
         return {
             "choir": choir.id,
             "hospitality": hospitality.id,
@@ -74,7 +91,7 @@ async def choir(database):
 
 async def _team_volunteer_ids(team_id: int) -> set[int]:
     async with db_session() as session:
-        pairs = ok(await teams.roster(session, None, team_id))
+        pairs = ok(await teams.roster(session, SYSTEM, team_id))
         return {volunteer.id for _, volunteer in pairs}
 
 
@@ -82,7 +99,7 @@ async def test_sync_roundtrip_of_team_export_is_a_noop(choir, env):
     async with db_session() as session:
         content = ok(
             await exporter.export_csv(
-                session, None, team_id=choir["choir"], subtree=False
+                session, SYSTEM, team_id=choir["choir"], subtree=False
             )
         )
     report = await importer.run_team_sync(
@@ -118,7 +135,7 @@ async def test_sync_applies_adds_and_updates_but_removes_nobody(choir, env):
     assert choir["carl"] in roster and choir["dora"] in roster
 
     async with db_session() as session:
-        (dora,) = await volunteers.search(session, "dora@example.org")
+        (dora,) = await volunteers.search(session, "dora@example.org", actor=SYSTEM)
         assert dora.is_active, "nobody is archived by a sync any more"
         # and no membership was ever deleted, so the history twin has no D row
         deleted = (
@@ -186,7 +203,7 @@ async def test_a_row_error_rolls_the_whole_team_back(choir, env):
     # the report still COUNTS what it would have done — the rollback is the
     # database's, not the tally's — so the state is what the assertion checks
     async with db_session() as session:
-        assert await volunteers.search(session, "nora@example.org") == []
+        assert await volunteers.search(session, "nora@example.org", actor=SYSTEM) == []
 
 
 async def test_sync_dry_run_reports_without_writing(choir, env):
@@ -199,14 +216,14 @@ async def test_sync_dry_run_reports_without_writing(choir, env):
     assert not report.has_errors and not report.applied
     assert report.volunteers_created == 1, "reported..."
     async with db_session() as session:
-        assert await volunteers.search(session, "nora@example.org") == [], (
-            "...but rolled back"
-        )
+        assert (
+            await volunteers.search(session, "nora@example.org", actor=SYSTEM) == []
+        ), "...but rolled back"
 
 
 async def test_sync_empty_sheet_for_an_empty_team_is_fine(choir, env):
     async with db_session() as session:
-        fresh = ok(await teams.create(session, None, "Fresh"))
+        fresh = ok(await teams.create(session, SYSTEM, "Fresh"))
         fresh_id = fresh.id
     report = await importer.run_team_sync(
         env, _csv_bytes([]), team_id=fresh_id, user_id=None
@@ -221,7 +238,9 @@ async def test_sync_adding_an_archived_volunteer_reactivates_them(choir, env):
     how a leader brings somebody back."""
     async with db_session() as session:
         gone = ok(
-            await volunteers.create(session, None, "Greta", "Gone", "greta@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Greta", "Gone", "greta@example.org"
+            )
         )
         gone.is_active = False
         await session.flush()
@@ -236,7 +255,7 @@ async def test_sync_adding_an_archived_volunteer_reactivates_them(choir, env):
     assert report.volunteers_reactivated == 1
 
     async with db_session() as session:
-        (greta,) = await volunteers.search(session, "greta@example.org")
+        (greta,) = await volunteers.search(session, "greta@example.org", actor=SYSTEM)
         assert greta.is_active, "joining a team implies active"
 
 
@@ -249,13 +268,13 @@ async def test_a_sheet_cannot_rewrite_the_contact_details_of_an_outsider(choir, 
     async with db_session() as session:
         outsider = ok(
             await volunteers.create(
-                session, None, "Orla", "Outsider", "orla@example.org"
+                session, SYSTEM, "Orla", "Outsider", "orla@example.org"
             )
         )
-        other = ok(await teams.create(session, None, "Altar Servers"))
+        other = ok(await teams.create(session, SYSTEM, "Altar Servers"))
         ok(
             await memberships.assign(
-                session, None, outsider.id, other.id, TeamRole.member
+                session, SYSTEM, outsider.id, other.id, TeamRole.member
             )
         )
         outsider_id = outsider.id
@@ -293,11 +312,11 @@ async def test_a_redirected_address_is_reported_so_the_old_mailbox_can_be_told(
     hole; what it may not do is move somebody it merely lists."""
     async with db_session() as session:
         blank = ok(
-            await volunteers.create(session, None, "Basil", "Blank")
+            await volunteers.create(session, SYSTEM, "Basil", "Blank")
         )  # no address
         ok(
             await memberships.assign(
-                session, None, blank.id, choir["choir"], TeamRole.member
+                session, SYSTEM, blank.id, choir["choir"], TeamRole.member
             )
         )
         blank_id = blank.id

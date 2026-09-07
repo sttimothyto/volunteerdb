@@ -176,9 +176,9 @@ def _own_email(actor: Actor) -> None:
     anchor here should read as the address it already was."""
     classes = "text-sm gt-sm"  # at 80% opacity the address read 3.7:1
     if actor.volunteer_id is None:
-        ui.label(actor.user.email).classes(classes).mark("header-email")
+        ui.label(actor.account.email).classes(classes).mark("header-email")
         return
-    ui.link(actor.user.email, f"/volunteers/{actor.volunteer_id}").classes(
+    ui.link(actor.account.email, f"/volunteers/{actor.volunteer_id}").classes(
         f"{classes} vdb-quiet"
     ).tooltip("My volunteer profile").mark("header-email")
 
@@ -201,7 +201,7 @@ def _own_avatar(actor: Actor) -> None:
     with ui.element("div").classes("flex items-center mx-2"):
         photo_avatar(
             actor.volunteer_id,
-            actor.volunteer_name or actor.user.email,
+            actor.volunteer_name or actor.account.email,
             actor.photo_at,
             on_change=changed,
             marker="header-avatar",

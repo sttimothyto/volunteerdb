@@ -526,7 +526,7 @@ async def _sync_sheet(team_id: int, direction: str) -> None:
     of work of its own, so it is not a command: the refusal is toasted here.
     """
     async with page_ctx() as ctx:
-        user_id = ctx.actor.user.id
+        user_id = ctx.actor.account.id
     env = ctx.env
     ui.notify("Syncing with Google Sheets…")
     synced = await roster_sheets.sync_team(
@@ -627,7 +627,7 @@ def _sheet_import_block(is_admin: bool) -> None:
         """run_import is an orchestrator with a unit of work of its own, so it
         is not a command; the refusal to import at all is toasted here."""
         async with page_ctx() as ctx:
-            user_id = ctx.actor.user.id  # run_import checks the right itself
+            user_id = ctx.actor.account.id  # run_import checks the right itself
         report = await importer.run_import(
             ctx.env, content, dry_run=dry_run, user_id=user_id
         )
@@ -700,7 +700,7 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
                 )
                 if isinstance(linked, Err):
                     return linked
-                return Ok(ctx.actor.user.id)
+                return Ok(ctx.actor.account.id)
 
             linked = await run_command(command, reload=False)
             if isinstance(linked, Err):

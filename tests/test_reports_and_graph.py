@@ -7,6 +7,7 @@ from PIL import Image
 
 from volunteerdb.actors import load_actor
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import (
     graph,
     memberships,
@@ -24,29 +25,33 @@ from tests.fp_helpers import ok
 
 async def test_coverage_counts_and_hole_first_sorting(database):
     async with db_session() as session:
-        altar = ok(await teams.create(session, None, "Altar"))
-        bakers = ok(await teams.create(session, None, "Bakers"))
-        choir = ok(await teams.create(session, None, "Choir"))
-        ok(await teams.create(session, None, "Drama"))
-        ok(await teams.update(session, None, choir.id, is_active=False))
+        altar = ok(await teams.create(session, SYSTEM, "Altar"))
+        bakers = ok(await teams.create(session, SYSTEM, "Bakers"))
+        choir = ok(await teams.create(session, SYSTEM, "Choir"))
+        ok(await teams.create(session, SYSTEM, "Drama"))
+        ok(await teams.update(session, SYSTEM, choir.id, is_active=False))
 
-        lead = ok(await volunteers.create(session, None, "Lea", "Der"))
-        second = ok(await volunteers.create(session, None, "Sec", "Ond"))
-        member = ok(await volunteers.create(session, None, "Mem", "Ber"))
-        ok(await memberships.assign(session, None, lead.id, altar.id, TeamRole.leader))
+        lead = ok(await volunteers.create(session, SYSTEM, "Lea", "Der"))
+        second = ok(await volunteers.create(session, SYSTEM, "Sec", "Ond"))
+        member = ok(await volunteers.create(session, SYSTEM, "Mem", "Ber"))
         ok(
             await memberships.assign(
-                session, None, second.id, altar.id, TeamRole.second
+                session, SYSTEM, lead.id, altar.id, TeamRole.leader
             )
         )
         ok(
             await memberships.assign(
-                session, None, member.id, altar.id, TeamRole.member
+                session, SYSTEM, second.id, altar.id, TeamRole.second
             )
         )
         ok(
             await memberships.assign(
-                session, None, member.id, bakers.id, TeamRole.member
+                session, SYSTEM, member.id, altar.id, TeamRole.member
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, member.id, bakers.id, TeamRole.member
             )
         )
 
@@ -71,20 +76,28 @@ async def test_coverage_counts_and_hole_first_sorting(database):
 
 async def _parish(session):
     """Parent team with a sub-team and an unrelated team, one volunteer each."""
-    parent = ok(await teams.create(session, None, "Liturgy"))
-    child = ok(await teams.create(session, None, "Music", parent_team_id=parent.id))
-    other = ok(await teams.create(session, None, "Hospitality"))
+    parent = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    child = ok(await teams.create(session, SYSTEM, "Music", parent_team_id=parent.id))
+    other = ok(await teams.create(session, SYSTEM, "Hospitality"))
 
-    on_parent = ok(await volunteers.create(session, None, "Pat", "Parent"))
-    on_child = ok(await volunteers.create(session, None, "Chris", "Child"))
-    on_other = ok(await volunteers.create(session, None, "Ollie", "Other"))
+    on_parent = ok(await volunteers.create(session, SYSTEM, "Pat", "Parent"))
+    on_child = ok(await volunteers.create(session, SYSTEM, "Chris", "Child"))
+    on_other = ok(await volunteers.create(session, SYSTEM, "Ollie", "Other"))
     ok(
         await memberships.assign(
-            session, None, on_parent.id, parent.id, TeamRole.leader
+            session, SYSTEM, on_parent.id, parent.id, TeamRole.leader
         )
     )
-    ok(await memberships.assign(session, None, on_child.id, child.id, TeamRole.member))
-    ok(await memberships.assign(session, None, on_other.id, other.id, TeamRole.leader))
+    ok(
+        await memberships.assign(
+            session, SYSTEM, on_child.id, child.id, TeamRole.member
+        )
+    )
+    ok(
+        await memberships.assign(
+            session, SYSTEM, on_other.id, other.id, TeamRole.leader
+        )
+    )
     return parent, child, other, on_parent, on_child, on_other
 
 
@@ -98,6 +111,7 @@ async def test_graph_admin_sees_everything(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await load_actor(session, admin)
@@ -129,6 +143,7 @@ async def test_graph_member_sees_only_own_team(database):
                 volunteer_id=on_child.id,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await load_actor(session, account)
@@ -171,6 +186,7 @@ async def test_graph_photo_datum_only_on_photographed_volunteers(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await load_actor(session, admin)
@@ -194,6 +210,7 @@ async def test_graph_team_filter_restricts_to_subtree(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await load_actor(session, admin)
@@ -221,6 +238,7 @@ async def test_graph_narrows_to_volunteer_ids(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await load_actor(session, admin)

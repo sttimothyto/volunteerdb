@@ -27,15 +27,19 @@ import re
 import subprocess
 import sys
 
-# What `uv run ty check src/` reported on 2026-09-06, after fp.py's variance
-# and raise_http's union were fixed (778aa47's Result idiom, typed properly).
-# The remainder is roughly half SQLAlchemy's declarative surface -- model
-# `__init__` overloads, Enum column descriptors -- and half real `X | None`
-# narrowing gaps in query_lang.py and services/elections.py.
-CEILING = 93
+# What `uv run ty check src/` reported on 2026-09-06: 93 after fp.py's variance
+# and raise_http's union were fixed (778aa47's Result idiom, typed properly),
+# 70 once every service took an `Actor` and nothing else (permissions.SYSTEM).
+# What is left is mostly the checker's blind spots, not bugs: `dict(rows.all())`
+# over SQLAlchemy `Row`s (nine; `rows.tuples().all()` is the fix), enum columns
+# assigned `.value` strings, guards it cannot correlate (`x = a is not None and
+# ...` and then `a.attr`), SQL `IS NOT NULL` filters it cannot see, and a
+# handful of library stubs (DeclarativeBase.__table__ as FromClause, Starlette
+# add_middleware, NiceGUI async handlers, PIL getpixel).
+CEILING = 70
 
 TARGET = "src/"
-# Warnings count too: an `unused-type-ignore-comment` is a suppression that has
+# Warnings count too: an `unused-ignore-comment` is a suppression that has
 # outlived the error it hid, and those are exactly what a ratchet should notice.
 DIAGNOSTIC = re.compile(r"^\S+:\d+:\d+: (error|warning)\[", re.MULTILINE)
 

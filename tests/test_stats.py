@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 from volunteerdb.actors import load_actor
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import (
     memberships,
     stats,
@@ -25,28 +26,34 @@ from tests.fp_helpers import done, ok
 async def _parish(session):
     """Liturgy (leader + second + core + member) with a Music sub-team, plus
     an unrelated Hospitality team that has nobody leading it."""
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
-    hospitality = ok(await teams.create(session, None, "Hospitality"))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    music = ok(await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id))
+    hospitality = ok(await teams.create(session, SYSTEM, "Hospitality"))
 
-    lea = ok(await volunteers.create(session, None, "Lea", "Der", "lea@example.org"))
-    sam = ok(await volunteers.create(session, None, "Sam", "Second", "sam@example.org"))
+    lea = ok(await volunteers.create(session, SYSTEM, "Lea", "Der", "lea@example.org"))
+    sam = ok(
+        await volunteers.create(session, SYSTEM, "Sam", "Second", "sam@example.org")
+    )
     cora = ok(
-        await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+        await volunteers.create(session, SYSTEM, "Cora", "Core", "cora@example.org")
     )
     mel = ok(
-        await volunteers.create(session, None, "Mel", "Ember")
+        await volunteers.create(session, SYSTEM, "Mel", "Ember")
     )  # no email on purpose
     solo = ok(
-        await volunteers.create(session, None, "Solo", "Nobody", "solo@example.org")
+        await volunteers.create(session, SYSTEM, "Solo", "Nobody", "solo@example.org")
     )
 
-    ok(await memberships.assign(session, None, lea.id, liturgy.id, TeamRole.leader))
-    ok(await memberships.assign(session, None, sam.id, liturgy.id, TeamRole.second))
-    ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
-    ok(await memberships.assign(session, None, mel.id, music.id, TeamRole.member))
+    ok(await memberships.assign(session, SYSTEM, lea.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, SYSTEM, sam.id, liturgy.id, TeamRole.second))
+    ok(await memberships.assign(session, SYSTEM, cora.id, liturgy.id, TeamRole.core))
+    ok(await memberships.assign(session, SYSTEM, mel.id, music.id, TeamRole.member))
     # one person on two teams, so "assignments" and "people" differ
-    ok(await memberships.assign(session, None, lea.id, hospitality.id, TeamRole.member))
+    ok(
+        await memberships.assign(
+            session, SYSTEM, lea.id, hospitality.id, TeamRole.member
+        )
+    )
 
     return {
         "liturgy": liturgy,
@@ -68,6 +75,7 @@ async def _actor(session, email, **kwargs):
             password="test-pass-phrase",
             **kwargs,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     return await load_actor(session, user)
@@ -76,7 +84,7 @@ async def _actor(session, email, **kwargs):
 async def test_parish_tier_counts(database):
     async with db_session() as session:
         p = await _parish(session)
-        done(await volunteers.update(session, None, p["solo"].id, is_active=False))
+        done(await volunteers.update(session, SYSTEM, p["solo"].id, is_active=False))
         ok(
             await users.create(
                 session,
@@ -84,6 +92,7 @@ async def test_parish_tier_counts(database):
                 volunteer_id=p["lea"].id,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         actor = await _actor(session, "admin@example.org", is_admin=True)

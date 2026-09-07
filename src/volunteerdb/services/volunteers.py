@@ -37,7 +37,7 @@ async def search(
     at: datetime | None = None,
     include_inactive: bool = False,
     *,
-    actor: Actor | None = None,
+    actor: Actor,
     limit: int | None = None,
 ) -> list[Volunteer]:
     """Substring search over every volunteer column.
@@ -45,8 +45,7 @@ async def search(
     Names match for everyone — they are shown to everyone. Email, phone, notes
     and custom-field values match only among volunteers the actor can already
     view unredacted, mirroring can_view_volunteer: self, plus anyone on a team
-    in full_view_team_ids (an admin, or a None actor meaning a trusted internal
-    caller, skips the wrap). Matching a field a viewer cannot see leaks its
+    in full_view_team_ids (an admin, SYSTEM included, skips the wrap). Matching a field a viewer cannot see leaks its
     content by the row's mere presence.
 
     Email used to match for everyone, on the reasoning that you can only match
@@ -76,7 +75,7 @@ async def search(
             # serialized JSONB: matches values (and keys) as text
             sa.cast(V.custom, sa.Text).ilike(pattern),
         )
-        if actor is None or actor.is_admin:
+        if actor.is_admin:
             stmt = stmt.where(sa.or_(public_match, private_match))
         else:
             M = entity(Membership, at)
@@ -107,7 +106,7 @@ async def search_or_query(
     at: datetime | None = None,
     include_inactive: bool = False,
     *,
-    actor: Actor | None = None,
+    actor: Actor,
     limit: int | None = None,
 ) -> Result[list[Volunteer], QueryError]:
     """`search`, unless `text` parses as a SQL WHERE filter — then run that.
@@ -186,7 +185,7 @@ async def find_by_email(session: AsyncSession, email: str) -> list[Volunteer]:
 
 async def create(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     first_name: str,
     last_name: str,
     email: str | None = None,
@@ -196,11 +195,9 @@ async def create(
     """Add a person to the parish. Admin-only: a volunteer record is the thing
     memberships and permissions hang off, and the roster paths that let a leader
     bring somebody in go through the importer, which grants its own licence
-    row-by-row (sheets/importer.py). `actor=None` is a trusted internal caller
-    — the importer and the seed script."""
-    if denied := require(
-        actor is None or actor.is_admin, "only admins create volunteers"
-    ):
+    row-by-row (sheets/importer.py). SYSTEM is the trusted internal caller —
+    the importer and the seed script."""
+    if denied := require(actor.is_admin, "only admins create volunteers"):
         return denied
     volunteer = Volunteer(
         first_name=first_name.strip(),
@@ -226,7 +223,7 @@ class AddressChange(StrEnum):
 
 
 def address_change(
-    actor: Actor | None, volunteer: Volunteer, typed: str | None
+    actor: Actor, volunteer: Volunteer, typed: str | None
 ) -> AddressChange:
     """Whether `typed` may simply be written as `volunteer`'s email, and if
     not, why.
@@ -240,25 +237,25 @@ def address_change(
     writes need no round-trip: retyping what is on file, and syncing the
     record onto the address you already sign in with, which is the one way
     to fill a linked record whose email is blank. A blank is refused: it is
-    how you sign in. `actor` None is a trusted internal caller, and plain.
+    how you sign in. SYSTEM is a trusted internal caller, and plain.
 
     The JSON API refuses what it cannot stage (it sends no mail); the GUI
     stages it. Both read the same answer, which is the point."""
-    if actor is None or actor.volunteer_id != volunteer.id:
+    if actor.volunteer_id != volunteer.id:
         return AddressChange.plain
     wanted = (typed or "").strip().lower()
     if not wanted:
         return AddressChange.blank_own
     if wanted == (volunteer.email or "").strip().lower():
         return AddressChange.unchanged
-    if wanted == (actor.user.email or "").strip().lower():
+    if wanted == (actor.account.email or "").strip().lower():
         return AddressChange.sync_login
     return AddressChange.needs_confirmation
 
 
 async def update(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     volunteer_id: int,
     *,
     first_name: str | None = None,
@@ -280,17 +277,16 @@ async def update(
     if volunteer is None:
         return not_found("volunteer", volunteer_id)
     previous = (volunteer.email or "").strip().lower()
-    if actor is not None:
-        if denied := require(
-            actor.can_edit_volunteer(
-                volunteer_id, await volunteer_team_ids(session, volunteer_id)
-            ),
-            "edit this volunteer",
-        ):
+    if denied := require(
+        actor.can_edit_volunteer(
+            volunteer_id, await volunteer_team_ids(session, volunteer_id)
+        ),
+        "edit this volunteer",
+    ):
+        return denied
+    if is_active is not None:
+        if denied := require(actor.is_admin, "only admins archive volunteers"):
             return denied
-        if is_active is not None:
-            if denied := require(actor.is_admin, "only admins archive volunteers"):
-                return denied
     if first_name is not None:
         volunteer.first_name = first_name.strip()
     if last_name is not None:
@@ -299,7 +295,7 @@ async def update(
     if email is not UNSET:
         settled = email.strip().lower() if email else None  # type: ignore[union-attr]
         volunteer.email = settled
-        by_other = actor is None or actor.volunteer_id != volunteer_id
+        by_other = actor.volunteer_id != volunteer_id
         if by_other and previous and previous != (settled or ""):
             events = (AddressReplaced(volunteer_id, was=previous, now=settled),)
     if phone is not UNSET:
@@ -313,11 +309,9 @@ async def update(
 
 
 async def delete(
-    session: AsyncSession, actor: Actor | None, volunteer_id: int
+    session: AsyncSession, actor: Actor, volunteer_id: int
 ) -> Result[None, DomainError]:
-    if denied := require(
-        actor is None or actor.is_admin, "only admins delete volunteers"
-    ):
+    if denied := require(actor.is_admin, "only admins delete volunteers"):
         return denied
     volunteer = await get(session, volunteer_id)
     if volunteer is None:
@@ -351,7 +345,7 @@ class ImpactRow:
 
 async def impact(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     volunteer_id: int,
     at: datetime | None = None,
 ) -> Result[list[ImpactRow], DomainError]:
@@ -363,14 +357,13 @@ async def impact(
     Needs full-profile view of the volunteer: it enumerates every team they
     serve on, including ones the viewer has no rights over.
     """
-    if actor is not None:
-        if denied := require(
-            actor.can_view_volunteer(
-                volunteer_id, await volunteer_team_ids(session, volunteer_id)
-            ),
-            "view this volunteer's impact",
-        ):
-            return denied
+    if denied := require(
+        actor.can_view_volunteer(
+            volunteer_id, await volunteer_team_ids(session, volunteer_id)
+        ),
+        "view this volunteer's impact",
+    ):
+        return denied
     rows = await assignments(session, volunteer_id, at)
     if not rows:
         return Ok([])

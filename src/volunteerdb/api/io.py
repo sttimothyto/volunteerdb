@@ -108,7 +108,7 @@ async def import_roster(
         raise HTTPException(413, "file larger than 10 MB")
     report = raise_http(
         await importer.run_import(
-            ctx.env, content, dry_run=dry_run, user_id=ctx.actor.user.id
+            ctx.env, content, dry_run=dry_run, user_id=ctx.actor.account.id
         )
     )
     return ImportReportOut.of(report)

@@ -5,7 +5,7 @@ are pinned (docs/explanation/auth.md, "changing an address")."""
 import pytest
 
 from volunteerdb.models import AppUser, Volunteer
-from volunteerdb.permissions import Actor
+from volunteerdb.permissions import SYSTEM, Actor
 from volunteerdb.services.volunteers import AddressChange, address_change
 
 pytestmark = pytest.mark.pure
@@ -32,7 +32,7 @@ def _volunteer(email: str | None) -> Volunteer:
         # somebody else's record: an ordinary edit, whatever is typed
         (_actor(3), "old@example.org", "new@example.org", AddressChange.plain),
         (_actor(3), "old@example.org", "", AddressChange.plain),
-        (None, "old@example.org", "new@example.org", AddressChange.plain),
+        (SYSTEM, "old@example.org", "new@example.org", AddressChange.plain),
         # your own record
         (_actor(7), "me@example.org", " Me@Example.org ", AddressChange.unchanged),
         (_actor(7), None, "me@example.org", AddressChange.sync_login),

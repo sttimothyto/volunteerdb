@@ -49,7 +49,7 @@ from volunteerdb.models import (
     TeamRole,
     Volunteer,
 )
-from volunteerdb.permissions import team_ids_map
+from volunteerdb.permissions import SYSTEM, team_ids_map
 from volunteerdb.services import custom_fields as custom_field_service
 from volunteerdb.services import events as event_service
 from volunteerdb.services import graph as graph_service
@@ -207,7 +207,7 @@ async def seed(scale: int) -> None:
             weight = Decimal(rng.choice(["1", "1.5", "2", "3"])) if i % 2 == 0 else None
             parent = expect(
                 await team_service.create(
-                    session, None, parent_name, workload_weight=weight
+                    session, SYSTEM, parent_name, workload_weight=weight
                 )
             )
             team_ids.append(parent.id)
@@ -216,7 +216,7 @@ async def seed(scale: int) -> None:
                 child = expect(
                     await team_service.create(
                         session,
-                        None,
+                        SYSTEM,
                         f"{parent_name} Group {k + 1}",
                         parent_team_id=parent.id,
                         workload_weight=weight,
@@ -326,7 +326,7 @@ async def seed(scale: int) -> None:
         expect(
             await custom_field_service.create_def(
                 session,
-                None,
+                SYSTEM,
                 "Safeguarding training",
                 FieldType.date,
                 show_in_list=True,
@@ -335,7 +335,7 @@ async def seed(scale: int) -> None:
         expect(
             await custom_field_service.create_def(
                 session,
-                None,
+                SYSTEM,
                 "Preferred contact",
                 FieldType.select,
                 options=["Email", "Phone", "Post"],
@@ -344,12 +344,20 @@ async def seed(scale: int) -> None:
 
         expect(
             await user_service.create(
-                session, ADMIN_EMAIL, is_admin=True, password=BENCH_PASSWORD
+                session,
+                ADMIN_EMAIL,
+                is_admin=True,
+                password=BENCH_PASSWORD,
+                actor=SYSTEM,
             )
         )
         expect(
             await user_service.create(
-                session, LEADER_EMAIL, volunteer_id=rows[1].id, password=BENCH_PASSWORD
+                session,
+                LEADER_EMAIL,
+                volunteer_id=rows[1].id,
+                password=BENCH_PASSWORD,
+                actor=SYSTEM,
             )
         )  # tuple return ignored: the bench never redeems an invite
 
@@ -442,7 +450,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
     asof_ts = datetime.now(UTC)
     async with db_session() as session:
         parish_roster = expect(
-            await export_csv(session, None)
+            await export_csv(session, SYSTEM)
         )  # for the re-import pattern
         # landmark slug for the ministries_page pattern: lowest-id published team
         published_now = await page_service.published_teams(session)
@@ -457,7 +465,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
             user = await user_service.get(session, marks["admin_user"])
             actor = await load_actor(session, user)
             found = await volunteer_service.search(
-                session, "", include_inactive=actor.is_admin
+                session, "", include_inactive=actor.is_admin, actor=SYSTEM
             )
             team_sets = await team_ids_map(session, [v.id for v in found])
             [d for d in await custom_field_service.list_defs(session) if d.show_in_list]
@@ -466,20 +474,26 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
     async def search_blank():
         async with db_session() as session:
-            await volunteer_service.search(session, "", include_inactive=True)
+            await volunteer_service.search(
+                session, "", include_inactive=True, actor=SYSTEM
+            )
 
     async def search_name():
         async with db_session() as session:
-            await volunteer_service.search(session, "mar", include_inactive=True)
+            await volunteer_service.search(
+                session, "mar", include_inactive=True, actor=SYSTEM
+            )
 
     async def search_email():
         async with db_session() as session:
-            await volunteer_service.search(session, "ller", include_inactive=True)
+            await volunteer_service.search(
+                session, "ller", include_inactive=True, actor=SYSTEM
+            )
 
     async def search_asof():
         async with db_session() as session:
             await volunteer_service.search(
-                session, "", at=asof_ts, include_inactive=True
+                session, "", at=asof_ts, include_inactive=True, actor=SYSTEM
             )
 
     async def load_actor_leader():
@@ -490,7 +504,7 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
     async def impact_busy():
         async with db_session() as session:
-            expect(await volunteer_service.impact(session, None, marks["busy"]))
+            expect(await volunteer_service.impact(session, SYSTEM, marks["busy"]))
 
     async def timeline_churned():
         async with db_session() as session:

@@ -28,6 +28,7 @@ GATES = {
     "require",
     "_managed",  # elections, events
     "_viewable",  # elections
+    "_own_volunteer",  # elections — a seat is the actor's own, never an argument
     "_visible",  # events
     "_require_self",  # events
     "_require_own_or_managed",  # events
@@ -77,8 +78,6 @@ EDGE_ALLOWLIST = {
     # operation; every operation behind it is checked in the service
     ("api/elections.py", "can_access_elections"),
     ("api/volunteers.py", "can_access_elections"),
-    # the caller must be linked to a volunteer before a ballot can exist
-    ("api/elections.py", "volunteer_id is not None"),
     # scope comes FROM the actor, so there is no argument for a service to check
     ("api/io.py", "people_team_ids"),
     ("ui/team_files_route.py", "full_view_team_ids"),

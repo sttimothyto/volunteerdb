@@ -123,18 +123,18 @@ uv run playwright show-trace test-results/*/trace.zip
 
 `make test` runs the suite on four workers (pytest-xdist), which is where the
 wall time went from about twelve minutes to about three. Every worker is a
-separate *process*, so the process-global state the suite keeps — the structlog
-configuration `_quiet_structlog` and `log_records` set, the in-process throttle
-ledger, `SIM_CLOCK` — is per-worker and needs no coordination. Two things did:
+separate *process*, so the state the suite keeps in-process is per-worker and
+needs no coordination. That is the structlog configuration (`_quiet_structlog`,
+`log_records`), the throttle ledger and `SIM_CLOCK`. Two things did need it:
 
 - **A database each.** `volunteerdb_test_gw0`, `_gw1`, and so on, named from
   `PYTEST_XDIST_WORKER` in `tests/conftest.py`. The suite truncates every table
   between tests, so two workers sharing one database would wipe each other's
   rows mid-test. A serial run still uses plain `volunteerdb_test`.
 - **The browser tests on one worker.** `tests/e2e/conftest.py` marks its own
-  tests `xdist_group("browser")`, and `--dist loadgroup` keeps a group together,
-  so the session-scoped `python -m volunteerdb.main` starts once rather than
-  once per worker that happened to be handed a browser test.
+  tests `xdist_group("browser")`, and `--dist loadgroup` keeps a group on one
+  worker. So the session-scoped `python -m volunteerdb.main` starts once, not
+  once per worker that was handed a browser test.
 
 ```sh
 uv run pytest -n 4 --dist loadgroup    # what make test runs
@@ -142,9 +142,9 @@ uv run pytest -n auto --dist loadgroup # a worker per core
 uv run pytest                          # serial, for a failure worth reading
 ```
 
-Four rather than `auto` is a deliberate default: the UI-simulation assertions
-are on retry budgets that a busy machine can exceed (see the failure modes
-below), and past four workers the suite spends more time competing with itself
+Four rather than `auto` is a deliberate default. The UI-simulation assertions
+run on retry budgets that a busy machine can exceed (see the failure modes
+below). Past four workers the suite spends more time competing with itself
 than it saves. Debug serially — one worker means one interleaving, and pytest's
 output is in test order.
 

@@ -11,6 +11,7 @@ from PIL import Image
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from volunteerdb.models import MailQuota
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import mail_quota, photos, teams, users, volunteers
 
 from .conftest import SIM_MAIN, SLOW, only
@@ -29,10 +30,14 @@ def _png(width: int, height: int) -> bytes:
 
 async def test_settings_menu_carries_reading_preferences(database):
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
         admin, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
 
@@ -54,7 +59,7 @@ async def test_settings_menu_carries_reading_preferences(database):
 
 async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
     async with db_session() as session:
-        maria = ok(await volunteers.create(session, None, "Maria", "Alvarez"))
+        maria = ok(await volunteers.create(session, SYSTEM, "Maria", "Alvarez"))
         ok(
             await photos.set_photo(
                 session, maria.id, _png(60, 60), uploaded_by=None, now=datetime.now(UTC)
@@ -66,6 +71,7 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
                 "maria@example.org",
                 volunteer_id=maria.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         maria_id, account_id = maria.id, account.id
@@ -85,13 +91,14 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
 
 async def test_the_header_offers_an_upload_when_there_is_no_photo_yet(database):
     async with db_session() as session:
-        felix = ok(await volunteers.create(session, None, "Felix", "Garcia"))
+        felix = ok(await volunteers.create(session, SYSTEM, "Felix", "Garcia"))
         account, _ = ok(
             await users.create(
                 session,
                 "felix@example.org",
                 volunteer_id=felix.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         account_id = account.id
@@ -112,7 +119,11 @@ async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(databas
     async with db_session() as session:
         admin, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         admin_id = admin.id
@@ -132,13 +143,14 @@ async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(databas
 async def test_the_header_address_opens_your_own_record(database):
     """The most natural handle on "me" in the whole app was dead text."""
     async with db_session() as session:
-        maria = ok(await volunteers.create(session, None, "Maria", "Alvarez"))
+        maria = ok(await volunteers.create(session, SYSTEM, "Maria", "Alvarez"))
         account, _ = ok(
             await users.create(
                 session,
                 "maria@example.org",
                 volunteer_id=maria.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         maria_id, account_id = maria.id, account.id
@@ -158,13 +170,14 @@ async def test_the_header_avatar_and_the_profile_avatar_are_addressed_apart(data
     be able to say so, and test_volunteer_panel's marker must keep finding
     exactly the one on the page."""
     async with db_session() as session:
-        maria = ok(await volunteers.create(session, None, "Maria", "Alvarez"))
+        maria = ok(await volunteers.create(session, SYSTEM, "Maria", "Alvarez"))
         account, _ = ok(
             await users.create(
                 session,
                 "maria@example.org",
                 volunteer_id=maria.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         maria_id, account_id = maria.id, account.id
@@ -201,12 +214,16 @@ async def test_the_mail_allowance_banner_is_for_admins_only(database):
     async with db_session() as session:
         admin, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         member, _ = ok(
             await users.create(
-                session, "member@example.org", invite=mint.fresh_invite()
+                session, "member@example.org", invite=mint.fresh_invite(), actor=SYSTEM
             )
         )
         admin_id, member_id = admin.id, member.id
@@ -234,7 +251,11 @@ async def test_a_comfortable_instance_shows_no_banner_even_to_an_admin(database)
     async with db_session() as session:
         admin, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         admin_id = admin.id
@@ -253,7 +274,11 @@ async def test_a_spent_day_reads_louder_than_one_merely_projected(database):
     async with db_session() as session:
         admin, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         admin_id = admin.id

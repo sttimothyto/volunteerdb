@@ -4,6 +4,7 @@ from io import BytesIO
 
 from PIL import Image
 
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import photos, teams, volunteers
 
 from tests.conftest import db_session
@@ -24,16 +25,16 @@ async def test_any_signed_in_account_may_manage_any_photo(client, seeded, token_
     """Pins the product decision: photo upload/view/delete needs only a signed-in
     account, NOT can_edit_volunteer — even for a volunteer on someone else's team."""
     async with db_session() as session:
-        other_team = ok(await teams.create(session, None, "Hospitality"))
+        other_team = ok(await teams.create(session, SYSTEM, "Hospitality"))
         zoe = ok(
-            await volunteers.create(session, None, "Zoe", "Zimmer", "zoe@example.org")
+            await volunteers.create(session, SYSTEM, "Zoe", "Zimmer", "zoe@example.org")
         )
         from volunteerdb.models import TeamRole
         from volunteerdb.services import memberships
 
         ok(
             await memberships.assign(
-                session, None, zoe.id, other_team.id, TeamRole.member
+                session, SYSTEM, zoe.id, other_team.id, TeamRole.member
             )
         )
         zoe_id = zoe.id

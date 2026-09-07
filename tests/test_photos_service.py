@@ -8,6 +8,7 @@ from PIL import Image
 
 from volunteerdb import errors
 from volunteerdb.models import VolunteerPhoto
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import photos, volunteers
 
 from tests.conftest import db_session
@@ -60,7 +61,7 @@ def test_normalize_rejects_garbage_and_oversize():
 async def test_set_get_delete_and_versions(database):
     async with db_session() as session:
         v = ok(
-            await volunteers.create(session, None, "Pia", "Photo", "pia@example.org")
+            await volunteers.create(session, SYSTEM, "Pia", "Photo", "pia@example.org")
         )
         volunteer_id = v.id
         stored = ok(
@@ -115,7 +116,7 @@ async def test_unknown_volunteer_raises_lookup_error(database):
 async def test_deleting_the_volunteer_cascades_the_photo(database):
     async with db_session() as session:
         v = ok(
-            await volunteers.create(session, None, "Gone", "Soon", "gone@example.org")
+            await volunteers.create(session, SYSTEM, "Gone", "Soon", "gone@example.org")
         )
         ok(
             await photos.set_photo(
@@ -124,7 +125,7 @@ async def test_deleting_the_volunteer_cascades_the_photo(database):
         )
         volunteer_id = v.id
     async with db_session() as session:
-        ok(await volunteers.delete(session, None, volunteer_id))
+        ok(await volunteers.delete(session, SYSTEM, volunteer_id))
         remaining = (
             await session.execute(
                 sa.select(VolunteerPhoto).where(

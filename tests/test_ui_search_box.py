@@ -9,6 +9,7 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
@@ -21,19 +22,25 @@ LIST_BOX = "Search volunteers…"
 
 async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
     async with db_session() as session:
-        music = ok(await teams.create(session, None, "Music"))
+        music = ok(await teams.create(session, SYSTEM, "Music"))
         choir = ok(
-            await teams.create(session, None, "Alvarado Choir", parent_team_id=music.id)
+            await teams.create(
+                session, SYSTEM, "Alvarado Choir", parent_team_id=music.id
+            )
         )
         maria = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+                session, SYSTEM, "Maria", "Alvarez", "maria@example.org", "555-1234"
             )
         )
-        ok(await memberships.assign(session, None, maria.id, choir.id, TeamRole.member))
-        retired = ok(await volunteers.create(session, None, "Pedro", "Alvarez"))
-        done(await volunteers.update(session, None, retired.id, is_active=False))
-        ok(await volunteers.create(session, None, "Bruno", "Costa"))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, maria.id, choir.id, TeamRole.member
+            )
+        )
+        retired = ok(await volunteers.create(session, SYSTEM, "Pedro", "Alvarez"))
+        done(await volunteers.update(session, SYSTEM, retired.id, is_active=False))
+        ok(await volunteers.create(session, SYSTEM, "Bruno", "Costa"))
         admin, _ = ok(
             await users.create(
                 session,
@@ -41,6 +48,7 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         member, _ = ok(
@@ -49,6 +57,7 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
                 "member@example.org",
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         maria_id, choir_id = maria.id, choir.id
@@ -127,7 +136,7 @@ async def test_volunteers_page_search_box_also_suggests(database):
     async with db_session() as session:
         maria = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "maria@example.org"
+                session, SYSTEM, "Maria", "Alvarez", "maria@example.org"
             )
         )
         admin, _ = ok(
@@ -137,6 +146,7 @@ async def test_volunteers_page_search_box_also_suggests(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         maria_id, admin_id = maria.id, admin.id
@@ -160,19 +170,27 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
     from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
     async with db_session() as session:
-        music = ok(await teams.create(session, None, "Music"))
+        music = ok(await teams.create(session, SYSTEM, "Music"))
         maria = ok(
             await volunteers.create(
-                session, None, "Maria", "Alvarez", "maria@example.org", "555-1234"
+                session, SYSTEM, "Maria", "Alvarez", "maria@example.org", "555-1234"
             )
         )
         bruno = ok(
             await volunteers.create(
-                session, None, "Bruno", "Costa", "bruno@example.org", "777-0000"
+                session, SYSTEM, "Bruno", "Costa", "bruno@example.org", "777-0000"
             )
         )
-        ok(await memberships.assign(session, None, maria.id, music.id, TeamRole.member))
-        ok(await memberships.assign(session, None, bruno.id, music.id, TeamRole.member))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, maria.id, music.id, TeamRole.member
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, bruno.id, music.id, TeamRole.member
+            )
+        )
         admin, _ = ok(
             await users.create(
                 session,
@@ -180,6 +198,7 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         bruno_u, _ = ok(
@@ -188,6 +207,7 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
                 "bruno@example.org",
                 volunteer_id=bruno.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         maria_id, bruno_id = maria.id, bruno.id

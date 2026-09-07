@@ -4,6 +4,7 @@ import csv
 from io import StringIO
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import teams, volunteers
 from volunteerdb.sheets import exporter, importer
 from volunteerdb.sheets.common import (
@@ -70,14 +71,14 @@ async def test_formula_injection_escape_roundtrips(database, env):
         ok(
             await volunteers.create(
                 session,
-                None,
+                SYSTEM,
                 "=Evil",
                 "Person",
                 "evil@example.org",
                 notes="=SUM(A1:A9)",
             )
         )
-        content = ok(await exporter.export_csv(session, None))
+        content = ok(await exporter.export_csv(session, SYSTEM))
 
     row = next(r for r in _rows(content)[1:] if r[3] == "evil@example.org")
     assert row[1] == "'=Evil" and row[5] == "'=SUM(A1:A9)", (
@@ -89,7 +90,7 @@ async def test_formula_injection_escape_roundtrips(database, env):
     assert report.volunteers_updated == 0, "round-trip is a no-op"
 
     async with db_session() as session:
-        (found,) = await volunteers.search(session, "evil@example.org")
+        (found,) = await volunteers.search(session, "evil@example.org", actor=SYSTEM)
         assert found.first_name == "=Evil" and found.notes == "=SUM(A1:A9)", (
             "database keeps the raw values"
         )
@@ -97,10 +98,10 @@ async def test_formula_injection_escape_roundtrips(database, env):
 
 async def test_import_row_validation_errors(database, env):
     async with db_session() as session:
-        ok(await teams.create(session, None, "Liturgy"))
+        ok(await teams.create(session, SYSTEM, "Liturgy"))
         ok(
             await volunteers.create(
-                session, None, "Rhea", "Roleless", "rhea@example.org"
+                session, SYSTEM, "Rhea", "Roleless", "rhea@example.org"
             )
         )
 
@@ -133,13 +134,13 @@ async def test_import_row_validation_errors(database, env):
 
 async def test_import_ambiguous_matches_error(database, env):
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
-        youth = ok(await teams.create(session, None, "Youth"))
-        ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
-        ok(await teams.create(session, None, "Music", parent_team_id=youth.id))
-        ok(await volunteers.create(session, None, "Sam", "Same"))
-        ok(await volunteers.create(session, None, "Sam", "Same"))
-        ok(await volunteers.create(session, None, "Uma", "Unique", "uma@example.org"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+        youth = ok(await teams.create(session, SYSTEM, "Youth"))
+        ok(await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id))
+        ok(await teams.create(session, SYSTEM, "Music", parent_team_id=youth.id))
+        ok(await volunteers.create(session, SYSTEM, "Sam", "Same"))
+        ok(await volunteers.create(session, SYSTEM, "Sam", "Same"))
+        ok(await volunteers.create(session, SYSTEM, "Uma", "Unique", "uma@example.org"))
 
     content = _csv_bytes(
         [
@@ -164,7 +165,7 @@ async def test_a_blank_cell_never_clears_an_existing_value(database, env):
         ok(
             await volunteers.create(
                 session,
-                None,
+                SYSTEM,
                 "Clara",
                 "Contact",
                 "clara@example.org",
@@ -180,7 +181,7 @@ async def test_a_blank_cell_never_clears_an_existing_value(database, env):
     assert report.applied and report.volunteers_updated == 0, "nothing changed"
 
     async with db_session() as session:
-        (found,) = await volunteers.search(session, "clara@example.org")
+        (found,) = await volunteers.search(session, "clara@example.org", actor=SYSTEM)
     assert found.phone == "555-0199" and found.notes == "sings alto", (
         "blanking a cell is a no-op; clearing a field needs the app, not the sheet"
     )
@@ -192,7 +193,7 @@ async def test_new_volunteers_are_created_active(database, env):
     assert report.applied and report.volunteers_created == 1
 
     async with db_session() as session:
-        (found,) = await volunteers.search(session, "newly@example.org")
+        (found,) = await volunteers.search(session, "newly@example.org", actor=SYSTEM)
         assert found.is_active is True
 
 
@@ -202,7 +203,7 @@ async def test_import_cannot_archive_anyone(database, env):
     async with db_session() as session:
         ok(
             await volunteers.create(
-                session, None, "Vera", "Verbatim", "vera@example.org"
+                session, SYSTEM, "Vera", "Verbatim", "vera@example.org"
             )
         )
 
@@ -213,7 +214,7 @@ async def test_import_cannot_archive_anyone(database, env):
     assert report.applied, report.errors
 
     async with db_session() as session:
-        (found,) = await volunteers.search(session, "vera@example.org")
+        (found,) = await volunteers.search(session, "vera@example.org", actor=SYSTEM)
     assert found.phone == "555-7" and found.is_active is True
 
 
@@ -222,9 +223,11 @@ async def test_volunteer_only_row_does_not_reactivate(database, env):
     a bare contact update leaves the archive flag alone."""
     async with db_session() as session:
         v = ok(
-            await volunteers.create(session, None, "Ana", "Archived", "ana@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Ana", "Archived", "ana@example.org"
+            )
         )
-        done(await volunteers.update(session, None, v.id, is_active=False))
+        done(await volunteers.update(session, SYSTEM, v.id, is_active=False))
 
     content = _csv_bytes(
         [["", "Ana", "Archived", "ana@example.org", "555-3", "", "", ""]]
@@ -235,7 +238,7 @@ async def test_volunteer_only_row_does_not_reactivate(database, env):
 
     async with db_session() as session:
         (found,) = await volunteers.search(
-            session, "ana@example.org", include_inactive=True
+            session, "ana@example.org", include_inactive=True, actor=SYSTEM
         )
     assert found.phone == "555-3", "the row still applied"
     assert found.is_active is False, "a contact update must not re-activate"

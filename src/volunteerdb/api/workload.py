@@ -27,7 +27,9 @@ async def put_config(ctx: CtxDep, data: WorkloadConfigIn) -> WorkloadConfigOut:
 @router.get("/scores")
 async def workload_scores(ctx: CtxDep, as_of: AsOf) -> list[WorkloadScoreOut]:
     """Workload scores, restricted to volunteers whose workload the caller may see."""
-    found = await volunteer_service.search(ctx.session, at=as_of, include_inactive=True)
+    found = await volunteer_service.search(
+        ctx.session, at=as_of, include_inactive=True, actor=ctx.actor
+    )
     team_sets = await team_ids_map(ctx.session, [v.id for v in found], as_of)
     visible = await service.visible_scores(
         ctx.session,

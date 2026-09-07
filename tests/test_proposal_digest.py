@@ -18,6 +18,7 @@ from volunteerdb.models import (
     ProposalVoter,
     TeamRole,
 )
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import elections, memberships, teams, users, volunteers
 
 from tests import mint
@@ -36,25 +37,39 @@ async def _parish():
     """Liturgy: Lena leads, Cora is core, Noel is core WITHOUT an email —
     create_proposal prefills its roll with exactly those three."""
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
-        )
-        cora = ok(
-            await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
-        )
-        noel = ok(await volunteers.create(session, None, "Noel", "NoEmail"))
-        vera = ok(await volunteers.create(session, None, "Vera", "Volunteer"))
-        ok(
-            await memberships.assign(
-                session, None, lena.id, liturgy.id, TeamRole.leader
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
             )
         )
-        ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
-        ok(await memberships.assign(session, None, noel.id, liturgy.id, TeamRole.core))
+        cora = ok(
+            await volunteers.create(session, SYSTEM, "Cora", "Core", "cora@example.org")
+        )
+        noel = ok(await volunteers.create(session, SYSTEM, "Noel", "NoEmail"))
+        vera = ok(await volunteers.create(session, SYSTEM, "Vera", "Volunteer"))
+        ok(
+            await memberships.assign(
+                session, SYSTEM, lena.id, liturgy.id, TeamRole.leader
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, cora.id, liturgy.id, TeamRole.core
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, noel.id, liturgy.id, TeamRole.core
+            )
+        )
         admin, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         return {
@@ -72,7 +87,7 @@ async def _proposal(ids, role=TeamRole.second) -> int:
         proposal = ok(
             await elections.create_proposal(
                 session,
-                None,
+                SYSTEM,
                 team_id=ids["liturgy"],
                 role=role,
                 nomination_deadline=D1,
@@ -228,7 +243,7 @@ async def test_new_round_renotifies_its_fresh_roll(database, monkeypatch, env):
         fresh = ok(
             await elections.new_round(
                 session,
-                None,
+                SYSTEM,
                 pid,
                 created_by=ids["admin_u"],
                 nomination_deadline=date(2026, 9, 5),

@@ -354,9 +354,9 @@ async def _personal(
 
     duties = await event_service.my_upcoming(session, volunteer_id, now=now)
     subs = await event_service.claimable_subs(session, actor, now=now)
-    # None: _personal only ever reports the actor's OWN service record
+    # the actor's OWN service record, which can_view_volunteer always allows
     hours = expect(
-        await event_service.hours_for_volunteer(session, None, volunteer_id, now=now)
+        await event_service.hours_for_volunteer(session, actor, volunteer_id, now=now)
     )
 
     # ballots the actor still owes: proposals they sit on the roll for, in the

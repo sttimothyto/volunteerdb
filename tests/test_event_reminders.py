@@ -10,10 +10,12 @@ import pytest
 
 from volunteerdb.jobs import event_reminders
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, volunteers
 
 from tests import mint
+from tests.actors import as_volunteer
 from tests.conftest import db_session
 from tests.fakes import FailingMailer
 from tests.fp_helpers import ok
@@ -33,18 +35,18 @@ def _at(days_ahead: int, hour: int) -> datetime:
 
 async def _team(n: int = 2) -> tuple[int, list[int]]:
     async with db_session() as session:
-        team = ok(await teams.create(session, None, "Liturgy"))
+        team = ok(await teams.create(session, SYSTEM, "Liturgy"))
         vids = []
         for i in range(n):
             v = ok(
                 await volunteers.create(
-                    session, None, f"Vol{i}", "Server", f"vol{i}@example.org"
+                    session, SYSTEM, f"Vol{i}", "Server", f"vol{i}@example.org"
                 )
             )
             ok(
                 await memberships.assign(
                     session,
-                    None,
+                    SYSTEM,
                     v.id,
                     team.id,
                     TeamRole.leader if i == 0 else TeamRole.member,
@@ -59,7 +61,7 @@ async def _event(team_id: int, days_ahead: int, title: str = "Mass") -> int:
         created = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title=title,
                 starts_at=_at(days_ahead, 10),
@@ -80,11 +82,11 @@ async def _assign(event_id: int, volunteer_id: int, *, notify_7d: bool = False) 
     later amounts to.
     """
     async with db_session() as session:
-        view = ok(await event_service.detail(session, None, event_id))
+        view = ok(await event_service.detail(session, SYSTEM, event_id))
         a = ok(
             await event_service.assign(
                 session,
-                None,
+                SYSTEM,
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=volunteer_id,
                 assigned_by=None,
@@ -158,11 +160,11 @@ async def test_opted_out_stages_stay_silent(database, sent_mail, env):
     team_id, vids = await _team(3)
     event_id = await _event(team_id, days_ahead=5)
     async with db_session() as session:
-        view = ok(await event_service.detail(session, None, event_id))
+        view = ok(await event_service.detail(session, SYSTEM, event_id))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(vids[1]),
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=vids[1],
                 notify_7d=False,
@@ -173,7 +175,7 @@ async def test_opted_out_stages_stay_silent(database, sent_mail, env):
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(vids[2]),
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=vids[2],
                 notify_7d=True,
@@ -226,17 +228,17 @@ async def test_exclusions(database, sent_mail, env):
     async with db_session() as session:
         ok(
             await event_service.cancel_event(
-                session, None, cancelled_id, cancelled_by=None, now=mint.now()
+                session, SYSTEM, cancelled_id, cancelled_by=None, now=mint.now()
             )
         )
 
     signup_id = await _event(team_id, days_ahead=10, title="Signup Mass")
     async with db_session() as session:
-        view = ok(await event_service.detail(session, None, signup_id))
+        view = ok(await event_service.detail(session, SYSTEM, signup_id))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(vids[2]),
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=vids[2],
                 notify_7d=True,  # opted in; off by default since the mail budget

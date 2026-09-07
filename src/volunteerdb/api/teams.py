@@ -141,7 +141,7 @@ async def sync_roster_sheet(
             ctx.env,
             team_id,
             direction=data.direction,
-            user_id=ctx.actor.user.id,
+            user_id=ctx.actor.account.id,
             now=ctx.now,
         )
     )

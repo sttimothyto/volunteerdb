@@ -18,6 +18,7 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import SIM_MAIN, SLOW, mail_to
@@ -38,31 +39,33 @@ async def _parish(session) -> dict[str, int]:
     """Liturgy (Lena leads, Cora is core) > Music, whose members cover every
     state the control has to deal with: Nils has no account, Stale's invite ran
     out unused, Live's is still good, Void has no email address at all."""
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    music = ok(await teams.create(session, None, "Music", parent_team_id=liturgy.id))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    music = ok(await teams.create(session, SYSTEM, "Music", parent_team_id=liturgy.id))
 
     lena = ok(
-        await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+        await volunteers.create(session, SYSTEM, "Lena", "Leader", "lena@example.org")
     )
     cora = ok(
-        await volunteers.create(session, None, "Cora", "Core", "cora@example.org")
+        await volunteers.create(session, SYSTEM, "Cora", "Core", "cora@example.org")
     )
-    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
-    ok(await memberships.assign(session, None, cora.id, liturgy.id, TeamRole.core))
+    ok(await memberships.assign(session, SYSTEM, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, SYSTEM, cora.id, liturgy.id, TeamRole.core))
 
     nils = ok(
-        await volunteers.create(session, None, "Nils", "Nobody", "nils@example.org")
+        await volunteers.create(session, SYSTEM, "Nils", "Nobody", "nils@example.org")
     )
     stale = ok(
-        await volunteers.create(session, None, "Stale", "Sender", "stale@example.org")
+        await volunteers.create(session, SYSTEM, "Stale", "Sender", "stale@example.org")
     )
     livev = ok(
-        await volunteers.create(session, None, "Live", "Link", "live@example.org")
+        await volunteers.create(session, SYSTEM, "Live", "Link", "live@example.org")
     )
-    void = ok(await volunteers.create(session, None, "Void", "Nomail"))  # no address
-    mia = ok(await volunteers.create(session, None, "Mia", "Member", "mia@example.org"))
+    void = ok(await volunteers.create(session, SYSTEM, "Void", "Nomail"))  # no address
+    mia = ok(
+        await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
+    )
     for v in (nils, stale, livev, void, mia):
-        ok(await memberships.assign(session, None, v.id, music.id, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, v.id, music.id, TeamRole.member))
 
     done(
         await users.invite_volunteer(
@@ -83,6 +86,7 @@ async def _parish(session) -> dict[str, int]:
                 f"{name}@example.org",
                 volunteer_id=v.id,
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         u.password_hash = "x"  # never verified; /login-dev establishes the session
@@ -246,7 +250,11 @@ async def test_only_an_admin_is_shown_the_link_itself(database, sent):
         ids = await _parish(session)
         admin, _ = ok(
             await users.create(
-                session, "boss@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "boss@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         admin.password_hash = "x"

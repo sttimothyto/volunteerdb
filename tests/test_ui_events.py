@@ -12,11 +12,13 @@ from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.env import current
 from volunteerdb.models import EventSubRequest, SubRequestStatus, TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import events as event_service
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from .conftest import SIM_MAIN, SLOW, only
 from tests import mint
+from tests.actors import as_volunteer
 from tests.conftest import db_session
 from tests.fp_helpers import ok
 
@@ -32,33 +34,40 @@ def sent_mail(sim_sent) -> list[tuple[str, str, str]]:
 
 async def _parish(session):
     """Liturgy (Lena leads, Mia + Noor members) and Choir (Oda member)."""
-    liturgy = ok(await teams.create(session, None, "Liturgy"))
-    choir = ok(await teams.create(session, None, "Choir"))
+    liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+    choir = ok(await teams.create(session, SYSTEM, "Choir"))
     lena = ok(
-        await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+        await volunteers.create(session, SYSTEM, "Lena", "Leader", "lena@example.org")
     )
-    mia = ok(await volunteers.create(session, None, "Mia", "Member", "mia@example.org"))
+    mia = ok(
+        await volunteers.create(session, SYSTEM, "Mia", "Member", "mia@example.org")
+    )
     noor = ok(
-        await volunteers.create(session, None, "Noor", "Member", "noor@example.org")
+        await volunteers.create(session, SYSTEM, "Noor", "Member", "noor@example.org")
     )
     oda = ok(
-        await volunteers.create(session, None, "Oda", "Chorister", "oda@example.org")
+        await volunteers.create(session, SYSTEM, "Oda", "Chorister", "oda@example.org")
     )
-    ok(await memberships.assign(session, None, lena.id, liturgy.id, TeamRole.leader))
-    ok(await memberships.assign(session, None, mia.id, liturgy.id, TeamRole.member))
-    ok(await memberships.assign(session, None, noor.id, liturgy.id, TeamRole.member))
-    ok(await memberships.assign(session, None, oda.id, choir.id, TeamRole.member))
+    ok(await memberships.assign(session, SYSTEM, lena.id, liturgy.id, TeamRole.leader))
+    ok(await memberships.assign(session, SYSTEM, mia.id, liturgy.id, TeamRole.member))
+    ok(await memberships.assign(session, SYSTEM, noor.id, liturgy.id, TeamRole.member))
+    ok(await memberships.assign(session, SYSTEM, oda.id, choir.id, TeamRole.member))
     lena_u, _ = ok(
         await users.create(
             session,
             "lena@example.org",
             volunteer_id=lena.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     mia_u, _ = ok(
         await users.create(
-            session, "mia@example.org", volunteer_id=mia.id, invite=mint.fresh_invite()
+            session,
+            "mia@example.org",
+            volunteer_id=mia.id,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     noor_u, _ = ok(
@@ -67,11 +76,16 @@ async def _parish(session):
             "noor@example.org",
             volunteer_id=noor.id,
             invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     oda_u, _ = ok(
         await users.create(
-            session, "oda@example.org", volunteer_id=oda.id, invite=mint.fresh_invite()
+            session,
+            "oda@example.org",
+            volunteer_id=oda.id,
+            invite=mint.fresh_invite(),
+            actor=SYSTEM,
         )
     )
     return {
@@ -96,7 +110,7 @@ async def _seed_event(team_id: int, *, slots=None, title="Sunday Mass") -> int:
         created = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=team_id,
                 title=title,
                 starts_at=_next_week(10),
@@ -173,11 +187,11 @@ async def test_sub_request_claim_flow_with_mail(database, sent_mail):
         ids = await _parish(session)
     event_id = await _seed_event(ids["liturgy"])
     async with db_session() as session:
-        view = ok(await event_service.detail(session, None, event_id))
+        view = ok(await event_service.detail(session, SYSTEM, event_id))
         a = ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(ids["mia"]),
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=ids["mia"],
                 now=mint.now(),
@@ -244,7 +258,11 @@ async def test_leader_creates_event_via_dialog(database):
     async with db_session() as session:
         admin, _ = ok(
             await users.create(
-                session, "admin@example.org", is_admin=True, invite=mint.fresh_invite()
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         from volunteerdb.actors import load_actor
@@ -268,11 +286,11 @@ async def test_calendar_views_default_to_my_duties(database):
     liturgy_event = await _seed_event(ids["liturgy"])
     choir_event = await _seed_event(ids["choir"], title="Choir practice")
     async with db_session() as session:
-        detail = ok(await event_service.detail(session, None, liturgy_event))
+        detail = ok(await event_service.detail(session, SYSTEM, liturgy_event))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(ids["mia"]),
                 slot_id=detail.slots[0].slot.id,
                 volunteer_id=ids["mia"],
                 now=mint.now(),
@@ -441,7 +459,7 @@ async def test_signup_notification_prefs_persist(database):
         await user.should_see("You're on the list", retries=SLOW)
 
     async with db_session() as session:
-        view = ok(await event_service.detail(session, None, event_id))
+        view = ok(await event_service.detail(session, SYSTEM, event_id))
         assignment = view.slots[0].entries[0][0]
         assert (assignment.notify_7d, assignment.notify_24h) == (True, False)
 
@@ -454,7 +472,7 @@ async def test_series_signup_repeats_across_weeks(database):
         weeks = ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=ids["liturgy"],
                 title="Sunday Mass",
                 starts_at=start,
@@ -480,7 +498,7 @@ async def test_series_signup_repeats_across_weeks(database):
 
     async with db_session() as session:
         for week_id in week_ids:
-            d = ok(await event_service.detail(session, None, week_id))
+            d = ok(await event_service.detail(session, SYSTEM, week_id))
             assert any(v.id == ids["mia"] for sv in d.slots for _, v in sv.entries)
 
 
@@ -493,11 +511,11 @@ async def test_a_teams_substitute_calls_are_capped_for_the_day(database, sent_ma
         ids = await _parish(session)
     event_id = await _seed_event(ids["liturgy"])
     async with db_session() as session:
-        view = ok(await event_service.detail(session, None, event_id))
+        view = ok(await event_service.detail(session, SYSTEM, event_id))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(ids["mia"]),
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=ids["mia"],
                 now=mint.now(),
@@ -544,11 +562,11 @@ async def test_handoff_and_self_removal_flows_with_mail(database, sent_mail):
         ids["liturgy"], slots=[event_service.SlotInput("Lector", 2)]
     )
     async with db_session() as session:
-        view = ok(await event_service.detail(session, None, event_id))
+        view = ok(await event_service.detail(session, SYSTEM, event_id))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(ids["mia"]),
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=ids["mia"],
                 now=mint.now(),
@@ -592,7 +610,7 @@ async def test_duplicate_location_warning_on_create(database):
         ok(
             await event_service.create_event(
                 session,
-                None,
+                SYSTEM,
                 team_id=ids["liturgy"],
                 title="Sunday Mass",
                 starts_at=_next_week(10),
@@ -634,11 +652,11 @@ async def test_attendance_section_on_past_event(database):
         ids = await _parish(session)
     event_id = await _seed_event(ids["liturgy"])
     async with db_session() as session:
-        view = ok(await event_service.detail(session, None, event_id))
+        view = ok(await event_service.detail(session, SYSTEM, event_id))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(ids["mia"]),
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=ids["mia"],
                 now=mint.now(),
@@ -648,7 +666,7 @@ async def test_attendance_section_on_past_event(database):
         ok(
             await event_service.update_event(
                 session,
-                None,
+                SYSTEM,
                 event_id,
                 starts_at=past,
                 ends_at=past + timedelta(hours=2),
@@ -674,7 +692,7 @@ async def test_attendance_section_on_past_event(database):
     async with db_session() as session:
         summary = ok(
             await event_service.hours_for_volunteer(
-                session, None, ids["mia"], now=mint.now()
+                session, SYSTEM, ids["mia"], now=mint.now()
             )
         )
         assert summary.events_attended == 0, "the no-show override took"
@@ -685,11 +703,11 @@ async def test_cancel_event_mails_assignees(database, sent_mail):
         ids = await _parish(session)
     event_id = await _seed_event(ids["liturgy"])
     async with db_session() as session:
-        view = ok(await event_service.detail(session, None, event_id))
+        view = ok(await event_service.detail(session, SYSTEM, event_id))
         ok(
             await event_service.sign_up(
                 session,
-                None,
+                as_volunteer(ids["mia"]),
                 slot_id=view.slots[0].slot.id,
                 volunteer_id=ids["mia"],
                 now=mint.now(),
@@ -719,7 +737,7 @@ async def test_a_leader_can_rename_a_slot_and_change_its_capacity(database):
     )
     async with db_session() as session:
         slot_id = (
-            (ok(await event_service.detail(session, None, event_id))).slots[0].slot.id
+            (ok(await event_service.detail(session, SYSTEM, event_id))).slots[0].slot.id
         )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -739,7 +757,7 @@ async def test_a_leader_can_rename_a_slot_and_change_its_capacity(database):
         await user.should_see("Ambo, first", retries=SLOW)
 
     async with db_session() as session:
-        slot = (ok(await event_service.detail(session, None, event_id))).slots[0].slot
+        slot = (ok(await event_service.detail(session, SYSTEM, event_id))).slots[0].slot
         assert (slot.name, slot.capacity) == ("Lector", 3)
         assert slot.description == "Ambo, first"
 
@@ -770,7 +788,7 @@ async def test_a_leader_adds_a_slot_with_a_description(database):
         await user.should_see("Main door, from 10:00")
 
     async with db_session() as session:
-        slots = (ok(await event_service.detail(session, None, event_id))).slots
+        slots = (ok(await event_service.detail(session, SYSTEM, event_id))).slots
         greeter = next(s.slot for s in slots if s.slot.name == "Greeter")
         assert greeter.description == "Main door, from 10:00"
         assert greeter.capacity is None, "blank capacity is still unlimited"
@@ -784,7 +802,7 @@ async def test_a_member_may_not_reach_the_slot_edit_control(database):
     )
     async with db_session() as session:
         slot_id = (
-            (ok(await event_service.detail(session, None, event_id))).slots[0].slot.id
+            (ok(await event_service.detail(session, SYSTEM, event_id))).slots[0].slot.id
         )
 
     async with user_simulation(main_file=SIM_MAIN) as user:
@@ -802,7 +820,7 @@ async def test_the_listing_can_be_narrowed_to_one_team(database):
         # Lena leads Choir too, so both teams' events reach her listing
         ok(
             await memberships.assign(
-                session, None, ids["lena"], ids["choir"], TeamRole.leader
+                session, SYSTEM, ids["lena"], ids["choir"], TeamRole.leader
             )
         )
     await _seed_event(ids["liturgy"], title="Sunday Mass")

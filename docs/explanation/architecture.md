@@ -157,12 +157,16 @@ object, built by `main.run`, owns the loop.
   that: no `ui.*` call inside a session block, no `nonlocal`, no nested
   handler that writes into its parent's container.
 
-`actor=None` means a trusted internal caller. Those are the nightly jobs,
-the seed and bench scripts, the roster sync, and a handful of services. Those
-services act for a caller already authorized upstream. Each such call site
-writes it out rather than defaults it, so a skipped check is visible in the
-diff. The parameter is required, so a forgotten actor is a `TypeError`
-rather than a silent bypass.
+Every service takes an `Actor` and nothing else. `permissions.SYSTEM` is the
+app acting for itself: the nightly jobs, the seed and bench scripts, the
+roster sync. A handful of services use it too, for a caller already authorized
+upstream. It has an admin's rights and nobody's identity. So it can do what an
+admin can, and nothing a person does for themselves: sign up, RSVP, cast a
+ballot.
+
+`permissions.ANONYMOUS` has no rights at all; the public calendar feed reads
+as it. Each call site writes the sentinel out, so a skipped check is visible
+in the diff. A forgotten actor is a type error rather than a silent bypass.
 
 The GUI is server-side, so a page interaction (say, a role change on a
 roster) follows one path. A websocket event calls `run_command(command)`.

@@ -6,6 +6,7 @@ from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
@@ -22,6 +23,7 @@ async def test_admin_pages_render(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         member, _ = ok(
@@ -30,6 +32,7 @@ async def test_admin_pages_render(database):
                 "felix@example.org",
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         admin_id, member_id = admin.id, member.id
@@ -69,13 +72,15 @@ async def test_leader_sees_scoped_export_on_teams_page(database):
     """The retired /import page's "My teams export" now lives on /teams, as a
     button whose scope follows the actor."""
     async with db_session() as session:
-        liturgy = ok(await teams.create(session, None, "Liturgy"))
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
         lena = ok(
-            await volunteers.create(session, None, "Lena", "Leader", "lena@example.org")
+            await volunteers.create(
+                session, SYSTEM, "Lena", "Leader", "lena@example.org"
+            )
         )
         ok(
             await memberships.assign(
-                session, None, lena.id, liturgy.id, TeamRole.leader
+                session, SYSTEM, lena.id, liturgy.id, TeamRole.leader
             )
         )
         leader, _ = ok(
@@ -85,6 +90,7 @@ async def test_leader_sees_scoped_export_on_teams_page(database):
                 volunteer_id=lena.id,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         leader_id = leader.id
@@ -107,11 +113,12 @@ async def test_admin_users_provision_button(database, monkeypatch):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         ok(
             await volunteers.create(
-                session, None, "Vera", "Volunteer", "vera@example.org"
+                session, SYSTEM, "Vera", "Volunteer", "vera@example.org"
             )
         )
         admin_id = admin.id
@@ -139,6 +146,7 @@ async def test_admin_users_relink_dialog(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         orphan, _ = ok(
@@ -147,11 +155,12 @@ async def test_admin_users_relink_dialog(database):
                 "orphan@example.org",
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         vera = ok(
             await volunteers.create(
-                session, None, "Vera", "Volunteer", "vera@example.org"
+                session, SYSTEM, "Vera", "Volunteer", "vera@example.org"
             )
         )
         admin_id, orphan_id, vera_id = admin.id, orphan.id, vera.id
@@ -182,11 +191,12 @@ async def test_admin_users_shows_invite_state(database):
                 is_admin=True,
                 password="test-pass-phrase",
                 invite=mint.fresh_invite(),
+                actor=SYSTEM,
             )
         )
         pending, _ = ok(
             await users.create(
-                session, "pending@example.org", invite=mint.fresh_invite()
+                session, "pending@example.org", invite=mint.fresh_invite(), actor=SYSTEM
             )
         )
         stale, _ = ok(
@@ -195,6 +205,7 @@ async def test_admin_users_shows_invite_state(database):
                 "stale@example.org",
                 # issued two hours ago with an hour to live
                 invite=mint.fresh_invite(hours=1, now=mint.now() - timedelta(hours=2)),
+                actor=SYSTEM,
             )
         )
         admin_id = admin.id

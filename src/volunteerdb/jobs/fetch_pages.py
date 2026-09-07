@@ -19,6 +19,7 @@ from ..env import Env
 from ..fp import expect
 from ..log import init_logging
 from ..models import Team
+from ..permissions import SYSTEM
 from ..services import pages as page_service
 from . import run_locked
 
@@ -43,7 +44,7 @@ async def main(env: Env) -> int:
                     continue  # changed while the job ran
                 page = expect(
                     await page_service.fetch_and_store(
-                        session, team, client, now=env.clock.now()
+                        session, team, client, actor=SYSTEM, now=env.clock.now()
                     )
                 )
                 if page.status == "ok":

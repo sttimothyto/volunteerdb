@@ -315,6 +315,15 @@ def gate(condition: bool, what: str) -> None:
         raise to_http(denied.error)
 
 
+def own_volunteer(actor: Actor, what: str) -> int:
+    """The gate on the one fact every "my ..." route needs first: the caller is
+    linked to a volunteer record. The id, or the 403 -- an account with no
+    volunteer has no duties, no seat and no ballot."""
+    if actor.volunteer_id is None:
+        raise to_http(ForbiddenValue(what))
+    return actor.volunteer_id
+
+
 def install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(IntegrityError)
     async def _conflict(request: Request, exc: IntegrityError):

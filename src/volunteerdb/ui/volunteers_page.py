@@ -629,14 +629,14 @@ def _edit_dialog(
                 # is taken), so this door is not the loose one
                 now = current_env().clock.now()
                 if denied := rate_limit(
-                    f"email-change:{actor.user.id}",
+                    f"email-change:{actor.account.id}",
                     now=now,
                     what="change your email address",
                 ):
                     toast(denied.error)
                     return
                 await perform(
-                    [EmailChangeAttempted(actor.user.id)], base_url=base_url, now=now
+                    [EmailChangeAttempted(actor.account.id)], base_url=base_url, now=now
                 )
             fields = {} if staged else {"email": email.value or None}
 
@@ -685,7 +685,7 @@ async def _stage_own_email(address: str) -> None:
     async def command(ctx: PageCtx):
         return await user_service.start_email_change(
             ctx.session,
-            ctx.actor.user.id,
+            ctx.actor.account.id,
             address,
             now=ctx.now,
             token=ctx.env.rng.token(),

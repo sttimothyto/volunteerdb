@@ -28,7 +28,15 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..errors import DomainError, Invalid, NotFound, invalid, not_found, require
+from ..errors import (
+    DomainError,
+    Forbidden,
+    Invalid,
+    NotFound,
+    invalid,
+    not_found,
+    require,
+)
 from ..fp import UNSET, Err, Ok, Result
 from ..models import (
     AppUser,
@@ -42,7 +50,7 @@ from ..models import (
     TeamRole,
     Volunteer,
 )
-from ..permissions import Actor
+from ..permissions import SYSTEM, Actor
 from ..star import StarResult, star_tally
 from . import memberships as membership_service
 from . import reports as report_service
@@ -186,7 +194,7 @@ async def get(session: AsyncSession, proposal_id: int) -> Proposal | None:
 
 
 async def _managed(
-    session: AsyncSession, actor: Actor | None, proposal_id: int
+    session: AsyncSession, actor: Actor, proposal_id: int
 ) -> Result[Proposal, DomainError]:
     """The proposal, for a caller who runs the seat's team.
 
@@ -197,7 +205,7 @@ async def _managed(
     if isinstance(found, Err):
         return found
     if denied := require(
-        actor is None or actor.can_manage_team(found.value.team_id),
+        actor.can_manage_team(found.value.team_id),
         "manage proposals for this team",
     ):
         return denied
@@ -205,7 +213,7 @@ async def _managed(
 
 
 async def _viewable(
-    session: AsyncSession, actor: Actor | None, proposal_id: int
+    session: AsyncSession, actor: Actor, proposal_id: int
 ) -> Result[Proposal, DomainError]:
     """The proposal, for a manager of its team or somebody on its roll. Voters
     keep access after the decision, to see the result they voted on."""
@@ -213,7 +221,7 @@ async def _viewable(
     if isinstance(found, Err):
         return found
     if denied := require(
-        actor is None or actor.can_view_proposal(proposal_id, found.value.team_id),
+        actor.can_view_proposal(proposal_id, found.value.team_id),
         "view this proposal",
     ):
         return denied
@@ -390,7 +398,7 @@ async def involving(
 
 async def detail(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     *,
     today: date,
@@ -403,6 +411,9 @@ async def detail(
     # is served from it rather than costing a second round trip on a cold memo
     paths = (await team_service.tree(session)).paths
     team = await session.get(Team, proposal.team_id)
+    # models.Proposal.team_id: ON DELETE CASCADE, so the team is there for as
+    # long as the proposal is
+    assert team is not None
 
     email_ids = {i for i in (proposal.created_by, proposal.decided_by) if i}
     emails: dict[int, str] = {}
@@ -516,7 +527,7 @@ async def _default_roll(session: AsyncSession, team_id: int) -> list[int]:
 
 async def create_proposal(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     *,
     team_id: int,
     role: TeamRole,
@@ -531,7 +542,7 @@ async def create_proposal(
     template voting roll. A second OPEN proposal for the same (team, role)
     violates uq_proposal_open and surfaces as IntegrityError (409 / toast)."""
     if denied := require(
-        actor is None or actor.can_manage_team(team_id),
+        actor.can_manage_team(team_id),
         "open proposals for this team",
     ):
         return denied
@@ -576,7 +587,7 @@ async def create_proposal(
 
 async def update_proposal(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     *,
     nomination_deadline: date | None = None,
@@ -620,7 +631,7 @@ async def _has_ballots(session: AsyncSession, proposal_id: int) -> bool:
 
 async def add_candidate(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     *,
     volunteer_id: int,
@@ -639,8 +650,7 @@ async def add_candidate(
         return found
     proposal = found.value
     if denied := require(
-        actor is None
-        or actor.can_manage_team(proposal.team_id)
+        actor.can_manage_team(proposal.team_id)
         or proposal_id in actor.voter_proposal_ids,
         "nominate on this proposal",
     ):
@@ -660,7 +670,7 @@ async def add_candidate(
 
 async def remove_candidate(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     candidate_id: int,
     *,
@@ -683,7 +693,7 @@ async def remove_candidate(
 
 async def add_voter(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     *,
     volunteer_id: int,
@@ -709,7 +719,7 @@ async def add_voter(
 
 async def remove_voter(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     voter_id: int,
     *,
@@ -733,12 +743,21 @@ async def remove_voter(
 # --- voting ------------------------------------------------------------------
 
 
+def _own_volunteer(actor: Actor, what: str) -> Result[int, Forbidden]:
+    """The actor's own volunteer id, or the refusal. A ballot is cast and read
+    by the person whose seat it is and nobody else: not a manager, and not
+    SYSTEM, which has no seat."""
+    if denied := require(actor.volunteer_id is not None, what):
+        return denied
+    assert actor.volunteer_id is not None  # the require() above refused None
+    return Ok(actor.volunteer_id)
+
+
 async def cast_ballot(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     *,
-    voter_volunteer_id: int,
     scores: Mapping[int, int],
     today: date,
     now: datetime,
@@ -746,19 +765,18 @@ async def cast_ballot(
     """Write the voter's whole ballot: one row per candidate, missing keys
     scored 0, revisable until the voting deadline (upsert).
 
-    Only for the caller's OWN seat on the roll: `voter_volunteer_id` is checked
-    against the actor rather than trusted, so no caller — however privileged —
-    can cast somebody else's ballot. Ballots are secret; a manager who could
-    write one could also read it back by writing it."""
+    Only for the caller's OWN seat on the roll: the voter is the actor, never
+    an argument, so no caller — however privileged, SYSTEM included — casts
+    somebody else's ballot. Ballots are secret; a manager who could write one
+    could also read it back by writing it."""
+    me = _own_volunteer(actor, "vote on this proposal")
+    if isinstance(me, Err):
+        return me
     if denied := require(
-        actor is None
-        or (
-            actor.volunteer_id == voter_volunteer_id
-            and proposal_id in actor.voter_proposal_ids
-        ),
-        "vote on this proposal",
+        proposal_id in actor.voter_proposal_ids, "vote on this proposal"
     ):
         return denied
+    voter_volunteer_id = me.value
     found = await _get(session, proposal_id)
     if isinstance(found, Err):
         return found
@@ -810,21 +828,19 @@ async def cast_ballot(
 
 async def my_scores(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
-    voter_volunteer_id: int,
 ) -> Result[dict[int, int], DomainError]:
     """The voter's own scores, candidate id -> 0-5 (a ballot is not secret
     to its owner); empty if they have not voted.
 
-    Only your own, and the id is checked against the actor rather than trusted:
-    this is the one function that returns individual scores, so the whole
-    secrecy guarantee rests on it."""
-    if denied := require(
-        actor is None or actor.volunteer_id == voter_volunteer_id,
-        "read this ballot",
-    ):
-        return denied
+    Only your own: the voter is the actor, never an argument. This is the one
+    function that returns individual scores, so the whole secrecy guarantee
+    rests on it."""
+    me = _own_volunteer(actor, "read this ballot")
+    if isinstance(me, Err):
+        return me
+    voter_volunteer_id = me.value
     rows = await session.execute(
         sa.select(ProposalBallot.candidate_id, ProposalBallot.score)
         .join(ProposalVoter, ProposalVoter.id == ProposalBallot.voter_id)
@@ -871,7 +887,7 @@ async def _tally(session: AsyncSession, proposal_id: int) -> StarResult:
 
 async def appoint(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     candidate_id: int,
     *,
@@ -898,10 +914,10 @@ async def appoint(
     proposal.decided_by = decided_by
     proposal.decided_at = now
     seated = await membership_service.assign(
-        # None: the caller of appoint() holds manage rights on this seat's team,
-        # which is the same right the membership write would ask for
+        # SYSTEM: the caller of appoint() holds manage rights on this seat's
+        # team, which is the same right the membership write would ask for
         session,
-        None,
+        SYSTEM,
         candidate.volunteer_id,
         proposal.team_id,
         TeamRole(proposal.role),
@@ -914,7 +930,7 @@ async def appoint(
 
 async def cancel(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     *,
     decided_by: int,
@@ -935,7 +951,7 @@ async def cancel(
 
 async def new_round(
     session: AsyncSession,
-    actor: Actor | None,
+    actor: Actor,
     proposal_id: int,
     *,
     created_by: int,

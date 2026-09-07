@@ -11,6 +11,7 @@ import pytest
 from playwright.async_api import expect
 
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, volunteers
 
 from .conftest import ready, sign_in
@@ -125,12 +126,12 @@ async def parish(seeded):
     async with db_session() as session:
         felix = ok(
             await volunteers.create(
-                session, None, "Felix", "Garcia", "felix@example.org"
+                session, SYSTEM, "Felix", "Garcia", "felix@example.org"
             )
         )
         ok(
             await memberships.assign(
-                session, None, felix.id, seeded["team_id"], TeamRole.leader
+                session, SYSTEM, felix.id, seeded["team_id"], TeamRole.leader
             )
         )
     return seeded

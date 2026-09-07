@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from volunteerdb.config import settings
 from volunteerdb.models import TeamRole
+from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, volunteers
 
 from tests import mint
@@ -20,15 +21,15 @@ TZ = ZoneInfo(settings().timezone)
 
 
 async def _fixtures(session, team_name="Choir"):
-    v = ok(await volunteers.create(session, None, "Tim", "Traveller"))
-    t = ok(await teams.create(session, None, team_name))
+    v = ok(await volunteers.create(session, SYSTEM, "Tim", "Traveller"))
+    t = ok(await teams.create(session, SYSTEM, team_name))
     return v.id, t.id
 
 
 async def test_ongoing_membership_is_one_open_spell(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.member))
 
     async with db_session() as session:
         spells = await volunteers.timeline(session, vid, tz=TZ)
@@ -47,9 +48,9 @@ async def test_ongoing_membership_is_one_open_spell(database):
 async def test_role_change_merges_into_one_spell(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.member))
     async with db_session(user_id=1) as session:
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.leader))
 
     async with db_session() as session:
         (spell,) = await volunteers.timeline(session, vid, tz=TZ)
@@ -63,12 +64,12 @@ async def test_role_change_merges_into_one_spell(database):
 async def test_leave_then_rejoin_splits_spells(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        m = ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
+        m = ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.member))
         mid = m.id
     async with db_session(user_id=1) as session:
-        ok(await memberships.remove(session, None, mid))
+        ok(await memberships.remove(session, SYSTEM, mid))
     async with db_session(user_id=1) as session:
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.core))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.core))
 
     async with db_session() as session:
         spells = await volunteers.timeline(session, vid, tz=TZ)
@@ -84,12 +85,12 @@ async def test_spells_on_two_teams_stay_independent_and_sort_by_start(database):
     team_id and the final sort are otherwise unexercised."""
     async with db_session(user_id=1) as session:
         vid, choir = await _fixtures(session)
-        ushers = ok(await teams.create(session, None, "Ushers"))
+        ushers = ok(await teams.create(session, SYSTEM, "Ushers"))
         ushers_id = ushers.id
-        ok(await memberships.assign(session, None, vid, choir, TeamRole.member))
-        ok(await memberships.assign(session, None, vid, ushers_id, TeamRole.core))
+        ok(await memberships.assign(session, SYSTEM, vid, choir, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, vid, ushers_id, TeamRole.core))
     async with db_session(user_id=1) as session:
-        ok(await memberships.assign(session, None, vid, choir, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, vid, choir, TeamRole.leader))
 
     async with db_session() as session:
         spells = await volunteers.timeline(session, vid, tz=TZ)
@@ -111,9 +112,9 @@ async def test_spells_on_two_teams_stay_independent_and_sort_by_start(database):
 async def test_deleted_team_uses_last_historical_name(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.member))
     async with db_session(user_id=1) as session:
-        ok(await teams.delete(session, None, tid))
+        ok(await teams.delete(session, SYSTEM, tid))
 
     async with db_session() as session:
         (spell,) = await volunteers.timeline(session, vid, tz=TZ)
@@ -135,7 +136,7 @@ def _anniv_of(since: date, years: int) -> date:
 async def test_team_anniversaries_window_and_years(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.member))
 
     since = mint.today()
     first = _anniv_of(since, 1)
@@ -179,9 +180,9 @@ async def test_team_anniversaries_window_and_years(database):
 async def test_team_anniversaries_role_change_keeps_one_entry(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.member))
     async with db_session(user_id=1) as session:
-        ok(await memberships.assign(session, None, vid, tid, TeamRole.leader))
+        ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.leader))
 
     probe = _anniv_of(mint.today(), 1) - timedelta(days=1)
     async with db_session() as session:
@@ -192,12 +193,12 @@ async def test_team_anniversaries_role_change_keeps_one_entry(database):
 async def test_team_anniversaries_skip_departed_members_and_other_teams(database):
     async with db_session(user_id=1) as session:
         vid, tid = await _fixtures(session)
-        other = ok(await teams.create(session, None, "Ushers"))
-        m = ok(await memberships.assign(session, None, vid, tid, TeamRole.member))
-        ok(await memberships.assign(session, None, vid, other.id, TeamRole.member))
+        other = ok(await teams.create(session, SYSTEM, "Ushers"))
+        m = ok(await memberships.assign(session, SYSTEM, vid, tid, TeamRole.member))
+        ok(await memberships.assign(session, SYSTEM, vid, other.id, TeamRole.member))
         mid, other_id = m.id, other.id
     async with db_session(user_id=1) as session:
-        ok(await memberships.remove(session, None, mid))
+        ok(await memberships.remove(session, SYSTEM, mid))
 
     probe = _anniv_of(mint.today(), 1)
     async with db_session() as session:

@@ -95,7 +95,7 @@ import os
 import random
 import sys
 import uuid
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -143,6 +143,7 @@ from volunteerdb.models import (
     Volunteer,
     VolunteerPhoto,
 )
+from volunteerdb.permissions import SYSTEM, Actor
 from volunteerdb.services import (
     branding,
     custom_fields,
@@ -201,8 +202,9 @@ def db_session(user_id: int | None = None):
 def ok[T](result: Result[T, DomainError] | Result[Outcome[T], DomainError]) -> T:
     """The value of a service call that cannot legitimately be refused here.
 
-    The seed acts as nobody (`actor=None`), on an empty database, with data it
-    wrote itself: a refusal means the seed and the services have drifted apart,
+    The seed acts as SYSTEM -- or as the volunteer themself, where the act is
+    theirs (a sign-up, a ballot) -- on an empty database, with data it wrote
+    itself: a refusal means the seed and the services have drifted apart,
     which is a bug to read rather than a stack trace to decipher -- so it says
     which call refused and why.
 
@@ -1440,7 +1442,7 @@ async def _staff(
                 ok(
                     await events.sign_up(
                         session,
-                        None,
+                        as_volunteer(volunteer_id),
                         slot_id=slots[name].id,
                         volunteer_id=volunteer_id,
                         now=NOW,
@@ -1452,7 +1454,7 @@ async def _staff(
                 ok(
                     await events.assign(
                         session,
-                        None,
+                        SYSTEM,
                         slot_id=slots[name].id,
                         volunteer_id=volunteer_id,
                         assigned_by=by,
@@ -1491,7 +1493,7 @@ async def _series(
     created = ok(
         await events.create_event(
             session,
-            None,
+            SYSTEM,
             team_id=team_id,
             title=title,
             starts_at=first,
@@ -1520,7 +1522,7 @@ async def _settle(session: AsyncSession, plan: list[Occurrence]) -> None:
         ok(
             await events.update_event(
                 session,
-                None,
+                SYSTEM,
                 occurrence.event.id,
                 starts_at=occurrence.starts_at,
                 ends_at=occurrence.ends_at,
@@ -1587,7 +1589,7 @@ async def _rsvps(
         ok(
             await events.set_rsvp(
                 session,
-                None,
+                as_volunteer(volunteer_id),
                 event_id=event.id,
                 volunteer_id=volunteer_id,
                 available=available,
@@ -1649,14 +1651,28 @@ async def _cast_ballots(
         ok(
             await elections.cast_ballot(
                 session,
-                None,
+                as_volunteer(volunteer_id, proposals=[proposal.id]),
                 proposal.id,
-                voter_volunteer_id=volunteer_id,
                 scores=scores,
                 today=today,
                 now=NOW,
             )
         )
+
+
+def as_volunteer(volunteer_id: int, *, proposals: Iterable[int] = ()) -> Actor:
+    """The person behind `volunteer_id`, for the acts that are theirs alone: a
+    sign-up, an RSVP, a claimed substitution, a ballot. No account and no team
+    rights; `proposals` are the rolls they sit on."""
+    return Actor(
+        user=None,
+        volunteer_id=volunteer_id,
+        managed_team_ids=set(),
+        people_team_ids=set(),
+        full_view_team_ids=set(),
+        names_view_team_ids=set(),
+        voter_proposal_ids=frozenset(proposals),
+    )
 
 
 # --- the steps ----------------------------------------------------------------
@@ -1667,7 +1683,7 @@ async def seed_teams(session: AsyncSession, parish: Parish) -> None:
         team = ok(
             await teams.create(
                 session,
-                None,
+                SYSTEM,
                 spec.name,
                 parent_team_id=parish.team_ids[parent] if parent else None,
                 description=spec.description,
@@ -1677,7 +1693,7 @@ async def seed_teams(session: AsyncSession, parish: Parish) -> None:
         parish.team_ids[spec.name] = team.id
         parish.rosters[spec.name] = []
         if spec.archived:
-            ok(await teams.update(session, None, team.id, is_active=False))
+            ok(await teams.update(session, SYSTEM, team.id, is_active=False))
 
 
 async def seed_people(
@@ -1687,7 +1703,7 @@ async def seed_people(
         volunteer = ok(
             await volunteers.create(
                 session,
-                None,
+                SYSTEM,
                 person.first,
                 person.last,
                 person.email,
@@ -1697,7 +1713,7 @@ async def seed_people(
         )
         parish.volunteer_ids[person.name] = volunteer.id
         if not person.active:
-            ok(await volunteers.update(session, None, volunteer.id, is_active=False))
+            ok(await volunteers.update(session, SYSTEM, volunteer.id, is_active=False))
 
     # historical churn BEFORE current memberships: assign is an upsert on
     # (volunteer, team), so an ended spell must be gone before the current one
@@ -1706,14 +1722,14 @@ async def seed_people(
         spell = ok(
             await memberships.assign(
                 session,
-                None,
+                SYSTEM,
                 parish.volunteer_ids[name],
                 parish.team_ids[team_name],
                 role,
             )
         )
         spell_id = spell.id
-        ok(await memberships.remove(session, None, spell_id))
+        ok(await memberships.remove(session, SYSTEM, spell_id))
         # demo-only backdating of the archived interval; real deployments
         # accumulate genuine history and never touch the twin tables
         await session.execute(
@@ -1738,12 +1754,12 @@ async def seed_people(
                 # timeline bar, and an op='U' row in membership_history
                 ok(
                     await memberships.assign(
-                        session, None, volunteer_id, parish.team_ids[team_name], M
+                        session, SYSTEM, volunteer_id, parish.team_ids[team_name], M
                     )
                 )
             ok(
                 await memberships.assign(
-                    session, None, volunteer_id, parish.team_ids[team_name], role
+                    session, SYSTEM, volunteer_id, parish.team_ids[team_name], role
                 )
             )
             if person.active:
@@ -1757,7 +1773,7 @@ async def seed_people(
         defs[spec.label] = ok(
             await custom_fields.create_def(
                 session,
-                None,
+                SYSTEM,
                 spec.label,
                 spec.field_type,
                 options=list(spec.options) if spec.options else None,
@@ -1773,7 +1789,7 @@ async def seed_people(
             if rng.random() < spec.fill
         }
         if values:
-            ok(await custom_fields.set_values(session, None, volunteer_id, values))
+            ok(await custom_fields.set_values(session, SYSTEM, volunteer_id, values))
     # retired last: set_values only accepts a live field, so the values above
     # had to be written while it still was one. It keeps its column in the
     # export and its answers on the people who gave them — a field is retired,
@@ -1782,7 +1798,7 @@ async def seed_people(
         if spec.retired:
             ok(
                 await custom_fields.update_def(
-                    session, None, defs[spec.label].id, is_active=False
+                    session, SYSTEM, defs[spec.label].id, is_active=False
                 )
             )
 
@@ -1814,6 +1830,7 @@ async def seed_accounts(session: AsyncSession, parish: Parish) -> None:
                 is_admin=account.is_admin,
                 link_by_email=False,
                 invite=ENV.invite(),
+                actor=SYSTEM,
             )
         )
         if account.invite and token:
@@ -1883,7 +1900,7 @@ async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:
         team_id = parish.team_ids[spec.team]
         ok(
             await pages.set_home_doc_url(
-                session, None, team_id, DOC_URL.format(n=index)
+                session, SYSTEM, team_id, DOC_URL.format(n=index)
             )
         )
         if spec.status == "pending":
@@ -1934,8 +1951,8 @@ async def seed_public_pages(session: AsyncSession, parish: Parish) -> None:
 
 async def seed_settings(session: AsyncSession, parish: Parish) -> None:
     """What the parish set for itself: its own mark, and its own bands."""
-    ok(await branding.set_logo(session, None, _logo(), now=NOW))
-    ok(await workload.set_config(session, None, WORKLOAD_CONFIG, now=NOW))
+    ok(await branding.set_logo(session, SYSTEM, _logo(), now=NOW))
+    ok(await workload.set_config(session, SYSTEM, WORKLOAD_CONFIG, now=NOW))
 
 
 async def seed_schedule(
@@ -2169,7 +2186,7 @@ async def seed_schedule(
     picnic = ok(
         await events.create_event(
             session,
-            None,
+            SYSTEM,
             team_id=parish.team_ids["Parish Picnic Task Force"],
             title="Parish picnic",
             starts_at=_at(picnic_day, 11),
@@ -2196,7 +2213,7 @@ async def seed_schedule(
         meta_team = ok(
             await task_force.add_collaborating_team(
                 session,
-                None,
+                SYSTEM,
                 event_id=picnic.id,
                 source_team_id=parish.team_ids[source],
                 created_by=admin,
@@ -2234,7 +2251,7 @@ async def seed_schedule(
     reception = ok(
         await events.create_event(
             session,
-            None,
+            SYSTEM,
             team_id=parish.team_ids["Bereavement Ministry"],
             title="Funeral reception — the Delgado family",
             starts_at=_at(funeral_day, 11),
@@ -2261,7 +2278,7 @@ async def seed_schedule(
     bazaar = ok(
         await events.create_event(
             session,
-            None,
+            SYSTEM,
             team_id=parish.team_ids["Catholic Women's League"],
             title="Christmas bazaar — planning meeting",
             starts_at=_at(bazaar_day, 19),
@@ -2295,7 +2312,7 @@ async def seed_schedule(
     ok(
         await events.request_sub(
             session,
-            None,
+            SYSTEM,
             assignment_id=open_call.id,
             requested_by=parish.user_ids["maria.alvarez@example.org"],
             note="Away at a wedding — sorry for the short notice.",
@@ -2306,7 +2323,7 @@ async def seed_schedule(
     ok(
         await events.request_sub(
             session,
-            None,
+            SYSTEM,
             assignment_id=(await _first_assignment(session, next_servers.id)).id,
             requested_by=parish.user_ids["peter.kowalski@example.org"],
             note="Exam that morning.",
@@ -2317,7 +2334,7 @@ async def seed_schedule(
     claimed = ok(
         await events.request_sub(
             session,
-            None,
+            SYSTEM,
             assignment_id=(await _first_assignment(session, next_youth.id)).id,
             requested_by=parish.user_ids["emmanuel.d@example.org"],
             note="Down with the flu.",
@@ -2334,7 +2351,7 @@ async def seed_schedule(
         ok(
             await events.claim_sub(
                 session,
-                None,
+                as_volunteer(spare[0]),
                 sub_request_id=claimed.id,
                 volunteer_id=spare[0],
                 now=NOW,
@@ -2343,7 +2360,7 @@ async def seed_schedule(
     withdrawn = ok(
         await events.request_sub(
             session,
-            None,
+            SYSTEM,
             assignment_id=(
                 await _first_assignment(session, next_youth.id, offset=1)
             ).id,
@@ -2352,7 +2369,7 @@ async def seed_schedule(
             now=NOW,
         )
     )
-    ok(await events.cancel_sub(session, None, withdrawn.id, now=NOW))
+    ok(await events.cancel_sub(session, SYSTEM, withdrawn.id, now=NOW))
 
     # --- the other two ways a future slot changes hands ---
     # a manager swaps somebody out directly (no call for a substitute went out)
@@ -2366,7 +2383,7 @@ async def seed_schedule(
         ok(
             await events.substitute(
                 session,
-                None,
+                SYSTEM,
                 assignment_id=(await _first_assignment(session, reception.id)).id,
                 new_volunteer_id=reception_spare[0],
                 acted_by=admin,
@@ -2382,7 +2399,7 @@ async def seed_schedule(
     ok(
         await events.remove_assignment(
             session,
-            None,
+            SYSTEM,
             (await _first_assignment(session, coffee[-1].event.id)).id,
             now=NOW,
             reason="Away at my daughter's graduation — sorry.",
@@ -2401,7 +2418,7 @@ async def seed_schedule(
         ok(
             await events.sign_up_series(
                 session,
-                None,
+                as_volunteer(choir_spare[0]),
                 slot_id=choir_slots["Singers"].id,
                 volunteer_id=choir_spare[0],
                 now=NOW,
@@ -2411,7 +2428,7 @@ async def seed_schedule(
     # --- a cancelled event, its roster still attached ---
     ok(
         await events.cancel_event(
-            session, None, choir[-1].event.id, cancelled_by=admin, now=NOW
+            session, SYSTEM, choir[-1].event.id, cancelled_by=admin, now=NOW
         )
     )
 
@@ -2420,7 +2437,7 @@ async def seed_schedule(
     ok(
         await events.set_attendance(
             session,
-            None,
+            SYSTEM,
             assignment_id=(await _first_assignment(session, last_mass.id)).id,
             attended=False,
             hours=None,
@@ -2430,7 +2447,7 @@ async def seed_schedule(
     ok(
         await events.set_attendance(
             session,
-            None,
+            SYSTEM,
             assignment_id=(await _first_assignment(session, work_day.event.id)).id,
             attended=True,
             hours=Decimal("8.50"),
@@ -2440,7 +2457,7 @@ async def seed_schedule(
     ok(
         await events.set_attendance(
             session,
-            None,
+            SYSTEM,
             assignment_id=(
                 await _first_assignment(session, cleaning.event.id, offset=1)
             ).id,
@@ -2465,7 +2482,7 @@ async def seed_elections(
     nominating = ok(
         await elections.create_proposal(
             session,
-            None,
+            SYSTEM,
             team_id=parish.team_ids["Hospitality"],
             role=L,
             nomination_deadline=TODAY + timedelta(days=5),
@@ -2489,7 +2506,7 @@ async def seed_elections(
     ok(
         await elections.add_candidate(
             session,
-            None,
+            SYSTEM,
             nominating.id,
             volunteer_id=person("Deirdre Walsh"),
             nominated_by=admin,
@@ -2500,7 +2517,7 @@ async def seed_elections(
     ok(
         await elections.add_voter(
             session,
-            None,
+            SYSTEM,
             nominating.id,
             volunteer_id=person("Bernard Quinn"),
             added_by=admin,
@@ -2512,7 +2529,7 @@ async def seed_elections(
     voting = ok(
         await elections.create_proposal(
             session,
-            None,
+            SYSTEM,
             team_id=parish.team_ids["Prayer Chain"],
             role=L,
             nomination_deadline=TODAY - timedelta(days=3),
@@ -2539,7 +2556,7 @@ async def seed_elections(
     concluded = ok(
         await elections.create_proposal(
             session,
-            None,
+            SYSTEM,
             team_id=parish.team_ids["Ushers"],
             role=S,
             nomination_deadline=TODAY - timedelta(days=20),
@@ -2565,7 +2582,7 @@ async def seed_elections(
     decided = ok(
         await elections.create_proposal(
             session,
-            None,
+            SYSTEM,
             team_id=parish.team_ids["Bereavement Ministry"],
             role=L,
             nomination_deadline=TODAY - timedelta(days=50),
@@ -2593,7 +2610,7 @@ async def seed_elections(
     ok(
         await elections.appoint(
             session,
-            None,
+            SYSTEM,
             decided.id,
             result.winner_id or decided_candidates[0],
             decided_by=admin,
@@ -2606,7 +2623,7 @@ async def seed_elections(
     cancelled = ok(
         await elections.create_proposal(
             session,
-            None,
+            SYSTEM,
             team_id=parish.team_ids["Website & Socials"],
             role=L,
             nomination_deadline=TODAY - timedelta(days=30),
@@ -2620,13 +2637,13 @@ async def seed_elections(
             ],
         )
     )
-    ok(await elections.cancel(session, None, cancelled.id, decided_by=admin, now=NOW))
+    ok(await elections.cancel(session, SYSTEM, cancelled.id, decided_by=admin, now=NOW))
 
     # 6. concluded then re-opened: the Ignatian "debate together, then repeat"
     first_round = ok(
         await elections.create_proposal(
             session,
-            None,
+            SYSTEM,
             team_id=parish.team_ids["Children's Liturgy"],
             role=L,
             nomination_deadline=TODAY - timedelta(days=35),
@@ -2651,7 +2668,7 @@ async def seed_elections(
     ok(
         await elections.new_round(
             session,
-            None,
+            SYSTEM,
             first_round.id,
             created_by=admin,
             nomination_deadline=TODAY + timedelta(days=7),
