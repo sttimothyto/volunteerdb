@@ -29,14 +29,15 @@ def empty_state(
     href: str | None = None,
     on_click: Callable[..., Any] | None = None,
     marker: str = "empty-state",
-) -> None:
+) -> ui.column:
     """A list with nothing in it says so, and offers the next thing.
 
     `text` is the fact ("Nobody matches “xyz”."), `hint` a quieter line
     under it, and `action` a button: a link when `href` is given, a
     handler otherwise. A blank page with a count of 0 leaves the reader
-    guessing whether the search, the filter or the parish is empty."""
-    with ui.column().classes("items-start gap-1 vdb-empty").mark(marker):
+    guessing whether the search, the filter or the parish is empty. The
+    block is returned: a section that empties in place shows it then."""
+    with ui.column().classes("items-start gap-1 vdb-empty").mark(marker) as block:
         ui.label(text).classes("text-gray-500")
         if hint:
             ui.label(hint).classes("text-sm text-gray-500")
@@ -46,6 +47,7 @@ def empty_state(
             ui.button(action, on_click=on_click).props("dense outline").mark(
                 "empty-action"
             )
+    return block
 
 
 def denied(reason: str, *, back: tuple[str, str], marker: str = "denied") -> None:

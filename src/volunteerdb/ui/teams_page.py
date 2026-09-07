@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from urllib.parse import quote
@@ -7,8 +8,8 @@ from nicegui import events, ui
 
 from .. import query_lang, timefmt
 from ..env import current as current_env
-from ..errors import not_found
-from ..fp import Err, Ok
+from ..errors import DomainError, not_found
+from ..fp import Err, Ok, Result
 from ..models import ROLE_LABELS, Team, TeamRole, TeamSheet
 from ..services import events as event_service
 from ..services import memberships as membership_service
@@ -24,10 +25,20 @@ from . import column_order, invites
 from .a11y import heading
 from .account_status import account_state
 from .asof import parse_as_of
-from .context import PageCtx, flash, page_ctx, run_command, success, toast
+from .context import (
+    Loader,
+    PageCtx,
+    Refresh,
+    flash,
+    page_ctx,
+    reread,
+    run_command,
+    success,
+    toast,
+)
 from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
-from .tables import count_text, wire_search
+from .tables import SearchedTable, count_text, wire_search
 from .volunteer_panel import VolunteerPanel
 from .widgets import ROLE_OPTIONS, busy, denied, empty_state, inactive_badge
 
@@ -236,7 +247,7 @@ async def teams_page(as_of: str = ""):
             ]
         # no pagination: the tree showed the whole parish at once and this replaces it
         columns = column_order.apply_saved_order("teams", columns)
-        table = ui.table(
+        table = SearchedTable(
             columns=columns, rows=rows, row_key="id", pagination=0
         ).classes("w-full vdb-clickable-rows")
         column_order.make_draggable(table, "teams")
@@ -288,7 +299,6 @@ async def teams_page(as_of: str = ""):
                 search,
                 count,
                 table,
-                rows,
                 noun="team",
                 compile=query_lang.compile_teams,
                 text_filter=_matching_rows,
@@ -1180,66 +1190,78 @@ def _roster_table(
     reveal: bool,
     now: datetime,
     tz: ZoneInfo,
-) -> None:
+    refresh: Refresh,
+) -> tuple[ui.column, SearchedTable, Callable[[], None]]:
     """The roster as a table: sortable, searchable, 25 rows a page. At
     parish scale a roster is the site's longest page (a 59-member team was
     5,289 px tall as one row of widgets per member); a table shows what a
-    screen can show and builds one control per row instead of a select."""
+    screen can show and builds one control per row instead of a select.
+
+    Returns the block, the table and the search's `apply`: what a refresh
+    puts a fresh room into."""
     rows = _roster_rows(room, now=now, tz=tz)
     team = room.team.name
-    with ui.row().classes("items-center gap-2 w-full"):
-        search = (
-            ui.input("Search the roster…")
-            .props("outlined dense clearable debounce=200")
-            .classes("grow")
-            .mark("roster-search")
+    with ui.column().classes("w-full") as block:
+        with ui.row().classes("items-center gap-2 w-full"):
+            search = (
+                ui.input("Search the roster…")
+                .props("outlined dense clearable debounce=200")
+                .classes("grow")
+                .mark("roster-search")
+            )
+        table = (
+            SearchedTable(
+                columns=_roster_columns(room),
+                rows=rows,
+                row_key="id",
+                pagination={"rowsPerPage": 25},
+            )
+            .props('rows-per-page-options="[25, 50, 100, 0]" hide-no-data')
+            .classes("w-full vdb-clickable-rows")
+            .mark("roster")
         )
-    table = (
-        ui.table(
-            columns=_roster_columns(room),
-            rows=rows,
-            row_key="id",
-            pagination={"rowsPerPage": 25},
+        table.add_slot("body-cell-name", _NAME_CELL)
+        table.add_slot("body-cell-role", _ROLE_CELL)
+        table.add_slot("body-cell-account", _ACCOUNT_CELL)
+        table.add_slot(
+            "body-cell-since",
+            '<q-td key="since" :props="props">{{ props.row.since }}</q-td>',
         )
-        .props('rows-per-page-options="[25, 50, 100, 0]" hide-no-data')
-        .classes("w-full vdb-clickable-rows")
-        .mark("roster")
-    )
-    table.add_slot("body-cell-name", _NAME_CELL)
-    table.add_slot("body-cell-role", _ROLE_CELL)
-    table.add_slot("body-cell-account", _ACCOUNT_CELL)
-    table.add_slot(
-        "body-cell-since",
-        '<q-td key="since" :props="props">{{ props.row.since }}</q-td>',
-    )
-    if room.can_manage:
-        table.add_slot("body-cell-actions", _ACTIONS_CELL)
-    table.on("rowClick", lambda e: panel.open(e.args[1]["volunteer_id"]))
-    table.on(
-        "role",
-        lambda e: _role_dialog(e.args["id"], e.args["name"], e.args["role"]),
-    )
-    table.on(
-        "invite",
-        lambda e: _invite_from_row(e.args, base_url, reveal=reveal, tz=tz),
-    )
-    table.on("remove", lambda e: _remove_member(e.args["id"], e.args["name"], team))
-    count = ui.label(count_text(len(rows), None, "member")).classes(
-        "text-sm text-gray-500"
-    )
-    wire_search(
-        search,
-        count,
-        table,
-        rows,
-        noun="member",
-        compile=query_lang.compile_roster,
-        text_filter=_matching_members,
-    )
+        if room.can_manage:
+            table.add_slot("body-cell-actions", _ACTIONS_CELL)
+        table.on("rowClick", lambda e: panel.open(e.args[1]["volunteer_id"]))
+        table.on(
+            "role",
+            lambda e: _role_dialog(
+                e.args["id"], e.args["name"], e.args["role"], refresh
+            ),
+        )
+        table.on(
+            "invite",
+            lambda e: _invite_from_row(
+                e.args, base_url, reveal=reveal, tz=tz, refresh=refresh
+            ),
+        )
+        table.on(
+            "remove",
+            lambda e: _remove_member(e.args["id"], e.args["name"], team, refresh),
+        )
+        count = ui.label(count_text(len(rows), None, "member")).classes(
+            "text-sm text-gray-500"
+        )
+        apply = wire_search(
+            search,
+            count,
+            table,
+            noun="member",
+            compile=query_lang.compile_roster,
+            text_filter=_matching_members,
+        )
+    return block, table, apply
 
 
 async def _invite_from_row(
-    row: dict, base_url: str, *, reveal: bool, tz: ZoneInfo
+    row: dict, base_url: str, *, reveal: bool, tz: ZoneInfo, refresh: Refresh
 ) -> None:
     """The row's invite button: the offer the row carries, acted on."""
     until = row.get("invite_until") or ""
@@ -1250,11 +1272,17 @@ async def _invite_from_row(
         until=datetime.fromisoformat(until) if until else None,
     )
     await invites.act_on_offer(
-        row["volunteer_id"], row["name"], offer, base_url, reveal=reveal, tz=tz
+        row["volunteer_id"],
+        row["name"],
+        offer,
+        base_url,
+        reveal=reveal,
+        tz=tz,
+        refresh=refresh,
     )
 
 
-def _role_dialog(membership_id: int, name: str, current: str) -> None:
+def _role_dialog(membership_id: int, name: str, current: str, refresh: Refresh) -> None:
     """One small dialog on demand, instead of a select on every row."""
     with dialog_card(f"Change the role of {name}") as dialog:
         role = (
@@ -1273,11 +1301,27 @@ def _role_dialog(membership_id: int, name: str, current: str) -> None:
             await run_command(
                 command,
                 on_ok=lambda _v, _e, _r: dialog.close(),
+                refresh=refresh,
                 success="Role updated",
             )
 
         actions(dialog, "Save", save, marker="role-save")
     dialog.open()
+
+
+# A fresh read of the room for the roster's refresh, with the instant it was
+# read at (the rows' account words and invite offers are as of then).
+type RoomRead = tuple[TeamRoom, datetime]
+
+
+def _room_loader(team_id: int, tz: ZoneInfo, at: datetime | None) -> Loader[RoomRead]:
+    async def load(ctx: PageCtx) -> Result[RoomRead, DomainError]:
+        shown = await readmodels.team_room(
+            ctx.session, ctx.actor, team_id, now=ctx.now, tz=tz, at=at
+        )
+        return Ok((shown.value, ctx.now)) if isinstance(shown, Ok) else shown
+
+    return load
 
 
 def _roster_section(
@@ -1288,24 +1332,50 @@ def _roster_section(
     reveal: bool,
     now: datetime,
     tz: ZoneInfo,
+    load: Loader[RoomRead],
     picker: ui.select | None = None,
 ) -> None:
     """`picker` is the add-member row's Volunteer box, when the reader has
-    one: an empty roster's button puts the cursor in it."""
+    one: an empty roster's button puts the cursor in it.
+
+    A role change, a removal or an invite refreshes the roster in place:
+    `load` reads the room again and the same table gets the fresh rows
+    (tables.SearchedTable), so the search box's text, the sort and the
+    page survive -- context.live's rebuild would clear them. The empty
+    state is drawn too and shown when a removal empties the roster."""
     heading("Roster", level=2)
     if not room.can_names:
         denied(
             "You are not on this team, so its roster is not visible to you.",
             back=("Teams", "/teams"),
         )
-    elif not room.roster:
-        empty_state(
-            "Nobody on this team yet.",
-            action="Add the first member" if picker is not None else None,
-            on_click=lambda: picker.run_method("focus") if picker else None,
-        )
-    else:
-        _roster_table(room, panel, base_url, reveal=reveal, now=now, tz=tz)
+        return
+    empty = empty_state(
+        "Nobody on this team yet.",
+        action="Add the first member" if picker is not None else None,
+        on_click=lambda: picker.run_method("focus") if picker else None,
+    )
+    empty.visible = not room.roster
+
+    async def refresh() -> None:
+        read = await reread(load)
+        if read is None:
+            return
+        fresh, read_at = read
+        # rights that changed under the reader (their own role, say) change
+        # the columns and the controls: the whole page says it better
+        if (fresh.can_manage, fresh.can_full) != (room.can_manage, room.can_full):
+            ui.navigate.reload()
+            return
+        table.every = _roster_rows(fresh, now=read_at, tz=tz)
+        apply()
+        block.visible = bool(fresh.roster)
+        empty.visible = not fresh.roster
+
+    block, table, apply = _roster_table(
+        room, panel, base_url, reveal=reveal, now=now, tz=tz, refresh=refresh
+    )
+    block.visible = bool(room.roster)
 
 
 def _upcoming_events_section(
@@ -1380,6 +1450,7 @@ async def team_detail(team_id: int, as_of: str = ""):
             reveal=actor.is_admin,
             now=ctx.now,
             tz=tz,
+            load=_room_loader(team_id, tz, at),
             picker=picker,
         )
         if room.upcoming_events:
@@ -1409,7 +1480,9 @@ async def _add_member(team_id: int, volunteer_id: int | None, role_value: str) -
     await run_command(command, reload=True, success="Added to the roster")
 
 
-async def _remove_member(membership_id: int, name: str, team: str) -> None:
+async def _remove_member(
+    membership_id: int, name: str, team: str, refresh: Refresh
+) -> None:
     """Take somebody off the roster, once the leader has said so twice: the
     icon is small, the row is one of sixty, and the wrong one is a phone
     call to make."""
@@ -1425,6 +1498,7 @@ async def _remove_member(membership_id: int, name: str, team: str) -> None:
         return
     await run_command(
         lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id),
+        refresh=refresh,
         success=f"Removed from {team}",
     )
 

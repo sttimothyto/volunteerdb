@@ -19,6 +19,29 @@ Rows = list[dict[str, Any]]
 Predicate = Callable[[dict[str, Any]], bool]
 
 
+class SearchedTable(ui.table):
+    """A table under a search box.
+
+    `every` is the whole row set and `rows` (Quasar's) what the box lets
+    through. So the widget, not a closure, holds what a section reloading
+    in place replaces: `table.every = fresh_rows`, then the `apply` that
+    wire_search returned, and the box's text, the sort and the page all
+    survive the redraw (teams_page._roster_section)."""
+
+    def __init__(
+        self,
+        *,
+        columns: list[dict],
+        rows: Rows,
+        row_key: str = "id",
+        pagination: int | dict | None = None,
+    ) -> None:
+        super().__init__(
+            columns=columns, rows=rows, row_key=row_key, pagination=pagination
+        )
+        self.every: Rows = rows
+
+
 def count_text(shown: int, total: int | None, noun: str) -> str:
     """'3 teams', '1 event', '3 of 12 teams'."""
     if total is None or shown == total:
@@ -29,8 +52,7 @@ def count_text(shown: int, total: int | None, noun: str) -> str:
 def wire_search(
     search: ui.input,
     count: ui.label,
-    table: ui.table,
-    rows: Rows,
+    table: SearchedTable,
     *,
     noun: str,
     compile: Callable[[Any], Any],
@@ -38,16 +60,21 @@ def wire_search(
     query_filter: Callable[[Rows, Predicate], Rows] = lambda rows, pred: [
         r for r in rows if pred(r)
     ],
-) -> None:
-    """Narrow `table` to the rows matching what is typed into `search`.
+) -> Callable[[], None]:
+    """Narrow `table` to the rows of `table.every` matching what is typed
+    into `search`.
 
     `text_filter` answers plain text (lowercased); `compile` is the
     query_lang compiler for this table's fields, and `query_filter` applies
     its predicate -- the teams page overrides it to keep each hit's ancestors,
     so the tree indent stays honest. A filter that cannot run says so inline
-    under the table, never as a toast: this runs on every keystroke."""
+    under the table, never as a toast: this runs on every keystroke.
+
+    Returns `apply`, the same narrowing on demand: what a section that
+    put a fresh row set into `table.every` calls next."""
 
     def apply() -> None:
+        rows = table.every
         text = (search.value or "").strip()
         ast = query_lang.parse(text) if text else None
         if ast is None:
@@ -63,3 +90,4 @@ def wire_search(
         count.set_text(count_text(len(shown), len(rows), noun))
 
     search.on_value_change(apply)
+    return apply

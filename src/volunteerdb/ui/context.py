@@ -195,12 +195,19 @@ async def page_ctx(as_of: datetime | None = None) -> AsyncIterator[PageCtx]:
             )
 
 
+# A section's own refresh (`live`), and the read it repeats: one page_ctx()
+# unit of work answering the page's Result.
+type Refresh = Callable[[], Awaitable[None]]
+type Loader[T] = Callable[[PageCtx], Awaitable[Result[T, DomainError]]]
+
+
 async def run_command[T](
     command: Callable[[PageCtx], Awaitable[Result[Outcome[T] | T, DomainError]]],
     *,
     reload: bool = True,
     on_ok: Callable[[T, tuple[Effect, ...], effects.EffectReport], None] | None = None,
     success: str | None = None,
+    refresh: Refresh | None = None,
 ) -> Result[T, DomainError]:
     """One GUI action, start to finish.
 
@@ -213,10 +220,15 @@ async def run_command[T](
     how they went) and, unless told otherwise, a reload. A conflict at commit
     (IntegrityError) is a Conflict toast.
 
+    `refresh`, a section's own (`live`, or the roster's in teams_page),
+    replaces the reload: the block that changed is redrawn from a fresh
+    read and the rest of the page -- the scroll, a sort, a search box's
+    text, an open drawer -- stays where the reader left it.
+
     `success` is the one line that says it worked. With a reload it is
     flashed -- stored for the page that comes back, which shows it -- since
     a toast sent just before the reload is torn down with the page. Without
-    one it is shown at once.
+    one it is shown at once, after the refresh when there is one.
     """
     env = current()
     try:
@@ -243,13 +255,72 @@ async def run_command[T](
         # that never comes (NiceGUI's handlers make the same distinction)
         if helpers.should_await(outcome):
             await outcome
-    if reload:
+    if refresh is not None:
+        await refresh()
+    if reload and refresh is None:
         if success is not None:
             flash(success)
         ui.navigate.reload()
     elif success is not None:
         notify(success, kind="positive")
     return Ok(value)
+
+
+async def reread[T](load: Loader[T]) -> T | None:
+    """A section's fresh read: `load` in its own page_ctx() unit of work.
+
+    None when the page has been sent elsewhere instead -- to /login by
+    page_ctx() for a lapsed session, or reloaded here for a load that
+    failed (a team deleted under the reader, say): the whole page says
+    why better than a section can."""
+    try:
+        async with page_ctx() as ctx:
+            loaded = await load(ctx)
+    except NotSignedIn:
+        return None
+    if isinstance(loaded, Err):
+        ui.navigate.reload()
+        return None
+    return loaded.value
+
+
+async def live[T](
+    first: T,
+    *,
+    load: Loader[T],
+    draw: Callable[[T, Refresh], None],
+) -> Refresh:
+    """A section that redraws itself in place, from a fresh read.
+
+    `draw(value, refresh)` draws the section now from `first` -- what the
+    page already loaded -- and again, in the same place, each time the
+    returned `refresh` is awaited: a command's `refresh=` is where. Every
+    redraw gets a value `reread(load)` answered, so the block is never
+    behind the database and never a client-side copy of it: it is the
+    page's own load, repeated for one section. What the block does not
+    hold (the scroll, a drawer, a search box outside it) stays.
+
+    Made per page on purpose. NiceGUI's refresh() re-runs every target its
+    refreshable holds, and a @ui.refreshable at module level holds one for
+    every open page (nicegui/functions/refreshable.py, _execute_refresh):
+    one reader's click would redraw every reader's copy, from this
+    reader's session. A refreshable made here holds this page's target
+    alone; tests/test_ui_layer.py keeps the decorator out of module scope.
+    """
+
+    async def refresh() -> None:
+        await section.refresh(None)
+
+    @ui.refreshable
+    async def section(value: T | None) -> None:
+        if value is None:
+            value = await reread(load)
+            if value is None:
+                return
+        draw(value, refresh)
+
+    await section(first)
+    return refresh
 
 
 def rate_limit(*keys: str, now: datetime, what: str) -> Err[Throttled] | None:

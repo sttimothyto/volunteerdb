@@ -294,3 +294,26 @@ def test_every_notification_goes_through_context():
     assert "color=" not in source.split("def notify(")[1], (
         "context.notify passes `type`, never `color`: the type is what draws the icon"
     )
+
+
+# --- a refreshable is made per page, never shared at module level ---
+#
+# The reason context.live exists: NiceGUI's refresh() re-runs every target its
+# refreshable holds, and a @ui.refreshable at module level holds one for every
+# open page (nicegui/functions/refreshable.py, _execute_refresh) -- so one
+# reader's click would redraw every reader's copy from this reader's session.
+
+
+def test_no_refreshable_is_shared_between_pages():
+    shared = []
+    for path in sorted(UI.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in tree.body:  # module level only: inside a function is per page
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for deco in node.decorator_list:
+                    if "refreshable" in ast.unparse(deco):
+                        shared.append(f"{path.name}:{node.lineno} {node.name}")
+    assert not shared, (
+        "a module-level @ui.refreshable is one object for every open page; "
+        f"make it inside the page (context.live): {shared}"
+    )

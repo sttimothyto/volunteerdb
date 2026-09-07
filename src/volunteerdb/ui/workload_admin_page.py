@@ -13,7 +13,7 @@ from .a11y import heading
 from .context import PageCtx, page_ctx, run_command, success
 from .guards import deny_unless_admin
 from .layout import frame
-from .tables import count_text, wire_search
+from .tables import SearchedTable, count_text, wire_search
 
 
 def _contrast_note(color: ui.color_input) -> None:
@@ -212,7 +212,7 @@ def _weights_table(all_teams, paths: dict[int, str]) -> None:
             .mark("weights-search")
         )
     table = (
-        ui.table(
+        SearchedTable(
             columns=WEIGHT_COLUMNS,
             rows=_weight_rows(all_teams, paths),
             row_key="id",
@@ -248,7 +248,6 @@ def _weights_table(all_teams, paths: dict[int, str]) -> None:
         search,
         count,
         table,
-        rows,
         noun="team",
         compile=query_lang.compile_weights,
         text_filter=_matching_teams,

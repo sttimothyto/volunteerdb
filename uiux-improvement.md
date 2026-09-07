@@ -308,7 +308,7 @@ screens that changed, and ends with the full suite green in its own commit.
 
 ### Phase 5 — Fewer reloads, bulk saves
 
-- [ ] **21. Four sections refresh in place.** The roster (`teams_page.py:968`), a
+- [x] **21. Four sections refresh in place.** The roster (`teams_page.py:968`), a
   slot card's assignments (`events_page.py:1533`), attendance (`:1586`) and the
   ballot + voters (`elections_page.py:562,603`) become `@ui.refreshable` builders
   that load inside `page_ctx()` and render after it (so `test_ui_layer` still

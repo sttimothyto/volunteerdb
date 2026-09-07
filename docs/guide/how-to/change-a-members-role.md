@@ -26,7 +26,7 @@ The rights of a leader, a second and a core member reach into the sub-teams. The
 
 ## What you see
 
-- The page shows the message *Role updated*. The roster sorts by role again.
+- The page shows the message *Role updated*. The row shows the new role. Your search and sort stay.
 - If the team now has no leader or no second, the *Teams* page shows a *no leader* or *no second* badge under *Gaps*. The team also appears under *Vacancies* on *Elections*.
 - The old role is kept as history. An as-of view of an earlier date still shows it.
 - Nobody is emailed.

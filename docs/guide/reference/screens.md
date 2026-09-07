@@ -170,6 +170,7 @@ The sections, from the top:
 - The role is a badge. For *leaders* it is a button: a click opens the dialog *Change the role of …*, with the list *Role* and *Save*. They also see the icon *Remove from team* at the end of the row. It asks *Remove … from the … roster?* first.
 - Every member sees the account badge: *no account*, *disabled*, *invite sent*, *invite expired* or *account*. Next to it: *never signed in*, or *last login* with the date.
 - For *core*, the button *Invite* or *Re-invite* sits beside the badge when an invitation makes sense.
+- A role change, a removal or an invite redraws the roster in place. The text in *Search the roster…*, the sort and the page stay.
 - A reader not on the team sees *You are not on this team, so its roster is not visible to you.* and the button *Teams*. An empty roster says *Nobody on this team yet.* For *leaders*, the button *Add the first member* under it puts the cursor in *Volunteer*.
 - *Roster spreadsheet* (*leaders*, not on a past date): a panel under the roster, open when a sheet is linked or the last sync failed. Inside: *Link a spreadsheet* opens the dialog *Roster spreadsheet*. The dialog has *Google Sheets link*, the choice *Overwrite it from the database* or *Import its rows into the database*, and *Save*. With a sheet linked, the section shows the link to the sheet, *Change the spreadsheet*, *Sync now* and *Overwrite sheet*. It also shows *Roster template (Google Sheets)*. Under them: *Last synced …* or *Last sync failed: …*.
 - *Import a .csv* (*leaders*): a panel of its own, closed until you click its title. Inside: the box *Drop a .csv file here (validated before anything is written)*. A clean file gets the report *Dry run — nothing written yet.* and the button *Apply this import*. A file with problems gets *Not applied — fix the errors below and re-upload.* and 1 line per problem. After the apply: *Import applied ✔*.
@@ -279,10 +280,10 @@ The sections, from the top:
 
 - *Collaboration* (*leaders*, event still to come): the badge *task force* and *Staffed by: …* once a second team is in, with *Sync rosters*. The list *Add collaborating team* and the button *Add* bring another team's roster in; the site asks *Add team* first.
 - *Can you serve at this event?* (*members*, event still to come): *Note (optional)*, *Available*, *Not available*. Your answer shows as the badge *you said: available* or *you said: not available*.
-- *Slots*: 1 card per slot, with the name, the badge *N/M* (*∞* means unlimited), the description, and 1 row per person.
+- *Slots*: 1 card per slot, with the name, the badge *N/M* (*∞* means unlimited), the description, and 1 row per person. A sign-up, an assignment, a removal or a change to a slot redraws the cards in place. The rest of the page stays.
 - *Substitutes wanted* (*members* with no shift at the event): *X needs a* slot, the note, and *Take this slot*.
 - *Availability answers* (*leaders*): 1 row per answer, *available* or *not available*, with the note.
-- *Attendance* (*leaders*, after the event): 1 row per person with the slot, the box *attended*, the field *hours* and *Save*. Once a row is changed, it carries the badge *adjusted* and the button *Reset*. Everyone assigned counts as attended for the planned hours unless corrected here.
+- *Attendance* (*leaders*, after the event): 1 row per person with the slot, the box *attended*, the field *hours* and *Save*. Once a row is changed, it carries the badge *adjusted* and the button *Reset*. Everyone assigned counts as attended for the planned hours unless corrected here. *Save* and *Reset* redraw the list in place.
 
 On a slot card:
 
@@ -342,6 +343,7 @@ The sections, from the top:
 - *Candidates*: 1 card per candidate. The card shows the name (a link to the profile), the badges *Appointed* and *STAR winner*, and the workload badge. The workload badge shows to *admin* and to the leaders of the candidate's own teams. Under them: *nominated by* an address, the nomination note, and *Current commitments:* with 1 badge per team and role, or *none*.
 - *Voting members*: *N of N ballots cast*, then 1 row per voter. The icon *Ballot cast* marks a voter who has voted. *no account — cannot vote* marks a voter with no account.
 - *Your ballot* (voters, while voting is open): the note on STAR voting, 1 row of scores per candidate, *Submit ballot*.
+- A ballot, an added voter or a removed voter redraws *Voting members* and *Your ballot* in place.
 - While voting is open, everyone else sees *Voting is in progress. The tally appears once voting closes.*
 - *Result* (after voting closes): *N ballots cast*, *STAR winner:* a name, or *Tie between* names. Then 1 row per candidate with *N points*, the badge *finalist* and *preferred on N ballots*. The tally is advisory.
 

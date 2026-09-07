@@ -174,6 +174,14 @@ That runs the service call in a transaction, commits, and runs the effects.
 Then the page reloads from the database. There is no client-side data model
 to reconcile.
 
+Four sections redraw in place instead of reloading: the roster, an event's
+slots and its attendance, a proposal's roll and ballot. Each is drawn again
+from a fresh read of its own (`ui/context.py: live`, and `refresh=` on
+`run_command`). So the scroll, a sort and a search box survive a role change,
+an assignment, a tick or a score. Still no client-side model: the block is
+the page's own load, repeated. The refreshable behind it is made per page,
+because NiceGUI's `refresh()` re-runs every open page's copy of a shared one.
+
 Within a page file the shape is the same. The page function loads its data
 and computes what the page needs. Then it reads as an outline: a header, a
 list, and one call per section. Sections and action handlers are

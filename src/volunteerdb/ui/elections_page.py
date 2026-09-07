@@ -30,7 +30,7 @@ from ..services.readmodels import ProposalWorkroom
 from ..services.reports import CoverageRow
 from ..star import StarResult
 from .a11y import heading
-from .context import PageCtx, flash, page_ctx, run_command, warn
+from .context import PageCtx, Refresh, flash, live, page_ctx, run_command, warn
 from .date_input import date_input
 from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
@@ -424,7 +424,9 @@ async def _remove_candidate(proposal_id: int, candidate_id: int, name: str) -> N
     )
 
 
-async def _add_voter(proposal_id: int, volunteer_id: int | None) -> None:
+async def _add_voter(
+    proposal_id: int, volunteer_id: int | None, refresh: Refresh
+) -> None:
     if not volunteer_id:  # the picker's own rule said so already (forms.valid)
         return
 
@@ -438,10 +440,12 @@ async def _add_voter(proposal_id: int, volunteer_id: int | None) -> None:
             today=ctx.env.today(),
         )
 
-    await run_command(command, reload=True, success="Voter added")
+    await run_command(command, refresh=refresh, success="Voter added")
 
 
-async def _remove_voter(proposal_id: int, voter_id: int, name: str) -> None:
+async def _remove_voter(
+    proposal_id: int, voter_id: int, name: str, refresh: Refresh
+) -> None:
     if not await confirm(
         f"Remove {name} from the roll?",
         detail="They can be added again while nominations are open.",
@@ -453,12 +457,17 @@ async def _remove_voter(proposal_id: int, voter_id: int, name: str) -> None:
         lambda ctx: elections_service.remove_voter(
             ctx.session, ctx.actor, proposal_id, voter_id, today=ctx.env.today()
         ),
+        refresh=refresh,
         success=f"{name} is off the roll",
     )
 
 
 async def _cast_ballot(
-    proposal_id: int, scores: dict[int, int], *, voting_deadline: date
+    proposal_id: int,
+    scores: dict[int, int],
+    *,
+    voting_deadline: date,
+    refresh: Refresh,
 ) -> None:
     async def command(ctx: PageCtx):
         return await elections_service.cast_ballot(
@@ -472,7 +481,7 @@ async def _cast_ballot(
 
     await run_command(
         command,
-        reload=True,
+        refresh=refresh,
         success=(
             "Ballot recorded — you may revise it until "
             f"{timefmt.date_words(voting_deadline)}"
@@ -613,6 +622,7 @@ def _voters_section(
     *,
     can_manage: bool,
     nominating: bool,
+    refresh: Refresh,
 ) -> None:
     """The roll, with turnout. That somebody has voted is shown; what they voted
     is not — ballots are secret, so only the flag and the count appear here."""
@@ -632,7 +642,7 @@ def _voters_section(
                     ui.button(
                         "Remove",
                         on_click=lambda _, v=vv.voter.id, who=vv.volunteer.full_name: (
-                            _remove_voter(proposal_id, v, who)
+                            _remove_voter(proposal_id, v, who, refresh)
                         ),
                     ).props("dense flat").mark(f"remove-voter-{vv.voter.id}")
         if can_manage and nominating:
@@ -650,7 +660,9 @@ def _voters_section(
                     "Add voter",
                     icon="person_add",
                     on_click=lambda: (
-                        _add_voter(proposal_id, extra.value) if valid(extra) else None
+                        _add_voter(proposal_id, extra.value, refresh)
+                        if valid(extra)
+                        else None
                     ),
                 ).props("dense")
 
@@ -660,6 +672,7 @@ def _ballot_section(
     candidates: list[elections_service.CandidateView],
     mine: dict[int, int],
     voting_deadline: date,
+    refresh: Refresh,
 ) -> None:
     """One 0-5 toggle per candidate, revisable until the deadline. A candidate
     left alone is submitted as an explicit 0: STAR has no abstention."""
@@ -681,8 +694,34 @@ def _ballot_section(
             proposal_id,
             {c: t.value or 0 for c, t in toggles.items()},
             voting_deadline=voting_deadline,
+            refresh=refresh,
         ),
     )
+
+
+def _roll_and_ballot(room: ProposalWorkroom, refresh: Refresh) -> None:
+    """The roll and the ballot, drawn by context.live: a voter added or
+    removed, or a ballot cast, redraws both in place -- the turnout line
+    is where a ballot shows."""
+    p = room.proposal
+    nominating = room.phase is Phase.nominating
+    voting = room.phase is Phase.voting
+    _voters_section(
+        p.id,
+        room.view.voters,
+        room.volunteer_options,
+        can_manage=room.can_manage,
+        nominating=nominating,
+        refresh=refresh,
+    )
+    if voting and room.is_voter:
+        _ballot_section(
+            p.id, room.view.candidates, room.my_scores, p.voting_deadline, refresh
+        )
+    elif voting:
+        ui.label(
+            "Voting is in progress. The tally appears once voting closes."
+        ).classes("text-sm text-gray-500")
 
 
 def _result_section(tally: StarResult, names: dict[int, str]) -> None:
@@ -746,7 +785,6 @@ async def proposal_detail(proposal_id: int):
     room = shown.value
     p = room.proposal
     nominating = room.phase is Phase.nominating
-    voting = room.phase is Phase.voting
 
     with frame(
         f"{room.view.path}: {ROLE_LABELS[TeamRole(p.role)]}",
@@ -757,21 +795,13 @@ async def proposal_detail(proposal_id: int):
         _candidates_section(room)
         if nominating and (room.can_manage or room.is_voter):
             _nominate_row(proposal_id, room.volunteer_options)
-        _voters_section(
-            proposal_id,
-            room.view.voters,
-            room.volunteer_options,
-            can_manage=room.can_manage,
-            nominating=nominating,
+        await live(
+            room,
+            load=lambda ctx: readmodels.proposal_workroom(
+                ctx.session, ctx.actor, proposal_id, now=ctx.now, tz=ctx.env.tz
+            ),
+            draw=_roll_and_ballot,
         )
-        if voting and room.is_voter:
-            _ballot_section(
-                proposal_id, room.view.candidates, room.my_scores, p.voting_deadline
-            )
-        elif voting:
-            ui.label(
-                "Voting is in progress. The tally appears once voting closes."
-            ).classes("text-sm text-gray-500")
         if room.view.tally:
             _result_section(room.view.tally, room.names)
             if room.can_manage and room.phase is Phase.concluded:

@@ -35,7 +35,7 @@ from ..models import AppUser
 from ..permissions import volunteer_team_ids
 from ..services import users as user_service
 from .account_status import invitable
-from .context import PageCtx, info, run_command, success, warn
+from .context import PageCtx, Refresh, info, run_command, success, warn
 from .forms import WIDE, actions, confirm, dialog_card
 
 
@@ -192,11 +192,14 @@ async def send_invite(
     *,
     again: bool = False,
     reveal: bool = False,
+    refresh: Refresh | None = None,
 ) -> None:
     """Confirm, create-or-rearm, then show the link; the policy mails it.
 
     Re-checks the permission inside its own unit of work: the rendered
-    control is a hint, never the gate."""
+    control is a hint, never the gate. With `refresh` (the roster's) the
+    row behind the dialog is redrawn at once; without one the page reloads
+    when the dialog closes."""
     if not await confirm_send(name, email, again=again):
         return
 
@@ -221,9 +224,16 @@ async def send_invite(
             success(f"Invite emailed to {addr}")
         else:
             warn(f"Invite created for {addr}")
-        show_invite(base_url, token, addr, sent, reveal=reveal, reload_on_close=True)
+        show_invite(
+            base_url,
+            token,
+            addr,
+            sent,
+            reveal=reveal,
+            reload_on_close=refresh is None,
+        )
 
-    await run_command(command, on_ok=done, reload=False)
+    await run_command(command, on_ok=done, reload=False, refresh=refresh)
 
 
 @dataclass(frozen=True)
@@ -267,6 +277,7 @@ async def act_on_offer(
     *,
     reveal: bool,
     tz: ZoneInfo,
+    refresh: Refresh | None = None,
 ) -> None:
     """The click on the roster's invite button."""
 
@@ -278,6 +289,7 @@ async def act_on_offer(
             base_url,
             again=offer.mode != "new",
             reveal=reveal,
+            refresh=refresh,
         )
 
     if offer.mode == "pending":

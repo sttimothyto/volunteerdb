@@ -22,7 +22,7 @@ from .context import PageCtx, flash, info, page_ctx, run_command
 from .forms import actions, confirm, dialog_card, required, valid
 from .guards import deny_unless_admin
 from .layout import frame
-from .tables import count_text, wire_search
+from .tables import SearchedTable, count_text, wire_search
 from .widgets import busy, empty_state
 
 # --- actions -------------------------------------------------------------------
@@ -427,7 +427,7 @@ def _accounts_table(
             .mark("accounts-search")
         )
     table = (
-        ui.table(
+        SearchedTable(
             columns=ACCOUNT_COLUMNS,
             rows=rows,
             row_key="id",
@@ -470,7 +470,6 @@ def _accounts_table(
         search,
         count,
         table,
-        rows,
         noun="account",
         compile=query_lang.compile_accounts,
         text_filter=_matching_accounts,

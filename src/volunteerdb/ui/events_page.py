@@ -51,11 +51,21 @@ from ..services.readmodels import EventWorkroom
 from . import calendar_grid, column_order
 from .a11y import heading
 from .calendar_panel import subscribe_panel
-from .context import PageCtx, flash, page_ctx, run_command, warn
+from .context import (
+    Kind,
+    PageCtx,
+    Refresh,
+    flash,
+    live,
+    notify,
+    page_ctx,
+    run_command,
+    warn,
+)
 from .date_input import date_input, iso_date, iso_time, time_input
 from .forms import WIDE, actions, answered, confirm, dialog_card, required, valid
 from .layout import frame
-from .tables import count_text, wire_search
+from .tables import SearchedTable, count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
 from .widgets import denied, empty_state
 
@@ -201,7 +211,20 @@ def _share_panel(base_url: str, event_id: int) -> None:
     ).mark("share-event")
 
 
-async def _sub_request_dialog(assignment_id: int) -> None:
+def _tell(
+    text: str, *, refresh: Refresh | None, kind: Kind = "positive", multi_line=False
+) -> None:
+    """A dialog's closing line, where the reader will be: on this page when
+    its section refreshes, on the reloaded one otherwise."""
+    if refresh is None:
+        flash(text, kind=kind, multi_line=multi_line)
+    else:
+        notify(text, kind=kind, multi_line=multi_line)
+
+
+async def _sub_request_dialog(
+    assignment_id: int, refresh: Refresh | None = None
+) -> None:
     """Open a substitution call; the policy mails the teammates who could
     take it.
 
@@ -239,25 +262,30 @@ async def _sub_request_dialog(assignment_id: int) -> None:
                 dialog.close()
                 capped = not any(isinstance(e, ThrottleHit) for e in effects)
                 if capped:
-                    flash(
+                    _tell(
                         "Your request is posted on the Events page, but this team "
                         f"has already sent its {SUB_REQUESTS_PER_TEAM_PER_DAY} "
                         "substitute emails for today — nobody was mailed. Ask a "
                         "teammate directly, or try again tomorrow.",
+                        refresh=refresh,
                         kind="warning",
                         multi_line=True,
                     )
                 else:
                     mailed = sum(isinstance(e, SendMail) for e in effects)
-                    flash(f"Asked {mailed} teammate(s) for a substitute")
+                    _tell(
+                        f"Asked {mailed} teammate(s) for a substitute", refresh=refresh
+                    )
 
-            await run_command(command, on_ok=done)
+            await run_command(command, on_ok=done, refresh=refresh)
 
         actions(dialog, "Ask the team", save, icon="campaign")
     dialog.open()
 
 
-async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> None:
+async def _substitute_dialog(
+    assignment_id: int, options: dict[int, str], refresh: Refresh | None = None
+) -> None:
     """Hand a slot straight to a chosen teammate — no open call, no race."""
     with dialog_card("Hand this slot to a teammate") as dialog:
         ui.label(
@@ -289,15 +317,17 @@ async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> Non
             def done(value, _effects, _report) -> None:
                 _assignment, _outgoing, incoming = value
                 dialog.close()
-                flash(f"{incoming.full_name} now holds the slot")
+                _tell(f"{incoming.full_name} now holds the slot", refresh=refresh)
 
-            await run_command(command, on_ok=done)
+            await run_command(command, on_ok=done, refresh=refresh)
 
         actions(dialog, "Hand it over", save, icon="swap_horiz")
     dialog.open()
 
 
-async def _self_removal_dialog(assignment_id: int) -> None:
+async def _self_removal_dialog(
+    assignment_id: int, refresh: Refresh | None = None
+) -> None:
     """Take yourself off a slot, telling the leaders why."""
     with dialog_card("Take yourself off this slot") as dialog:
         ui.label(
@@ -332,11 +362,12 @@ async def _self_removal_dialog(assignment_id: int) -> None:
                     ctx.session, ctx.actor, assignment_id, now=ctx.now, reason=text
                 )
 
-            def done(_event, _effects, _report) -> None:
-                dialog.close()
-                flash("You're off the slot — the leaders have been told")
-
-            await run_command(command, on_ok=done)
+            await run_command(
+                command,
+                on_ok=lambda _v, _e, _r: dialog.close(),
+                refresh=refresh,
+                success="You're off the slot — the leaders have been told",
+            )
 
         actions(dialog, "Take me off", save, danger=True)
     dialog.open()
@@ -772,7 +803,7 @@ def _events_table(rows: list[dict], *, show_past: bool, search: ui.input) -> Non
     """The listing itself, its count line, and the search box wired to it."""
     columns = column_order.apply_saved_order("events", EVENT_COLUMNS)
     table = (
-        ui.table(
+        SearchedTable(
             columns=columns,
             rows=rows,
             row_key="id",
@@ -830,7 +861,6 @@ def _events_table(rows: list[dict], *, show_past: bool, search: ui.input) -> Non
         search,
         count,
         table,
-        rows,
         noun="event",
         compile=query_lang.compile_events,
         text_filter=_matching_events,
@@ -992,7 +1022,7 @@ def _edit_event_dialog(event: Event) -> None:
     dialog.open()
 
 
-def _add_slot_dialog(event_id: int) -> None:
+def _add_slot_dialog(event_id: int, refresh: Refresh) -> None:
     with dialog_card("Add a slot") as dialog:
         name = required(ui.input("Slot name")).props("outlined dense").classes("w-full")
         capacity = (
@@ -1027,7 +1057,9 @@ def _add_slot_dialog(event_id: int) -> None:
             def done(_value, _effects, _report) -> None:
                 dialog.close()
 
-            await run_command(command, on_ok=done, reload=True, success="Slot added")
+            await run_command(
+                command, on_ok=done, refresh=refresh, success="Slot added"
+            )
 
         # marked like slot-edit-save: the button that opens this dialog
         # carries the same label, so a test needs to name this one
@@ -1035,7 +1067,7 @@ def _add_slot_dialog(event_id: int) -> None:
     dialog.open()
 
 
-def _edit_slot_dialog(slot: EventSlot) -> None:
+def _edit_slot_dialog(slot: EventSlot, refresh: Refresh) -> None:
     """Rename a slot, change how many it holds, or reword its description.
 
     Reachable over the API (PATCH /events/{id}/slots/{sid}) and nowhere in the
@@ -1090,13 +1122,17 @@ def _edit_slot_dialog(slot: EventSlot) -> None:
             def done(_value, _effects, _report) -> None:
                 dialog.close()
 
-            await run_command(command, on_ok=done, reload=True, success="Slot saved")
+            await run_command(
+                command, on_ok=done, refresh=refresh, success="Slot saved"
+            )
 
         actions(dialog, "Save", save, marker="slot-edit-save")
     dialog.open()
 
 
-def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
+def _signup_dialog(
+    slot_id: int, slot_name: str, *, series: bool, refresh: Refresh
+) -> None:
     """Confirm a sign-up, with the reminder stages to opt out of — and for a
     weekly series, the offer to take the later weeks in one go."""
     with dialog_card(f"Sign up — {slot_name}") as dialog:
@@ -1144,15 +1180,16 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
                 if result is None or result == event_service.SeriesSignupResult(
                     0, 0, 0
                 ):
-                    flash("You're on the list")
+                    _tell("You're on the list", refresh=refresh)
                 else:
                     skipped = result.skipped_full + result.skipped_conflict
-                    flash(
+                    _tell(
                         f"You're on the list — this week plus {result.joined} more"
-                        + (f", {skipped} week(s) skipped" if skipped else "")
+                        + (f", {skipped} week(s) skipped" if skipped else ""),
+                        refresh=refresh,
                     )
 
-            await run_command(command, on_ok=done)
+            await run_command(command, on_ok=done, refresh=refresh)
 
         actions(dialog, "Sign up", save, icon="person_add", marker="signup-confirm")
     dialog.open()
@@ -1161,7 +1198,7 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
 # --- the workroom's actions ----------------------------------------------------
 
 
-async def _withdraw(assignment_id: int, name: str, slot: str) -> None:
+async def _withdraw(assignment_id: int, name: str, slot: str, refresh: Refresh) -> None:
     """A manager takes somebody off a slot. The volunteer taking themselves
     off goes through _self_removal_dialog, whose reason box is its question;
     this is the leader's side, and it asks the plain way."""
@@ -1178,10 +1215,10 @@ async def _withdraw(assignment_id: int, name: str, slot: str) -> None:
             ctx.session, ctx.actor, assignment_id, now=ctx.now
         )
 
-    await run_command(command, reload=True, success=f"{name} is off the slot")
+    await run_command(command, refresh=refresh, success=f"{name} is off the slot")
 
 
-async def _assign(slot_id: int, volunteer_id: int | None) -> None:
+async def _assign(slot_id: int, volunteer_id: int | None, refresh: Refresh) -> None:
     if not volunteer_id:  # the picker's own rule said so already (forms.valid)
         return
 
@@ -1195,10 +1232,10 @@ async def _assign(slot_id: int, volunteer_id: int | None) -> None:
             now=ctx.now,
         )
 
-    await run_command(command, reload=True, success="Scheduled")
+    await run_command(command, refresh=refresh, success="Scheduled")
 
 
-async def _delete_slot(slot_id: int, name: str) -> None:
+async def _delete_slot(slot_id: int, name: str, refresh: Refresh) -> None:
     if not await confirm(
         f"Delete the slot {name}?",
         detail="It is empty, so nobody loses a place.",
@@ -1212,7 +1249,7 @@ async def _delete_slot(slot_id: int, name: str) -> None:
             ctx.session, ctx.actor, slot_id, now=ctx.now
         )
 
-    await run_command(command, reload=True, success=f"Deleted the slot {name}")
+    await run_command(command, refresh=refresh, success=f"Deleted the slot {name}")
 
 
 async def _cancel_event(event_id: int) -> None:
@@ -1300,7 +1337,9 @@ async def _set_rsvp(event_id: int, available: bool, note: str) -> None:
     await run_command(command, reload=True, success="Answer saved")
 
 
-async def _save_attendance(assignment_id: int, attended: bool, hours_value) -> None:
+async def _save_attendance(
+    assignment_id: int, attended: bool, hours_value, refresh: Refresh
+) -> None:
     try:
         hours = Decimal(str(hours_value)) if hours_value is not None else None
     except InvalidOperation:
@@ -1317,10 +1356,10 @@ async def _save_attendance(assignment_id: int, attended: bool, hours_value) -> N
             now=ctx.now,
         )
 
-    await run_command(command, reload=True, success="Attendance saved")
+    await run_command(command, refresh=refresh, success="Attendance saved")
 
 
-async def _clear_attendance(assignment_id: int) -> None:
+async def _clear_attendance(assignment_id: int, refresh: Refresh) -> None:
     """Back to the automatic answer."""
 
     async def command(ctx: PageCtx):
@@ -1333,7 +1372,7 @@ async def _clear_attendance(assignment_id: int) -> None:
             now=ctx.now,
         )
 
-    await run_command(command, reload=True, success="Back to the automatic answer")
+    await run_command(command, refresh=refresh, success="Back to the automatic answer")
 
 
 # --- the workroom's sections ---------------------------------------------------
@@ -1476,10 +1515,11 @@ def _assignment_row(
     options: dict[int, str],
     *,
     slot_name: str,
+    refresh: Refresh,
 ) -> None:
     """One person on a slot: their name and badges, then the controls --
     the assignee's own (a substitute call, a hand-off, withdrawing) or the
-    manager's Remove."""
+    manager's Remove. Each redraws the slots (`refresh`) when it is done."""
     mine = volunteer.id == room.my_volunteer_id
     with ui.row().classes("w-full items-center gap-2 p-1 rounded hover:bg-gray-100"):
         volunteer_link(volunteer.full_name, volunteer.id, panel)
@@ -1495,24 +1535,28 @@ def _assignment_row(
             ui.button(
                 "Need a sub",
                 icon="campaign",
-                on_click=lambda _, aid=assignment.id: _sub_request_dialog(aid),
+                on_click=lambda _, aid=assignment.id: _sub_request_dialog(aid, refresh),
             ).props("dense outline")
         if room.upcoming and mine:
             # handing off with an open sub call cancels the call
             ui.button(
                 "Hand off",
                 icon="swap_horiz",
-                on_click=lambda _, aid=assignment.id: _substitute_dialog(aid, options),
+                on_click=lambda _, aid=assignment.id: _substitute_dialog(
+                    aid, options, refresh
+                ),
             ).props("dense outline")
             ui.button(
                 "Withdraw",
-                on_click=lambda _, aid=assignment.id: _self_removal_dialog(aid),
+                on_click=lambda _, aid=assignment.id: _self_removal_dialog(
+                    aid, refresh
+                ),
             ).props("dense flat")
         elif room.upcoming and room.can_manage:
             ui.button(
                 "Remove",
                 on_click=lambda _, aid=assignment.id, who=volunteer.full_name: (
-                    _withdraw(aid, who, slot_name)
+                    _withdraw(aid, who, slot_name, refresh)
                 ),
             ).props("dense flat").mark(f"remove-assignment-{assignment.id}")
 
@@ -1522,6 +1566,7 @@ def _slot_card(
     sv: event_service.SlotView,
     panel: VolunteerPanel,
     options: dict[int, str],
+    refresh: Refresh,
 ) -> None:
     """One slot: its name and fill, the sign-up button for a member with no
     slot yet, the manager's edit and delete, everyone on it, and for a
@@ -1544,12 +1589,13 @@ def _slot_card(
                     "Sign up",
                     icon="person_add",
                     on_click=lambda _, sid=slot.id, sn=slot.name: _signup_dialog(
-                        sid, sn, series=room.series
+                        sid, sn, series=room.series, refresh=refresh
                     ),
                 ).props("dense outline")
             if room.can_manage and room.upcoming:
                 ui.button(
-                    icon="edit", on_click=lambda _, s=slot: _edit_slot_dialog(s)
+                    icon="edit",
+                    on_click=lambda _, s=slot: _edit_slot_dialog(s, refresh),
                 ).props("dense flat").mark(f"slot-edit-{slot.id}").tooltip(
                     "Rename this slot, change how many it holds, or "
                     "reword its description"
@@ -1557,7 +1603,9 @@ def _slot_card(
             if room.can_manage and room.upcoming and not sv.entries:
                 ui.button(
                     icon="delete",
-                    on_click=lambda _, sid=slot.id, sn=slot.name: _delete_slot(sid, sn),
+                    on_click=lambda _, sid=slot.id, sn=slot.name: _delete_slot(
+                        sid, sn, refresh
+                    ),
                 ).props("dense flat").mark(f"slot-delete-{slot.id}").tooltip(
                     "Remove this empty slot"
                 )
@@ -1565,7 +1613,13 @@ def _slot_card(
             ui.label(slot.description).classes("text-sm text-gray-600")
         for assignment, volunteer in sv.entries:
             _assignment_row(
-                room, assignment, volunteer, panel, options, slot_name=slot.name
+                room,
+                assignment,
+                volunteer,
+                panel,
+                options,
+                slot_name=slot.name,
+                refresh=refresh,
             )
         if room.can_manage and room.upcoming and options and has_room:
             with ui.row().classes("w-full items-center gap-2"):
@@ -1579,20 +1633,26 @@ def _slot_card(
                 ui.button(
                     "Assign",
                     on_click=lambda _, sid=slot.id, p=pick: (
-                        _assign(sid, p.value) if valid(p) else None
+                        _assign(sid, p.value, refresh) if valid(p) else None
                     ),
                 ).props("dense outline")
 
 
-def _slots_section(room: EventWorkroom, panel: VolunteerPanel) -> None:
-    """The slot list, and for a manager the button that adds one."""
+def _slots_section(
+    room: EventWorkroom, panel: VolunteerPanel, refresh: Refresh
+) -> None:
+    """The slot list, and for a manager the button that adds one. Drawn by
+    context.live: a sign-up, an assignment, a removal, a slot added or
+    changed redraws it in place from a fresh room."""
     heading("Slots", level=2).classes("mt-2")
     options = room.picker_options()
     for sv in room.view.slots:
-        _slot_card(room, sv, panel, options)
+        _slot_card(room, sv, panel, options, refresh)
     if room.can_manage and room.upcoming:
         ui.button(
-            "Add slot", icon="add", on_click=lambda: _add_slot_dialog(room.event.id)
+            "Add slot",
+            icon="add",
+            on_click=lambda: _add_slot_dialog(room.event.id, refresh),
         ).props("dense flat no-caps")
 
 
@@ -1638,13 +1698,15 @@ def _subs_wanted_section(
 
 
 def _attendance_section(
-    event: Event,
-    attendance: list[tuple[EventAssignment, EventSlot, Volunteer]],
-    panel: VolunteerPanel,
+    room: EventWorkroom, panel: VolunteerPanel, refresh: Refresh
 ) -> None:
     """Recorded after the event ends. Attendance is derived, so this section
     exists only to correct it: a row with no override shows the automatic
-    answer, and Reset puts it back."""
+    answer, and Reset puts it back. Drawn by context.live: a Save or a
+    Reset redraws the list in place."""
+    event, attendance = room.event, room.attendance
+    if attendance is None:  # not after the event, or not a manager
+        return
     heading("Attendance", level=2).classes("mt-2")
     ui.label(
         "Everyone assigned counts as attended for the scheduled "
@@ -1674,13 +1736,15 @@ def _attendance_section(
             ui.button(
                 "Save",
                 on_click=lambda _, aid=assignment.id, b=box, h=hrs: _save_attendance(
-                    aid, b.value, h.value
+                    aid, b.value, h.value, refresh
                 ),
             ).props("dense flat")
             if overridden:
                 ui.button(
                     "Reset",
-                    on_click=lambda _, aid=assignment.id: _clear_attendance(aid),
+                    on_click=lambda _, aid=assignment.id: _clear_attendance(
+                        aid, refresh
+                    ),
                 ).props("dense flat").tooltip("Back to automatic")
 
 
@@ -1708,6 +1772,8 @@ async def event_detail_page(event_id: int):
     room = shown.value
 
     panel = VolunteerPanel("", ctx.base_url)
+    # the slots and the attendance redraw in place, each from a fresh room
+    load = _workroom_loader(event_id)
     with frame(
         room.event.title, actor, help="event-leader" if room.can_manage else "event"
     ):
@@ -1718,10 +1784,29 @@ async def event_detail_page(event_id: int):
             )
         if room.am_member and room.upcoming:
             _availability_card(event_id, room.my_rsvp)
-        _slots_section(room, panel)
+        await live(
+            room,
+            load=load,
+            draw=lambda fresh, refresh: _slots_section(fresh, panel, refresh),
+        )
         if room.can_manage and room.view.rsvps:
             _availability_answers(room.view.rsvps, panel)
         if room.claimable_subs:
             _subs_wanted_section(room.claimable_subs, room.view.slots)
         if room.attendance is not None:
-            _attendance_section(room.event, room.attendance, panel)
+            await live(
+                room,
+                load=load,
+                draw=lambda fresh, refresh: _attendance_section(fresh, panel, refresh),
+            )
+
+
+def _workroom_loader(event_id: int):
+    """The page's own read, for its sections' refreshes (context.live)."""
+
+    async def load(ctx: PageCtx):
+        return await readmodels.event_workroom(
+            ctx.session, ctx.actor, event_id, now=ctx.now
+        )
+
+    return load

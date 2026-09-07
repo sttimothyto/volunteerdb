@@ -170,8 +170,7 @@ async def test_removing_from_the_roster_asks_and_cancel_keeps_them(database):
         assert yes.text == "Remove Mia Member from Music"
         user.find(marker=YES).click()
         await user.should_see("Removed from Music", retries=SLOW)
-        # the line is flashed while the reloaded page is still being built;
-        # the table it lands on arrives a moment later
+        # the roster redraws in place before the line is shown (step 21)
         await _until(lambda: "Mia Member" not in _names(user))
 
     async with db_session() as session:
