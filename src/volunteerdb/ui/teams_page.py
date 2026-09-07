@@ -28,7 +28,7 @@ from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
-from .widgets import ROLE_OPTIONS, busy, empty_state, inactive_badge, role_badge
+from .widgets import ROLE_OPTIONS, busy, denied, empty_state, inactive_badge, role_badge
 
 
 def _hierarchy_rows(tree, coverage, actor) -> list[dict]:
@@ -1012,9 +1012,10 @@ def _roster_section(
     one: an empty roster's button puts the cursor in it."""
     ui.label("Roster").classes("text-lg font-medium")
     if not room.can_names:
-        ui.label(
-            "You are not on this team, so its roster is not visible to you."
-        ).classes("text-gray-500")
+        denied(
+            "You are not on this team, so its roster is not visible to you.",
+            back=("Teams", "/teams"),
+        )
     elif not room.roster:
         empty_state(
             "Nobody on this team yet.",
@@ -1055,7 +1056,10 @@ async def team_detail(team_id: int, as_of: str = ""):
         )
     if isinstance(shown, Err):
         with frame("Team not found", actor, as_of=at, asof_path=f"/teams/{team_id}"):
-            ui.label(f"No team with id {team_id} at this time.")
+            denied(
+                f"No team with id {team_id} at this time.",
+                back=("Teams", f"/teams?as_of={as_of}" if as_of else "/teams"),
+            )
         return
     room = shown.value
 

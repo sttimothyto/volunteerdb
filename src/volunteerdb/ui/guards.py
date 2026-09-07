@@ -5,17 +5,17 @@ to draw itself at all. The admin pages share one answer for a reader who is
 not an admin, and this is it.
 """
 
-from nicegui import ui
-
 from ..permissions import Actor
 from .layout import frame
+from .widgets import denied
 
 
 def deny_unless_admin(actor: Actor, title: str) -> bool:
     """True, with the refusal page already drawn, when `actor` is not an
-    admin -- so a page reads `if deny_unless_admin(actor, "Accounts"): return`."""
+    admin -- so a page reads `if deny_unless_admin(actor, "Accounts"): return`.
+    The refusal carries the way back (widgets.denied)."""
     if actor.is_admin:
         return False
     with frame(title, actor):
-        ui.label("Admins only.").classes("text-gray-500")
+        denied("Admins only.", back=("Dashboard", "/"))
     return True

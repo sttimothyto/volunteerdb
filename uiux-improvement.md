@@ -238,7 +238,7 @@ screens that changed, and ends with the full suite green in its own commit.
   *My profile* (linked volunteers), *Your account*, *Sign out*. The page title, the
   menu label and the login copy (`login.py:500`) all say "Your account". On the phone
   the name is inside the menu, so the three-hop workaround in the tutorial is deleted.
-- [ ] **9. A refusal has a way back.** `guards.deny_unless_admin` and the four
+- [x] **9. A refusal has a way back.** `guards.deny_unless_admin` and the four
   "visible to…" sentences (`events_page.py:1649`, `elections_page.py:216,682`,
   `teams_page.py:973`) render `widgets.denied(reason, back=(label, href))`; a
   not-found profile or event likewise.

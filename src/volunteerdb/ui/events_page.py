@@ -56,7 +56,7 @@ from .forms import WIDE, actions, answered, confirm, dialog_card, required, vali
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
-from .widgets import empty_state
+from .widgets import denied, empty_state
 
 # Substitute calls a single team may broadcast in a rolling day; the limit and
 # its reasons live with the other families in throttle.LIMITS. Past it the
@@ -1657,14 +1657,15 @@ async def event_detail_page(event_id: int):
     match shown:
         case Err(NotFound()):
             with frame("Event not found", actor):
-                ui.label(f"No event with id {event_id}.")
+                denied(f"No event with id {event_id}.", back=("Events", "/events"))
             return
         case Err():
             # the service decides; the page only chooses how to say it, and
             # a whole page reads better than a toast on an empty frame
             with frame("Events", actor):
-                ui.label("This event is visible to the members of its team.").classes(
-                    "text-gray-500"
+                denied(
+                    "This event is visible to the members of its team.",
+                    back=("Events", "/events"),
                 )
             return
     room = shown.value

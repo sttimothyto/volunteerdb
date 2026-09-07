@@ -47,6 +47,21 @@ def empty_state(
             )
 
 
+def denied(reason: str, *, back: tuple[str, str], marker: str = "denied") -> None:
+    """A refusal, or a page that is not there, with a way back.
+
+    The sentence says whose page it is ("This event is visible to the
+    members of its team."); the button goes to a page this reader can
+    read. A refusal that ends in one sentence and no control leaves a
+    member with the browser's back button and nothing else."""
+    label, href = back
+    with ui.column().classes("items-start gap-2 vdb-empty").mark(marker):
+        ui.label(reason).classes("text-gray-500")
+        ui.button(label, icon="arrow_back").props(f'dense outline href="{href}"').mark(
+            "denied-back"
+        )
+
+
 def busy(
     handler: Callable[..., Any],
 ) -> Callable[[ClickEventArguments], Awaitable[None]]:

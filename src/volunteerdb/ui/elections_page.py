@@ -32,7 +32,14 @@ from .context import PageCtx, flash, page_ctx, run_command, warn
 from .date_input import date_input
 from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
-from .widgets import ROLE_OPTIONS, empty_state, phase_badge, role_badge, workload_badge
+from .widgets import (
+    ROLE_OPTIONS,
+    denied,
+    empty_state,
+    phase_badge,
+    role_badge,
+    workload_badge,
+)
 
 IGNATIAN_NOTE = (
     "Ignatian election: 1. pray separately, 2. vote separately, "
@@ -213,10 +220,11 @@ async def elections_page():
         )
     if not allowed:
         with frame("Elections", actor):
-            ui.label(
+            denied(
                 "Elections are available to admins, team leaders/seconds, "
-                "and the voting members of a proposal."
-            ).classes("text-gray-500")
+                "and the voting members of a proposal.",
+                back=("Dashboard", "/"),
+            )
         return
 
     open_rows = [s for s in summaries if s.proposal.status == ProposalStatus.open.value]
@@ -713,16 +721,20 @@ async def proposal_detail(proposal_id: int):
     match shown:
         case Err(NotFound()):
             with frame("Proposal not found", actor):
-                ui.label(f"No proposal with id {proposal_id}.")
+                denied(
+                    f"No proposal with id {proposal_id}.",
+                    back=("Elections", "/elections"),
+                )
             return
         case Err():
             # the service decides; the page only chooses how to say it, and
             # a whole page reads better than a toast on an empty frame
             with frame("Elections", actor):
-                ui.label(
+                denied(
                     "This proposal is visible to its voting members and to "
-                    "the team's managers."
-                ).classes("text-gray-500")
+                    "the team's managers.",
+                    back=("Elections", "/elections"),
+                )
             return
     room = shown.value
     p = room.proposal

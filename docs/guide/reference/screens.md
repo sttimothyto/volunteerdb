@@ -164,7 +164,7 @@ The sections, from the top:
 - The role is a badge. For *leaders* it is a list, and a new choice changes the role at once. They also see the icon *Remove from team* at the end of the row. It asks *Remove … from the … roster?* first.
 - Every member sees the account badge: *no account*, *disabled*, *invite sent*, *invite expired* or *account*. Next to it: *never signed in*, or *last login* with the date.
 - For *core*, the badges *no account* and *invite expired* turn into a button on hover: *invite to create account* or *send a new invite*.
-- A reader not on the team sees *You are not on this team, so its roster is not visible to you.* An empty roster says *Nobody on this team yet.* For *leaders*, the button *Add the first member* under it puts the cursor in *Volunteer*.
+- A reader not on the team sees *You are not on this team, so its roster is not visible to you.* and the button *Teams*. An empty roster says *Nobody on this team yet.* For *leaders*, the button *Add the first member* under it puts the cursor in *Volunteer*.
 - *Roster spreadsheet* (*leaders*, not on a past date). *Link a spreadsheet* opens the dialog *Roster spreadsheet*. The dialog has *Google Sheets link*, the choice *Overwrite it from the database* or *Import its rows into the database*, and *Save*. With a sheet linked, the section shows the link to the sheet, *Change spreadsheet*, *Sync now* and *Overwrite sheet*. It also shows *Roster template (Google Sheets)*. Under them: *Last synced …* or *Last sync failed: …*.
 - *Import a .csv* (*leaders*, in the same section): the box *Drop a .csv file here (validated before anything is written)*. A clean file gets the report *Dry run — nothing written yet.* and the button *Apply this import*. A file with problems gets *Not applied — fix the errors below and re-upload.* and 1 line per problem. After the apply: *Import applied ✔*.
 - *Sub-teams*: 1 button per sub-team.
@@ -290,11 +290,11 @@ On a slot card:
 | *Remove* | Asks *Remove … from the … slot?*, then takes that person off the slot. Nobody is emailed. | *leaders* |
 | *Schedule someone* and *Assign* | A list of the roster, the people who said *available* first, and the button that puts the chosen person on the slot. | *leaders*, while there is space |
 
-A reader who cannot see the event sees *This event is visible to the members of its team.*
+A reader who cannot see the event sees *This event is visible to the members of its team.* and the button *Events*. An event that is not there says *No event with id …* with the same button.
 
 ## Elections
 
-Shown to *admin*, *leaders*, and anyone on the roll of an election. Others see *Elections are available to admins, team leaders/seconds, and the voting members of a proposal.*
+Shown to *admin*, *leaders*, and anyone on the roll of an election. Others see *Elections are available to admins, team leaders/seconds, and the voting members of a proposal.* and the button *Dashboard*.
 
 | Section | What it shows | Who |
 |---|---|---|
@@ -337,7 +337,7 @@ The sections, from the top:
 - While voting is open, everyone else sees *Voting is in progress. The tally appears once voting closes.*
 - *Result* (after voting closes): *N ballots cast*, *STAR winner:* a name, or *Tie between* names. Then 1 row per candidate with *N points*, the badge *finalist* and *preferred on N ballots*. The tally is advisory.
 
-A reader who cannot see the election sees *This proposal is visible to its voting members and to the team's managers.*
+A reader who cannot see the election sees *This proposal is visible to its voting members and to the team's managers.* and the button *Elections*.
 
 ## Your account
 
@@ -356,7 +356,7 @@ Shown to *everyone*, from *Your account* in the account menu. It has 4 cards.
 
 ## Accounts
 
-Shown to *admin* only. Anyone else sees *Admins only.* The page lists every account, *N accounts*, 1 row each. With no accounts: *No accounts yet.* and the button *New account*.
+Shown to *admin* only. Anyone else sees *Admins only.* and the button *Dashboard*. The page lists every account, *N accounts*, 1 row each. With no accounts: *No accounts yet.* and the button *New account*.
 
 | Control | What it does |
 |---|---|
@@ -378,7 +378,7 @@ Each row shows:
 
 ## Fields
 
-Shown to *admin* only, under the title *Custom fields*. Anyone else sees *Admins only.*
+Shown to *admin* only, under the title *Custom fields*. Anyone else sees *Admins only.* and the button *Dashboard*.
 
 | Control | What it does |
 |---|---|
@@ -392,7 +392,7 @@ Shown to *admin* only, under the title *Custom fields*. Anyone else sees *Admins
 
 ## Workload
 
-Shown to *admin* only, under the title *Workload*. Anyone else sees *Admins only.* A volunteer's score is the sum, over their teams, of the team's weight times the number for their role.
+Shown to *admin* only, under the title *Workload*. Anyone else sees *Admins only.* and the button *Dashboard*. A volunteer's score is the sum, over their teams, of the team's weight times the number for their role.
 
 | Card | What is on it |
 |---|---|

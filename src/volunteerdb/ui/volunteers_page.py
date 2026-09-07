@@ -41,6 +41,7 @@ from .timeline_chart import timeline_chart
 from .volunteer_panel import VolunteerPanel, format_custom
 from .widgets import (
     ROLE_OPTIONS,
+    denied,
     empty_state,
     inactive_badge,
     phase_badge,
@@ -512,7 +513,10 @@ async def volunteer_detail(volunteer_id: int):
         )
     if isinstance(shown, Err):
         with frame("Volunteer not found", actor):
-            ui.label(f"No volunteer with id {volunteer_id}.")
+            denied(
+                f"No volunteer with id {volunteer_id}.",
+                back=("Volunteers", "/volunteers"),
+            )
         return
     profile = shown.value
 
