@@ -4,10 +4,13 @@
 # nightly by volunteerdb-demo-reset.timer on the host.
 #
 # Deliberately different from a real parish, in three ways:
-#   * [proxy] caddy = false  - the host's Caddy is hand-written and fronts a
-#     live Matrix deployment; the deploy must not take the file over, upgrade
-#     Caddy, or touch the firewall. The vdb.bhw.name block was added by hand
-#     from deploy/examples/Caddyfile, plus security headers and a robots.txt.
+#   * [proxy] caddy = false  - the host's Caddy fronts a live Matrix
+#     deployment and its Caddyfile is owned by another deploy: Project
+#     Isidore's Consfigurator (src/infra/production.lisp in that repo)
+#     rewrites the whole file and reboots the host on every push to it. The
+#     vdb.bhw.name block therefore lives THERE, next to the Matrix block,
+#     and never in a hand edit on the server, which the next push erases.
+#     It is deploy/examples/Caddyfile plus security headers and a robots.txt.
 #   * no VDB_SMTP2GO_API_KEY and no VDB_SHEETS_* - mail is logged rather than
 #     sent, and both Google syncs stay off. A public demo must not be able to
 #     mail anybody.
