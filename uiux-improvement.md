@@ -390,7 +390,7 @@ screens that changed, and ends with the full suite green in its own commit.
   own the ARIA — decide at implementation.
 - [x] **36. Counts and reports are announced.** `aria-live="polite"` on the count
   label `wire_search` updates (`tables.py:63`) and on the CSV import report.
-- [ ] **37. Clickable text is a button.** `volunteer_link` (`volunteer_panel.py:49`),
+- [x] **37. Clickable text is a button.** `volunteer_link` (`volunteer_panel.py:49`),
   the clickable badges (`invites.py:275`, `admin_page.py:239`), the photo
   (`photo_dialog.py:144`) and the logo (`logo_dialog.py:131`) become real buttons
   (`.vdb-rowbtn` already styles a bare `<button>`) with `aria-label`s; Enter and

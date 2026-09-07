@@ -66,18 +66,16 @@ def custom_field_lines(
 
 def volunteer_link(
     name: str, volunteer_id: int, panel: "VolunteerPanel", *, classes: str = ""
-) -> ui.label:
-    """A volunteer's name, clickable to open the side panel beside it.
-
-    The idiom lived inline in the team roster until the events pages needed it
-    in four more places. ui.label has no on_click parameter, so the generic
-    .on() is the way (same as photo_dialog.photo_avatar)."""
+) -> ui.button:
+    """A volunteer's name, a real button that opens the side panel beside it:
+    Enter and Space work, a screen reader hears a button, and the tab key
+    reaches it. Styled as the link it used to look like (theme.css
+    .vdb-namebtn). The idiom lived inline in the team roster until the
+    events pages needed it in four more places."""
     return (
-        ui.label(name)
-        .classes(
-            f"font-medium cursor-pointer text-primary hover:underline {classes}".rstrip()
-        )
-        .on("click", lambda _, vid=volunteer_id: panel.open(vid))
+        ui.button(name, on_click=lambda _, vid=volunteer_id: panel.open(vid))
+        .props(f'flat dense no-caps aria-label="{name} — open their panel"')
+        .classes(f"vdb-namebtn font-medium {classes}".rstrip())
     )
 
 

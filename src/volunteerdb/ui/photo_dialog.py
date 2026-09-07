@@ -147,10 +147,16 @@ def photo_avatar(
     else:
         element = ui.icon("person").classes("text-2xl")
     if on_change is not None:
-        # ui.icon/ui.image have no on_click param; the generic .on() is the idiom
-        element.mark(marker).classes("cursor-pointer").tooltip(
-            "Add or change photo"
-        ).on(
-            "click",
-            lambda: open_photo_dialog(volunteer_id, full_name, photo_at, on_change),
+        # a real button around the picture, so the keyboard reaches it and
+        # a screen reader hears what it does; the picture is the button's face
+        element.move(
+            ui.button(
+                on_click=lambda: open_photo_dialog(
+                    volunteer_id, full_name, photo_at, on_change
+                )
+            )
+            .props('flat dense round aria-label="Add or change photo"')
+            .classes("vdb-picbtn")
+            .mark(marker)
+            .tooltip("Add or change photo")
         )

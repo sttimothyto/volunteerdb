@@ -241,9 +241,15 @@ async def _reinvite(user_id: int, email: str, base_url: str) -> None:
 # the status badge: in its own column, and on a phone (where that column
 # is hidden, theme.css .vdb-col-wide) under the address instead
 _STATUS_BADGE = """
-    <q-badge v-if="props.row.status" :color="props.row.status_color"
-             :class="props.row.status === 'invite pending' ? 'cursor-pointer' : ''"
-             @click.stop="props.row.status === 'invite pending' && $parent.$emit('pending', props.row)">
+    <q-btn v-if="props.row.status === 'invite pending'" flat dense no-caps padding="none xs"
+           :aria-label="'Invite pending for ' + props.row.email + ' — send it again'"
+           @click.stop="$parent.$emit('pending', props.row)">
+        <q-badge :color="props.row.status_color">
+            {{ props.row.status }}
+            <q-tooltip>{{ props.row.status_tooltip }}</q-tooltip>
+        </q-badge>
+    </q-btn>
+    <q-badge v-else-if="props.row.status" :color="props.row.status_color">
         {{ props.row.status }}
         <q-tooltip>{{ props.row.status_tooltip }}</q-tooltip>
     </q-badge>

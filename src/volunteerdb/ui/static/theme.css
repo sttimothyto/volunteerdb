@@ -527,6 +527,33 @@ a.vdb-quiet .vdb-stat-chip:hover {
   box-shadow: inset 0 -3px 0 var(--vdb-heading);
 }
 
+/* a volunteer's name as a button that looks like the link it was
+   (ui/volunteer_panel.py volunteer_link), and a picture -- the photo, the
+   logo -- as a button whose face is the picture */
+.q-btn.vdb-namebtn {
+  padding: 0;
+  min-height: 0;
+  font: inherit;
+  font-weight: 500;
+  color: var(--q-primary);
+  line-height: inherit;
+  text-align: inherit;
+}
+
+.q-btn.vdb-namebtn .q-btn__content {
+  justify-content: flex-start;
+  white-space: normal;
+}
+
+.q-btn.vdb-namebtn:hover .q-btn__content {
+  text-decoration: underline;
+}
+
+.q-btn.vdb-picbtn {
+  padding: 0;
+  min-height: 0;
+}
+
 /* the suggestion the keyboard is on (ui/search_box.py) */
 .vdb-suggest .vdb-active {
   background-color: var(--vdb-row-hover);

@@ -137,7 +137,12 @@ def site_logo(actor: Actor, *, classes: str, marker: str = "site-logo") -> None:
         flash(message)
         ui.navigate.reload()
 
-    # an <img> has no on_click parameter; the generic .on() is the idiom
-    element.mark(marker).classes("cursor-pointer").tooltip("Change the site logo").on(
-        "click", lambda: open_logo_dialog(changed)
+    # a real button around the mark, so the keyboard reaches it and a screen
+    # reader hears what it does; the image is the button's face
+    element.move(
+        ui.button(on_click=lambda: open_logo_dialog(changed))
+        .props('flat dense aria-label="Change the site logo"')
+        .classes("vdb-picbtn")
+        .mark(marker)
+        .tooltip("Change the site logo")
     )

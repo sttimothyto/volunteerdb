@@ -64,6 +64,9 @@ finding.
 - **4.1.3** the count under a searchable table ("3 of 12 teams") and the
   .csv import report are `aria-live="polite"` regions. A screen reader
   hears what the box or the upload changed.
+- **2.1.1 / 4.1.2** clickable text is a button. A volunteer's name, the
+  photo, the site logo and the *invite pending* badge are real buttons with
+  names. Enter and Space work, and a screen reader hears a button.
 - **2.4.1 / 1.3.1** a skip link ("Skip to content", visible on focus) into
   the page body, and a `<nav aria-label="Main">`. The `<main>` landmark is
   NiceGUI's own page container.
