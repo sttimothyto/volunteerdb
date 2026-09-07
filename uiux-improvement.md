@@ -257,7 +257,7 @@ screens that changed, and ends with the full suite green in its own commit.
 
 ### Phase 3 — Words for dates and values
 
-- [ ] **13. One short form for tables and badges.** `timefmt.when_short(dt, tz)` →
+- [x] **13. One short form for tables and badges.** `timefmt.when_short(dt, tz)` →
   "Thu, Sep 10, 7:30 PM"; `timefmt.day(dt, tz)` → "Sep 10, 2026"; both in the parish
   zone like `event_when`. Replaces the seven page-level formats in the table above
   (events table "When", the calendar's `%H:%M`, the dashboard's "next", the account

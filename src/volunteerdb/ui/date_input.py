@@ -10,7 +10,7 @@ alone: the Quasar picker has one keyboard model and one look in both modes,
 where a native ``<input type=date>`` has one per browser.
 """
 
-from datetime import date, time
+from datetime import date, datetime, time
 
 from nicegui import ui
 
@@ -18,6 +18,16 @@ from .a11y import icon_button
 
 DATE_RULE = "Use YYYY-MM-DD"
 TIME_RULE = "Use HH:MM"
+
+
+def iso_date(on: date) -> str:
+    """A field's value for a date: the one place the shape is spelled."""
+    return on.isoformat()
+
+
+def iso_time(at: datetime) -> str:
+    """A field's value for a time of day (already in the parish's clock)."""
+    return f"{at:%H:%M}"
 
 
 def _is_date(value: str | None) -> bool:

@@ -12,6 +12,7 @@ from nicegui import helpers, ui
 from nicegui.elements.mixins.disableable_element import DisableableElement
 from nicegui.events import ClickEventArguments
 
+from .. import timefmt
 from ..models import ROLE_LABELS, ProposalStatus, TeamRole
 from ..services import workload as workload_service
 from ..services.elections import ProposalPhase
@@ -128,9 +129,15 @@ def phase_badge(proposal, phase: ProposalPhase | None) -> None:
     """Where a proposal stands: its phase while open, its outcome once
     decided."""
     if phase is ProposalPhase.nominating:
-        ui.badge(f"Nominating until {proposal.nomination_deadline}", color="primary")
+        ui.badge(
+            f"Nominating until {timefmt.date_words(proposal.nomination_deadline)}",
+            color="primary",
+        )
     elif phase is ProposalPhase.voting:
-        ui.badge(f"Voting until {proposal.voting_deadline}", color="warning")
+        ui.badge(
+            f"Voting until {timefmt.date_words(proposal.voting_deadline)}",
+            color="warning",
+        )
     elif phase is ProposalPhase.concluded:
         ui.badge("Awaiting decision", color="purple")
     elif proposal.status == ProposalStatus.appointed.value:

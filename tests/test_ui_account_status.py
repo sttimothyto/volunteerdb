@@ -120,7 +120,7 @@ async def test_roster_shows_who_has_an_account_to_plain_members(database):
         await user.should_see("invite sent")  # Mia herself, link still unused
         await user.should_see("never signed in")  # and the line beneath it
         await user.should_see("account")  # Opal, settled
-        await user.should_see("last login 2026-03-01")  # Opal
+        await user.should_see("last login Mar 1, 2026")  # Opal
         await user.should_see("disabled")  # Quin
 
         # reporting only: a plain member is offered no way to act on any of it
@@ -142,7 +142,7 @@ async def test_last_login_shows_on_a_profile_the_viewer_cannot_read(database):
         await user.should_see("Last login: no VolunteerDB account")
 
         await user.open(f"/volunteers/{ids['opal']}")
-        await user.should_see("Last login: 2026-03-01")
+        await user.should_see("Last login: Sun, Mar 1")
 
         await user.open(f"/volunteers/{ids['quin']}")
         await user.should_see("account disabled")

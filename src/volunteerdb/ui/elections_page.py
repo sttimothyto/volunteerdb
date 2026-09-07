@@ -18,6 +18,7 @@ from datetime import date, timedelta
 
 from nicegui import ui
 
+from .. import timefmt
 from ..env import current as current_env
 from ..errors import NotFound
 from ..fp import Err
@@ -472,7 +473,10 @@ async def _cast_ballot(
     await run_command(
         command,
         reload=True,
-        success=f"Ballot recorded — you may revise it until {voting_deadline}",
+        success=(
+            "Ballot recorded — you may revise it until "
+            f"{timefmt.date_words(voting_deadline)}"
+        ),
     )
 
 
@@ -503,8 +507,8 @@ def _proposal_header(room: ProposalWorkroom) -> None:
                 "dense outline color=negative"
             )
     with ui.row().classes("w-full gap-4 text-sm text-gray-600"):
-        ui.label(f"Nominations close {p.nomination_deadline}")
-        ui.label(f"Voting closes {p.voting_deadline}")
+        ui.label(f"Nominations close {timefmt.date_words(p.nomination_deadline)}")
+        ui.label(f"Voting closes {timefmt.date_words(p.voting_deadline)}")
         if room.view.creator_email:
             ui.label(f"opened by {room.view.creator_email}")
         if p.decided_at is not None and room.view.decider_email:

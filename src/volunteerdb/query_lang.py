@@ -596,7 +596,7 @@ _EVENT_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
     "team": (FieldType.text, _text_of("team")),
     "location": (FieldType.text, _text_of("location")),
     "you": (FieldType.text, _text_of("you")),
-    "date": (FieldType.date, lambda row: date.fromisoformat(row["when"][:10])),
+    "date": (FieldType.date, lambda row: date.fromisoformat(row["when_iso"][:10])),
     # numeric twins of the pretty "3/∞" display cell; capacity None = unlimited,
     # which reads as NULL, so comparisons never match it (SQL semantics)
     "filled": (FieldType.integer, lambda row: row.get("filled_n")),

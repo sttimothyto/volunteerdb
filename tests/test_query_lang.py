@@ -208,7 +208,8 @@ def test_teams_backend_rejects_unknown_fields():
 EVENT_ROWS = [
     {
         "id": 1,
-        "when": "2026-09-06 10:30",
+        "when": "Sun, Sep 6, 10:30 AM",
+        "when_iso": "2026-09-06T10:30",
         "title": "Sunday Mass",
         "team": "Liturgy",
         "location": "Main church",
@@ -219,7 +220,8 @@ EVENT_ROWS = [
     },
     {
         "id": 2,
-        "when": "2026-12-24 19:00",
+        "when": "Thu, Dec 24, 7:00 PM",
+        "when_iso": "2026-12-24T19:00",
         "title": "Carol night",
         "team": "Liturgy > Music",
         "location": "",

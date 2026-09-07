@@ -14,6 +14,7 @@ import html
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from .. import timefmt
 from ..services.events import CalendarEntry
 
 VIEWS = (("mine", "My duties"), ("parish", "Whole parish"))
@@ -73,7 +74,7 @@ def _entry_html(entry: CalendarEntry, tz: ZoneInfo) -> str:
         title = f'<span class="vdb-cal-title">{title}</span>'
     meta = entry.slot_name or entry.path
     return (
-        f'<li><time datetime="{local.isoformat(timespec="minutes")}">{local:%H:%M}</time> '
+        f'<li><time datetime="{local.isoformat(timespec="minutes")}">{timefmt.clock(local, tz)}</time> '
         f'{title}<span class="vdb-cal-meta">{html.escape(meta)}</span></li>'
     )
 

@@ -77,7 +77,7 @@ def test_the_grid_escapes_what_people_typed_and_marks_today():
     assert "&lt;b&gt;Mass&lt;/b&gt; &amp; more" in html and "<b>Mass</b>" not in html
     assert 'href="/events?month=2026-08&amp;x=&lt;y&gt;"' in html
     assert html.count('aria-current="date"') == 1
-    assert '<time datetime="2026-09-06T10:30-04:00">10:30</time>' in html
+    assert '<time datetime="2026-09-06T10:30-04:00">10:30 AM</time>' in html
     assert "nothing" not in html, "the empty note only shows for an empty month"
     assert "September 2026" in html and "August" in html and "October" in html
 

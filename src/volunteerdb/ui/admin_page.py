@@ -6,9 +6,11 @@ can be read without the page around it.
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from nicegui import ui
 
+from .. import timefmt
 from ..domain import InviteIssued, Outcome
 from ..effects import SendMail, delivered
 from ..fp import Err, Ok, expect
@@ -238,6 +240,7 @@ def _account_row(
     base_url: str,
     *,
     now: datetime,
+    tz: ZoneInfo,
 ) -> None:
     """One account: who it is and who it is linked to, its sign-in state,
     and the four controls -- relink, admin, disable, reinvite."""
@@ -260,13 +263,14 @@ def _account_row(
             # No link on offer: only its digest is stored
             # (services.users._issue_invite), so handing one over again
             # means minting a fresh one — which is what Reinvite does.
+            until = account.invite_expires_at
             ui.badge("invite pending", color="warning").classes("cursor-pointer").on(
                 "click",
-                lambda: invites.show_outstanding_invite(
-                    account.email, account.invite_expires_at
-                ),
+                lambda: invites.show_outstanding_invite(account.email, until, tz=tz),
             ).tooltip(
-                f"Invite link, usable until {account.invite_expires_at:%Y-%m-%d %H:%M}"
+                f"Invite link, usable until {timefmt.when_short(until, tz)}"
+                if until
+                else "Invite link outstanding"
             )
         elif account.invite_token:
             ui.badge("invite expired", color="muted").tooltip(
@@ -278,7 +282,7 @@ def _account_row(
                 "No password set — signs in with a one-time code emailed each time"
             )
         if account.last_login_at:
-            ui.label(f"last login {account.last_login_at:%Y-%m-%d}").classes(
+            ui.label(f"last login {timefmt.day(account.last_login_at, tz)}").classes(
                 "text-xs text-gray-400"
             )
         icon_button(
@@ -345,4 +349,6 @@ async def users_page():
                 on_click=lambda: _new_account_dialog(volunteer_names, ctx.base_url),
             )
         for account in accounts:
-            _account_row(account, volunteer_names, ctx.base_url, now=ctx.now)
+            _account_row(
+                account, volunteer_names, ctx.base_url, now=ctx.now, tz=ctx.env.tz
+            )

@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from nicegui import ui
 
-from .. import asof_param
+from .. import asof_param, timefmt
 from ..env import current as current_env
 
 # The pages that can be read as of a past instant. The header carries the
@@ -69,7 +69,7 @@ def asof_banner(as_of: datetime, base_path: str) -> None:
         ui.icon("history")
         with ui.column().classes("gap-0"):
             ui.label(
-                f"Read-only snapshot as of {as_of.astimezone(current_env().tz).strftime('%Y-%m-%d %H:%M %Z')}"
+                f"Read-only snapshot as of {timefmt.when_short(as_of, current_env().tz)}"
             ).classes("text-amber-900 font-medium")
             ui.label(SHOW_TODAY).classes("text-sm text-amber-800")
         ui.space()

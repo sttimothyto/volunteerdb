@@ -22,6 +22,7 @@ events_page.
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from nicegui import ui
 
@@ -127,6 +128,7 @@ def show_outstanding_invite(
     email: str,
     until: datetime | None,
     *,
+    tz: ZoneInfo,
     on_resend: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     """An invite is already out — say so, and offer to replace it.
@@ -137,7 +139,7 @@ def show_outstanding_invite(
     password-reset flow makes, and the reason this dialog exists at all."""
     with dialog_card(f"An invite is already out to {email}", width=WIDE) as dialog:
         ui.label(
-            f"It can be used until {until:%Y-%m-%d %H:%M}."
+            f"It can be used until {timefmt.when_short(until, tz)}."
             if until
             else "It is still outstanding."
         ).classes("text-sm text-gray-500")
@@ -252,8 +254,9 @@ def invite_control(
         )
         return
 
+    env = current_env()
     pending = account is not None and user_service.invite_live(
-        account, now=current_env().clock.now()
+        account, now=env.clock.now()
     )
     mark = f"invite-{where}-{volunteer_id}"
 
@@ -273,9 +276,11 @@ def invite_control(
         ui.badge("invite sent", color="warning").classes("cursor-pointer").mark(
             mark
         ).on(
-            "click", lambda _: show_outstanding_invite(address, until, on_resend=go)
+            "click",
+            lambda _: show_outstanding_invite(address, until, tz=env.tz, on_resend=go),
         ).tooltip(
-            f"Invite link usable until {until:%Y-%m-%d %H:%M} — click to send it again"
+            f"Invite link usable until {timefmt.when_short(until, env.tz)} — "
+            "click to send it again"
             if until
             else "Invite link outstanding — click to send it again"
         )

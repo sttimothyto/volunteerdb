@@ -10,10 +10,12 @@ other button on the page; `popovertarget` falls through to its <button>.
 """
 
 import html
-from datetime import datetime
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from nicegui import ui
 
+from .. import timefmt
 from ..env import current as current_env
 from ..services import gcal
 
@@ -31,13 +33,17 @@ def _address_field(label: str, url: str) -> str:
     )
 
 
-def _when(iso: str | None) -> str:
+def _when(iso: str | None, tz: ZoneInfo) -> str:
+    """A stored instant (UTC, from the sync job) in the parish's clock."""
     if not iso:
         return "not yet"
     try:
-        return f"{datetime.fromisoformat(iso):%Y-%m-%d %H:%M} UTC"
+        at = datetime.fromisoformat(iso)
     except ValueError:
         return iso
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=UTC)
+    return timefmt.when_short(at, tz)
 
 
 def _google_status(calendar: dict | None) -> str:
@@ -58,8 +64,8 @@ def _google_status(calendar: dict | None) -> str:
     cid = calendar["calendar_id"]
     return (
         '<p class="vdb-cal-admin"><strong>Google Calendar:</strong> created '
-        f"{_when(calendar.get('created_at'))}; sharing last verified "
-        f"{_when(calendar.get('verified_at'))}. "
+        f"{_when(calendar.get('created_at'), env.tz)}; sharing last verified "
+        f"{_when(calendar.get('verified_at'), env.tz)}. "
         f'<a href="{html.escape(gcal.embed_url(cid, env.settings.timezone), quote=True)}">Open in Google Calendar</a>'
         f' · <span class="vdb-feed-id">{html.escape(cid)}</span></p>'
     )

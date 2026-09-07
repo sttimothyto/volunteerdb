@@ -5,8 +5,30 @@ reads the same in a digest and on the events page. `tz` is always the
 parish's zone (Env.tz), never the host's.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
+
+
+def when_short(at: datetime, tz: ZoneInfo) -> str:
+    """'Thu, Sep 10, 7:30 PM': the one short form for a table cell, a badge
+    or a line that names an instant, in the parish's clock."""
+    local = at.astimezone(tz)
+    return f"{local:%a, %b %-d}, {local:%-I:%M %p}"
+
+
+def day(at: datetime, tz: ZoneInfo) -> str:
+    """'Sep 10, 2026': the day an instant fell on, in the parish's clock."""
+    return date_words(at.astimezone(tz).date())
+
+
+def date_words(on: date) -> str:
+    """'Sep 13, 2026' for a date that is already a parish day (a deadline)."""
+    return f"{on:%b %-d, %Y}"
+
+
+def clock(at: datetime, tz: ZoneInfo) -> str:
+    """'7:30 PM': the time of day alone, where the day is already said."""
+    return f"{at.astimezone(tz):%-I:%M %p}"
 
 
 def event_when(starts_at: datetime, ends_at: datetime, tz: ZoneInfo) -> str:

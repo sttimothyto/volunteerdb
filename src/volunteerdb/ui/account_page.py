@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 import structlog
 from nicegui import ui
 
-from .. import passwords
+from .. import passwords, timefmt
 from ..auth import async_verify_password
 from ..domain import EmailChangeAttempted, SignInFailed
 from ..env import current as current_env
@@ -238,8 +238,7 @@ def _email_card(
                 ui.label(
                     f"Waiting for {pending} to confirm"
                     + (
-                        f" — the link stops working "
-                        f"{pending_until.astimezone(tz).strftime('%a %d %b, %H:%M')}"
+                        f" — the link stops working {timefmt.when_short(pending_until, tz)}"
                         if pending_until is not None
                         else ""
                     )

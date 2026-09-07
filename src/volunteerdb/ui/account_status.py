@@ -19,13 +19,15 @@ from datetime import datetime
 
 from nicegui import ui
 
+from .. import timefmt
 from ..env import current as current_env
 from ..models import AppUser
 from ..services import users as user_service
 
 
-def _local(ts: datetime) -> datetime:
-    return ts.astimezone(current_env().tz)
+def _words(ts: datetime) -> str:
+    """'Thu, Sep 10, 7:30 PM' in the parish's clock."""
+    return timefmt.when_short(ts, current_env().tz)
 
 
 def last_login_text(account: AppUser | None) -> str:
@@ -36,7 +38,7 @@ def last_login_text(account: AppUser | None) -> str:
     if account is None:
         return "no VolunteerDB account"
     when = (
-        f"{_local(account.last_login_at):%Y-%m-%d %H:%M %Z}"
+        _words(account.last_login_at)
         if account.last_login_at is not None
         else "never signed in"
     )
@@ -77,10 +79,9 @@ def roster_account(
     # never-signed-in gate, an admin's password reset (reissue_invite arms a
     # link on a live account) would make the roster say an established member
     # was still waiting to set up.
+    env = current_env()
     unused = account is not None and account.is_active and account.last_login_at is None
-    outstanding = unused and user_service.invite_live(
-        account, now=current_env().clock.now()
-    )
+    outstanding = unused and user_service.invite_live(account, now=env.clock.now())
     lapsed = unused and bool(account.invite_token) and not outstanding
     if action is not None and invitable(account):
         action()
@@ -98,7 +99,7 @@ def roster_account(
         # tooltip while the badge says the thing a leader just did.
         until = account.invite_expires_at
         ui.badge("invite sent", color="warning").tooltip(
-            f"An invite link is outstanding — it works until {_local(until):%Y-%m-%d}."
+            f"An invite link is outstanding — it works until {_words(until)}."
             if until
             else "An invite link is outstanding."
         )
@@ -119,6 +120,5 @@ def roster_account(
         label.text = "never signed in"
         label.tooltip("The account exists but has not been used yet.")
     else:
-        local = _local(account.last_login_at)
-        label.text = f"last login {local:%Y-%m-%d}"
-        label.tooltip(f"{local:%Y-%m-%d %H:%M %Z}")
+        label.text = f"last login {timefmt.day(account.last_login_at, env.tz)}"
+        label.tooltip(timefmt.when_short(account.last_login_at, env.tz))

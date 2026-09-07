@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from nicegui import app
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
+from .. import timefmt
 from ..db import transaction
 from ..env import current as current_env
 from ..models import Team
@@ -131,7 +132,8 @@ async def _resolve_slug(session, slug: str) -> tuple[Team | None, dict[int, str]
 
 
 async def ministry_page(slug: str) -> HTMLResponse:
-    async with transaction(current_env(), None) as session:
+    env = current_env()
+    async with transaction(env, None) as session:
         team, paths = await _resolve_slug(session, slug)
         # one row for the one team — never every published page's html
         page = (
@@ -143,7 +145,7 @@ async def ministry_page(slug: str) -> HTMLResponse:
         return _not_found()
     title = paths[team.id]
     updated = (
-        f'<p class="meta">Last updated {page.fetched_at:%B %-d, %Y}</p>'
+        f'<p class="meta">Last updated {timefmt.day(page.fetched_at, env.tz)}</p>'
         if page.fetched_at
         else ""
     )

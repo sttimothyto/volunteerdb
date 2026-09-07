@@ -52,7 +52,7 @@ from . import calendar_grid, column_order
 from .a11y import heading
 from .calendar_panel import subscribe_panel
 from .context import PageCtx, flash, page_ctx, run_command, warn
-from .date_input import date_input, time_input
+from .date_input import date_input, iso_date, iso_time, time_input
 from .forms import WIDE, actions, answered, confirm, dialog_card, required, valid
 from .layout import frame
 from .tables import count_text, wire_search
@@ -75,7 +75,7 @@ def _status_badge(event: Event, *, now: datetime, tz: ZoneInfo) -> None:
     elif event_service.is_past(event, now=now):
         ui.badge("Past", color="purple")
     else:
-        ui.badge(f"{event.starts_at.astimezone(tz):%a %b %-d}", color="primary")
+        ui.badge(timefmt.day(event.starts_at, tz), color="primary")
 
 
 def _parse_local(day_s: str, time_s: str, what: str) -> datetime | None:
@@ -145,13 +145,14 @@ class Listing:
 
 
 def _matching_events(rows: list[dict], text: str) -> list[dict]:
-    """The rows whose title, team, location or date contains `text`."""
+    """The rows whose title, team, location or date contains `text` -- the
+    date in words ("sep") and as typed into a picker ("2026-09")."""
     return [
         r
         for r in rows
         if any(
             text in (r[key] or "").lower()
-            for key in ("title", "team", "location", "when")
+            for key in ("title", "team", "location", "when", "when_iso")
         )
     ]
 
@@ -630,7 +631,10 @@ def _event_rows(summaries: list[EventSummary], tz: ZoneInfo) -> list[dict]:
         rows.append(
             {
                 "id": s.event.id,
-                "when": f"{local:%Y-%m-%d %H:%M}",
+                # the words are what the cell shows; the ISO twin is what the
+                # column sorts on and the query language's `date` reads
+                "when": timefmt.when_short(s.event.starts_at, tz),
+                "when_iso": local.isoformat(timespec="minutes"),
                 "title": s.event.title
                 + (
                     " (cancelled)"
@@ -712,9 +716,9 @@ EVENT_COLUMNS = [
     {
         "name": "when",
         "label": "When",
-        "field": "when",
+        "field": "when_iso",  # ISO strings: lexicographic = chronological
         "align": "left",
-        "sortable": True,  # ISO strings: lexicographic = chronological
+        "sortable": True,
     },
     {
         "name": "title",
@@ -772,6 +776,11 @@ def _events_table(rows: list[dict], *, show_past: bool, search: ui.input) -> Non
     column_order.make_draggable(table, "events")
     # a real link in the title cell (the teams page idiom), so the row
     # is reachable by keyboard; the row click stays for the mouse
+    # the When cell shows the words; the column sorts on the ISO twin
+    table.add_slot(
+        "body-cell-when",
+        '<q-td key="when" :props="props">{{ props.row.when }}</q-td>',
+    )
     table.add_slot(
         "body-cell-title",
         '<q-td key="title" :props="props"><a :href="\'/events/\' + props.row.id" '
@@ -909,13 +918,13 @@ def _edit_event_dialog(event: Event) -> None:
         )
         with ui.row().classes("w-full gap-2"):
             day = required(
-                date_input("Date (YYYY-MM-DD)", value=str(local_start.date()))
+                date_input("Date (YYYY-MM-DD)", value=iso_date(local_start.date()))
             ).classes("grow")
             start = required(
-                time_input("Starts (HH:MM)", value=f"{local_start:%H:%M}")
+                time_input("Starts (HH:MM)", value=iso_time(local_start))
             ).classes("w-36")
             end = required(
-                time_input("Ends (HH:MM)", value=f"{local_end:%H:%M}")
+                time_input("Ends (HH:MM)", value=iso_time(local_end))
             ).classes("w-36")
         location = (
             ui.input("Location", value=event.location or "")

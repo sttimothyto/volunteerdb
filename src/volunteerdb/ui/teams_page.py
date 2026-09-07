@@ -393,7 +393,7 @@ def _team_dialog(parent_options: dict[int, str], team=None) -> None:
 
 
 def _home_page_section(
-    team, team_page, team_id: int, slug: str | None, base_url: str
+    team, team_page, team_id: int, slug: str | None, base_url: str, *, tz: ZoneInfo
 ) -> None:
     """Home-page controls for leaders/seconds/core members (and admins): link a
     public Google Doc, preview-fetch it, and reach the published page."""
@@ -440,11 +440,14 @@ def _home_page_section(
         ).classes("text-sm text-gray-500")
     elif team_page.fetched_at is not None:
         ui.label(
-            f"Refreshed nightly · last fetched {team_page.fetched_at:%Y-%m-%d %H:%M}"
+            "Refreshed nightly · last fetched "
+            f"{timefmt.when_short(team_page.fetched_at, tz)}"
         ).classes("text-sm text-gray-500")
 
 
-def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -> None:
+def _sheet_section(
+    team_sheet: TeamSheet | None, team_id: int, is_admin: bool, *, tz: ZoneInfo
+) -> None:
     """The team's roster spreadsheet, for leaders/seconds (and admins).
 
     Everything to do with getting rosters in and out of a spreadsheet lives
@@ -520,9 +523,9 @@ def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -
                 "text-negative text-sm"
             )
         elif team_sheet.last_synced_at is not None:
-            ui.label(f"Last synced {team_sheet.last_synced_at:%Y-%m-%d %H:%M}").classes(
-                "text-sm text-gray-500"
-            )
+            ui.label(
+                f"Last synced {timefmt.when_short(team_sheet.last_synced_at, tz)}"
+            ).classes("text-sm text-gray-500")
     _sheet_import_block(is_admin)
 
 
@@ -1086,7 +1089,9 @@ async def team_detail(team_id: int, as_of: str = ""):
         # core members included on purpose: leaders are often elderly and a
         # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
         if room.can_full and room.live:
-            _home_page_section(room.team, room.page, team_id, room.slug, ctx.base_url)
+            _home_page_section(
+                room.team, room.page, team_id, room.slug, ctx.base_url, tz=tz
+            )
         if room.children:
             _subteams_row(room.children)
         picker = (
@@ -1096,7 +1101,7 @@ async def team_detail(team_id: int, as_of: str = ""):
         )
         _roster_section(room, panel, ctx.base_url, reveal=actor.is_admin, picker=picker)
         if room.can_manage:
-            _sheet_section(room.sheet, team_id, actor.is_admin)
+            _sheet_section(room.sheet, team_id, actor.is_admin, tz=tz)
         if room.upcoming_events:
             _upcoming_events_section(room.upcoming_events, tz)
 

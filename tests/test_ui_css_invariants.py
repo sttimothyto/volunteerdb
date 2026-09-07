@@ -164,3 +164,22 @@ def test_a_section_title_is_a_heading_not_a_label_that_looks_like_one():
         "a label dressed as a section title; use a11y.heading(text, level=2):\n  "
         + "\n  ".join(offenders)
     )
+
+
+def test_dates_and_times_are_words_not_format_strings():
+    """Seven output formats were live across the pages (ISO in the events
+    table, `%H:%M` in the calendar, `%a %d %b` on the account page …).
+    timefmt.py is the one voice now -- when_short, day, clock, date_words --
+    and the two machine shapes appear in ui/ only in date_input.py, where
+    they are what a field's value is."""
+    offenders = []
+    for path in sorted(UI_DIR.rglob("*.py")):
+        if path.name == "date_input.py":
+            continue
+        for lineno, line in enumerate(path.read_text().splitlines(), start=1):
+            if "%Y-%m-%d" in line or "%H:%M" in line:
+                offenders.append(f"{path.name}:{lineno}: {line.strip()}")
+    assert not offenders, (
+        "a page formats a date or time itself; use timefmt (words) or, for a "
+        "field's value, date_input.iso_date/iso_time:\n  " + "\n  ".join(offenders)
+    )

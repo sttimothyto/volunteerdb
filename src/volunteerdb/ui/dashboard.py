@@ -2,7 +2,7 @@ from urllib.parse import quote_plus, urlencode
 
 from nicegui import ui
 
-from .. import query_lang
+from .. import query_lang, timefmt
 from ..env import current as current_env
 from ..fp import Err
 from ..permissions import Actor
@@ -319,9 +319,7 @@ def _my_service_section(mine: stats_service.PersonalStats) -> None:
             stat_tile(
                 mine.upcoming_duties,
                 "Upcoming duties",
-                sub=mine.next_duty_at.astimezone(current_env().tz).strftime(
-                    "next %-d %b, %H:%M"
-                )
+                sub=f"next {timefmt.when_short(mine.next_duty_at, current_env().tz)}"
                 if mine.next_duty_at
                 else None,
                 hint=f"{mine.next_duty_title} · {mine.next_duty_slot}"
