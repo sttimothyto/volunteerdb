@@ -317,7 +317,7 @@ screens that changed, and ends with the full suite green in its own commit.
   calling client's targets, since a module-level refreshable is shared by every open
   page; if not, key the builder per client. Scroll, sort, search and the toast now
   survive a role change, an assignment, a tick, a score.
-- [ ] **22. Bulk where the leader works in bulk.** Attendance gets "Save all" (one
+- [x] **22. Bulk where the leader works in bulk.** Attendance gets "Save all" (one
   command over the changed rows, the diff-against-originals pattern of
   `workload_admin_page.py:150-173`) beside the per-row Save. "Schedule someone"
   becomes a multi-select with the *available* people first; one command assigns them

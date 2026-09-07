@@ -63,7 +63,7 @@ You see a green message that says how many teammates were asked, and the badge *
 1. Click *Events* in the header.
 2. Find the section *Teammates need a substitute*. It is on the page only when a teammate has asked.
 3. Read the line: the name, the slot, the event, the time, and the note of your teammate.
-4. Click *Take this slot*.
+4. Click *Take this slot*. The site asks *Take the … slot for …?*. Click *Take this slot* again.
 
 You see the message *The slot is yours — thank you!* The event now appears under *Your upcoming duties*, and your teammate gets an email. If the section is not on the page, come back when the email *Substitute needed* reaches you.
 

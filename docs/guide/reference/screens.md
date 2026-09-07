@@ -240,7 +240,7 @@ Shown to *everyone*. The list holds the events of the teams whose roster names y
 | Section or control | What it shows or does | Who |
 |---|---|---|
 | *Your upcoming duties* | 1 row per shift: the event, the slot, the date and time. *Need a sub* opens the dialog *Ask for a substitute* with *Note to the team (optional)* and *Ask the team*. With a request out: the badge *sub wanted* and *Withdraw request*. | *everyone* with a linked volunteer and a shift |
-| *Teammates need a substitute* | 1 row per open request on your teams: who *needs a* slot *at* which event, their note, and *Take this slot*. | *members* not already at that event |
+| *Teammates need a substitute* | 1 row per open request on your teams: who *needs a* slot *at* which event, their note, and *Take this slot*. The button asks *Take the … slot for …?* first. | *members* not already at that event |
 | *My duties* / *Whole parish* | Switches the calendar between your shifts and every team's events. | *everyone* |
 | *Add to your calendar* | Opens a panel with a link to subscribe your own calendar and a `.ics` file to download. Your own feed also has the *Feed address* to paste and *Reset the address*. The parish panel has *Add to Google Calendar* once the parish calendar exists. | *everyone*; in the *Whole parish* panel, *admin* also sees the state of the parish Google calendar |
 | The month grid | 1 cell per day, Sunday first, with the time and name of each event. A link at each end, *← July* for example, moves to the month before or after. | *everyone* |
@@ -281,9 +281,9 @@ The sections, from the top:
 - *Collaboration* (*leaders*, event still to come): the badge *task force* and *Staffed by: …* once a second team is in, with *Sync rosters*. The list *Add collaborating team* and the button *Add* bring another team's roster in; the site asks *Add team* first.
 - *Can you serve at this event?* (*members*, event still to come): *Note (optional)*, *Available*, *Not available*. Your answer shows as the badge *you said: available* or *you said: not available*.
 - *Slots*: 1 card per slot, with the name, the badge *N/M* (*∞* means unlimited), the description, and 1 row per person. A sign-up, an assignment, a removal or a change to a slot redraws the cards in place. The rest of the page stays.
-- *Substitutes wanted* (*members* with no shift at the event): *X needs a* slot, the note, and *Take this slot*.
+- *Substitutes wanted* (*members* with no shift at the event): *X needs a* slot, the note, and *Take this slot*. The button asks *Take the … slot for …?* first.
 - *Availability answers* (*leaders*): 1 row per answer, *available* or *not available*, with the note.
-- *Attendance* (*leaders*, after the event): 1 row per person with the slot, the box *attended*, the field *hours* and *Save*. Once a row is changed, it carries the badge *adjusted* and the button *Reset*. Everyone assigned counts as attended for the planned hours unless corrected here. *Save* and *Reset* redraw the list in place.
+- *Attendance* (*leaders*, after the event): 1 row per person with the slot, the box *attended*, the field *hours* and *Save*. Once a row is changed, it carries the badge *adjusted* and the button *Reset*. Everyone assigned counts as attended for the planned hours unless corrected here. *Save* and *Reset* redraw the list in place. *Save all*, under the list, saves every changed row at once. It says how many.
 
 On a slot card:
 
@@ -297,7 +297,7 @@ On a slot card:
 | *Hand off* | Opens the dialog *Hand this slot to a teammate*: the list *Who takes it?* and *Hand it over*. The teammate is emailed. | the person on that row |
 | *Withdraw* | Opens the dialog *Take yourself off this slot*: *Why can you no longer serve?* and *Take me off*. The leaders are emailed the reason. | the person on that row |
 | *Remove* | Asks *Remove … from the … slot?*, then takes that person off the slot. Nobody is emailed. | *leaders* |
-| *Schedule someone* and *Assign* | A list of the roster, the people who said *available* first, and the button that puts the chosen person on the slot. | *leaders*, while there is space |
+| *Schedule someone* and *Assign* | A list of the roster, the people who said *available* first. Pick one name or several; the button puts them all on the slot. If they do not all fit, nobody is added and the page says why. | *leaders*, while there is space |
 
 A reader who cannot see the event sees *This event is visible to the members of its team.* and the button *Events*. An event that is not there says *No event with id …* with the same button.
 

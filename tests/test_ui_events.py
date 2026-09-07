@@ -186,7 +186,7 @@ async def test_signup_withdraw_and_leader_assign(database):
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/events/{event_id}")
         pick = only(user.find(kind=ui.select, content="Schedule someone"))
-        pick.value = ids["noor"]
+        pick.value = [ids["noor"]]
         user.find("Assign", kind=ui.button).click()
         await user.should_see("Noor Member", retries=SLOW)
         await user.should_see("1/2", retries=SLOW)
@@ -232,6 +232,8 @@ async def test_sub_request_claim_flow_with_mail(database, sent_mail):
         await user.should_see("Teammates need a substitute")
         await user.should_see("out of town")
         user.find("Take this slot", kind=ui.button).click()
+        await user.should_see("Take the Volunteers slot for Mia Member?", retries=SLOW)
+        user.find(marker="confirm-yes").click()
         await user.should_see("The slot is yours", retries=SLOW)
 
         # the asker alone is told — the leaders were copied once and had
@@ -667,7 +669,7 @@ async def test_attendance_section_on_past_event(database):
     event_id = await _seed_event(ids["liturgy"])
     async with db_session() as session:
         view = ok(await event_service.detail(session, SYSTEM, event_id))
-        ok(
+        mia_a = ok(
             await event_service.sign_up(
                 session,
                 as_volunteer(ids["mia"]),
@@ -675,7 +677,7 @@ async def test_attendance_section_on_past_event(database):
                 volunteer_id=ids["mia"],
                 now=mint.now(),
             )
-        )
+        ).id
         past = datetime.combine(mint.today() - timedelta(days=2), time(9), TZ)
         ok(
             await event_service.update_event(
@@ -699,7 +701,7 @@ async def test_attendance_section_on_past_event(database):
         await user.should_see("Mia Member")
         box = only(user.find(kind=ui.checkbox, content="attended"))
         box.value = False
-        user.find("Save", kind=ui.button).click()
+        user.find(marker=f"attendance-save-{mia_a}").click()
         # the notification proves the save task finished before teardown
         await user.should_see("Attendance saved", retries=SLOW)
 

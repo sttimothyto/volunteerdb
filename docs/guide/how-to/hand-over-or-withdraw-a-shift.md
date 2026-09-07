@@ -12,10 +12,10 @@ Put a member on a slot, take one off, or pass your own shift to a teammate, and 
 
 1. Open *Events* and click the event.
 2. Under *Slots*, find the slot. Its badge, for example *1/2*, counts the people on it.
-3. Click *Schedule someone* and pick the name. People who answered *Available* come first, marked *· available*.
+3. Click *Schedule someone* and pick the name, or several names. People who answered *Available* come first, marked *· available*.
 4. Click *Assign*.
 
-The name appears on the slot at once. The person gets the nightly email *VolunteerDB: your upcoming service* at 4:00, under *You have been scheduled to serve:*, and a reminder the day before. A name marked *· UNAVAILABLE* answered *Not available*. You can still assign them; their row then shows the badge *marked unavailable*.
+The names appear on the slot at once. If the slot has no room for all of them, nobody is added and the page says so. The person gets the nightly email *VolunteerDB: your upcoming service* at 4:00, under *You have been scheduled to serve:*, and a reminder the day before. A name marked *· UNAVAILABLE* answered *Not available*. You can still assign them; their row then shows the badge *marked unavailable*.
 
 ## Take a member off a slot
 

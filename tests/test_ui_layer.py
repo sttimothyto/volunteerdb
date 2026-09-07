@@ -157,6 +157,9 @@ REMOVING = frozenset(
         ("elections", "remove_candidate"),
         ("elections", "remove_voter"),
         ("elections", "cancel"),
+        # not a removal but a commitment: taking a teammate's slot puts a
+        # name on the roster and mails them (uiux-improvement.md, step 22)
+        ("events", "claim_sub"),
     }
 )
 # Handlers whose own dialog is the question: the reason box a volunteer

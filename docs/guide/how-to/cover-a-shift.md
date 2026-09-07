@@ -16,6 +16,7 @@ Take over a slot that a teammate can no longer fill.
 3. Find the section *Teammates need a substitute*.
 4. Read the line: the name of your teammate, the slot, the event, the time and the note.
 5. Click *Take this slot*.
+6. Read the question *Take the … slot for …?*. Click *Take this slot*. *Cancel* changes nothing.
 
 ## What you see
 

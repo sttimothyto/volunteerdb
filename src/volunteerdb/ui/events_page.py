@@ -31,7 +31,7 @@ from .. import query_lang, throttle, timefmt
 from ..effects import Effect, SendMail, ThrottleHit
 from ..env import current as current_env
 from ..errors import NotFound, not_found, require
-from ..fp import Err, expect
+from ..fp import Err, Ok, expect
 from ..models import (
     Event,
     EventAssignment,
@@ -56,6 +56,7 @@ from .context import (
     PageCtx,
     Refresh,
     flash,
+    info,
     live,
     notify,
     page_ctx,
@@ -373,7 +374,18 @@ async def _self_removal_dialog(
     dialog.open()
 
 
-async def _claim_sub(sub_request_id: int) -> None:
+async def _claim_sub(sub_request_id: int, *, slot: str, asker: str) -> None:
+    """Answer a teammate's call. One line first: it is a commitment (a
+    reminder mail, a name on the roster), and signing up for the same slot
+    from the event page takes a dialog."""
+    if not await confirm(
+        f"Take the {slot} slot for {asker}?",
+        detail="You are on the slot at once, and they are emailed that you have it.",
+        yes="Take this slot",
+        icon="volunteer_activism",
+    ):
+        return
+
     async def command(ctx: PageCtx):
         return await event_service.claim_sub(
             ctx.session,
@@ -594,7 +606,9 @@ def _claimable_section(
                 ui.button(
                     "Take this slot",
                     icon="volunteer_activism",
-                    on_click=lambda _, sid=c.sub.id: _claim_sub(sid),
+                    on_click=lambda _, c=c: _claim_sub(
+                        c.sub.id, slot=c.slot.name, asker=c.volunteer.full_name
+                    ),
                 ).props("dense outline")
 
 
@@ -1218,21 +1232,34 @@ async def _withdraw(assignment_id: int, name: str, slot: str, refresh: Refresh) 
     await run_command(command, refresh=refresh, success=f"{name} is off the slot")
 
 
-async def _assign(slot_id: int, volunteer_id: int | None, refresh: Refresh) -> None:
-    if not volunteer_id:  # the picker's own rule said so already (forms.valid)
+async def _assign(slot_id: int, volunteer_ids: list[int], refresh: Refresh) -> None:
+    """Put everyone picked on the slot, in one transaction: a slot with
+    room for two and three names picked schedules nobody, and says why."""
+    if not volunteer_ids:  # the picker's own rule said so already (forms.valid)
         return
 
     async def command(ctx: PageCtx):
-        return await event_service.assign(
-            ctx.session,
-            ctx.actor,
-            slot_id=slot_id,
-            volunteer_id=volunteer_id,
-            assigned_by=ctx.actor.account.id,
-            now=ctx.now,
-        )
+        assigned = []
+        for volunteer_id in volunteer_ids:
+            done = await event_service.assign(
+                ctx.session,
+                ctx.actor,
+                slot_id=slot_id,
+                volunteer_id=volunteer_id,
+                assigned_by=ctx.actor.account.id,
+                now=ctx.now,
+            )
+            if isinstance(done, Err):
+                return done
+            assigned.append(done.value)
+        return Ok(assigned)
 
-    await run_command(command, refresh=refresh, success="Scheduled")
+    n = len(volunteer_ids)
+    await run_command(
+        command,
+        refresh=refresh,
+        success="Scheduled" if n == 1 else f"Scheduled {n} people",
+    )
 
 
 async def _delete_slot(slot_id: int, name: str, refresh: Refresh) -> None:
@@ -1337,11 +1364,67 @@ async def _set_rsvp(event_id: int, available: bool, note: str) -> None:
     await run_command(command, reload=True, success="Answer saved")
 
 
+def _hours(value) -> Decimal | None:
+    """The hours box as a Decimal, or None for blank; raises on nonsense."""
+    return Decimal(str(value)) if value is not None else None
+
+
+# One line of the attendance sheet: the assignment, its two boxes, and what
+# they showed when drawn (Save all saves the lines that differ from it).
+type SheetLine = tuple[int, ui.checkbox, ui.number, bool, Decimal]
+
+
+def _changed_lines(sheet: list[SheetLine]) -> list[tuple[int, bool, Decimal | None]]:
+    """The lines whose boxes no longer say what was drawn."""
+    changed = []
+    for assignment_id, box, hrs, attended, hours in sheet:
+        hours_now = _hours(hrs.value)
+        if bool(box.value) != attended or hours_now != hours:
+            changed.append((assignment_id, bool(box.value), hours_now))
+    return changed
+
+
+async def _save_all_attendance(sheet: list[SheetLine], refresh: Refresh) -> None:
+    """Every changed line in one command: one transaction, one line back.
+    A row that the service refuses rolls the others back with it."""
+    try:
+        changes = _changed_lines(sheet)
+    except InvalidOperation:
+        warn("Hours must be a number")
+        return
+    if not changes:
+        info("Nothing changed")
+        return
+
+    async def command(ctx: PageCtx):
+        saved = []
+        for assignment_id, attended, hours in changes:
+            done = await event_service.set_attendance(
+                ctx.session,
+                ctx.actor,
+                assignment_id=assignment_id,
+                attended=attended,
+                hours=hours,
+                now=ctx.now,
+            )
+            if isinstance(done, Err):
+                return done
+            saved.append(done.value)
+        return Ok(saved)
+
+    n = len(changes)
+    await run_command(
+        command,
+        refresh=refresh,
+        success=f"Attendance saved for {n} {'person' if n == 1 else 'people'}",
+    )
+
+
 async def _save_attendance(
     assignment_id: int, attended: bool, hours_value, refresh: Refresh
 ) -> None:
     try:
-        hours = Decimal(str(hours_value)) if hours_value is not None else None
+        hours = _hours(hours_value)
     except InvalidOperation:
         warn("Hours must be a number")
         return
@@ -1622,18 +1705,26 @@ def _slot_card(
                 refresh=refresh,
             )
         if room.can_manage and room.upcoming and options and has_room:
+            # several names at once: a leader staffing a slot picks the
+            # available people in one go (the picker lists them first)
             with ui.row().classes("w-full items-center gap-2"):
                 pick = (
                     required(
-                        ui.select(options, label="Schedule someone", with_input=True)
+                        ui.select(
+                            options,
+                            label="Schedule someone",
+                            with_input=True,
+                            multiple=True,
+                        )
                     )
-                    .props("outlined dense")
-                    .classes("w-64")
+                    .props("outlined dense use-chips")
+                    .classes("w-96")
+                    .mark(f"schedule-{slot.id}")
                 )
                 ui.button(
                     "Assign",
                     on_click=lambda _, sid=slot.id, p=pick: (
-                        _assign(sid, p.value, refresh) if valid(p) else None
+                        _assign(sid, list(p.value or []), refresh) if valid(p) else None
                     ),
                 ).props("dense outline")
 
@@ -1693,7 +1784,11 @@ def _subs_wanted_section(
             ui.button(
                 "Take this slot",
                 icon="volunteer_activism",
-                on_click=lambda _, sid=sub.id: _claim_sub(sid),
+                on_click=lambda _, sid=sub.id, a=a: _claim_sub(
+                    sid,
+                    slot=slot_names.get(a.slot_id, "open"),
+                    asker=names.get(a.volunteer_id, "a teammate"),
+                ),
             ).props("dense outline")
 
 
@@ -1715,6 +1810,7 @@ def _attendance_section(
     ).classes("text-sm text-gray-500")
     if not attendance:
         ui.label("Nobody was assigned to this event.").classes("text-gray-500")
+    sheet: list[SheetLine] = []
     for assignment, slot, volunteer in attendance:
         attended, hours = event_service.effective(assignment, event)
         overridden = (
@@ -1730,6 +1826,7 @@ def _attendance_section(
                 .props("outlined dense")
                 .classes("w-28")
             )
+            sheet.append((assignment.id, box, hrs, attended, Decimal(hours)))
             if overridden:
                 ui.badge("adjusted", color="secondary")
             ui.space()
@@ -1738,7 +1835,7 @@ def _attendance_section(
                 on_click=lambda _, aid=assignment.id, b=box, h=hrs: _save_attendance(
                     aid, b.value, h.value, refresh
                 ),
-            ).props("dense flat")
+            ).props("dense flat").mark(f"attendance-save-{assignment.id}")
             if overridden:
                 ui.button(
                     "Reset",
@@ -1746,6 +1843,14 @@ def _attendance_section(
                         aid, refresh
                     ),
                 ).props("dense flat").tooltip("Back to automatic")
+    if sheet:
+        # the whole sheet at once: a leader ticking a dozen no-shows after
+        # a Mass saves them together, not one Save per row
+        ui.button(
+            "Save all",
+            icon="save",
+            on_click=lambda: _save_all_attendance(sheet, refresh),
+        ).props("dense outline").classes("mt-1").mark("attendance-save-all")
 
 
 @ui.page("/events/{event_id}")
