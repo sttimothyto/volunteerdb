@@ -68,7 +68,7 @@ Every team can keep its roster in a Google Sheet. If you do nothing, the site ma
 10. Leave *Overwrite it from the database* selected. The site fills your sheet from the roster.
 11. Click *Save*.
 
-You see a spinner on *Save* while the site syncs, then a green message with the result. The section now shows the name of the sheet as a link, with *Change spreadsheet*, *Sync now* and *Overwrite sheet*. Under it is the line *Last synced*, with the date. Every night at 2:30 the site reads your edits from the sheet, and then rewrites the sheet to match.
+You see a spinner on *Save* while the site syncs, then a green message with the result. The section now shows the name of the sheet as a link, with *Change the spreadsheet*, *Sync now* and *Overwrite sheet*. Under it is the line *Last synced*, with the date. Every night at 2:30 the site reads your edits from the sheet, and then rewrites the sheet to match.
 
 - Keep the link private. It holds the email address, the phone number and the notes of every member.
 - If the message says *Linked, but the first sync failed*, check the share setting in Google Sheets. Then click *Sync now*.
@@ -87,11 +87,11 @@ You see a spinner on *Save* while the site syncs, then a green message with the 
 9. Click *Fetch now*.
 10. Click *Public page*.
 
-You see the page of your team as anyone in the world sees it, with no sign-in. Back on the team page, the section shows *Google Doc*, *Public page*, *Download QR Code to Public page*, *Fetch now* and *Change*. The site fetches the document again every night at 3:00. Put nothing private in the document.
+You see the page of your team as anyone in the world sees it, with no sign-in. Back on the team page, the section shows *Google Doc*, *Public page*, *Download QR Code to Public page*, *Fetch now* and *Change the doc*. The site fetches the document again every night at 3:00. Put nothing private in the document.
 
 - Before *Fetch now*, the section said *Not published yet*. After it, the message *Home page updated* appeared.
 - *Download QR Code to Public page* saves a picture to print on a poster or a bulletin.
-- To take the page down, click *Change*, then *Clear*.
+- To take the page down, click *Change the doc*, then *Clear*.
 
 ## What you learned
 

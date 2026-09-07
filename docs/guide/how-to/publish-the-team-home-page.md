@@ -20,7 +20,7 @@ Give your team a public web page, written in a Google Doc, that anyone can read 
 
 ## What you see
 
-- After *Save*, the section shows a *Google Doc* link, *Fetch now* and *Change*.
+- After *Save*, the section shows a *Google Doc* link, *Fetch now* and *Change the doc*.
 - Until the first fetch it says *Not published yet — Fetch now downloads the doc, or wait for the nightly refresh (3:00).*
 - After *Fetch now*, the page shows *Home page updated*, and a *Public page* link appears. Click it to see the result.
 - The page lives under `/ministries/` on the site. *View Team Homepages* on the *Teams* page lists every published team.
@@ -37,7 +37,7 @@ The code holds the address of the page. If the team is renamed or moved under an
 
 ## Take the page down
 
-1. Click *Change*.
+1. Click *Change the doc*.
 2. Click *Clear*.
 
 ## If something goes wrong

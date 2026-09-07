@@ -270,7 +270,7 @@ screens that changed, and ends with the full suite green in its own commit.
   volunteers table. Unset fields collapse into one muted line ("Not recorded: T-shirt
   size, Years in the parish, …") so a core member still sees what to fill without ten
   `—` rows.
-- [ ] **15. Copy.** "consulatative" → "consultative"; the missing space in
+- [x] **15. Copy.** "consulatative" → "consultative"; the missing space in
   `STAR_NOTE`; "Password & sign-in" → "Your account" everywhere; the two "Change"
   buttons eleven lines apart on the team page (`teams_page.py:459-463`) get their
   objects ("Change the doc", "Change the spreadsheet").

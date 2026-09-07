@@ -32,7 +32,7 @@ Keep the roster of your team in a Google Sheet that you and your helpers edit, a
 ## What you see
 
 - A spinner on *Save* while the site syncs, then a green message: *sheet rewritten from the database*, or the counts of the rows imported.
-- The section shows the name of the sheet as a link, with *Change spreadsheet*, *Sync now* and *Overwrite sheet*. Under it is *Last synced*, with the date and time.
+- The section shows the name of the sheet as a link, with *Change the spreadsheet*, *Sync now* and *Overwrite sheet*. Under it is *Last synced*, with the date and time.
 - The sheet has the 8 roster columns, a drop-down list in *Role* and in *Team*, a hidden *ID* column and a protected header row. See [The roster spreadsheet](../reference/roster-spreadsheet.md).
 
 ## Every night
@@ -48,7 +48,7 @@ Keep the roster of your team in a Google Sheet that you and your helpers edit, a
 
 - *Sync now* runs the nightly sync at once: the sheet into the site, then the site back into the sheet.
 - *Overwrite sheet* rewrites the sheet from the roster and discards whatever is in the sheet. Use it when the sheet is a mess.
-- *Change spreadsheet* links a different sheet. The old sheet is not synced any more.
+- *Change the spreadsheet* links a different sheet. The old sheet is not synced any more.
 
 ## Keep the link private
 

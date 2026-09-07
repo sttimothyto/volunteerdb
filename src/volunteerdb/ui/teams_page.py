@@ -425,7 +425,9 @@ def _home_page_section(
             on_click=busy(lambda: _fetch_home_page(team_id)),
         ).props("dense outline")
         ui.button(
-            "Change",
+            # its object, like the spreadsheet section's Change: the two sit a
+            # few lines apart on the same page
+            "Change the doc",
             icon="edit",
             on_click=lambda: _home_doc_dialog(team_id, team.home_doc_url),
         ).props("dense flat")
@@ -466,9 +468,9 @@ def _sheet_section(
                 new_tab=True,
             )
             ui.button(
-                # not plain "Change": the home-page section above carries one
-                # of those, and the two sit a few lines apart
-                "Change spreadsheet",
+                # its object, like the home-page section's Change the doc: the
+                # two sit a few lines apart on the same page
+                "Change the spreadsheet",
                 icon="edit",
                 on_click=lambda: _roster_sheet_dialog(team_id, linked=True),
             ).props("dense flat")

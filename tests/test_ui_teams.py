@@ -438,7 +438,7 @@ async def test_roster_sheet_section_gated_by_role(database):
         await user.open(f"/teams/{ids['liturgy']}")
         await user.should_see("Roster spreadsheet")
         await user.should_see("liturgy-list")
-        await user.should_see("Change spreadsheet")
+        await user.should_see("Change the spreadsheet")
 
         # Lena leads Liturgy: same controls as the admin, including the import
         # that used to live on its own page
@@ -446,7 +446,7 @@ async def test_roster_sheet_section_gated_by_role(database):
         await user.open(f"/teams/{ids['liturgy']}")
         await user.should_see("Roster spreadsheet")
         await user.should_see("liturgy-list")
-        await user.should_see("Change spreadsheet")
+        await user.should_see("Change the spreadsheet")
         await user.should_see("Import a .csv")
         await user.should_see("DO NOT edit the ID Column")
 
@@ -468,7 +468,7 @@ async def test_the_change_dialog_warns_that_the_link_is_the_access(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['liturgy']}")
-        user.find("Change spreadsheet", kind=ui.button).click()
+        user.find("Change the spreadsheet", kind=ui.button).click()
         await user.should_see("Keep this link private")
         await user.should_see("anyone with the link")
 
@@ -482,7 +482,7 @@ async def test_the_change_dialog_rejects_a_doc_link(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/teams/{ids['liturgy']}")
-        user.find("Change spreadsheet", kind=ui.button).click()
+        user.find("Change the spreadsheet", kind=ui.button).click()
         await user.should_see("Google Sheets link")
         user.find("Google Sheets link").type(
             "https://docs.google.com/document/d/abc123"
