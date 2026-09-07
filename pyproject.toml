@@ -44,7 +44,14 @@ dev = [
     "pytest-playwright-asyncio>=0.9",
     "pytest-randomly>=4.1.0",
     "pytest-timeout>=2.4.0",
+    # Parallel workers, one scratch database each (tests/conftest.py). The
+    # suite is ~12 minutes in one process and a quarter of that in four.
+    "pytest-xdist>=3.8",
     "ruff>=0.15",
+    # Pinned exactly, unlike everything above it: ty is pre-1.0, the diagnostic
+    # count in scripts/typecheck.py is the gate, and a release that adds a rule
+    # would move that number with no change of ours behind it.
+    "ty==0.0.24",
 ]
 docs = [
     "sphinx>=9.1",

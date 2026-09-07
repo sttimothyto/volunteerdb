@@ -239,7 +239,7 @@ async def update(
         # third state any more (models.Team.workload_weight)
         team.workload_weight = (
             Decimal(0) if workload_weight is None else workload_weight
-        )  # type: ignore[assignment]
+        )
     await session.flush()
     return Ok(team)
 

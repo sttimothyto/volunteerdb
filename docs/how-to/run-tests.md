@@ -73,7 +73,9 @@ uv run playwright show-trace test-results/*/trace.zip
 
 `tests/conftest.py`:
 
-- It drops and recreates `volunteerdb_test` once per session.
+- It drops and recreates `volunteerdb_test` once per session — or
+  `volunteerdb_test_gw0`, `_gw1`, ... under `-n` (see [In
+  parallel](#in-parallel)).
 - It migrates that database with a real `alembic upgrade head`.
 - It truncates all tables between tests (identities restart).
 - There is no process-global engine. The `database` fixture keeps the test
@@ -117,9 +119,34 @@ uv run playwright show-trace test-results/*/trace.zip
   `ui/cytoscape_graph.js` and `ui/static/column_drag.js`.
 - Uncaught JavaScript errors fail the test they happen in.
 
-The suite cannot run under `pytest-xdist`. `_quiet_structlog` and
-`log_records` call the process-global `structlog.configure()`, so parallel
-workers would fight over the log configuration.
+## In parallel
+
+`make test` runs the suite on four workers (pytest-xdist), which is where the
+wall time went from about twelve minutes to about three. Every worker is a
+separate *process*, so the process-global state the suite keeps — the structlog
+configuration `_quiet_structlog` and `log_records` set, the in-process throttle
+ledger, `SIM_CLOCK` — is per-worker and needs no coordination. Two things did:
+
+- **A database each.** `volunteerdb_test_gw0`, `_gw1`, and so on, named from
+  `PYTEST_XDIST_WORKER` in `tests/conftest.py`. The suite truncates every table
+  between tests, so two workers sharing one database would wipe each other's
+  rows mid-test. A serial run still uses plain `volunteerdb_test`.
+- **The browser tests on one worker.** `tests/e2e/conftest.py` marks its own
+  tests `xdist_group("browser")`, and `--dist loadgroup` keeps a group together,
+  so the session-scoped `python -m volunteerdb.main` starts once rather than
+  once per worker that happened to be handed a browser test.
+
+```sh
+uv run pytest -n 4 --dist loadgroup    # what make test runs
+uv run pytest -n auto --dist loadgroup # a worker per core
+uv run pytest                          # serial, for a failure worth reading
+```
+
+Four rather than `auto` is a deliberate default: the UI-simulation assertions
+are on retry budgets that a busy machine can exceed (see the failure modes
+below), and past four workers the suite spends more time competing with itself
+than it saves. Debug serially — one worker means one interleaving, and pytest's
+output is in test order.
 
 ## Failure modes
 
@@ -156,7 +183,11 @@ A browser test fails only in the full run
 A UI-simulation assertion fails only in the full run
 : `user.should_see()` retries 3 times at 0.1 s. That is a 300 ms budget,
   and an argon2 verify plus a redirect can exceed it when the whole suite
-  competes for the database. Pass `retries=`; do not add a sleep.
+  competes for the database. Pass `retries=`; do not add a sleep. Parallel
+  workers make this likelier, not less likely — so confirm it serially
+  (`uv run pytest -p no:randomly <nodeid>`) before believing the failure is
+  about the code. A `404` where the test expected `200` is the same story
+  seen from `user.open()`.
 
 Tests pass locally but the app misbehaves
 : The suite covers services and API thoroughly, the UI through simulation,

@@ -64,9 +64,3 @@ def test_expect_is_for_a_result_that_cannot_refuse():
     assert fp.expect(Ok(1)) == 1
     with pytest.raises(AssertionError, match="unexpected refusal"):
         fp.expect(Err(Invalid("too long")))
-
-
-def test_as_result_wraps_plain_values_only():
-    assert fp.as_result(1) == Ok(1)
-    assert fp.as_result(Ok(1)) == Ok(1)
-    assert fp.as_result(Err("e")) == Err("e")

@@ -191,7 +191,7 @@ async def add_collaborating_team(
     refreshed = await refresh_rosters(session, None, event_id)  # authorized above
     if isinstance(refreshed, Err):
         return refreshed
-    meta_team = await session.get(Team, event.task_force_team_id)  # type: ignore[arg-type]
+    meta_team = await session.get(Team, event.task_force_team_id)
     assert meta_team is not None  # just created or repointed to
     return Ok(
         Outcome(

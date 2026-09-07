@@ -40,7 +40,7 @@ def snapshot[T: Base](model: type[T], at: datetime) -> type[T]:
         hist.c.sys_period.contains(ts)
     )
     subq = sa.union_all(live_sel, hist_sel).subquery(f"{live.name}_asof")
-    return aliased(model, subq)  # type: ignore[return-value]
+    return aliased(model, subq)
 
 
 def entity[T: Base](model: type[T], at: datetime | None) -> type[T]:

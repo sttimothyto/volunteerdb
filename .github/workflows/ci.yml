@@ -36,6 +36,12 @@ jobs:
         run: uv run ruff check --output-format=github .
       - name: ruff format --check
         run: uv run ruff format --check .
+      # `ty` over src/, held to the ceiling in scripts/typecheck.py -- the same
+      # checker the editor runs, so a type error that is visible while writing
+      # the code cannot reach main unnoticed. Over the ceiling, every
+      # diagnostic is in the log.
+      - name: ty check
+        run: uv run python scripts/typecheck.py
 
   test:
     runs-on: ubuntu-latest
@@ -83,8 +89,14 @@ jobs:
       # With coverage, and the floor in pyproject (tool.coverage.report
       # fail_under): a run that passes every test but leaves new code
       # untested fails here, and the missing lines are in the log.
+      # -n 4 --dist loadgroup: a worker per runner core, each on its own
+      # scratch database, with tests/e2e held together on one of them so the
+      # browser session starts one app process. The pure tier above stays
+      # serial -- it is ten seconds, and four workers cost more to start than
+      # they save. pytest-cov combines the workers' data itself, so the floor
+      # in pyproject still applies to the whole run.
       - name: pytest
-        run: uv run pytest -q --cov --cov-report=term-missing:skip-covered
+        run: uv run pytest -q -n 4 --dist loadgroup --cov --cov-report=term-missing:skip-covered
 
   docs:
     runs-on: ubuntu-latest

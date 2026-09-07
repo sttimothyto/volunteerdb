@@ -40,7 +40,7 @@ from ..errors import (
     require,
 )
 from ..errors import Forbidden as ForbiddenValue
-from ..fp import Err, Result, as_result
+from ..fp import Err, Result
 from ..log import bind_actor
 from ..permissions import Actor
 from ..services import users as user_service
@@ -218,13 +218,21 @@ def to_http(err: DomainError) -> HTTPException:
     return HTTPException(status_of(err), message(err), headers=headers)
 
 
-def raise_http[T](result: Result[T, DomainError] | T) -> T:
+def raise_http[T](result: Result[T, DomainError]) -> T:
     """The value, or the refusal as the HTTPException it maps to (the
-    transaction unwinds with it, so nothing partial commits)."""
-    r = as_result(result)
-    if isinstance(r, Err):
-        raise to_http(r.error)
-    return r.value
+    transaction unwinds with it, so nothing partial commits).
+
+    A Result and nothing else. This used to take ``Result[T, ...] | T`` so a
+    route could adopt it before the service it called had converted, and every
+    service converted long ago -- but the union outlived its purpose loudly:
+    with ``T`` on both sides of it the checker solves ``T = Ok[Proposal]`` at
+    every call, so the whole API layer looked like it returned Results it had
+    already unwrapped. That was most of what ty had left to say about this
+    tree once fp's variance was fixed.
+    """
+    if isinstance(result, Err):
+        raise to_http(result.error)
+    return result.value
 
 
 def dispatch[T](

@@ -241,10 +241,11 @@ from a sheet is simply restored by the write-back.
   `podman exec <db-container> pg_dump -U volunteerdb volunteerdb > backup.sql`
 - **Migrations**: `make migrate` (`uv run alembic upgrade head`) after pulling
 - **Tests**: `make test` — starts the db container if needed, then runs
-  `uv run pytest` against a separate `volunteerdb_test` database. Pass extra
-  arguments with `make test ARGS="-k roster"`. The browser tests under
-  `tests/e2e/` need Chromium once per machine:
-  `uv run playwright install --with-deps chromium`.
+  `uv run pytest` on four workers (pytest-xdist), each against a scratch
+  database of its own: about three minutes for 1204 tests. Pass extra
+  arguments with `make test ARGS="-k roster"`, and `make test WORKERS=0` for a
+  serial run. The browser tests under `tests/e2e/` need Chromium once per
+  machine: `uv run playwright install --with-deps chromium`.
 - **Start over**: `make fresh` wipes the database volume, re-migrates, re-seeds
 - Dev auto-reload: `make dev` (`VDB_RELOAD=true uv run python -m
   volunteerdb.main`). It must be the `python -m` form — under the

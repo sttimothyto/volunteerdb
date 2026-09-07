@@ -19,9 +19,16 @@ door, and these tests should stay few enough to run on every `make test`.
 
 The fixtures below start the *real* app — `python -m volunteerdb.main`, the
 entry point `make serve` uses — in its own process against the same scratch
-`volunteerdb_test` database, and drive it with Playwright's Chromium. Nothing
+database the rest of the suite uses (`..conftest.TEST_URL`, which under xdist
+is this worker's own), and drive it with Playwright's Chromium. Nothing
 is stubbed and no dev shortcut is wired in: signing in means filling the login
 form, and every interaction goes over the websocket the app really uses.
+
+That server is session-scoped and costs a cold start, so under pytest-xdist
+this package is pinned to a single worker (the `xdist_group` below, which is
+why the Makefile and CI pass `--dist loadgroup`): scattered, these fifteen
+tests would each land wherever there was room and boot an app process per
+worker to run two of them.
 """
 
 import asyncio
@@ -42,6 +49,24 @@ from playwright.async_api import Locator, Page, Playwright, expect
 from ..conftest import TEST_URL
 
 STARTUP_TIMEOUT = 60.0  # a cold `python -m volunteerdb.main` plus uvicorn bind
+
+
+_HERE = Path(__file__).parent
+
+
+def pytest_collection_modifyitems(items):
+    """Every test in this package into one xdist group, so one worker runs
+    them all against one server. A no-op in a serial run.
+
+    `items` is the whole session's, not this package's -- a conftest hook in a
+    subdirectory is still called once, for the lot -- so the path test is what
+    makes this about the browser tests. Marking all 1205 pins all 1205 to one
+    worker, which looks exactly like a suite that was never parallelised."""
+    for item in items:
+        if _HERE in Path(item.path).parents:
+            item.add_marker(pytest.mark.xdist_group("browser"))
+
+
 SHUTDOWN_GRACE = 10.0
 # Fixed so a session cookie stays readable across a server restart within one
 # run; it protects nothing but a scratch database on the loopback interface.

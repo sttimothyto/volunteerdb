@@ -34,7 +34,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Generic, TypeVar
+
+# Ok and Err are covariant in what they carry, and have to say so the old way.
+# The PEP 695 spelling (``class Err[E]``) infers variance from how the type
+# parameter is used, and an annotated attribute counts as settable however
+# frozen the dataclass is -- so ``Err[E]`` comes out invariant, and every
+# ``return invalid(...)`` from a function returning ``Result[Event, DomainError]``
+# is a type error, because ``Err[Invalid]`` is not an ``Err[DomainError]``.
+# That was 231 of the 368 diagnostics ty had on this tree. An explicit
+# ``covariant=True`` TypeVar is the only way to state it until PEP 696-era
+# syntax grows one; the classes below are otherwise unchanged.
+T_co = TypeVar("T_co", covariant=True)
+E_co = TypeVar("E_co", covariant=True)
 
 
 class _Unset:
@@ -55,8 +67,8 @@ UNSET: Final = _Unset()
 
 
 @dataclass(frozen=True, slots=True)
-class Ok[T]:
-    value: T
+class Ok(Generic[T_co]):
+    value: T_co
 
     def is_ok(self) -> bool:
         return True
@@ -64,13 +76,13 @@ class Ok[T]:
     def is_err(self) -> bool:
         return False
 
-    def unwrap_or(self, default: Any) -> T:
+    def unwrap_or(self, default: Any) -> T_co:
         return self.value
 
 
 @dataclass(frozen=True, slots=True)
-class Err[E]:
-    error: E
+class Err(Generic[E_co]):
+    error: E_co
 
     def is_ok(self) -> bool:
         return False
@@ -104,9 +116,3 @@ def expect[T](result: Result[T, Any]) -> T:
     An Err is then a bug, not a refusal, and says so."""
     assert isinstance(result, Ok), f"unexpected refusal: {result!r}"
     return result.value
-
-
-def as_result[T, E](x: Result[T, E] | T) -> Result[T, E]:
-    """Edges accept a Result or a plain value, so a route or handler can adopt
-    the Result-aware helper before every service it calls has converted."""
-    return x if isinstance(x, (Ok, Err)) else Ok(x)

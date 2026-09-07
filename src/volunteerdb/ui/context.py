@@ -36,7 +36,7 @@ from ..errors import (
     WeakPassword,
     message,
 )
-from ..fp import Err, Ok, Result, as_result
+from ..fp import Err, Ok, Result
 from ..log import bind_actor
 from ..permissions import Actor
 from ..services import users as user_service
@@ -209,7 +209,7 @@ async def run_command[T](
     env = current()
     try:
         async with page_ctx() as ctx:
-            result = as_result(await command(ctx))
+            result = await command(ctx)
             if isinstance(result, Err):
                 await ctx.session.rollback()
                 toast(result.error)

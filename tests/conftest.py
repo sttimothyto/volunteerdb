@@ -2,6 +2,12 @@
 
 A separate volunteerdb_test database is dropped/recreated per test session and
 migrated with alembic; every test starts from truncated tables.
+
+Under pytest-xdist each worker gets a database of its own -- volunteerdb_test_gw0,
+_gw1, ... -- because the truncate-between-tests contract above is the whole
+suite's, and two workers sharing one database would truncate each other's rows
+mid-test. Nothing else needs coordinating: a worker is a process, so the
+session-scoped fixtures below already run once per worker.
 """
 
 import asyncio
@@ -51,7 +57,16 @@ from tests.fp_helpers import ok
 # dev` and a `make test` that failed against stale credentials, since make
 # exports nothing from that file.
 BASE_URL = settings().database_url
-TEST_URL = BASE_URL.rsplit("/", 1)[0] + "/volunteerdb_test"
+
+# xdist sets PYTEST_XDIST_WORKER ("gw0", "gw1", ...) in every worker process
+# before conftest is imported, and leaves it unset for a serial run -- so a
+# plain `pytest` still uses the same volunteerdb_test it always has, and only
+# `-n` splits the name. Anything but the shape xdist documents is refused
+# rather than interpolated: this string goes into CREATE DATABASE.
+_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+assert re.fullmatch(r"(gw\d+)?", _WORKER), f"unexpected xdist worker id: {_WORKER!r}"
+TEST_DB = "volunteerdb_test" + (f"_{_WORKER}" if _WORKER else "")
+TEST_URL = BASE_URL.rsplit("/", 1)[0] + "/" + TEST_DB
 
 # NiceGUI "main file" for user_simulation; see its docstring for why page module
 # imports have to happen inside the simulation's reset context.
@@ -165,9 +180,9 @@ async def database():
     try:
         async with admin_engine.connect() as conn:
             await conn.execute(
-                sa.text("DROP DATABASE IF EXISTS volunteerdb_test WITH (FORCE)")
+                sa.text(f'DROP DATABASE IF EXISTS "{TEST_DB}" WITH (FORCE)')
             )
-            await conn.execute(sa.text("CREATE DATABASE volunteerdb_test"))
+            await conn.execute(sa.text(f'CREATE DATABASE "{TEST_DB}"'))
     except Exception as exc:  # DB not running
         # Failing (not skipping) is deliberate: a skip exits 0, so a suite that
         # never reached the database would report the same green as a suite that

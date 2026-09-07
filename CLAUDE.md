@@ -51,10 +51,21 @@ executeCommand.
 Read capabilities with `eglot--capabilities`, not `eglot--server-capabilities`
 (void in this version).
 
-### Known standing diagnostics
+### Known standing diagnostics, and the ceiling over them
 
-`src/volunteerdb/models.py:1149-1151` — three `Argument to function
-_make_history_table is incorrect: Expected Table, found FromClause` errors on
-`Volunteer.__table__`, `Team.__table__`, `Membership.__table__`. SQLAlchemy declares
-`DeclarativeBase.__table__` as `FromClause`; the code is correct. Pre-existing — not
-something you introduced, and not something to "fix" unasked.
+`ty check src/` reports 95 diagnostics, and `make types` (CI's lint job runs the
+same `scripts/typecheck.py`) fails the build above that number. So a diagnostic
+in a file you edited is **not** automatically pre-existing: check it against the
+ceiling before assuming it was already there, and if your change adds one, fix
+the type rather than raising the ceiling. Fewer is a ratchet — lower `CEILING`
+in the same commit.
+
+The remainder is roughly half SQLAlchemy's declarative surface (model `__init__`
+overloads, Enum column descriptors) and half real `X | None` narrowing gaps in
+`query_lang.py` and `services/elections.py`.
+
+The three in `src/volunteerdb/models.py` on `Volunteer.__table__`,
+`Team.__table__` and `Membership.__table__` — `Argument to function
+_make_history_table is incorrect: Expected Table, found FromClause` — are the
+clearest of the not-a-bug kind: SQLAlchemy declares `DeclarativeBase.__table__`
+as `FromClause`, and the code is correct. Not something to "fix" unasked.

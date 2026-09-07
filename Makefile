@@ -15,6 +15,17 @@ DB_USER := volunteerdb
 # Extra arguments for `make test`, e.g. make test ARGS="-k roster -x"
 ARGS ?=
 
+# pytest-xdist workers. Each gets a scratch database of its own
+# (volunteerdb_test_gw0, _gw1, ...; tests/conftest.py) and --dist loadgroup
+# keeps tests/e2e on one worker, so the browser session starts one app process
+# rather than one per worker. Four rather than `auto`: the UI-simulation
+# assertions run on retry budgets a busy machine can blow, and past four this
+# suite spends more time competing with itself than it saves -- twelve minutes
+# serial, three on four workers, measured 2026-09-06. Override for a serial
+# run, which is what a failure worth reading wants:
+#   make test WORKERS=0        (or ARGS="-n0", which wins over this)
+WORKERS ?= 4
+
 # Production deploy: pyinfra, through uvx so it is never a project dependency.
 # The pin is here and in .github/workflows/ci.yml, and a test keeps the two
 # equal -- an unpinned uvx would take a new major into production.
@@ -22,7 +33,7 @@ PYINFRA ?= uvx pyinfra==3.10.0
 # Which deploy/sites/<name>.toml to deploy: make deploy SITE=<name>
 SITE ?=
 
-.PHONY: help db down clean migrate seed dev serve test coverage lint format docs \
+.PHONY: help db down clean migrate seed dev serve test coverage lint types format docs \
         model fresh deploy-dry deploy
 
 help: ## list these targets
@@ -69,15 +80,22 @@ dev: db ## serve http://localhost:8080, restarting on source changes
 serve: db ## serve http://localhost:8080 without auto-reload
 	$(UV) run volunteerdb
 
-test: db ## run the test suite (scratch volunteerdb_test database)
-	$(UV) run pytest $(ARGS)
+test: db ## run the test suite on $(WORKERS) workers (scratch databases)
+	$(UV) run pytest -n $(WORKERS) --dist loadgroup $(ARGS)
 
 coverage: db ## the test suite with coverage, held to the floor in pyproject.toml
-	$(UV) run pytest --cov --cov-report=term-missing:skip-covered $(ARGS)
+	$(UV) run pytest -n $(WORKERS) --dist loadgroup \
+	  --cov --cov-report=term-missing:skip-covered $(ARGS)
 
 lint: ## check the source with ruff (no writes)
 	$(UV) run ruff check .
 	$(UV) run ruff format --check .
+
+# The same `ty` the editor's LSP runs, as a gate: the ceiling and the reasoning
+# are in the script. It is not folded into `lint` because that target is about
+# style and this one is about types -- and because CI reports them separately.
+types: ## type-check src/ with ty, held to the ceiling in scripts/typecheck.py
+	$(UV) run python scripts/typecheck.py
 
 format: ## reformat and sort imports in place (ruff)
 	$(UV) run ruff format .
