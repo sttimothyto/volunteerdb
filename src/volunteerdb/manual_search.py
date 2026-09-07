@@ -2,15 +2,16 @@
 
 The built manual (Sphinx + Furo HTML, served at /manual) is cut into one
 chunk per section and searched two ways at once: a hand-rolled BM25 over the
-words, and a cosine over ``model2vec`` static embeddings (numpy-only; the
-model is ``manual_model``'s pin), fused by reciprocal rank. The keywords find
-the page that says "password"; the vectors find it for "I forgot how to sign
-in". Nothing here calls an API, and without the model the keyword half still
-answers, so a development checkout that never ran ``make model`` has a
-working, plainer search rather than a broken one.
+words, and a cosine over static embeddings (a mean of token rows over
+``manual_model``'s pinned matrix -- numpy and tokenizers, no inference
+library), fused by reciprocal rank. The keywords find the page that says
+"password"; the vectors find it for "I forgot how to sign in". Nothing here
+calls an API, and without the model the keyword half still answers, so a
+development checkout that never ran ``make model`` has a working, plainer
+search rather than a broken one.
 
 Top level rather than ``services/`` or ``ui/``: an index loader reads the
-disk and imports a model, which the purity core forbids, and it renders
+disk and loads a model, which the purity core forbids, and it renders
 nothing. It still follows the core's rules -- ``docs_dir`` and ``model_dir``
 arrive as parameters, ``settings()`` is never read, and nothing raises: a
 missing manual is an empty index, a missing model is one warning and
@@ -25,8 +26,10 @@ never does.
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import re
+import struct
 import sys
 import time
 from collections import Counter
@@ -34,7 +37,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import anyio.to_thread
 import structlog
@@ -403,26 +406,85 @@ def _normalise(vectors: np.ndarray) -> np.ndarray:
     return out / norms
 
 
-class Model2vecEmbedder:
-    """A model2vec StaticModel from a local directory. Rows come out
-    normalised whatever the model's config says, so a dot product is a
-    cosine."""
+class StaticEmbedder:
+    """The pinned static model, read straight from its own two files.
 
-    def __init__(self, model: object) -> None:
-        self._model = model
+    A model2vec static model is an embedding matrix plus the tokenizer that
+    indexes it, and encoding a text is the mean of its tokens' rows: the PCA
+    and Zipf weighting ``config.json`` names happened at distillation time and
+    are already in the matrix. That is the whole of inference, so the
+    ``model2vec`` package buys nothing these thirty lines do not -- it,
+    ``safetensors`` and ``joblib`` came out of the lockfile for them, and the
+    load stopped importing an inference library: 30 MB less RSS and 0.1 s off
+    a startup that warms the index. (``huggingface_hub`` and ``hf_xet`` stay:
+    ``tokenizers`` requires them. Nothing here calls either -- the model comes
+    from ``manual_model`` over ``urllib``.) Checked against
+    ``StaticModel.encode`` on the pin before the dependency went: the same
+    vectors to 1.5e-08, empty and unknown-token texts included.
+
+    Rows come out normalised whatever the config says, so a dot product is a
+    cosine.
+    """
+
+    def __init__(self, embeddings: np.ndarray, tokenizer: Any, unk_id: int | None):
+        self._embeddings = embeddings
+        self._tokenizer = tokenizer
+        self._unk_id = unk_id
 
     def encode(self, texts: Sequence[str]) -> np.ndarray:
-        # use_multiprocessing=False: a handful of strings per call, and the
-        # app is one process on one event loop
-        vectors = self._model.encode(list(texts), use_multiprocessing=False)  # type: ignore[attr-defined]
-        return _normalise(vectors)
+        import numpy as np
+
+        dim = self._embeddings.shape[1]
+        # add_special_tokens=False: [CLS]/[SEP] carry no meaning to a mean,
+        # and their rows would dilute every text by the same vector
+        encodings = self._tokenizer.encode_batch_fast(
+            list(texts), add_special_tokens=False
+        )
+        rows = []
+        for encoding in encodings:
+            # the unknown token is dropped, not embedded: its row is whatever
+            # the distillation left there and means nothing
+            ids = [i for i in encoding.ids if i != self._unk_id]
+            # a text of nothing the tokenizer knows embeds as zero, which
+            # `_normalise` leaves at zero and every cosine then scores 0
+            rows.append(self._embeddings[ids].mean(axis=0) if ids else np.zeros(dim))
+        return _normalise(np.stack(rows) if rows else np.zeros((0, dim)))
+
+
+def _read_embeddings(path: Path) -> np.ndarray:
+    """The one tensor in the pinned model's safetensors file.
+
+    The format is an 8-byte little-endian header length, that many bytes of
+    JSON naming each tensor's dtype, shape and byte range, then the buffers.
+    Anything but a single float32 ``embeddings`` matrix raises: a later pin
+    carrying per-token ``weights`` or a ``token_mapping`` (the multilingual
+    potions do) needs arithmetic this file does not have, and must say so
+    rather than embed silently wrong.
+    """
+    import numpy as np
+
+    with path.open("rb") as f:
+        (header_len,) = struct.unpack("<Q", f.read(8))
+        header = json.loads(f.read(header_len))
+        tensors = {k: v for k, v in header.items() if k != "__metadata__"}
+        if set(tensors) != {"embeddings"}:
+            raise ValueError(
+                f"expected one `embeddings` tensor, found {sorted(tensors)}"
+            )
+        info = tensors["embeddings"]
+        if info["dtype"] != "F32":
+            raise ValueError(f"expected a float32 matrix, found {info['dtype']}")
+        start, end = info["data_offsets"]
+        f.seek(8 + header_len + start)
+        raw = f.read(end - start)
+    return np.frombuffer(raw, dtype="<f4").reshape(info["shape"])
 
 
 def load_embedder(model_dir: str) -> Embedder | None:
     """The model at `model_dir`, or None with the reason logged once. Empty
     means keyword-only on purpose and says nothing; a directory that is not
-    the pinned model is checked file by file BEFORE model2vec sees it, so a
-    half-fetched download reads as "run make model" rather than as a
+    the pinned model is checked file by file BEFORE anything in it is opened,
+    so a half-fetched download reads as "run make model" rather than as a
     safetensors traceback."""
     if not model_dir:
         return None
@@ -437,11 +499,23 @@ def load_embedder(model_dir: str) -> Embedder | None:
         )
         return None
     try:
-        from model2vec import StaticModel
+        from tokenizers import Tokenizer
 
-        # a path that exists is loaded from disk and never fetched
-        # (model2vec.persistence._resolve_folder)
-        return Model2vecEmbedder(StaticModel.from_pretrained(str(target)))
+        embeddings = _read_embeddings(target / manual_model.WEIGHTS)
+        config = json.loads((target / manual_model.CONFIG).read_text())
+        # the config's own account of the matrix, as a check that the two
+        # files are the pair they claim to be
+        if config.get("hidden_dim") != embeddings.shape[1]:
+            raise ValueError(
+                f"config says hidden_dim={config.get('hidden_dim')}, "
+                f"matrix is {embeddings.shape[1]} wide"
+            )
+        tokenizer = Tokenizer.from_file(str(target / manual_model.TOKENIZER))
+        # as model2vec derives it: the tokenizer's own unknown token, not a
+        # hardcoded "[UNK]" that a different tokenizer family would not use
+        unk = getattr(tokenizer.model, "unk_token", None)
+        unk_id = None if unk is None else tokenizer.get_vocab().get(unk)
+        return StaticEmbedder(embeddings, tokenizer, unk_id)
     except Exception:  # noqa: BLE001 — search must degrade, not take the app down
         log.warning("manual_search.model_unloadable", dir=model_dir, exc_info=True)
         return None

@@ -4,13 +4,13 @@
 model2vec static model: numpy-only inference, MIT licensed). The model is not
 a dependency the lockfile can pin, so this module is the pin: one revision and
 the sha256 of each file it needs, and ``fetch`` downloads exactly those, once,
-into a directory model2vec loads without ever touching the network.
+into a directory the embedder reads without ever touching the network.
 
 Standard library only, on purpose. The Containerfile's model stage copies in
 this one file and runs it -- the build context excludes ``scripts/`` and the
 package is not installed there -- and ``manual_search.load_embedder`` imports
-it to check a directory before model2vec gets to see it. ``make model`` runs
-the same code into ``.models/`` for development.
+it to check a directory before opening anything in it. ``make model`` runs the
+same code into ``.models/`` for development.
 """
 
 import hashlib
@@ -21,19 +21,25 @@ from pathlib import Path
 
 REPO = "minishlab/potion-base-8M"
 REVISION = "bf8b056651a2c21b8d2565580b8569da283cab23"
-# name -> (sha256, size in bytes), as served at REVISION. Everything
-# model2vec's layout needs and nothing else: the ONNX export, the vocabulary
-# and the sentence-transformers wrappers in the repository are not loaded.
+# The three files an embedder needs, named here because `manual_search` opens
+# two of them by name: the matrix, the tokenizer that indexes it, and the
+# config that says how wide the matrix should be.
+CONFIG = "config.json"
+TOKENIZER = "tokenizer.json"
+WEIGHTS = "model.safetensors"
+# name -> (sha256, size in bytes), as served at REVISION. What a static
+# embedding needs and nothing else: the ONNX export, the vocabulary and the
+# sentence-transformers wrappers in the repository are not loaded.
 FILES: dict[str, tuple[str, int]] = {
-    "config.json": (
+    CONFIG: (
         "2a6ac0e9aaa356a68a5688070db78fc3a464fefe85d2f06a1905ce3718687553",
         202,
     ),
-    "tokenizer.json": (
+    TOKENIZER: (
         "e67e803f624fb4d67dea1c730d06e1067e1b14d830e2c2202569e3ef0f70bb50",
         683666,
     ),
-    "model.safetensors": (
+    WEIGHTS: (
         "f65d0f325faadc1e121c319e2faa41170d3fa07d8c89abd48ca5358d9a223de2",
         30236760,
     ),

@@ -53,8 +53,9 @@ RUN useradd --system --uid 10001 --create-home app
 COPY --from=builder --chown=app:app /app /app
 COPY --from=docs --chown=app:app /build/docs/_build/html /app/docs-html
 COPY --from=model --chown=app:app /models /app/models
-# HF_HUB_OFFLINE: the model is loaded from that directory and never fetched;
-# this makes huggingface_hub refuse to try, whatever a future upgrade does.
+# HF_HUB_OFFLINE: manual_search reads the model out of that directory itself
+# and calls nothing in huggingface_hub, which is here only because tokenizers
+# requires it. Belt and braces, so it stays that way under a future upgrade.
 ENV VDB_DOCS_DIR=/app/docs-html \
     VDB_MANUAL_MODEL_DIR=/app/models/potion-base-8M \
     HF_HUB_OFFLINE=1

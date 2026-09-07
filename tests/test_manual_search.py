@@ -2,6 +2,8 @@
 keyword side, the fusion, and -- when `make model` has run -- the real model
 loading offline and telling a spreadsheet from dark mode."""
 
+import json
+import struct
 from pathlib import Path
 
 import pytest
@@ -324,6 +326,79 @@ def test_the_cli_counts_and_refuses_a_thin_manual(tmp_path, capsys):
     assert ms.main(["prog"]) == 2
 
 
+# --- the shape the loader assumes ----------------------------------------------
+
+
+def _safetensors(tensors: dict[str, dict]) -> bytes:
+    """A safetensors file with `tensors` as its header and enough zero bytes
+    behind it to satisfy the offsets."""
+    header = json.dumps(tensors).encode()
+    end = max((t["data_offsets"][1] for t in tensors.values()), default=0)
+    return struct.pack("<Q", len(header)) + header + bytes(end)
+
+
+def test_the_loader_refuses_a_model_that_needs_more_than_a_mean(tmp_path):
+    """`StaticEmbedder` is a mean over token rows. A pin carrying per-token
+    `weights` or a `token_mapping` -- the multilingual potions do -- needs
+    arithmetic it does not have, and must fail loudly rather than quietly
+    ignore the extra tensor and embed wrong."""
+    path = tmp_path / "model.safetensors"
+    path.write_bytes(
+        _safetensors(
+            {
+                "embeddings": {
+                    "dtype": "F32",
+                    "shape": [2, 4],
+                    "data_offsets": [0, 32],
+                },
+                "weights": {"dtype": "F32", "shape": [2], "data_offsets": [32, 40]},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="one `embeddings` tensor"):
+        ms._read_embeddings(path)
+
+
+def test_the_loader_refuses_a_matrix_that_is_not_float32(tmp_path):
+    path = tmp_path / "model.safetensors"
+    path.write_bytes(
+        _safetensors(
+            {"embeddings": {"dtype": "F16", "shape": [2, 4], "data_offsets": [0, 16]}}
+        )
+    )
+    with pytest.raises(ValueError, match="float32"):
+        ms._read_embeddings(path)
+
+
+def test_a_model_dir_that_passes_the_hashes_but_will_not_load_degrades(
+    tmp_path, monkeypatch, log_records
+):
+    """Past the hash check, whatever is wrong with the files, the app keeps
+    answering on keywords and says so once rather than failing to start."""
+    monkeypatch.setattr(manual_model, "missing", lambda target: ())
+    (tmp_path / manual_model.WEIGHTS).write_bytes(b"not a safetensors file")
+    assert ms.load_embedder(str(tmp_path)) is None
+    (entry,) = log_records
+    assert entry["event"] == "manual_search.model_unloadable"
+
+
+def test_a_config_that_disagrees_with_the_matrix_does_not_load(
+    tmp_path, monkeypatch, log_records
+):
+    """The two files must be the pair they claim to be: a tokenizer indexing
+    one matrix and a matrix of another width would embed silently wrong."""
+    monkeypatch.setattr(manual_model, "missing", lambda target: ())
+    (tmp_path / manual_model.WEIGHTS).write_bytes(
+        _safetensors(
+            {"embeddings": {"dtype": "F32", "shape": [2, 4], "data_offsets": [0, 32]}}
+        )
+    )
+    (tmp_path / manual_model.CONFIG).write_text(json.dumps({"hidden_dim": 256}))
+    assert ms.load_embedder(str(tmp_path)) is None
+    (entry,) = log_records
+    assert entry["event"] == "manual_search.model_unloadable"
+
+
 # --- the real model, when it is there ------------------------------------------
 
 
@@ -333,8 +408,7 @@ def test_the_cli_counts_and_refuses_a_thin_manual(tmp_path, capsys):
     bool(manual_model.missing(MODEL_DIR)),
     reason="no complete .models/potion-base-8M: run `make model`",
 )
-def test_the_real_model_loads_offline_and_tells_sheets_from_dark_mode(monkeypatch):
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+def test_the_real_model_loads_offline_and_tells_sheets_from_dark_mode():
     embedder = ms.load_embedder(str(MODEL_DIR))
     assert embedder is not None
     vectors = embedder.encode(["roster spreadsheet", "sync the sheet", "dark mode"])
