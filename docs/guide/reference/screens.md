@@ -14,6 +14,8 @@ Dates and times read as words, in the parish's time zone: *Thu, Sep 10, 7:30 PM*
 
 A field marked with * is required. Left blank, it says *Required* under it, and nothing is saved until it is filled. A date or time field says *Use YYYY-MM-DD* or *Use HH:MM* under a value that is not in that shape. A button that is working shows a spinner and takes no second click until the work is done. After a save, a green message at the foot of the page says what happened, for example *Details saved*. A refusal is a red or amber message with an icon and a close button; it stays for 8 seconds.
 
+On a narrow screen, fields that sit side by side stack one under the other.
+
 A dialog with fields in it stays open until you click *Cancel* or its own button. A click outside it, or the Escape key, changes nothing. A question, for example *Delete the team …?*, closes on a click outside it, and nothing happens.
 
 ## The header

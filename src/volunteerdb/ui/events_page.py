@@ -452,14 +452,19 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
         )
         title = required(ui.input("Title")).props("outlined dense").classes("w-full")
         tomorrow = current_env().today() + timedelta(days=1)
-        with ui.row().classes("w-full gap-2"):
-            day = required(
-                date_input("Date (YYYY-MM-DD)", value=str(tomorrow))
-            ).classes("grow")
+        # the date on its own line, the two times side by side under it: three
+        # fields with these labels never fit one line of a WIDE card, and the
+        # row used to wrap with Ends alone on a second line
+        day = required(date_input("Date (YYYY-MM-DD)", value=str(tomorrow))).classes(
+            "w-full"
+        )
+        # flex-1, not grow: a field's natural width is wide enough that two
+        # of them wrap; a zero basis makes them share the line
+        with ui.row().classes("w-full gap-2 vdb-fields"):
             start = required(time_input("Starts (HH:MM)", value="10:00")).classes(
-                "w-36"
+                "flex-1"
             )
-            end = required(time_input("Ends (HH:MM)", value="12:00")).classes("w-36")
+            end = required(time_input("Ends (HH:MM)", value="12:00")).classes("flex-1")
         location = (
             ui.input("Location (optional)").props("outlined dense").classes("w-full")
         )
@@ -475,7 +480,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
         slots_col = ui.column().classes("w-full gap-1")
 
         def add_slot_row(name: str = "", capacity: int | None = None) -> None:
-            with slots_col, ui.row().classes("w-full gap-2 items-center"):
+            with slots_col, ui.row().classes("w-full gap-2 items-center vdb-fields"):
                 n = ui.input("Slot", value=name).props("outlined dense").classes("grow")
                 c = (
                     ui.number("Capacity", value=capacity, min=1, precision=0)
@@ -1010,16 +1015,16 @@ def _edit_event_dialog(event: Event) -> None:
             .props("outlined dense")
             .classes("w-full")
         )
-        with ui.row().classes("w-full gap-2"):
-            day = required(
-                date_input("Date (YYYY-MM-DD)", value=iso_date(local_start.date()))
-            ).classes("grow")
+        day = required(
+            date_input("Date (YYYY-MM-DD)", value=iso_date(local_start.date()))
+        ).classes("w-full")
+        with ui.row().classes("w-full gap-2 vdb-fields"):
             start = required(
                 time_input("Starts (HH:MM)", value=iso_time(local_start))
-            ).classes("w-36")
+            ).classes("flex-1")
             end = required(
                 time_input("Ends (HH:MM)", value=iso_time(local_end))
-            ).classes("w-36")
+            ).classes("flex-1")
         location = (
             ui.input("Location", value=event.location or "")
             .props("outlined dense")
@@ -1584,7 +1589,7 @@ def _collaboration_card(
 def _availability_card(event_id: int, my_rsvp: EventRsvp | None) -> None:
     """ "Can you serve?" — an answer, not a commitment; the assignment is that."""
     with ui.card().classes("w-full gap-2 p-3"):
-        with ui.row().classes("w-full items-center gap-2"):
+        with ui.row().classes("w-full items-center gap-2 vdb-fields"):
             heading("Can you serve at this event?", level=3)
             if my_rsvp is not None:
                 ui.badge(

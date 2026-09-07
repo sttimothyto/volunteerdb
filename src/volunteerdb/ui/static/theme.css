@@ -977,6 +977,24 @@ body.body--dark .q-badge.bg-muted {
   }
 }
 
+/* ---------- a row of fields stacks on the phone ----------
+   A dialog's date / start / end row, the slot rows, the availability
+   card's note and buttons: side by side on a desktop, one under the other
+   at a phone's width, each the full width of its card. Two classes deep,
+   so the rule outranks Tailwind's items-center and w-36 on the same
+   elements. */
+@media (max-width: 40rem) {
+  .q-card .vdb-fields {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .q-card .vdb-fields > .q-field,
+  .q-card .vdb-fields > .q-btn {
+    width: 100%;
+  }
+}
+
 /* ---------- touch targets ----------
    WCAG 2.5.8 asks 24px at AA; 44px is the AAA and the iOS figure, and the
    readers are not all young. A pointer that is a finger gets it on the

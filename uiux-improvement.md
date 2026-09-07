@@ -353,7 +353,7 @@ screens that changed, and ends with the full suite green in its own commit.
 - [x] **28. Targets are 44 px on touch.** `@media (pointer: coarse)` gives dense icon
   buttons and the role badge/button the padding to reach 44 px (WCAG 2.5.8 at AA is
   24 px; 44 px is the AAA and iOS figure, and the readers are not all young).
-- [ ] **29. Dialog field rows stack below 40 rem.** The date/start/end row
+- [x] **29. Dialog field rows stack below 40 rem.** The date/start/end row
   (`events_page.py:414-417,918-925`) and the availability note + buttons row
   (`:1409-1426`) wrap to full-width fields on the phone.
 - [ ] **30. Forgot password, on the login card.** A "Forgot your password?" link that

@@ -169,3 +169,33 @@ async def test_a_finger_gets_44px_targets(seeded, browser, base_url):
         assert box and box["height"] >= 44, box
     finally:
         await context.close()
+
+
+async def test_a_dialogs_field_row_stacks_on_a_phone(seeded, page):
+    """theme.css `.vdb-fields` below 40rem: the new-event dialog's Date,
+    Starts and Ends sit side by side on a desktop and one under the other,
+    each the width of the card, on a phone."""
+    await sign_in(page, "admin@example.org", "secret-pass-phrase")
+    await ready(page)
+    await page.goto("/events")
+    await ready(page)
+    # two buttons say New event on an empty parish: the header's and the
+    # empty state's; either opens the same dialog
+    await page.get_by_role("button", name="New event", exact=True).first.click()
+    # the two time fields (the date has a line of its own). Tailwind's
+    # runtime writes the width classes a moment after the dialog appears,
+    # so wait for the card to reach forms.WIDE before measuring anything
+    starts = page.locator(".q-dialog .q-field", has_text="Starts (HH:MM)")
+    ends = page.locator(".q-dialog .q-field", has_text="Ends (HH:MM)")
+    await expect(starts).to_be_visible()
+    await page.wait_for_function(
+        "document.querySelector('.q-dialog .q-card')?.getBoundingClientRect().width > 500"
+    )
+    a, b = await starts.bounding_box(), await ends.bounding_box()
+    assert a and b and abs(a["y"] - b["y"]) < 4, "side by side on a desktop"
+
+    await page.set_viewport_size({"width": 390, "height": 844})
+    a, b = await starts.bounding_box(), await ends.bounding_box()
+    assert a and b and b["y"] > a["y"] + a["height"] - 1, "one under the other"
+    card = await page.locator(".q-dialog .q-card").first.bounding_box()
+    assert card and a["width"] > card["width"] * 0.8, "the full width of the card"
