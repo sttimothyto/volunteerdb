@@ -621,6 +621,28 @@ _ROSTER_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
 }
 
 
+_ACCOUNT_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
+    "email": (FieldType.text, _text_of("email")),
+    "name": (FieldType.text, _text_of("linked")),
+    "status": (FieldType.text, _text_of("status")),
+    "admin": (FieldType.checkbox, lambda row: bool(row.get("is_admin"))),
+    "active": (FieldType.checkbox, lambda row: bool(row.get("is_active"))),
+    "last_login": (
+        FieldType.date,
+        lambda row: (
+            date.fromisoformat(row["last_login_iso"][:10])
+            if row.get("last_login_iso")
+            else None
+        ),
+    ),
+}
+
+
+def compile_accounts(ast: exp.Expression) -> Result[Callable[[dict], bool], QueryError]:
+    """`status = 'invite expired' AND admin = false` over the accounts rows."""
+    return _compile(ast, False, _PyBackend(_ACCOUNT_FIELDS))
+
+
 def compile_roster(ast: exp.Expression) -> Result[Callable[[dict], bool], QueryError]:
     """`role = 'Member' AND since < '2024-01-01'` over a roster's rows."""
     return _compile(ast, False, _PyBackend(_ROSTER_FIELDS))

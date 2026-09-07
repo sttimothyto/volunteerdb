@@ -285,7 +285,7 @@ screens that changed, and ends with the full suite green in its own commit.
   Below 40 rem, Email and Phone columns hide (column `classes`/`headerClasses` +
   `theme.css`) — they are in the panel a tap away. "Copy email list", "Email all"
   and the export stay in the action row.
-- [ ] **17. Accounts is a table.** Search over address and name, sort, 25 per page,
+- [x] **17. Accounts is a table.** Search over address and name, sort, 25 per page,
   the badge column, and a row-end "⋯" menu with the four actions named in words
   ("Change linked volunteer", "Make admin", "Disable", "New invite link (resets the
   password)") instead of four icons; "invite pending" opens the dialog it does now.

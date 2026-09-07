@@ -23,21 +23,21 @@ The site emails the volunteer an invitation. The dialog *Invite link for …* al
 ### Make someone an administrator
 
 1. Find the account in the list.
-2. Click the key icon *Make admin* on its row.
+2. Click *⋯* at the end of its row, then *Make admin*.
 
-To take the right away, click the key icon *Revoke admin* on the same row.
+To take the right away, click *⋯* on the same row, then *Revoke admin*.
 
 ### Switch an account off or on
 
 1. Find the account in the list.
-2. Click the icon *Disable* on its row.
+2. Click *⋯* at the end of its row, then *Disable*.
 
-The row shows the badge *disabled*, and the person can no longer sign in. Their volunteer record and their teams stay as they are. Click *Enable* on the row to switch the account on again.
+The row shows the badge *disabled*, and the person can no longer sign in. Their volunteer record and their teams stay as they are. Click *⋯*, then *Enable*, to switch the account on again.
 
 ### Link an account to a volunteer
 
 1. Find the account in the list. The small grey line under the address names the linked volunteer, or says *not linked to a volunteer*.
-2. Click the link icon *Change linked volunteer*.
+2. Click *⋯* at the end of its row, then *Change linked volunteer*.
 3. Pick the volunteer in the list, or pick *— not linked —*.
 4. Click *Save*.
 
@@ -50,7 +50,8 @@ Every active volunteer with an email address and no account gets an account and 
 
 ## What you see
 
-- Each row shows the email address, the linked volunteer and a badge for the sign-in state. Once the person has signed in, the row also shows *last login* with the date.
+- Each row shows the email address, the linked volunteer and a badge for the sign-in state. Once the person has signed in, the row also shows the day under *Last login*.
+- *Search accounts…* narrows the table as you type. A click on a column heading sorts it.
 - The badge *invite pending* means the invitation link is out and still works. *invite expired* means it ran out.
 - The badge *email-code sign-in* means the person has no password and signs in with an emailed code.
 - The icon at the left of a row is a shield for an administrator, and a grey person for everyone else.

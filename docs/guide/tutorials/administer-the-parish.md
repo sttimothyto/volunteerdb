@@ -13,9 +13,9 @@ In this tutorial you visit the pages *Accounts*, *Fields* and *Workload* as an a
 1. Click *Accounts* in the header.
 2. Find the two buttons at the top: *Create accounts for all volunteers with email* and *New account*.
 3. Read one row. It shows an email address and, under it, the name of the linked volunteer.
-4. Move the mouse over the 4 icons at the right end of the row.
+4. Click the *⋯* button at the right end of the row. A menu of 4 actions opens. Click outside it to close it.
 
-You see a page with one row per account. A row can carry a badge: *disabled*, *invite pending*, *invite expired* or *email-code sign-in*. The tooltips on the 4 icons are *Change linked volunteer*, *Make admin* or *Revoke admin*, *Disable* or *Enable*, and *New invite link (resets password)*. Do not click the last one now: it cancels the password of that person.
+You see a page with one row per account. A row can carry a badge: *disabled*, *invite pending*, *invite expired* or *email-code sign-in*. The 4 actions are *Change linked volunteer*, *Make admin* or *Revoke admin*, *Disable* or *Enable*, and *New invite link (resets the password)*. Do not click the last one now: it cancels the password of that person.
 
 ## 2. Create an account
 
@@ -31,7 +31,7 @@ You see a page with one row per account. A row can carry a badge: *disabled*, *i
 You see the new row with the badge *invite pending*. The same link was emailed to the volunteer. It works once, and for 7 days. If the email did not arrive, the dialog was the one moment to copy the link and hand it over by other means.
 
 - A row with *email-code sign-in* is an account with no password. The person signs in with an emailed code.
-- To close an account, click the *Disable* icon on its row. The volunteer record and the memberships stay.
+- To close an account, click *⋯* on its row, then *Disable*. The volunteer record and the memberships stay.
 
 ## 3. Add a custom field
 

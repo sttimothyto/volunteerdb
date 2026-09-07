@@ -126,15 +126,17 @@ async def test_admin_users_provision_button(database, monkeypatch):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin_id}")
         await user.open("/admin/users")
-        await user.should_see("1 accounts")
+        await user.should_see("1 account")
 
         user.find(
             "Create accounts for all volunteers with email", kind=ui.button
         ).click()
         await user.should_see("send each of them an invite email?", retries=SLOW)
         user.find("Create and email invites", kind=ui.button).click()
-        await user.should_see("vera@example.org", retries=SLOW)
         await user.should_see("2 accounts", retries=SLOW)
+        assert "vera@example.org" in {
+            r["email"] for r in only(user.find(marker="accounts")).rows
+        }
 
 
 async def test_admin_users_relink_dialog(database):
@@ -168,9 +170,12 @@ async def test_admin_users_relink_dialog(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin_id}")
         await user.open("/admin/users")
-        await user.should_see("not linked to a volunteer")
+        row = next(
+            r for r in only(user.find(marker="accounts")).rows if r["id"] == orphan_id
+        )
+        assert row["linked"] == "not linked to a volunteer"
 
-        user.find(marker=f"relink-{orphan_id}").click()
+        user.find(marker="accounts").trigger("relink", row)
         await user.should_see("Linked volunteer for orphan@example.org", retries=SLOW)
         only(user.find(marker=f"relink-pick-{orphan_id}")).set_value(vera_id)
         user.find("Save", kind=ui.button).click()
@@ -216,5 +221,8 @@ async def test_admin_users_shows_invite_state(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin_id}")
         await user.open("/admin/users")
-        await user.should_see("invite pending")
-        await user.should_see("invite expired")
+        status = {
+            r["email"]: r["status"] for r in only(user.find(marker="accounts")).rows
+        }
+        assert status["pending@example.org"] == "invite pending"
+        assert status["stale@example.org"] == "invite expired"

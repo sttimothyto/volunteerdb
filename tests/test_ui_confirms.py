@@ -258,14 +258,19 @@ async def test_a_new_invite_link_is_asked_because_it_resets_the_password(
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['admin_u']}")
         await user.open("/admin/users")
-        user.find(marker=f"reinvite-{ids['mia_u']}").click()
+        mia = next(
+            r
+            for r in only(user.find(marker="accounts")).rows
+            if r["id"] == ids["mia_u"]
+        )
+        user.find(marker="accounts").trigger("reinvite", mia)
         await user.should_see("Send mia@example.org a new invite link?", retries=SLOW)
         await user.should_see("Their password is removed")
         user.find(marker=NO).click()
         await user.should_see("3 accounts")
         assert sim_sent == [], "Cancel mailed nobody"
 
-        user.find(marker=f"reinvite-{ids['mia_u']}").click()
+        user.find(marker="accounts").trigger("reinvite", mia)
         await user.should_see("Send mia@example.org a new invite link?", retries=SLOW)
         assert only(user.find(marker=YES)).text == "Send a new invite link"
         user.find(marker=YES).click()

@@ -367,18 +367,20 @@ Shown to *admin* only. Anyone else sees *Admins only.* and the button *Dashboard
 | *Create accounts for all volunteers with email* | Asks, then *Create and email invites* makes an account for every active volunteer with an email address and no account, and emails each an invitation. |
 | *New account* | Opens the dialog *New account*: *Email (login)*, *Linked volunteer* (*— match by email —* or a name), the switch *Parish admin (full access)*, *Create*. |
 | *Invite link for …* | The dialog after a new account or a new link: the link, how long it works, whether the email went out, *Copy*, *Close*. |
+| *Search accounts…* | Narrows the table as you type, on the address, the linked name and the status. | 
 | The badge *invite pending* | A click opens *An invite is already out to …* with the date it runs out. The link itself is not kept. |
-| The link icon *Change linked volunteer* | Opens *Linked volunteer for …*: a list with *— not linked —* and every volunteer, *Save*. |
-| The key icon *Make admin* / *Revoke admin* | Gives or takes the administrator right. |
-| The icon *Disable* / *Enable* | Switches the account off or on. A switched-off account cannot sign in. |
-| The mail icon *New invite link (resets password)* | Asks *Send … a new invite link?*, then makes a fresh invitation link, emails it, and removes the password. |
+| The *⋯* menu at the end of a row | Opens the 4 actions of that account, below. |
+| *Change linked volunteer* | Opens *Linked volunteer for …*: a list with *— not linked —* and every volunteer, *Save*. |
+| *Make admin* / *Revoke admin* | Gives or takes the administrator right. |
+| *Disable* / *Enable* | Switches the account off or on. A switched-off account cannot sign in. |
+| *New invite link (resets the password)* | Asks *Send … a new invite link?*, then makes a fresh invitation link, emails it, and removes the password. |
 
-Each row shows:
+The table has the columns *Account*, *Status* and *Last login*. A click on a column heading sorts. 25 rows per page; *All* shows every row. Each row shows:
 
 - A shield icon for an administrator, a grey person for everyone else.
 - The email address, and under it the linked volunteer's name or *not linked to a volunteer*.
 - 1 badge: *disabled*, *invite pending*, *invite expired*, or *email-code sign-in* for an account with no password. An account with a password and no open invitation has no badge.
-- *last login* with the date, once the person has signed in.
+- *Last login* with the date, once the person has signed in.
 
 ## Fields
 

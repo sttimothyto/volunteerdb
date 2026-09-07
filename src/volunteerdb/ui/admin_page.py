@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from nicegui import ui
 
-from .. import timefmt
+from .. import query_lang, timefmt
 from ..domain import InviteIssued, Outcome
 from ..effects import SendMail, delivered
 from ..fp import Err, Ok, expect
@@ -18,11 +18,11 @@ from ..models import AppUser
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from . import invites
-from .a11y import icon_button
 from .context import PageCtx, flash, info, page_ctx, run_command
 from .forms import actions, confirm, dialog_card, required, valid
 from .guards import deny_unless_admin
 from .layout import frame
+from .tables import count_text, wire_search
 from .widgets import busy, empty_state
 
 # --- actions -------------------------------------------------------------------
@@ -233,86 +233,245 @@ async def _reinvite(user_id: int, email: str, base_url: str) -> None:
 
 # --- the page ------------------------------------------------------------------
 
+# The email cell carries the shield or person icon and the linked volunteer
+# under the address; the status cell is the badge, clickable for a pending
+# invite; the last cell is a "⋯" menu whose four actions are named in words
+# instead of four icons whose meaning was in a tooltip. Each emits an event
+# with its row (NiceGUI's table idiom); the handlers above take ids.
+_EMAIL_CELL = """
+<q-td key="email" :props="props">
+    <div class="flex no-wrap items-center gap-2">
+        <q-icon :name="props.row.is_admin ? 'admin_panel_settings' : 'person'"
+                :class="props.row.is_admin ? 'text-primary' : 'text-gray-400'" size="sm" />
+        <div>
+            <div class="font-medium">{{ props.row.email }}</div>
+            <div class="text-xs text-gray-500">{{ props.row.linked }}</div>
+        </div>
+    </div>
+</q-td>
+"""
+_STATUS_CELL = """
+<q-td key="status" :props="props">
+    <q-badge v-if="props.row.status" :color="props.row.status_color"
+             :class="props.row.status === 'invite pending' ? 'cursor-pointer' : ''"
+             @click.stop="props.row.status === 'invite pending' && $parent.$emit('pending', props.row)">
+        {{ props.row.status }}
+        <q-tooltip>{{ props.row.status_tooltip }}</q-tooltip>
+    </q-badge>
+</q-td>
+"""
+_ACTIONS_CELL = """
+<q-td key="actions" :props="props">
+    <q-btn-dropdown flat dense round no-icon-animation dropdown-icon="more_horiz"
+                    :aria-label="'Actions for ' + props.row.email">
+        <q-list dense>
+            <q-item clickable v-close-popup @click.stop="$parent.$emit('relink', props.row)">
+                <q-item-section avatar><q-icon name="link" /></q-item-section>
+                <q-item-section>Change linked volunteer</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click.stop="$parent.$emit('admin', props.row)">
+                <q-item-section avatar><q-icon :name="props.row.is_admin ? 'key_off' : 'key'" /></q-item-section>
+                <q-item-section>{{ props.row.is_admin ? 'Revoke admin' : 'Make admin' }}</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click.stop="$parent.$emit('active', props.row)">
+                <q-item-section avatar><q-icon :name="props.row.is_active ? 'block' : 'check_circle'" /></q-item-section>
+                <q-item-section>{{ props.row.is_active ? 'Disable' : 'Enable' }}</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click.stop="$parent.$emit('reinvite', props.row)">
+                <q-item-section avatar><q-icon name="mail" /></q-item-section>
+                <q-item-section>New invite link (resets the password)</q-item-section>
+            </q-item>
+        </q-list>
+    </q-btn-dropdown>
+</q-td>
+"""
 
-def _account_row(
-    account: AppUser,
+ACCOUNT_COLUMNS = [
+    {
+        "name": "email",
+        "label": "Account",
+        "field": "email",
+        "align": "left",
+        "sortable": True,
+    },
+    {
+        "name": "status",
+        "label": "Status",
+        "field": "status",
+        "align": "left",
+        "sortable": True,
+    },
+    {
+        "name": "last_login",
+        "label": "Last login",
+        "field": "last_login_iso",  # ISO sorts; the cell shows the words
+        "align": "left",
+        "sortable": True,
+    },
+    {"name": "actions", "label": "", "field": "id", "align": "right"},
+]
+
+
+def _account_rows(
+    accounts: list[AppUser],
     volunteer_names: dict[int, str],
-    base_url: str,
     *,
     now: datetime,
     tz: ZoneInfo,
-) -> None:
-    """One account: who it is and who it is linked to, its sign-in state,
-    and the four controls -- relink, admin, disable, reinvite."""
-    with ui.row().classes("w-full items-center gap-3 p-2 rounded hover:bg-gray-100"):
-        ui.icon("admin_panel_settings" if account.is_admin else "person").classes(
-            "text-xl " + ("text-primary" if account.is_admin else "text-gray-400")
-        )
-        with ui.column().classes("gap-0"):
-            ui.label(account.email).classes("font-medium")
-            linked = (
-                volunteer_names.get(account.volunteer_id, "?")
-                if account.volunteer_id
-                else "not linked to a volunteer"
-            )
-            ui.label(linked).classes("text-xs text-gray-500")
-        ui.space()
+) -> list[dict]:
+    """One row per account: who it is and who it is linked to, its sign-in
+    state, and the day it last signed in. The precedence of the states
+    matches the roster's (account_status.account_state)."""
+    rows = []
+    for account in accounts:
         if not account.is_active:
-            ui.badge("disabled", color="muted")
+            status, color, tip = (
+                "disabled",
+                "muted",
+                "Switched off: this account cannot sign in.",
+            )
         elif user_service.invite_live(account, now=now):
             # No link on offer: only its digest is stored
             # (services.users._issue_invite), so handing one over again
-            # means minting a fresh one — which is what Reinvite does.
+            # means minting a fresh one -- which is what the re-invite does.
             until = account.invite_expires_at
-            ui.badge("invite pending", color="warning").classes("cursor-pointer").on(
-                "click",
-                lambda: invites.show_outstanding_invite(account.email, until, tz=tz),
-            ).tooltip(
+            status, color, tip = (
+                "invite pending",
+                "warning",
                 f"Invite link, usable until {timefmt.when_short(until, tz)}"
                 if until
-                else "Invite link outstanding"
+                else "Invite link outstanding",
             )
         elif account.invite_token:
-            ui.badge("invite expired", color="muted").tooltip(
-                "The link has run out. They can still sign in with an "
-                "emailed code; re-invite to hand out a fresh link."
+            status, color, tip = (
+                "invite expired",
+                "muted",
+                "The link has run out. They can still sign in with an emailed "
+                "code; re-invite to hand out a fresh link.",
             )
         elif account.password_hash is None:
-            ui.badge("email-code sign-in", color="info").tooltip(
-                "No password set — signs in with a one-time code emailed each time"
+            status, color, tip = (
+                "email-code sign-in",
+                "info",
+                "No password set — signs in with a one-time code emailed each time",
             )
-        if account.last_login_at:
-            ui.label(f"last login {timefmt.day(account.last_login_at, tz)}").classes(
-                "text-xs text-gray-400"
-            )
-        icon_button(
-            "link",
-            "Change linked volunteer",
-            on_click=lambda: _relink_dialog(
-                account.id, account.email, account.volunteer_id, volunteer_names
-            ),
-        ).props("dense flat").mark(f"relink-{account.id}")
-        icon_button(
-            "key_off" if account.is_admin else "key",
-            "Revoke admin" if account.is_admin else "Make admin",
-            on_click=lambda: _toggle_admin(account.id, account.is_admin),
-        ).props("dense flat")
-        icon_button(
-            "block" if account.is_active else "check_circle",
-            "Disable" if account.is_active else "Enable",
-            on_click=lambda: _toggle_active(account.id, account.is_active),
-        ).props("dense flat")
-        icon_button(
-            "mail",
-            "New invite link (resets password)",
-            on_click=lambda: _reinvite(account.id, account.email, base_url),
-        ).props("dense flat").mark(f"reinvite-{account.id}")
+        else:
+            status, color, tip = "", "", ""
+        rows.append(
+            {
+                "id": account.id,
+                "email": account.email,
+                "linked": (
+                    volunteer_names.get(account.volunteer_id, "?")
+                    if account.volunteer_id
+                    else "not linked to a volunteer"
+                ),
+                "volunteer_id": account.volunteer_id,
+                "is_admin": account.is_admin,
+                "is_active": account.is_active,
+                "status": status,
+                "status_color": color,
+                "status_tooltip": tip,
+                "invite_until": (
+                    account.invite_expires_at.isoformat()
+                    if account.invite_expires_at
+                    else ""
+                ),
+                "last_login": (
+                    timefmt.day(account.last_login_at, tz)
+                    if account.last_login_at
+                    else ""
+                ),
+                "last_login_iso": (
+                    account.last_login_at.isoformat() if account.last_login_at else ""
+                ),
+            }
+        )
+    return rows
+
+
+def _matching_accounts(rows: list[dict], text: str) -> list[dict]:
+    """The rows whose address, linked name or state contains `text`."""
+    return [
+        r
+        for r in rows
+        if any(text in (r[key] or "").lower() for key in ("email", "linked", "status"))
+    ]
+
+
+def _accounts_table(
+    rows: list[dict],
+    volunteer_names: dict[int, str],
+    base_url: str,
+    *,
+    tz: ZoneInfo,
+) -> None:
+    """Every account as a table: searched, sorted, 25 to a page, one menu
+    of named actions per row. Thirty-three accounts were 2,665 px of rows
+    with four icon-only buttons each; four hundred would have been a page
+    nobody scrolls."""
+    with ui.row().classes("items-center gap-2 w-full"):
+        search = (
+            ui.input("Search accounts…")
+            .props("outlined dense clearable debounce=200")
+            .classes("grow")
+            .mark("accounts-search")
+        )
+    table = (
+        ui.table(
+            columns=ACCOUNT_COLUMNS,
+            rows=rows,
+            row_key="id",
+            pagination={"rowsPerPage": 25},
+        )
+        .props('rows-per-page-options="[25, 50, 100, 0]" hide-no-data')
+        .classes("w-full")
+        .mark("accounts")
+    )
+    table.add_slot("body-cell-email", _EMAIL_CELL)
+    table.add_slot("body-cell-status", _STATUS_CELL)
+    table.add_slot(
+        "body-cell-last_login",
+        '<q-td key="last_login" :props="props">{{ props.row.last_login }}</q-td>',
+    )
+    table.add_slot("body-cell-actions", _ACTIONS_CELL)
+    table.on(
+        "relink",
+        lambda e: _relink_dialog(
+            e.args["id"], e.args["email"], e.args["volunteer_id"], volunteer_names
+        ),
+    )
+    table.on("admin", lambda e: _toggle_admin(e.args["id"], e.args["is_admin"]))
+    table.on("active", lambda e: _toggle_active(e.args["id"], e.args["is_active"]))
+    table.on("reinvite", lambda e: _reinvite(e.args["id"], e.args["email"], base_url))
+    table.on(
+        "pending",
+        lambda e: invites.show_outstanding_invite(
+            e.args["email"],
+            datetime.fromisoformat(e.args["invite_until"])
+            if e.args["invite_until"]
+            else None,
+            tz=tz,
+        ),
+    )
+    count = ui.label(count_text(len(rows), None, "account")).classes(
+        "text-sm text-gray-500"
+    )
+    wire_search(
+        search,
+        count,
+        table,
+        rows,
+        noun="account",
+        compile=query_lang.compile_accounts,
+        text_filter=_matching_accounts,
+    )
 
 
 @ui.page("/admin/users")
 async def users_page():
     async with page_ctx() as ctx:
-        session, actor = ctx.session, ctx.actor
+        session, actor, tz = ctx.session, ctx.actor, ctx.env.tz
         accounts = (
             expect(await user_service.list_all(session, actor))
             if actor.is_admin
@@ -341,14 +500,15 @@ async def users_page():
                 on_click=lambda: _new_account_dialog(volunteer_names, ctx.base_url),
             ).props("dense outline")
         if accounts:
-            ui.label(f"{len(accounts)} accounts").classes("text-sm text-gray-500")
+            _accounts_table(
+                _account_rows(accounts, volunteer_names, now=ctx.now, tz=tz),
+                volunteer_names,
+                ctx.base_url,
+                tz=tz,
+            )
         else:  # unreachable while the reader's own account is listed; kept honest
             empty_state(
                 "No accounts yet.",
                 action="New account",
                 on_click=lambda: _new_account_dialog(volunteer_names, ctx.base_url),
-            )
-        for account in accounts:
-            _account_row(
-                account, volunteer_names, ctx.base_url, now=ctx.now, tz=ctx.env.tz
             )
