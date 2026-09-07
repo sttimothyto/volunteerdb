@@ -233,7 +233,7 @@ screens that changed, and ends with the full suite green in its own commit.
   sets `aria-current="page"` on the matching nav button (and menu item on the phone);
   `theme.css` underlines it in the accent. The home link reads "Dashboard" in the
   same Cinzel face ("Dash" survives nowhere else in the copy).
-- [ ] **8. One account menu.** The address and the avatar become one menu button
+- [x] **8. One account menu.** The address and the avatar become one menu button
   (avatar, or a person icon for an account with no photo): the reader's name, then
   *My profile* (linked volunteers), *Your account*, *Sign out*. The page title, the
   menu label and the login copy (`login.py:500`) all say "Your account". On the phone

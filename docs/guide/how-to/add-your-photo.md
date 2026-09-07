@@ -23,7 +23,7 @@ Put a picture of your face on your record. It shows in the header, on your profi
 - The tooltip of the icon in the header says *Add or change photo*.
 - After step 6 the page says *Photo saved*, and it loads again with the new photo.
 - The same dialog opens from your profile page. Click the icon or the photo beside your name at the top of the card.
-- On a phone the header hides your address, but the icon or photo stays. It is the mark of who is signed in.
+- On a phone the header shows your photo, or the person icon, but not your address. The address is inside the menu.
 
 ## If something goes wrong
 

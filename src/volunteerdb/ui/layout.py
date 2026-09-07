@@ -6,11 +6,12 @@ from nicegui import context, ui
 from ..env import current as current_env
 from ..permissions import Actor
 from ..services import mail_quota
-from .a11y import heading, icon_button
+from ..services import photos as photo_service
+from .a11y import heading
 from .asof import asof_banner, asof_picker
 from .context import clear_session, flash, show_flashed
 from .logo_dialog import site_logo
-from .photo_dialog import photo_avatar
+from .photo_dialog import open_photo_dialog
 from .theme import apply_theme
 
 
@@ -89,12 +90,8 @@ def frame(
                         f'href="{target}"' + _current(here, target)
                     )
         ui.space()
-        _own_email(actor)
-        _own_avatar(actor)
+        _account_menu(actor)
         _settings_menu(dark, as_of, asof_path)
-        icon_button("logout", "Sign out", on_click=_logout).props(
-            "flat color=white dense"
-        )
     # p-4 keeps a gutter and lines the content up with the header's own px-4
     # instead of running into the window edge; on a phone theme.css narrows
     # both (.vdb-page, .vdb-header) so a 360px screen keeps a 336px column.
@@ -195,54 +192,81 @@ def _mail_quota_banner(actor: Actor) -> None:
             ).classes(f"text-xs {faint}")
 
 
-def _own_email(actor: Actor) -> None:
-    """Your address, and — for an account linked to a volunteer record — the
-    way to your own profile.
+def _account_menu(actor: Actor) -> None:
+    """You, under one button: the headshot (or a person icon) and, on a wide
+    screen, the address beside it. The menu holds your name, *My profile*
+    and *Change photo* for an account linked to a volunteer record, *Your
+    account*, and *Sign out*.
 
-    Unlinked accounts (the sync bot, an admin nobody linked) keep a plain
-    label: there is no page to send them to. Same null check _own_avatar makes
-    below, for the same reason. vdb-quiet keeps the header's own face — an
-    anchor here should read as the address it already was."""
-    classes = "text-sm gt-sm"  # at 80% opacity the address read 3.7:1
-    if actor.volunteer_id is None:
-        ui.label(actor.account.email).classes(classes).mark("header-email")
-        return
-    ui.link(actor.account.email, f"/volunteers/{actor.volunteer_id}").classes(
-        f"{classes} vdb-quiet"
-    ).tooltip("My volunteer profile").mark("header-email")
-
-
-def _own_avatar(actor: Actor) -> None:
-    """Your own headshot beside your address, clickable to change it.
-
-    The same dialog the volunteer profile opens, so there is one upload
-    workflow and one legal declaration. Nothing renders for an account with no
-    volunteer record (the sync bot, an admin nobody linked): there is no row a
-    photo could hang off. Unlike the address to its left this shows at every
-    width — on a phone it is the only thing identifying who is signed in."""
-    if actor.volunteer_id is None:
-        return
+    One place for everything that is about the reader, where there were
+    four: an address that was a link, a photo that was a button, a gear item
+    called something else ("Password & sign-in"), and a sign-out icon. On a
+    phone the address is inside the menu, so the guide's "open a team page,
+    click your own name, then Full profile" is gone. An account with no
+    volunteer record (the sync bot, an admin nobody linked) gets the icon
+    and the two items that apply: there is no profile to send them to."""
+    name = actor.volunteer_name or actor.account.email
 
     async def changed(message: str) -> None:
         flash(message)
-        ui.navigate.reload()
+        ui.navigate.reload()  # the header shows the new photo too
 
-    # a plain flex div, not ui.row(): row() would claim the header's width
-    with ui.element("div").classes("flex items-center mx-2"):
-        photo_avatar(
-            actor.volunteer_id,
-            actor.volunteer_name or actor.account.email,
-            actor.photo_at,
-            on_change=changed,
-            marker="header-avatar",
-        )
+    with (
+        ui.button()
+        .props('flat dense no-caps color=white aria-label="Your account"')
+        .classes("vdb-account")
+        .mark("account-menu")
+    ):
+        with ui.element("div").classes("flex items-center gap-2"):
+            _headshot(actor)
+            # at 80% opacity the address read 3.7:1; the class keeps it plain
+            ui.label(actor.account.email).classes("text-sm gt-sm").mark("header-email")
+            ui.icon("arrow_drop_down")
+        with ui.menu(), ui.column().classes("p-2 gap-0 w-64"):
+            ui.label(name).classes("font-medium px-3 pt-1")
+            if name != actor.account.email:
+                ui.label(actor.account.email).classes("text-xs text-gray-500 px-3 pb-1")
+            if actor.volunteer_id is not None:
+                volunteer_id = actor.volunteer_id
+                ui.button("My profile", icon="person").props(
+                    f'flat dense no-caps align=left href="/volunteers/{volunteer_id}"'
+                ).classes("w-full").mark("menu-profile")
+                # the same dialog the profile opens: one upload workflow, one
+                # legal declaration
+                ui.button(
+                    "Change photo",
+                    icon="add_a_photo",
+                    on_click=lambda: open_photo_dialog(
+                        volunteer_id, name, actor.photo_at, changed
+                    ),
+                ).props("flat dense no-caps align=left").classes("w-full").mark(
+                    "header-photo"
+                )
+            ui.button("Your account", icon="key").props(
+                'flat dense no-caps align=left href="/account"'
+            ).classes("w-full").mark("menu-account")
+            ui.separator()
+            ui.button("Sign out", icon="logout", on_click=_logout).props(
+                "flat dense no-caps align=left"
+            ).classes("w-full").mark("sign-out")
+
+
+def _headshot(actor: Actor) -> None:
+    """The menu button's face: the reader's photo, or the person icon."""
+    if actor.volunteer_id is not None and actor.photo_at is not None:
+        ui.image(photo_service.photo_url(actor.volunteer_id, actor.photo_at)).props(
+            'loading="lazy"'
+        ).classes("w-8 h-8 rounded-full object-cover").mark("header-avatar")
+    else:
+        ui.icon("person").classes("text-2xl").mark("header-avatar")
 
 
 def _settings_menu(
     dark: ui.dark_mode, as_of: datetime | None, asof_path: str | None
 ) -> None:
     """Everything that changes how you're reading the app, under one gear:
-    dark mode, the manual, and (where the page supports it) the as-of date."""
+    dark mode, the manual, and (where the page supports it) the as-of date.
+    Your account is under the account menu beside it, not here."""
     with ui.button(icon="settings").props(
         f'flat dense round color={"warning" if as_of else "white"} aria-label="Settings"'
     ):
@@ -250,9 +274,6 @@ def _settings_menu(
         ui.tooltip("Settings").props('anchor="center left" self="center right"')
         with ui.menu(), ui.column().classes("p-3 gap-3 w-64"):
             ui.switch("Dark mode").bind_value(dark, "value").props("dense")
-            ui.button("Password & sign-in", icon="key").props(
-                'flat dense no-caps align=left href="/account"'
-            ).classes("w-full")
             ui.button("Manual", icon="menu_book").props(
                 'flat dense no-caps align=left href="/manual" target="_blank"'
             ).classes("w-full")

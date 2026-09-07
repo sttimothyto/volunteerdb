@@ -14,8 +14,8 @@ Set a new password for your own account, or add one if you sign in with emailed 
 
 ## Steps
 
-1. Click the gear icon (*Settings*) at the top right of any page.
-2. Click *Password & sign-in*.
+1. Click your photo, or the person icon, at the top right of any page.
+2. Click *Your account*.
 3. Find the card *Change your password* (or *Set a password*).
 4. If the card shows *Current password*, type your old password in it.
 5. Type the new password in *New password*.

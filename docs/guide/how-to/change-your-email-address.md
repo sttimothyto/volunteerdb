@@ -10,8 +10,8 @@ Move your account to a new email address. The address is how you sign in, and it
 
 ## Steps
 
-1. Click the gear icon (*Settings*) at the top right of any page.
-2. Click *Password & sign-in*.
+1. Click your photo, or the person icon, at the top right of any page.
+2. Click *Your account*.
 3. Find the card *Change your email address*.
 4. Type the new address in *New email address*.
 5. Click *Send confirmation*.

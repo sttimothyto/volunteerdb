@@ -10,7 +10,7 @@ import re
 
 from playwright.async_api import expect
 
-from .conftest import icon_button, ready, sign_in
+from .conftest import icon_button, ready, sign_in, sign_out
 
 # Chromium hands back the decoded path, so the %2F the middleware quoted is a /
 # again by the time it reaches page.url.
@@ -43,8 +43,8 @@ async def test_signing_in_and_out_through_the_real_form(seeded, page):
     await expect(page.get_by_text("1 volunteer")).to_be_visible()
     await ready(page)
 
-    # and out again, from the header
-    await icon_button(page, "logout").click()
+    # and out again, from the header's account menu
+    await sign_out(page)
     await expect(page).to_have_url(re.compile(r"/login$"))
     await page.goto("/volunteers")
     await expect(page).to_have_url(LOGIN_WITH_REDIRECT)
@@ -71,6 +71,6 @@ async def test_dark_mode_is_kept_by_the_browser_across_a_sign_out(seeded, page):
 
     # ... and survives signing out, unlike everything else in that storage
     await ready(page)
-    await icon_button(page, "logout").click()
+    await sign_out(page)
     await expect(page).to_have_url(re.compile(r"/login$"))
     await expect(body).to_have_class(re.compile(r"body--dark"))

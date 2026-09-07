@@ -89,13 +89,12 @@ async def test_a_phone_gets_one_header_row_paired_tiles_and_a_panel_that_fits(
     await sign_in(page, "admin@example.org", "secret-pass-phrase")
     await ready(page)
 
-    # one row: the sign-out button sits level with the brand, not under it
+    # one row: the settings gear sits level with the brand, not under it
     brand = await page.locator("header").get_by_text("Dashboard").bounding_box()
-    sign_out = await icon_button(page, "logout").bounding_box()
-    assert brand and sign_out
-    assert abs(brand["y"] - sign_out["y"]) < brand["height"], (
-        f"the header wrapped: brand at y={brand['y']:.0f}, sign out at "
-        f"y={sign_out['y']:.0f}"
+    gear = await icon_button(page, "settings").bounding_box()
+    assert brand and gear
+    assert abs(brand["y"] - gear["y"]) < brand["height"], (
+        f"the header wrapped: brand at y={brand['y']:.0f}, the gear at y={gear['y']:.0f}"
     )
 
     # two abreast: the first two tiles share a row and neither leaves the screen

@@ -221,6 +221,19 @@ a.vdb-quiet {
   font-weight: 600;
 }
 
+/* ---------- the account menu button (ui/layout.py _account_menu) ----------
+   The header's buttons wear the display face in spaced capitals; an email
+   address is not a heading, so this one keeps the body face and its case. */
+.q-header .q-btn.vdb-account {
+  font-family: var(--vdb-serif);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.vdb-account .q-btn__content {
+  flex-wrap: nowrap;
+}
+
 /* ---------- header & neo-greco accents ---------- */
 
 .vdb-header {

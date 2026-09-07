@@ -315,6 +315,8 @@ async def sign_in(page: Page, email: str) -> None:
 async def sign_out(page: Page) -> None:
     await page.goto("/")
     await ready(page)
+    # the way a person goes: the account menu, then Sign out
+    await page.get_by_role("button", name="Your account", exact=True).click()
     await page.locator("button:has(i.q-icon:text-is('logout'))").click()
     await page.wait_for_url(lambda url: "/login" in url)
 

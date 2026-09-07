@@ -29,17 +29,23 @@ A dialog with fields in it stays open until you click *Cancel* or its own button
 | *Events* | Opens the *Events* page. | *everyone* |
 | *Elections* | Opens the *Elections* page. | *admin*, *leaders*, and anyone on the roll of an election |
 | *Accounts*, *Fields*, *Workload* | Open the 3 administrator pages. | *admin* |
-| Your email address | Opens your own profile. It is hidden on a narrow screen. | *everyone*; it is a link only for an account with a linked volunteer record |
-| Your photo | Opens the dialog *Photo — …* to add, change or remove your photo. | *everyone* with a linked volunteer record |
+| Your photo, with your email address | Opens your account menu: your name, *My profile*, *Change photo*, *Your account* and *Sign out*. On a narrow screen the address is inside the menu. | *everyone*; *My profile* and *Change photo* need a linked volunteer record |
 | The gear *Settings* | Opens the settings menu, below. | *everyone* |
-| *Sign out* | Signs you out and shows the sign-in page. | *everyone* |
+
+The account menu holds:
+
+| Control | What it does |
+|---|---|
+| *My profile* | Opens your own profile page. |
+| *Change photo* | Opens the dialog *Photo — …* to add, change or remove your photo. |
+| *Your account* | Opens *Your account*. |
+| *Sign out* | Signs you out and shows the sign-in page. |
 
 The settings menu holds:
 
 | Control | What it does |
 |---|---|
 | *Dark mode* | Switches the whole site between light and dark colours. The choice stays with this browser. |
-| *Password & sign-in* | Opens *Your account*. |
 | *Manual* | Opens this manual in a new tab. |
 | *View as of (YYYY-MM-DD)* and *View* | Show the page as it was on a past date. Only the *Dashboard*, the *Teams* page and a team page have it. |
 
@@ -335,7 +341,7 @@ A reader who cannot see the election sees *This proposal is visible to its votin
 
 ## Your account
 
-Shown to *everyone*, from *Password & sign-in* in the settings menu. It has 4 cards.
+Shown to *everyone*, from *Your account* in the account menu. It has 4 cards.
 
 | Card | What is on it |
 |---|---|

@@ -497,7 +497,7 @@ def _show_dead_link(body: ui.column, login_url: str, reason: str = "") -> None:
             ui.label(
                 reason
                 or "This link has expired or has already been used. Ask for "
-                "the change again from the Password & sign-in page and we'll "
+                "the change again from the Your account page and we'll "
                 "send a fresh one."
             ).classes("text-sm text-gray-500")
             ui.button("Sign in").props(f'href="{login_url}"').classes("w-full")

@@ -283,6 +283,12 @@ async def ready(page: Page) -> None:
     await page.wait_for_function("window.did_handshake === true")
 
 
+async def sign_out(page: Page) -> None:
+    """Out the way a person goes: the account menu, then Sign out."""
+    await page.get_by_role("button", name="Your account", exact=True).click()
+    await icon_button(page, "logout").click()
+
+
 async def sign_in(page: Page, email: str, password: str) -> None:
     """Sign in the way a person does: the real form, over the real socket.
 

@@ -1,6 +1,7 @@
 """The header frame: one settings gear holds dark mode, the manual, and — only
-on the pages that can time-travel — the as-of date picker. The address is the
-way to your own record, and the headshot beside it is how you change it."""
+on the pages that can time-travel — the as-of date picker. The headshot and
+the address beside it are one account menu: your profile, your photo, your
+account, and the way out."""
 
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -49,6 +50,7 @@ async def test_settings_menu_carries_reading_preferences(database):
         await user.should_see("Dashboard")  # the brand, next to the nav links
         await user.should_see("Dark mode")
         await user.should_see("Manual")
+        await user.should_not_see("Password & sign-in")  # under the account menu now
         await user.should_not_see(PICKER)  # the volunteer list cannot time-travel
 
         # a page that reads history offers the picker in the same menu
@@ -84,8 +86,8 @@ async def test_the_header_carries_the_signed_in_volunteers_headshot(database):
             "the header shows their own headshot, cache-busted by upload time"
         )
         # the same dialog the profile page opens: one upload workflow, one
-        # legal declaration
-        user.find(marker="header-avatar").trigger("click")
+        # legal declaration -- from the menu's Change photo
+        user.find(marker="header-photo").click()
         await user.should_see("reported to the authorities", retries=SLOW)
 
 
@@ -106,16 +108,15 @@ async def test_the_header_offers_an_upload_when_there_is_no_photo_yet(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{account_id}")
         await user.open("/volunteers")
-        # the person icon stands in, and is still the way to add one
-        assert user.find(marker="header-avatar").elements, (
-            "a volunteer with no photo still gets the placeholder to click"
-        )
+        # the person icon stands in, and the menu still offers the upload
+        assert isinstance(only(user.find(marker="header-avatar")), ui.icon)
+        assert only(user.find(marker="header-photo")).text == "Change photo"
 
 
-async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(database):
+async def test_an_account_with_no_volunteer_record_gets_no_profile_items(database):
     """The sync bot, and any admin nobody linked: there is no volunteer row a
-    photo could hang off, so nothing renders rather than something broken. The
-    address beside it is plain text for the same reason — nowhere to send them."""
+    photo could hang off and no profile to send them to, so the menu holds
+    Your account and Sign out, under the person icon."""
     async with db_session() as session:
         admin, _ = ok(
             await users.create(
@@ -132,16 +133,16 @@ async def test_an_account_with_no_volunteer_record_gets_no_header_avatar(databas
         await user.open(f"/login-dev/{admin_id}")
         await user.open("/volunteers")
         await user.should_see("Volunteers")
-        await user.should_not_see(marker="header-avatar")
-        # find() raises rather than returning empty, so name what it is
-        address = only(user.find(marker="header-email"))
-        assert isinstance(address, ui.label), (
-            "an unlinked account's address is a label, not a link"
-        )
+        assert isinstance(only(user.find(marker="header-avatar")), ui.icon)
+        await user.should_not_see(marker="menu-profile")
+        await user.should_not_see(marker="header-photo")
+        assert only(user.find(marker="menu-account")).props["href"] == "/account"
+        assert only(user.find(marker="header-email")).text == "admin@example.org"
 
 
-async def test_the_header_address_opens_your_own_record(database):
-    """The most natural handle on "me" in the whole app was dead text."""
+async def test_the_account_menu_opens_your_own_record(database):
+    """The most natural handle on "me" in the whole app was dead text; now it
+    is the menu's first item -- on a phone too, where the address is hidden."""
     async with db_session() as session:
         maria = ok(await volunteers.create(session, SYSTEM, "Maria", "Alvarez"))
         account, _ = ok(
@@ -158,11 +159,16 @@ async def test_the_header_address_opens_your_own_record(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{account_id}")
         await user.open("/volunteers")
-        link = only(user.find(marker="header-email", kind=ui.link))
-        assert link.props["href"] == f"/volunteers/{maria_id}"
+        profile = only(user.find(marker="menu-profile"))
+        assert profile.props["href"] == f"/volunteers/{maria_id}"
+        await user.should_see("Maria Alvarez")  # the menu names the reader
 
         await user.open(f"/volunteers/{maria_id}")
         await user.should_see("Maria Alvarez", retries=SLOW)
+
+        # and the way out is in the same menu
+        user.find(marker="sign-out").click()
+        await user.should_see("Sign in", retries=SLOW)
 
 
 async def test_the_header_avatar_and_the_profile_avatar_are_addressed_apart(database):

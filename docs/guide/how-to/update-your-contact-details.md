@@ -9,7 +9,7 @@ Change the name, the phone number or the notes on your own volunteer record. You
 
 ## Steps
 
-1. Click your email address at the right end of the header.
+1. Click your photo, or the person icon, at the right end of the header. Then click *My profile*.
 2. Click *Edit* at the top right of the card.
 3. Check *First name* and *Last name*, and correct them if needed.
 4. Type your phone number in *Phone*.
@@ -24,7 +24,7 @@ Change the name, the phone number or the notes on your own volunteer record. You
 - The leaders, the seconds and the core members of your teams see the new phone number on the roster.
 - *Notes* are for you, the leaders and seconds of your teams, and the administrators. Core members do not see them.
 - A date field has a calendar button, *Choose a date*. You can also type the date as YYYY-MM-DD.
-- On a phone the header hides your address. Open a team page, click your own name, then click *Full profile*.
+- On a phone the header shows your photo but not your address. The menu is the same.
 
 ## If something goes wrong
 

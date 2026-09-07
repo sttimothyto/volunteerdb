@@ -27,7 +27,7 @@ Subscribe the calendar on your phone to the events of the parish, or to your own
 - A new calendar appears in your calendar app. The name of the parish feed is the name of the parish, followed by *events*. The name of your duties is *My duties*.
 - A calendar added to Google Calendar on the computer appears in the Google Calendar app on the phone too.
 - Every slot you sign up for appears in your duties. Every slot you leave disappears.
-- The panel for your duties is also on the page *Your account*: the gear icon (*Settings*), then *Password & sign-in*.
+- The panel for your duties is also on the page *Your account*: your photo at the top right, then *Your account*.
 
 ## If something goes wrong
 

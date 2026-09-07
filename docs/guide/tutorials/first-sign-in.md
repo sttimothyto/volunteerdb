@@ -61,17 +61,18 @@ You see the *Teams* page, a list of every team in the parish. *Dashboard* takes 
 
 ## 5. The right side of the header
 
-1. Find your email address at the right of the header. A tooltip says *My volunteer profile*.
-2. Find the round photo, or the person icon, next to your address. That is your photo.
-3. Click the gear icon. A tooltip says *Settings*.
-4. Read the menu: *Dark mode*, *Password & sign-in* and *Manual*.
-5. Click outside the menu to close it.
+1. Find the round photo, or the person icon, at the right of the header. Your email address is next to it.
+2. Click it. A menu opens with your name, *My profile*, *Change photo*, *Your account* and *Sign out*.
+3. Click outside the menu to close it.
+4. Click the gear icon. A tooltip says *Settings*.
+5. Read the menu: *Dark mode* and *Manual*.
+6. Click outside the menu to close it.
 
-You see the header as before. On a phone the address is hidden, and only the photo shows. You add a photo in the next tutorial.
+You see the header as before. On a phone the address is inside the menu, and only the photo shows. You add a photo in the next tutorial.
 
 ## 6. Sign out and sign in again
 
-1. Click the icon at the far right of the header. A tooltip says *Sign out*.
+1. Click your photo at the right of the header, then *Sign out*.
 2. Type your email address in *Email*.
 3. If you set a password, type it in *Password (optional)*. If not, leave the box empty.
 4. Click *Sign in*.
@@ -89,7 +90,7 @@ You see the *Dashboard*. If the code does not work, click *Resend code* and type
 - The invitation link opens your account once. After that, you sign in with your email address.
 - A password is optional. Without one, the site emails you a 6-digit code each time.
 - The *Dashboard* shows your teams and your service. *Dashboard* in the header brings you back to it.
-- The gear icon opens *Dark mode*, *Password & sign-in* and *Manual*. The icon at the far right signs you out.
+- Your photo at the right of the header opens your account menu: *My profile*, *Your account* and *Sign out*. The gear icon opens *Dark mode* and *Manual*.
 
 ## Next steps
 

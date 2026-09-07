@@ -37,12 +37,12 @@ You see the panel slide away to the right. If you are a plain member, the panel 
 
 ## 4. Open your own profile
 
-1. Click your email address at the right end of the header.
+1. Click your photo, or the person icon, at the right end of the header. Then click *My profile*.
 2. Read the card at the top. It shows your name, *Email*, *Phone* and *Last login*.
 3. Find the section *Serves on*. It lists your teams and your role on each.
 4. Find the section *Service timeline*. It is a chart of when you joined each team.
 
-You see your own profile page. Its title is your name. On a phone the header hides your address; open a team page, click your own name, then click *Full profile*.
+You see your own profile page. Its title is your name. The menu is the same on a phone.
 
 ## 5. Update your contact details
 
@@ -75,7 +75,7 @@ You see the message *Photo saved*. Your photo now shows beside your name on your
 - *My teams* on the *Dashboard* lists your teams and your role on each. A team name opens the team page.
 - The *Roster* shows names to every member. Contact details are for the leader, the second and the core team members.
 - A name in a roster opens a side panel. *Full profile* opens the whole profile page.
-- Your email address in the header opens your own profile. *Edit* changes your contact details.
+- *My profile*, under your photo in the header, opens your own profile. *Edit* changes your contact details.
 - The person icon beside your name opens the photo dialog.
 
 ## Next steps

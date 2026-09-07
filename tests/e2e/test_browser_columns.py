@@ -12,7 +12,7 @@ import re
 
 from playwright.async_api import expect
 
-from .conftest import icon_button, ready, sign_in
+from .conftest import ready, sign_in, sign_out
 
 # /volunteers as an admin: the three plain columns, the workload column an
 # admin can see, and Status last (ui/volunteers_page.py). None is pinned, so
@@ -98,7 +98,7 @@ async def test_dragging_a_header_moves_the_column_and_the_order_sticks(seeded, p
 
     # ... but not the sitting: clear_session() drops the column order while
     # keeping the preferences that belong to the browser rather than the login
-    await icon_button(page, "logout").click()
+    await sign_out(page)
     await expect(page).to_have_url(re.compile(r"/login$"))
     await sign_in(page, "admin@example.org", "secret-pass-phrase")
     await open_volunteers(page)

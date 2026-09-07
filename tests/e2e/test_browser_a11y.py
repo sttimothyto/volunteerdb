@@ -79,5 +79,8 @@ async def test_the_skip_link_is_first_and_lands_on_main(seeded, page: Page, base
 async def test_icon_buttons_have_names(seeded, page: Page, base_url):
     await sign_in(page, "admin@example.org", "secret-pass-phrase")
     await ready(page)
-    for name in ("Settings", "Sign out"):
+    for name in ("Settings", "Your account"):
         assert await page.get_by_role("button", name=name).count() == 1, name
+    # and the way out, under the account menu, is a named button too
+    await page.get_by_role("button", name="Your account", exact=True).click()
+    assert await page.get_by_role("button", name="Sign out").count() == 1
