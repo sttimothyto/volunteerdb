@@ -958,11 +958,64 @@ body.body--dark .q-badge.bg-muted {
   text-shadow: none;
 }
 
-/* ---------- columns a phone cannot show (ui/teams_page.py roster) ----------
-   Marked on the column (classes + headerClasses); the side panel has what
-   they held, a tap away. */
+/* ---------- what a phone can show of a table ----------
+   Marked on the column (classes + headerClasses), never on the row data, so
+   column_order keeps working and a hidden column's data still reaches the
+   query language. vdb-col-wide goes below 40rem (the phone), vdb-col-md
+   below Quasar's md (a tablet on its side); vdb-phone-only is the second
+   line a cell grows on the phone to carry what the hidden columns held;
+   vdb-col-tight is a column whose cell never wraps (a date), and the two
+   vdb-when spans in it are the day and the clock, one line each on the
+   phone and "day, clock" elsewhere. */
+.vdb-phone-only {
+  display: none;
+}
+
+.vdb-when + .vdb-when::before {
+  content: ", ";
+}
+
 @media (max-width: 40rem) {
   .q-table .vdb-col-wide {
+    display: none;
+  }
+
+  .q-table .vdb-phone-only {
+    display: block;
+  }
+
+  /* the columns that stay must fit the width, so their cells wrap
+     (Quasar's default is nowrap and a sideways scroll); the padding
+     halves, since the width is what is short. An address breaks after
+     its @ (a <wbr> in the cell templates), never mid-word */
+  .q-table td,
+  .q-table th {
+    white-space: normal;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .q-table .vdb-col-tight {
+    white-space: nowrap;
+  }
+
+  .q-table .vdb-when {
+    display: block;
+  }
+
+  .q-table .vdb-when + .vdb-when::before {
+    content: none;
+  }
+
+  /* the meter sits over its number instead of beside it */
+  .q-table .vdb-meter {
+    display: block;
+    margin: 0 0 2px;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .q-table .vdb-col-md {
     display: none;
   }
 }

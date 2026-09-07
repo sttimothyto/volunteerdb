@@ -116,3 +116,29 @@ async def test_a_phone_gets_one_header_row_paired_tiles_and_a_panel_that_fits(
     box = await drawer.bounding_box()
     assert box and box["x"] >= 0, f"the side panel starts {-box['x']:.0f}px off-screen"
     await expect(icon_button(page, "close")).to_be_in_viewport()
+
+
+async def test_a_phone_sees_the_columns_it_can_show(seeded, page):
+    """theme.css hides .vdb-col-wide below 40rem and grows the first cell's
+    second line: at 390px the events table shows When, Event and Filled,
+    and the volunteers table carries the address under the name."""
+    await page.set_viewport_size({"width": 390, "height": 844})
+    await sign_in(page, "admin@example.org", "secret-pass-phrase")
+    await ready(page)
+
+    await page.goto("/volunteers")
+    await ready(page)
+    headers = page.locator("thead th")
+    await expect(headers.filter(has_text="Name")).to_be_visible()
+    await expect(headers.filter(has_text="Email")).to_be_hidden()
+    await expect(headers.filter(has_text="Phone")).to_be_hidden()
+    # the address moved under the name
+    await expect(
+        page.locator(".vdb-phone-only", has_text="maria@example.org")
+    ).to_be_visible()
+
+    await page.set_viewport_size({"width": 1280, "height": 900})
+    await expect(headers.filter(has_text="Email")).to_be_visible()
+    await expect(
+        page.locator(".vdb-phone-only", has_text="maria@example.org")
+    ).to_be_hidden()

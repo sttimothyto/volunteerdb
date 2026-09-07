@@ -142,6 +142,7 @@ The table:
 - *admin* and *leaders* also see the columns *Ministry leader*, *Second-in-command*, *Core team member*, *Member*, *Total* and *Gaps*. The counts are filled in for the teams they manage only.
 - *Gaps* shows the badges *no leader* and *no second*.
 - A click on a column heading sorts. Drag a heading to move the column; the order stays until you sign out.
+- On a narrow screen the count columns are hidden. *Gaps* stays.
 - A click on a row opens the team page. Under the table: *N teams*, or *N of M teams* while a search is on.
 - With no teams: *No teams yet.*, and for *admin* the button *New team*.
 
@@ -165,7 +166,7 @@ The sections, from the top:
 - Inside the panel *Volunteer home page*: *Set home page doc* opens the dialog *Team home page doc*. The dialog has the field *Google Doc link*, *Clear* and *Save*. With a doc set, the section shows the links *Google Doc* and *Public page*. It also shows the buttons *Download QR Code to Public page*, *Fetch now* and *Change the doc*. Under them: *Not published yet — …*, *Refreshed nightly · last fetched …*, or *Last fetch failed: …*.
 - *Add member* (*leaders*): the lists *Volunteer* and *Role*, and the button *Add*.
 - *Roster* (*members*): a table with 1 row per person and the columns *Name*, *Role*, *Account* and *Since*. *core* also see *Email* and *Phone*. A click on a column heading sorts. *Search the roster…* narrows the table as you type. 25 rows per page; *All* shows every row.
-- The name opens the side panel. *Since* is the day the person joined the team, as far as the site's records go. On a narrow screen the *Email* and *Phone* columns are hidden; the side panel has them.
+- The name opens the side panel. *Since* is the day the person joined the team, as far as the site's records go. On a narrow screen the *Email*, *Phone* and *Since* columns are hidden; the side panel has the first two.
 - The role is a badge. For *leaders* it is a button: a click opens the dialog *Change the role of …*, with the list *Role* and *Save*. They also see the icon *Remove from team* at the end of the row. It asks *Remove … from the … roster?* first.
 - Every member sees the account badge: *no account*, *disabled*, *invite sent*, *invite expired* or *account*. Next to it: *never signed in*, or *last login* with the date.
 - For *core*, the button *Invite* or *Re-invite* sits beside the badge when an invitation makes sense.
@@ -192,6 +193,7 @@ The table:
 - *Workload* shows a badge with the band and the score, coloured by band, for the people whose workload you can read.
 - *Status* shows *inactive* for an archived volunteer. Only *admin* sees archived volunteers in the table.
 - 20 rows per page. A click on a row opens the side panel. Drag a heading to move a column.
+- On a narrow screen the *Email* and *Phone* columns are hidden, and the address and the phone number sit under the name. The custom-field columns are hidden below the width of a tablet.
 - Under the table: *N volunteers*. With a workload band chosen, the chip *Workload: …* shows it; its × clears it.
 - With no match: *Nobody matches “…”.* and the button *Clear search*.
 
@@ -258,6 +260,7 @@ The table:
 
 - The columns: *When*, *Event*, *Team*, *Location*, *Filled* (a bar and *N/M*; *∞* means unlimited), *You* (*serving*, *available* or *unavailable*).
 - A cancelled event carries *(cancelled)* after its name, in the past list only.
+- On a narrow screen only *When*, *Event* and *Filled* show. The team and the place sit under the event's name, and *serving* is a badge there.
 - A click on a row opens the event page. The past list shows 20 rows per page. Under the table: *N events*.
 - With no events: *Nothing scheduled yet.*, and for *admin* and *leaders* the button *New event*. The search box stays. With *Show past* on and nothing past: *No past events yet.*
 
@@ -376,7 +379,7 @@ Shown to *admin* only. Anyone else sees *Admins only.* and the button *Dashboard
 | *Disable* / *Enable* | Switches the account off or on. A switched-off account cannot sign in. |
 | *New invite link (resets the password)* | Asks *Send … a new invite link?*, then makes a fresh invitation link, emails it, and removes the password. |
 
-The table has the columns *Account*, *Status* and *Last login*. A click on a column heading sorts. 25 rows per page; *All* shows every row. Each row shows:
+The table has the columns *Account*, *Status* and *Last login*. A click on a column heading sorts. 25 rows per page; *All* shows every row. On a narrow screen *Status* and *Last login* are hidden, and the status badge sits under the address. Each row shows:
 
 - A shield icon for an administrator, a grey person for everyone else.
 - The email address, and under it the linked volunteer's name or *not linked to a volunteer*.

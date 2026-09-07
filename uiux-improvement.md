@@ -299,7 +299,7 @@ screens that changed, and ends with the full suite green in its own commit.
   above the roster (`8383242`); the page still reads chrome → roster → plumbing
   (`4a2603d`). At 1280 px the 59-member page drops from 5,289 px to roughly the
   height of 25 rows.
-- [ ] **20. Tables on the phone show what a phone can show.** Events: below 40 rem
+- [x] **20. Tables on the phone show what a phone can show.** Events: below 40 rem
   the row is When (short form) + Event, with team and location as a second muted
   line in the Event cell and *serving* as a badge; Team, Location, You hide.
   Volunteers: Name + one muted details line (email · phone); custom-field columns

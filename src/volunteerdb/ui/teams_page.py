@@ -190,32 +190,45 @@ async def teams_page(as_of: str = ""):
         if show_coverage:
             # every count sorts; a blanked cell is "", which Quasar string-compares
             # and so files ahead of every number, keeping the order well-defined
+            # the five counts hide below 40rem (theme.css .vdb-col-wide);
+            # Gaps, the column a leader acts on, stays
+            wide = {"classes": "vdb-col-wide", "headerClasses": "vdb-col-wide"}
             columns += [
                 {
                     "name": "leader",
                     "label": ROLE_LABELS[TeamRole.leader],
                     "field": "leader",
                     "sortable": True,
+                    **wide,
                 },
                 {
                     "name": "second",
                     "label": ROLE_LABELS[TeamRole.second],
                     "field": "second",
                     "sortable": True,
+                    **wide,
                 },
                 {
                     "name": "core",
                     "label": ROLE_LABELS[TeamRole.core],
                     "field": "core",
                     "sortable": True,
+                    **wide,
                 },
                 {
                     "name": "member",
                     "label": ROLE_LABELS[TeamRole.member],
                     "field": "member",
                     "sortable": True,
+                    **wide,
                 },
-                {"name": "total", "label": "Total", "field": "total", "sortable": True},
+                {
+                    "name": "total",
+                    "label": "Total",
+                    "field": "total",
+                    "sortable": True,
+                    **wide,
+                },
                 # A hierarchy cannot also honour coverage()'s holes-first row
                 # order, so the holes become a column here: sort descending to
                 # float them up. Chasing them is /elections's job now anyway.
@@ -1024,7 +1037,7 @@ _ACCOUNT_CELL = """
             {{ props.row.account }}
             <q-tooltip>{{ props.row.account_tooltip }}</q-tooltip>
         </q-badge>
-        <span v-if="props.row.last_login" class="text-xs text-gray-500 no-wrap">
+        <span v-if="props.row.last_login" class="text-xs text-gray-500 no-wrap vdb-col-wide">
             {{ props.row.last_login }}
             <q-tooltip v-if="props.row.last_login_tooltip">{{ props.row.last_login_tooltip }}</q-tooltip>
         </span>
@@ -1135,6 +1148,8 @@ def _roster_columns(room: TeamRoom) -> list[dict]:
                 "field": "since_iso",
                 "align": "left",
                 "sortable": True,
+                "classes": "vdb-col-wide",
+                "headerClasses": "vdb-col-wide",
             }
         )
     if room.can_manage:

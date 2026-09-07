@@ -238,27 +238,32 @@ async def _reinvite(user_id: int, email: str, base_url: str) -> None:
 # invite; the last cell is a "⋯" menu whose four actions are named in words
 # instead of four icons whose meaning was in a tooltip. Each emits an event
 # with its row (NiceGUI's table idiom); the handlers above take ids.
-_EMAIL_CELL = """
-<q-td key="email" :props="props">
-    <div class="flex no-wrap items-center gap-2">
-        <q-icon :name="props.row.is_admin ? 'admin_panel_settings' : 'person'"
-                :class="props.row.is_admin ? 'text-primary' : 'text-gray-400'" size="sm" />
-        <div>
-            <div class="font-medium">{{ props.row.email }}</div>
-            <div class="text-xs text-gray-500">{{ props.row.linked }}</div>
-        </div>
-    </div>
-</q-td>
-"""
-_STATUS_CELL = """
-<q-td key="status" :props="props">
+# the status badge: in its own column, and on a phone (where that column
+# is hidden, theme.css .vdb-col-wide) under the address instead
+_STATUS_BADGE = """
     <q-badge v-if="props.row.status" :color="props.row.status_color"
              :class="props.row.status === 'invite pending' ? 'cursor-pointer' : ''"
              @click.stop="props.row.status === 'invite pending' && $parent.$emit('pending', props.row)">
         {{ props.row.status }}
         <q-tooltip>{{ props.row.status_tooltip }}</q-tooltip>
     </q-badge>
+"""
+# the address breaks after its @ on a phone (the <wbr>), never mid-word
+_EMAIL_CELL = f"""
+<q-td key="email" :props="props">
+    <div class="flex no-wrap items-center gap-2">
+        <q-icon :name="props.row.is_admin ? 'admin_panel_settings' : 'person'"
+                :class="props.row.is_admin ? 'text-primary' : 'text-gray-400'" size="sm" />
+        <div>
+            <div class="font-medium">{{{{ props.row.email.split('@')[0] }}}}@<wbr>{{{{ props.row.email.split('@').slice(1).join('@') }}}}</div>
+            <div class="text-xs text-gray-500">{{{{ props.row.linked }}}}</div>
+            <div class="vdb-phone-only">{_STATUS_BADGE}</div>
+        </div>
+    </div>
 </q-td>
+"""
+_STATUS_CELL = f"""
+<q-td key="status" :props="props">{_STATUS_BADGE}</q-td>
 """
 _ACTIONS_CELL = """
 <q-td key="actions" :props="props">
@@ -300,6 +305,8 @@ ACCOUNT_COLUMNS = [
         "field": "status",
         "align": "left",
         "sortable": True,
+        "classes": "vdb-col-wide",  # under the address on a phone
+        "headerClasses": "vdb-col-wide",
     },
     {
         "name": "last_login",
@@ -307,6 +314,8 @@ ACCOUNT_COLUMNS = [
         "field": "last_login_iso",  # ISO sorts; the cell shows the words
         "align": "left",
         "sortable": True,
+        "classes": "vdb-col-wide",  # not on a phone
+        "headerClasses": "vdb-col-wide",
     },
     {"name": "actions", "label": "", "field": "id", "align": "right"},
 ]

@@ -133,12 +133,16 @@ async def volunteers_page(q: str = "", band: str = ""):
                 "align": "left",
                 "sortable": True,
             },
+            # below 40rem these two hide (theme.css .vdb-col-wide); the Name
+            # cell carries them on a second line instead
             {
                 "name": "email",
                 "label": "Email",
                 "field": "email",
                 "align": "left",
                 "sortable": True,
+                "classes": "vdb-col-wide",
+                "headerClasses": "vdb-col-wide",
             },
             {
                 "name": "phone",
@@ -146,6 +150,8 @@ async def volunteers_page(q: str = "", band: str = ""):
                 "field": "phone",
                 "align": "left",
                 "sortable": True,
+                "classes": "vdb-col-wide",
+                "headerClasses": "vdb-col-wide",
             },
         ]
         if shows_workload:
@@ -169,6 +175,9 @@ async def volunteers_page(q: str = "", band: str = ""):
                     "field": f"cf_{d.key}",
                     "align": "left",
                     "sortable": True,
+                    # a custom column is a desktop's: it hides below md
+                    "classes": "vdb-col-md",
+                    "headerClasses": "vdb-col-md",
                 }
             )
         columns.append(
@@ -211,10 +220,20 @@ async def volunteers_page(q: str = "", band: str = ""):
         column_order.make_draggable(table, "volunteers")
         # a real button in the name cell, so the row opens from the keyboard
         # too; its click bubbles to the row, which is what opens the panel
+        # On a phone the cell carries the address and the phone number on a
+        # second line, since their columns are hidden there
         table.add_slot(
             "body-cell-name",
-            '<q-td key="name" :props="props"><button type="button" '
-            'class="vdb-rowbtn">{{ props.row.name }}</button></q-td>',
+            """
+            <q-td key="name" :props="props">
+                <button type="button" class="vdb-rowbtn">{{ props.row.name }}</button>
+                <div class="vdb-phone-only text-xs text-gray-500">
+                    <span v-if="props.row.email">{{ props.row.email.split('@')[0] }}@<wbr>{{ props.row.email.split('@').slice(1).join('@') }}</span>
+                    <span v-if="props.row.email && props.row.phone"> · </span>
+                    <span v-if="props.row.phone">{{ props.row.phone }}</span>
+                </div>
+            </q-td>
+            """,
         )
         if shows_workload:
             table.add_slot(

@@ -719,6 +719,8 @@ EVENT_COLUMNS = [
         "field": "when_iso",  # ISO strings: lexicographic = chronological
         "align": "left",
         "sortable": True,
+        "classes": "vdb-col-tight",  # a date split at its comma reads worse
+        "headerClasses": "vdb-col-tight",
     },
     {
         "name": "title",
@@ -727,12 +729,16 @@ EVENT_COLUMNS = [
         "align": "left",
         "sortable": True,
     },
+    # below 40rem the Team, Location and You columns hide (theme.css
+    # .vdb-col-wide); the Event cell carries them on a second line instead
     {
         "name": "team",
         "label": "Team",
         "field": "team",
         "align": "left",
         "sortable": True,
+        "classes": "vdb-col-wide",
+        "headerClasses": "vdb-col-wide",
     },
     {
         "name": "location",
@@ -740,6 +746,8 @@ EVENT_COLUMNS = [
         "field": "location",
         "align": "left",
         "sortable": True,
+        "classes": "vdb-col-wide",
+        "headerClasses": "vdb-col-wide",
     },
     # sorts on the count; the cell slot shows the pretty "3/∞"
     {
@@ -754,6 +762,8 @@ EVENT_COLUMNS = [
         "field": "you",
         "align": "left",
         "sortable": True,
+        "classes": "vdb-col-wide",
+        "headerClasses": "vdb-col-wide",
     },
 ]
 
@@ -774,17 +784,33 @@ def _events_table(rows: list[dict], *, show_past: bool, search: ui.input) -> Non
         .classes("w-full vdb-clickable-rows")
     )
     column_order.make_draggable(table, "events")
-    # a real link in the title cell (the teams page idiom), so the row
-    # is reachable by keyboard; the row click stays for the mouse
-    # the When cell shows the words; the column sorts on the ISO twin
+    # the When cell shows the words; the column sorts on the ISO twin. The
+    # day and the clock are two spans (timefmt.when_short's last ", " is
+    # the seam), so the phone can give each its own line
     table.add_slot(
         "body-cell-when",
-        '<q-td key="when" :props="props">{{ props.row.when }}</q-td>',
+        """
+        <q-td key="when" :props="props">
+            <span class="vdb-when">{{ props.row.when.slice(0, props.row.when.lastIndexOf(', ')) }}</span><span class="vdb-when">{{ props.row.when.slice(props.row.when.lastIndexOf(', ') + 2) }}</span>
+        </q-td>
+        """,
     )
+    # a real link in the title cell (the teams page idiom), so the row
+    # is reachable by keyboard; the row click stays for the mouse. On a
+    # phone the cell carries the team, the place and "serving" on a
+    # second line, since their columns are hidden there
     table.add_slot(
         "body-cell-title",
-        '<q-td key="title" :props="props"><a :href="\'/events/\' + props.row.id" '
-        'class="vdb-quiet" @click.stop>{{ props.row.title }}</a></q-td>',
+        """
+        <q-td key="title" :props="props">
+            <a :href="'/events/' + props.row.id" class="vdb-quiet" @click.stop>{{ props.row.title }}</a>
+            <div class="vdb-phone-only text-xs text-gray-500">
+                {{ [props.row.team, props.row.location].filter(Boolean).join(' · ') }}
+                <q-badge v-if="props.row.you === 'serving'" color="positive" class="q-ml-xs">serving</q-badge>
+                <q-badge v-else-if="props.row.you" color="grey-7" class="q-ml-xs">{{ props.row.you }}</q-badge>
+            </div>
+        </q-td>
+        """,
     )
     table.add_slot(
         "body-cell-filled",

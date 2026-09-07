@@ -89,7 +89,7 @@ async def test_each_tier_gets_the_columns_it_may_see(database):
         names = [c["name"] for c in table.columns]
         assert names == ["name", "role", "email", "phone", "account", "since"]
         wide = {c["name"] for c in table.columns if c.get("classes") == "vdb-col-wide"}
-        assert wide == {"email", "phone"}
+        assert wide == {"email", "phone", "since"}
         assert table.rows[0]["email"] == "lena@example.org"
         assert table.rows[0]["invite"] == "", "a settled account offers no invite"
 
