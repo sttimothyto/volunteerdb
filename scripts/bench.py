@@ -39,6 +39,7 @@ from volunteerdb import env as env_mod
 from volunteerdb.actors import load_actor
 from volunteerdb.config import settings
 from volunteerdb.db import transaction
+from volunteerdb.fp import expect
 from volunteerdb.models import (
     FieldType,
     Membership,
@@ -204,15 +205,15 @@ async def seed(scale: int) -> None:
         team_ids: list[int] = []
         for i, parent_name in enumerate(PARENT_TEAMS):
             weight = Decimal(rng.choice(["1", "1.5", "2", "3"])) if i % 2 == 0 else None
-            parent = (
+            parent = expect(
                 await team_service.create(
                     session, None, parent_name, workload_weight=weight
                 )
-            ).unwrap()
+            )
             team_ids.append(parent.id)
             for k in range(4):
                 weight = Decimal(rng.choice(["1", "1.5", "2"])) if k % 2 == 0 else None
-                child = (
+                child = expect(
                     await team_service.create(
                         session,
                         None,
@@ -220,7 +221,7 @@ async def seed(scale: int) -> None:
                         parent_team_id=parent.id,
                         workload_weight=weight,
                     )
-                ).unwrap()
+                )
                 team_ids.append(child.id)
 
         # 15 published ministry pages (~100 KB html + 3 small images each) —
@@ -322,7 +323,7 @@ async def seed(scale: int) -> None:
             v.phone = "555-0199"
         await session.flush()
 
-        (
+        expect(
             await custom_field_service.create_def(
                 session,
                 None,
@@ -330,8 +331,8 @@ async def seed(scale: int) -> None:
                 FieldType.date,
                 show_in_list=True,
             )
-        ).unwrap()
-        (
+        )
+        expect(
             await custom_field_service.create_def(
                 session,
                 None,
@@ -339,18 +340,18 @@ async def seed(scale: int) -> None:
                 FieldType.select,
                 options=["Email", "Phone", "Post"],
             )
-        ).unwrap()
+        )
 
-        (
+        expect(
             await user_service.create(
                 session, ADMIN_EMAIL, is_admin=True, password=BENCH_PASSWORD
             )
-        ).unwrap()
-        (
+        )
+        expect(
             await user_service.create(
                 session, LEADER_EMAIL, volunteer_id=rows[1].id, password=BENCH_PASSWORD
             )
-        ).unwrap()  # tuple return ignored: the bench never redeems an invite
+        )  # tuple return ignored: the bench never redeems an invite
 
     # bulk load leaves the planner blind until autovacuum catches up
     async with ENV.engine.begin() as conn:
@@ -440,7 +441,9 @@ async def find_landmarks() -> dict[str, int]:
 async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
     asof_ts = datetime.now(UTC)
     async with db_session() as session:
-        parish_roster = await export_csv(session, None)  # for the re-import pattern
+        parish_roster = expect(
+            await export_csv(session, None)
+        )  # for the re-import pattern
         # landmark slug for the ministries_page pattern: lowest-id published team
         published_now = await page_service.published_teams(session)
         slug_paths = (await team_service.tree(session)).paths
@@ -487,16 +490,18 @@ async def build_patterns(marks: dict[str, int]) -> dict[str, callable]:
 
     async def impact_busy():
         async with db_session() as session:
-            (await volunteer_service.impact(session, None, marks["busy"])).unwrap()
+            expect(await volunteer_service.impact(session, None, marks["busy"]))
 
     async def timeline_churned():
         async with db_session() as session:
-            await volunteer_service.timeline(session, marks["churned"])
+            await volunteer_service.timeline(session, marks["churned"], tz=ENV.tz)
 
     async def import_reimport():
         # idempotent parish re-import; dry_run rolls back so runs are repeatable
-        report = await run_import(
-            parish_roster, dry_run=True, user_id=marks["admin_user"]
+        report = expect(
+            await run_import(
+                ENV, parish_roster, dry_run=True, user_id=marks["admin_user"]
+            )
         )
         assert not report.has_errors, report.errors[:3]
 
@@ -596,6 +601,34 @@ async def cmd_setup(scale: int) -> None:
     await ENV.engine.dispose()
 
 
+async def cmd_profile(args) -> None:
+    """cProfile one pattern: where the CPU goes when the queries are already few.
+
+    Query count answers "how many round trips"; this answers "and what did
+    Python do with the rows once they arrived", which is the other half of a
+    slow page and the half `run` cannot see."""
+    import cProfile
+    import pstats
+
+    _connect(BENCH_URL)
+    marks = await find_landmarks()
+    patterns = await build_patterns(marks)
+    fn = patterns.get(args.pattern)
+    if fn is None:
+        sys.exit(f"no such pattern: {args.pattern}\n  {', '.join(patterns)}")
+
+    await fn()  # warm the pool, the caches and the import graph
+    profiler = cProfile.Profile()
+    profiler.enable()
+    for _ in range(args.runs):
+        await fn()
+    profiler.disable()
+
+    stats = pstats.Stats(profiler)
+    stats.sort_stats(args.sort).print_stats(args.limit)
+    await ENV.engine.dispose()
+
+
 async def cmd_run(args) -> None:
     _connect(BENCH_URL)
     marks = await find_landmarks()
@@ -665,6 +698,11 @@ def main() -> None:
     )
     p_run.add_argument("--only", help="run only patterns whose name contains this")
     p_run.add_argument("--runs", type=int, default=15)
+    p_prof = sub.add_parser("profile", help="cProfile a single pattern")
+    p_prof.add_argument("pattern", help="pattern name, e.g. import_reimport")
+    p_prof.add_argument("--runs", type=int, default=10)
+    p_prof.add_argument("--sort", default="tottime", help="tottime or cumtime")
+    p_prof.add_argument("--limit", type=int, default=35)
     p_cmp = sub.add_parser("compare", help="diff two run JSONs")
     p_cmp.add_argument("before")
     p_cmp.add_argument("after")
@@ -674,6 +712,8 @@ def main() -> None:
         asyncio.run(cmd_setup(args.scale))
     elif args.cmd == "run":
         asyncio.run(cmd_run(args))
+    elif args.cmd == "profile":
+        asyncio.run(cmd_profile(args))
     else:
         cmd_compare(args.before, args.after)
 
