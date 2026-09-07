@@ -310,76 +310,42 @@ def invite_control(
     reveal: bool = False,
     where: str = "roster",
 ) -> None:
-    """The roster/profile cell for somebody who could be invited.
+    """The Invite / Re-invite button beside a status line -- the profile
+    page's and the side panel's Last login. A plain outlined button, no
+    hover: a phone never hovers, and the status the line says is what most
+    viewers came for. `invite_offer` says what it offers (nothing for an
+    account in use), `act_on_offer` does it; a volunteer with no address on
+    file gets a note saying why there is no button.
 
-    Reads as their sign-in status until pointed at, then offers the action —
-    the status is what most viewers came for, the action is what a leader
-    reaches for. A volunteer with no address on file cannot be invited at all,
-    so they keep the plain badge and a note saying why.
-
-    `where` only names the marker. /teams/{id} renders both the roster and the
-    drawer, so one marker per volunteer would match twice and a test click would
-    fire the flow twice over.
+    `where` only names the marker. /teams/{id} renders both the roster and
+    the drawer, so one marker per volunteer would match twice and a test
+    click would fire the flow twice over.
     """
-    # An existing account's login IS its address, and it can differ from what the
-    # volunteer record says after a relink — invite the address that will be used.
-    address = (account.email if account is not None else email) or ""
-    if not address:
-        ui.badge("no account", color="muted").props("outline").tooltip(
-            "No email address on file — add one before they can be invited."
-        )
-        return
-
     env = current_env()
-    pending = account is not None and user_service.invite_live(
-        account, now=env.clock.now()
-    )
-    mark = f"invite-{where}-{volunteer_id}"
-
-    async def go() -> None:
-        await send_invite(
-            volunteer_id, name, address, base_url, again=pending, reveal=reveal
-        )
-
-    if pending and account is not None:
-        # Same affordance as the admin page's clickable "invite pending" badge,
-        # but it can only ever SEND — never re-display. Only the digest of the
-        # link is stored (services.users._issue_invite), so an outstanding one
-        # no longer exists in readable form anywhere; handing it over again
-        # means minting a fresh one, which is what "Send again" does.
-        until = account.invite_expires_at
-
-        ui.badge("invite sent", color="warning").classes("cursor-pointer").mark(
-            mark
-        ).on(
-            "click",
-            lambda _: show_outstanding_invite(address, until, tz=env.tz, on_resend=go),
-        ).tooltip(
-            f"Invite link usable until {timefmt.when_short(until, env.tz)} — "
-            "click to send it again"
-            if until
-            else "Invite link outstanding — click to send it again"
-        )
+    offer = invite_offer(email, account, now=env.clock.now())
+    if offer is None:
+        if not ((account.email if account is not None else email) or ""):
+            ui.label(
+                "No email address on file — add one before they can be invited."
+            ).classes("text-xs text-gray-500")
         return
-
-    again = account is not None
-    idle_text = "invite expired" if again else "no account"
-    action_text = "send a new invite" if again else "invite to create account"
-    # Both faces sit in the DOM at all times, so a screen reader would otherwise
-    # read the pair as one run-on phrase; the aria-label states the action alone.
-    spoken = f"{action_text} — {name}".replace('"', "")
-    with (
-        ui.button(on_click=go)
-        .props(f'flat dense no-caps aria-label="{spoken}"')
-        .classes("vdb-invite-swap")
-        .mark(mark)
-        .tooltip(
-            f"The old link has run out — email {address} a fresh one."
-            if again
-            else f"Email {address} a link to set up their account."
+    if offer.mode == "pending":
+        tip = (
+            f"Invite link usable until {timefmt.when_short(offer.until, env.tz)} — "
+            "send it again"
+            if offer.until
+            else "Invite link outstanding — send it again"
         )
-    ):
-        with ui.element("span").classes("vdb-invite-idle"):
-            ui.badge(idle_text, color="muted").props("outline")
-            ui.icon("mail").classes("vdb-invite-hint")
-        ui.label(action_text).classes("vdb-invite-action text-xs")
+    elif offer.mode == "again":
+        tip = f"The old link has run out — email {offer.address} a fresh one."
+    else:
+        tip = f"Email {offer.address} a link to set up their account."
+    ui.button(
+        offer.label,
+        icon="mail",
+        on_click=lambda: act_on_offer(
+            volunteer_id, name, offer, base_url, reveal=reveal, tz=env.tz
+        ),
+    ).props(f'dense outline no-caps aria-label="{offer.label} {name}"').mark(
+        f"invite-{where}-{volunteer_id}"
+    ).tooltip(tip)

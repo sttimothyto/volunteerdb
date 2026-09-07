@@ -346,7 +346,7 @@ screens that changed, and ends with the full suite green in its own commit.
 
 ### Phase 7 — The phone
 
-- [ ] **27. Invite is a button, not a hover.** The badge stays informational; beside
+- [x] **27. Invite is a button, not a hover.** The badge stays informational; beside
   it a small outlined "Invite" / "Re-invite" button appears where `invitable()` says
   so. `.vdb-invite-swap` and its 60 lines of CSS go; the tutorial's "move the mouse
   over the badge" and its touch apology go with them.

@@ -337,3 +337,27 @@ async def test_an_invite_the_mail_could_not_carry_is_still_created(database, sim
     async with db_session() as session:
         account = await users.account_for_volunteer(session, ids["nils"])
         assert account is not None and account.invite_token, "created all the same"
+
+
+async def test_the_side_panel_offers_the_same_button(database, sent):
+    """Invite is a button, not a hover (uiux-improvement.md, step 27): the
+    panel's Last login line carries an outlined Invite / Re-invite button,
+    reachable by a tap, and it runs the same confirm-then-send flow."""
+    async with db_session() as session:
+        ids = await _parish(session)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['cora_u']}")
+        await user.open(f"/teams/{ids['music']}")
+        user.find(marker="roster").trigger(
+            "rowClick", args=[None, {"volunteer_id": ids["nils"]}, 0]
+        )
+        await user.should_see("Last login: no VolunteerDB account", retries=SLOW)
+        button = only(user.find(marker=f"invite-detail-{ids['nils']}"))
+        assert isinstance(button, ui.button) and button.text == "Invite"
+        assert button.props.get("outline"), "a plain button, no hover face"
+        user.find(marker=f"invite-detail-{ids['nils']}").click()
+        await user.should_see("Send an invite to Nils Nobody?", retries=SLOW)
+        user.find(marker="invite-confirm").click()
+        await user.should_see("Invite link for nils@example.org", retries=SLOW)
+        assert [m[0] for m in sent] == ["nils@example.org"]

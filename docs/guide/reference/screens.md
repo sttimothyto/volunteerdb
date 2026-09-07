@@ -215,7 +215,7 @@ The sections, from the top:
 
 - The top card: the photo, the name, the badge *inactive*, and for *admin* and *leaders* the badge *workload: band · score*.
 - Under them, for *core* and the person: *Email:*, *Phone:*, 1 line per custom field with a value, and *Service hours: N h across N events*. The line *Not recorded:* names the custom fields with no value. A duration reads *3 h 30 min*, a time *4:00 PM*, a date *May 5, 2021*. *Notes:* shows for *leaders*, *admin* and the person. Others see *Contact details visible to their team leaders and core members.*
-- *Last login:* the date and time, *never signed in*, *no VolunteerDB account*, or the date with *— account disabled*. Everyone sees it. Next to it, *core* see *invite to create account* or *send a new invite* when an invitation makes sense.
+- *Last login:* the date and time, *never signed in*, *no VolunteerDB account*, or the date with *— account disabled*. Everyone sees it. Next to it, *core* see the button *Invite* or *Re-invite* when an invitation makes sense.
 - In the *Edit* dialog, your own *Email* is different. The site sends a confirmation link to the new address, and nothing changes until you open it.
 - *Serves on*: 1 row per team, with the role. *Not on any team.* when there is none.
 - *Service timeline*: a chart with 1 bar per team and per spell of service, coloured by role, over the years.
@@ -229,7 +229,7 @@ The side panel slides in from the right. It opens from the *Dashboard* graph and
 - At the top: the photo (a click opens the photo dialog), the name, and the button *Close*.
 - Under the name: the badge *inactive*, and for *admin* and *leaders* the badge *workload: band · score*.
 - For *core* and the person: *Email:*, *Phone:*, 1 line per custom field with a value, and the line *Not recorded:* for the rest. *Notes:* shows for *leaders*, *admin* and the person. Others see *Contact details visible to their team leaders and core members.*
-- *Last login:* with the same values as on the profile, and the invite control for *core*.
+- *Last login:* with the same values as on the profile, and the button *Invite* or *Re-invite* for *core*.
 - *Serves on*: 1 line per team with the role. Each team is a link. *Not on any team.* when there is none.
 - *Full profile* opens the volunteer page.
 - On a past date the panel shows the person as they were then, and the photo cannot be changed.
