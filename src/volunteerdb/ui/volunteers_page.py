@@ -39,7 +39,7 @@ from .layout import frame
 from .photo_dialog import photo_avatar
 from .search_box import search_box
 from .timeline_chart import timeline_chart
-from .volunteer_panel import VolunteerPanel, format_custom
+from .volunteer_panel import VolunteerPanel, custom_field_lines, format_custom
 from .widgets import (
     ROLE_OPTIONS,
     denied,
@@ -56,7 +56,7 @@ async def volunteers_page(q: str = "", band: str = ""):
     is_query = query_lang.parse(q) is not None
     query_error: str | None = None
     async with page_ctx() as ctx:
-        session, actor = ctx.session, ctx.actor
+        session, actor, tz = ctx.session, ctx.actor, ctx.env.tz
         result = await volunteer_service.search_or_query(
             session, q, include_inactive=actor.is_admin, actor=actor
         )
@@ -202,9 +202,7 @@ async def volunteers_page(q: str = "", band: str = ""):
                 row["workload_sort"] = float(score_band[0]) if score_band else -1.0
             for d in list_defs:
                 value = (v.custom or {}).get(d.key)
-                row[f"cf_{d.key}"] = (
-                    format_custom(d, value, missing="") if visible else "•••"
-                )
+                row[f"cf_{d.key}"] = format_custom(d, value, tz) if visible else "•••"
             rows.append(row)
         columns = column_order.apply_saved_order("volunteers", columns)
         table = ui.table(
@@ -312,15 +310,11 @@ async def _reload_page(message: str) -> None:
     ui.navigate.reload()
 
 
-def _contact_details(profile: VolunteerProfile) -> None:
+def _contact_details(profile: VolunteerProfile, tz: ZoneInfo) -> None:
     volunteer = profile.volunteer
     ui.label(f"Email: {volunteer.email or '—'}").classes("text-sm text-gray-700")
     ui.label(f"Phone: {volunteer.phone or '—'}").classes("text-sm text-gray-700")
-    for defn in profile.field_defs:
-        value = (volunteer.custom or {}).get(defn.key)
-        ui.label(f"{defn.label}: {format_custom(defn, value)}").classes(
-            "text-sm text-gray-700"
-        )
+    custom_field_lines(profile.field_defs, volunteer.custom, tz)
     if profile.can_edit and volunteer.notes:
         ui.label(f"Notes: {volunteer.notes}").classes("text-sm text-gray-700")
     hours = profile.hours
@@ -335,7 +329,9 @@ def _contact_details(profile: VolunteerProfile) -> None:
         )
 
 
-def _profile_card(profile: VolunteerProfile, actor: Actor, base_url: str) -> None:
+def _profile_card(
+    profile: VolunteerProfile, actor: Actor, base_url: str, *, tz: ZoneInfo
+) -> None:
     """Name, photo and badges, with Edit and Delete for those who may; the
     contact details for those who may read them; and for everyone the
     sign-in status -- whether someone reads what the app sends them is not
@@ -370,7 +366,7 @@ def _profile_card(profile: VolunteerProfile, actor: Actor, base_url: str) -> Non
                     on_click=lambda: _delete_volunteer(volunteer.id),
                 ).props("dense outline color=negative")
         if profile.can_view:
-            _contact_details(profile)
+            _contact_details(profile, tz)
         else:
             ui.label(
                 "Contact details visible to their team leaders and core members."
@@ -528,7 +524,7 @@ async def volunteer_detail(volunteer_id: int):
         actor,
         help="volunteer-leader" if profile.can_edit and not own else "volunteer",
     ):
-        _profile_card(profile, actor, ctx.base_url)
+        _profile_card(profile, actor, ctx.base_url, tz=tz)
         _serves_on_section(profile, actor)
         if profile.assignable:
             _add_to_team_row(volunteer_id, profile.assignable)

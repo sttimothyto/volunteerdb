@@ -44,6 +44,7 @@ Add a piece of information that the parish records for every volunteer, for exam
 - The field appears as a column on the *Volunteers* page if you switched that on.
 - The field appears as an extra column in every `.csv` export, but not in a team's Google Sheet.
 - Whoever can see a volunteer's contact details can see their custom fields.
+- A value reads in words on the profile and in the side panel. A duration shows as *3 h 30 min*, a time as *4:00 PM*, a date as *May 5, 2021*, a checkbox as *yes* or *no*. The fields with no value are named on 1 line, *Not recorded:*.
 
 ## If something goes wrong
 

@@ -57,3 +57,37 @@ def test_parse_scalar_handles_every_field_type():
     assert set(samples) == set(FieldType)
     for ft, sample in samples.items():
         assert ok(fieldcodec.parse_scalar(ft, sample)) is not None
+
+
+# --- the way back: a stored value in words ----------------------------------------
+
+
+def test_display_reads_each_type_to_a_person():
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("America/Toronto")
+    assert fieldcodec.display(FieldType.interval, "PT3H30M") == "3 h 30 min"
+    assert fieldcodec.display(FieldType.interval, "P1DT2H") == "1 d 2 h"
+    assert fieldcodec.display(FieldType.interval, "PT45S") == "45 s"
+    assert fieldcodec.display(FieldType.interval, "PT0S") == "0 min"
+    assert fieldcodec.display(FieldType.time, "16:00:00") == "4:00 PM"
+    assert fieldcodec.display(FieldType.date, "2021-05-05") == "May 5, 2021"
+    assert (
+        fieldcodec.display(FieldType.timestamp, "2021-05-05T16:40:00")
+        == "Wed, May 5, 2021, 4:40 PM"
+    )
+    # a zoned timestamp is read in the parish's clock
+    assert (
+        fieldcodec.display(FieldType.timestamptz, "2021-05-05T20:40:00+00:00", tz=tz)
+        == "Wed, May 5, 2021, 4:40 PM"
+    )
+    assert fieldcodec.display(FieldType.checkbox, True) == "yes"
+    assert fieldcodec.display(FieldType.checkbox, False) == "no"
+    assert fieldcodec.display(FieldType.decimal, "12.50") == "12.50"
+    assert fieldcodec.display(FieldType.integer, 3) == "3"
+    uuid = "36c105ca-a37d-49ec-b303-028df40cdb2f"
+    assert fieldcodec.display(FieldType.uuid, uuid) == uuid
+    assert fieldcodec.is_mono(FieldType.uuid) and not fieldcodec.is_mono(FieldType.text)
+    # unset is nothing; a value that will not parse is shown as stored
+    assert fieldcodec.display(FieldType.date, None) == ""
+    assert fieldcodec.display(FieldType.date, "next week") == "next week"

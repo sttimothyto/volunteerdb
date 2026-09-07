@@ -5,8 +5,11 @@ must be direct children of the page content, so create the panel *before*
 entering ``frame`` and call ``panel.open(volunteer_id)`` from click handlers.
 """
 
+from zoneinfo import ZoneInfo
+
 from nicegui import ui
 
+from .. import fieldcodec
 from ..env import current as current_env
 from ..models import CustomFieldDef, FieldType
 from ..permissions import volunteer_team_ids
@@ -25,16 +28,40 @@ from .photo_dialog import photo_avatar
 from .widgets import inactive_badge, role_badge, workload_badge
 
 
-def format_custom(defn: CustomFieldDef, value, missing: str = "—") -> str:
-    if value is None:
-        return missing
-    match FieldType(defn.field_type):
-        case FieldType.checkbox:
-            return "yes" if value else "no"
-        case FieldType.timestamp | FieldType.timestamptz:
-            return str(value).replace("T", " ")
-        case _:
-            return str(value)
+def format_custom(defn: CustomFieldDef, value, tz: ZoneInfo) -> str:
+    """A custom field's value in words (fieldcodec.display); "" when unset."""
+    return fieldcodec.display(FieldType(defn.field_type), value, tz=tz)
+
+
+def custom_field_lines(
+    defs: list[CustomFieldDef], values: dict | None, tz: ZoneInfo
+) -> None:
+    """The custom fields of a record, one line each for those with a value,
+    then one muted line naming the empty ones ("Not recorded: T-shirt
+    size, Years in the parish"): a core member still sees what could be
+    filled in, without ten "—" lines ahead of the notes. Shared by the
+    profile card and the side panel."""
+    unset: list[str] = []
+    for defn in defs:
+        value = (values or {}).get(defn.key)
+        if value is None:
+            unset.append(defn.label)
+            continue
+        text = format_custom(defn, value, tz)
+        with ui.row().classes("items-baseline gap-1 no-wrap"):
+            ui.label(f"{defn.label}:").classes("text-sm text-gray-700")
+            ui.label(text).classes(
+                "text-sm text-gray-700"
+                + (
+                    " font-mono"
+                    if fieldcodec.is_mono(FieldType(defn.field_type))
+                    else ""
+                )
+            )
+    if unset:
+        ui.label(f"Not recorded: {', '.join(unset)}").classes(
+            "text-sm text-gray-500 vdb-prose"
+        ).mark("not-recorded")
 
 
 def volunteer_link(
@@ -82,7 +109,7 @@ class VolunteerPanel:
             warn(f"No volunteer with id {volunteer_id} at this time.")
             return
         async with page_ctx() as ctx:
-            session, actor = ctx.session, ctx.actor
+            session, actor, tz = ctx.session, ctx.actor, ctx.env.tz
             team_ids = await volunteer_team_ids(session, volunteer_id)
             can_view = actor.can_view_volunteer(volunteer_id, team_ids)
             can_edit = actor.can_edit_volunteer(volunteer_id, team_ids)
@@ -139,11 +166,7 @@ class VolunteerPanel:
                 ui.label(f"Phone: {volunteer.phone or '—'}").classes(
                     "text-sm text-gray-700"
                 )
-                for defn in field_defs:
-                    value = (volunteer.custom or {}).get(defn.key)
-                    ui.label(f"{defn.label}: {format_custom(defn, value)}").classes(
-                        "text-sm text-gray-700"
-                    )
+                custom_field_lines(field_defs, volunteer.custom, tz)
                 if can_edit and volunteer.notes:
                     ui.label(f"Notes: {volunteer.notes}").classes(
                         "text-sm text-gray-700"

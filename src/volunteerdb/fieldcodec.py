@@ -18,7 +18,9 @@ import uuid as uuid_lib
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from . import timefmt
 from .errors import Invalid, invalid
 from .fp import Err, Ok, Result
 from .models import FieldType
@@ -75,6 +77,67 @@ def format_duration(td: timedelta) -> str:
     if clock:
         out += f"T{clock}"
     return out if out != "P" else "PT0S"
+
+
+def duration_words(td: timedelta) -> str:
+    """'3 h 30 min', '1 d 2 h', '45 s': the parts that are not zero, largest
+    first. A duration a volunteer gives once a week is read far more often
+    than it is typed, and PT3H30M is for the machine."""
+    days, seconds = td.days, td.seconds
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    parts = [
+        f"{n} {unit}"
+        for n, unit in ((days, "d"), (hours, "h"), (minutes, "min"), (secs, "s"))
+        if n
+    ]
+    return " ".join(parts) if parts else "0 min"
+
+
+def display(ft: FieldType, value: Any, *, tz: ZoneInfo | None = None) -> str:
+    """A stored value in words, by its type: the encodings above are for
+    the JSON column, and a profile reads them back to a person.
+
+    A duration reads "3 h 30 min", a time "4:00 PM", a date "May 5, 2021",
+    a timestamp "Wed, May 5, 2021, 4:40 PM" (a zoned one in `tz`, the
+    parish's), a checkbox "yes"/"no"; a UUID stays as it is (the page sets
+    it in a monospace face, see is_mono). A value that will not parse --
+    written before its field changed type, say -- is shown as stored rather
+    than hidden."""
+    if value is None:
+        return ""
+    try:
+        match ft:
+            case FieldType.checkbox:
+                return "yes" if value else "no"
+            case FieldType.date:
+                return timefmt.date_words(date.fromisoformat(str(value)))
+            case FieldType.time:
+                return f"{time.fromisoformat(str(value)):%-I:%M %p}"
+            case FieldType.timestamp:
+                at = datetime.fromisoformat(str(value))
+                return f"{at:%a, %b %-d, %Y}, {at:%-I:%M %p}"
+            case FieldType.timestamptz:
+                at = datetime.fromisoformat(str(value))
+                if tz is not None and at.tzinfo is not None:
+                    at = at.astimezone(tz)
+                return f"{at:%a, %b %-d, %Y}, {at:%-I:%M %p}"
+            case FieldType.interval:
+                parsed = parse_duration(str(value))
+                if isinstance(parsed, Err):
+                    return str(value)
+                return duration_words(parsed.value)
+            case FieldType.number | FieldType.integer | FieldType.decimal:
+                return f"{value}"
+            case _:
+                return str(value)
+    except ValueError:
+        return str(value)
+
+
+def is_mono(ft: FieldType) -> bool:
+    """Whether a value of this type reads better in a monospace face."""
+    return ft is FieldType.uuid
 
 
 def parse_scalar(ft: FieldType, value: Any) -> Result[Any, Invalid]:

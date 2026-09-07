@@ -264,7 +264,7 @@ screens that changed, and ends with the full suite green in its own commit.
   page's pending-change line, election deadlines "Nominating until Sep 13", last
   login, sync lines, invites, the public ministry pages). A source sweep forbids
   `%Y-%m-%d` and `%H:%M` format strings in `ui/` outside `date_input.py`.
-- [ ] **14. Custom fields read by type.** `fieldcodec.display(field, value)`: a
+- [x] **14. Custom fields read by type.** `fieldcodec.display(field, value)`: a
   duration as "3 h 30 min", a time as "4:00 PM", timestamps through `timefmt`, a
   checkbox as "yes"/"no", a UUID in monospace. Used on the profile, the panel and the
   volunteers table. Unset fields collapse into one muted line ("Not recorded: T-shirt
