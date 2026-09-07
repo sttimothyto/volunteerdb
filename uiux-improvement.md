@@ -339,7 +339,7 @@ screens that changed, and ends with the full suite green in its own commit.
 - [x] **25. Guides are three, not forty.** The band shows the tutorial and the two
   how-tos for the reader's highest role, plus "All guides" (the manual's sidebar). The
   rest is a `?` away on each page (step 11).
-- [ ] **26. The reader first.** For a linked volunteer the order is My service, My
+- [x] **26. The reader first.** For a linked volunteer the order is My service, My
   teams, Needs attention, Parish; an administrator with no volunteer record sees
   Parish, Needs attention. The events page opens on "Whole parish" for a reader with
   no upcoming duties and on "My duties" otherwise (the choice stays in the URL).

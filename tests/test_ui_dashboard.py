@@ -141,14 +141,15 @@ async def test_plain_member_sees_only_their_own_service(database):
         # workload is a leadership signal and never turns up on one's own page
         await user.should_not_see("Workload:")
 
-        # My teams, then My service, then the guides, then the folded graph.
-        # NiceGUI hands out element ids in creation order, which is render
-        # order down the page — the only handle a headless run has on "above".
+        # The reader first: My service, then My teams, then the guides, then
+        # the folded graph. NiceGUI hands out element ids in creation order,
+        # which is render order down the page — the only handle a headless
+        # run has on "above".
         teams_head = only(user.find("My teams", kind=ui.label))
         service_head = only(user.find("My service", kind=ui.label))
         guides_head = only(user.find("Guides", kind=ui.label))
         graph = only(user.find(marker="graph-panel"))
-        assert teams_head.id < service_head.id < guides_head.id < graph.id
+        assert service_head.id < teams_head.id < guides_head.id < graph.id
 
         # a plain member gets the members' three, and none of a core member's
         await user.should_see("Your teams and your service")

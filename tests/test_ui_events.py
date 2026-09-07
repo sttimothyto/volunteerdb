@@ -338,6 +338,47 @@ async def test_calendar_views_default_to_my_duties(database):
         await user.should_see(marker="subscribe-parish")
 
 
+async def test_the_calendar_opens_on_the_parish_without_duties(database):
+    """The reader first (uiux-improvement.md, step 26): a reader with no
+    shift to come opens on Whole parish, one with a shift on My duties, and
+    a chosen view stays in the address."""
+    async with db_session() as session:
+        ids = await _parish(session)
+    event_id = await _seed_event(ids["liturgy"])
+    async with db_session() as session:
+        detail = ok(await event_service.detail(session, SYSTEM, event_id))
+        ok(
+            await event_service.sign_up(
+                session,
+                as_volunteer(ids["mia"]),
+                slot_id=detail.slots[0].slot.id,
+                volunteer_id=ids["mia"],
+                now=mint.now(),
+            )
+        )
+
+    def current(user) -> str:
+        switch = only(user.find(marker="calendar-views")).content
+        return "mine" if 'aria-current="page">My duties' in switch else "parish"
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['noor_u']}")  # no duties
+        await user.open("/events")
+        assert current(user) == "parish"
+        await user.should_see(marker="subscribe-parish")
+        # the switch's links name the view, so a choice is kept in the URL
+        switch = only(user.find(marker="calendar-views")).content
+        assert "view=mine" in switch and "view=parish" in switch
+        await user.open("/events?view=mine")
+        assert current(user) == "mine"
+
+        await user.open(f"/login-dev/{ids['mia_u']}")  # one duty
+        await user.open("/events")
+        assert current(user) == "mine"
+        await user.open("/events?view=parish")
+        assert current(user) == "parish"
+
+
 async def test_calendar_month_links_and_bad_input(database):
     async with db_session() as session:
         ids = await _parish(session)

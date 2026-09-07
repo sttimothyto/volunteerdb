@@ -104,23 +104,32 @@ async def dashboard(as_of: str = "", q: str = "", graph: str = ""):
                 as_of=as_of,
             )
 
-        # Statistics run widest-audience first — the parish, then what the
-        # people who run ministries must act on — and then narrow to the
-        # reader: their teams, then their own service. The guides follow, and
-        # the graph, the exploratory tail rather than the answer most readers
-        # came for, is folded at the foot. Each block is absent, not empty,
-        # for a viewer without the right to it; the service never ran its
-        # queries.
-        if figures.parish is not None:
-            _parish_section(figures.parish, live=figures.live)
-        if figures.leadership is not None:
-            _leadership_section(
-                figures.leadership, live=figures.live, is_admin=actor.is_admin
-            )
-        if my_assignments:
-            _my_teams_section(my_assignments, as_of=as_of)
-        if figures.personal is not None:
-            _my_service_section(figures.personal)
+        # The reader first. Somebody with a volunteer record came for their
+        # own service and their teams, so those lead; then what the people
+        # who run ministries must act on; then the parish. An administrator
+        # with no record of their own reads the parish, then what needs
+        # attention. The guides follow, and the graph, the exploratory tail
+        # rather than the answer most readers came for, is folded at the
+        # foot. Each block is absent, not empty, for a viewer without the
+        # right to it; the service never ran its queries.
+        if actor.volunteer_id is not None:
+            if figures.personal is not None:
+                _my_service_section(figures.personal)
+            if my_assignments:
+                _my_teams_section(my_assignments, as_of=as_of)
+            if figures.leadership is not None:
+                _leadership_section(
+                    figures.leadership, live=figures.live, is_admin=actor.is_admin
+                )
+            if figures.parish is not None:
+                _parish_section(figures.parish, live=figures.live)
+        else:
+            if figures.parish is not None:
+                _parish_section(figures.parish, live=figures.live)
+            if figures.leadership is not None:
+                _leadership_section(
+                    figures.leadership, live=figures.live, is_admin=actor.is_admin
+                )
         _guides_section(actor)
         await _graph_panel(
             panel,
@@ -383,9 +392,9 @@ def _leadership_section(
 
 
 def _my_teams_section(assignments: list, *, as_of: str) -> None:
-    """The reader's own memberships — its own band now, not a footnote
-    under My service. For most people this is the whole reason they
-    opened the page, so it comes before the figures and the graph."""
+    """The reader's own memberships — its own band, second after My
+    service. For most people this is the whole reason they opened the
+    page, so it comes before the figures and the graph."""
     with stat_section("My teams"):
         with ui.column().classes("w-full gap-1"):
             for membership, team in assignments:

@@ -57,12 +57,28 @@ The settings menu holds:
 
 ## Dashboard
 
-The *Dashboard* is the first page after sign-in. Its bands run from the whole parish down to you. A band you have no right to is absent, not empty.
+The *Dashboard* is the first page after sign-in. When your account is linked to a volunteer, its bands run from you outward: *My service*, *My teams*, *Needs attention*, *Parish*. An administrator with no volunteer record sees *Parish*, then *Needs attention*. A band you have no right to is absent, not empty.
 
 - At the top is the search box *Find volunteers or teams…* with the button *Search*.
 - After 2 letters, a list of suggestions opens under the box: up to 6 under *Teams*, up to 6 under *Volunteers*.
 - A click on a team opens its page. A click on a volunteer opens the side panel. *See every match for “…”* opens the *Volunteers* page.
 - Enter, or *Search*, opens the *Volunteers* page with the search.
+
+### My service
+
+Shown when your account is linked to a volunteer, and not on a past date.
+
+| Tile | What it shows | Opens |
+|---|---|---|
+| *Upcoming duties* | Your shifts still to come. Under it: *next* with the date and time of the first. | *Events* |
+| *Shifts I could cover* | The open substitute requests on your teams. Absent when there are none. | *Events* |
+| *Ballots waiting* | The elections you can vote in and have not. Absent when there are none. | *Elections* |
+| *Hours served* | Your hours at past events. Under it: *N events attended*. | — |
+
+### My teams
+
+- Shown when your account is linked to a volunteer on at least 1 team.
+- 1 row per team: the team's name and your role on it. A click opens the team page.
 
 ### Parish
 
@@ -92,22 +108,6 @@ Shown to *admin*, *leaders* and *core*. The figures cover the teams you help run
 | *Open seats:* | The open elections by phase: *Nominating*, *Voting*, *Awaiting decision*. A click opens *Elections*. Absent on a past date. | *admin*, *leaders*, voters |
 
 On a past date the band carries a note. It says that the counts are as of the snapshot, and that shifts, elections and sign-ins are left out.
-
-### My teams
-
-- Shown when your account is linked to a volunteer on at least 1 team.
-- 1 row per team: the team's name and your role on it. A click opens the team page.
-
-### My service
-
-Shown when your account is linked to a volunteer, and not on a past date.
-
-| Tile | What it shows | Opens |
-|---|---|---|
-| *Upcoming duties* | Your shifts still to come. Under it: *next* with the date and time of the first. | *Events* |
-| *Shifts I could cover* | The open substitute requests on your teams. Absent when there are none. | *Events* |
-| *Ballots waiting* | The elections you can vote in and have not. Absent when there are none. | *Elections* |
-| *Hours served* | Your hours at past events. Under it: *N events attended*. | — |
 
 ### The ministry graph
 
@@ -242,7 +242,7 @@ Shown to *everyone*. The list holds the events of the teams whose roster names y
 |---|---|---|
 | *Your upcoming duties* | 1 row per shift: the event, the slot, the date and time. *Need a sub* opens the dialog *Ask for a substitute* with *Note to the team (optional)* and *Ask the team*. With a request out: the badge *sub wanted* and *Withdraw request*. | *everyone* with a linked volunteer and a shift |
 | *Teammates need a substitute* | 1 row per open request on your teams: who *needs a* slot *at* which event, their note, and *Take this slot*. The button asks *Take the … slot for …?* first. | *members* not already at that event |
-| *My duties* / *Whole parish* | Switches the calendar between your shifts and every team's events. | *everyone* |
+| *My duties* / *Whole parish* | Switches the calendar between your shifts and every team's events. The calendar opens on *My duties* when you have a shift to come, and on *Whole parish* when you have none. Your choice stays in the address. | *everyone* |
 | *Add to your calendar* | Opens a panel with a link to subscribe your own calendar and a `.ics` file to download. Your own feed also has the *Feed address* to paste and *Reset the address*. The parish panel has *Add to Google Calendar* once the parish calendar exists. | *everyone*; in the *Whole parish* panel, *admin* also sees the state of the parish Google calendar |
 | The month grid | 1 cell per day, Sunday first, with the time and name of each event. A link at each end, *← July* for example, moves to the month before or after. | *everyone* |
 | *Upcoming events on your teams* | The heading of the table. For *admin* it reads *Upcoming events (all teams)*. With *Show past* on, *Upcoming* becomes *Past*. | *everyone* |

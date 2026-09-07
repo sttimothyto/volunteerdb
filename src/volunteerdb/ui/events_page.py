@@ -115,13 +115,15 @@ def _events_href(
     plain page stays the plain address. Every control on the page navigates
     through here — the past/upcoming toggle, the team filter, the calendar's
     view switch and month links — so each keeps the others' state, the
-    search box's text included."""
+    search box's text included. The view is written only once chosen: an
+    address without one opens on the reader's default (My duties with a
+    shift to come, Whole parish without)."""
     parts = [
         p
         for p in (
             "past=1" if show_past else "",
             f"team={team_filter}" if team_filter else "",
-            f"view={view}" if view and view != "mine" else "",
+            f"view={view}" if view else "",
             f"month={month:%Y-%m}" if month else "",
             f"q={quote_plus(q)}" if q else "",
         )
@@ -139,7 +141,7 @@ class Listing:
 
     show_past: bool
     team_filter: int | None
-    view: str  # the calendar's scope: mine or parish
+    view: str  # the calendar's scope: mine or parish, or "" until chosen
     month: date  # the calendar's month, as its first day
     q: str = ""  # the search box's text, as the page was opened
 
@@ -150,7 +152,7 @@ class Listing:
         return cls(
             show_past=past == "1",
             team_filter=int(team) if team.isdigit() else None,
-            view=view if view in dict(calendar_grid.VIEWS) else "mine",
+            view=view if view in dict(calendar_grid.VIEWS) else "",
             month=calendar_grid.parse_month(month, today),
             q=q.strip(),
         )
@@ -624,6 +626,7 @@ def _calendar_section(
     listing: Listing,
     entries: list[CalendarEntry],
     *,
+    view: str,
     today: date,
     tz: ZoneInfo,
     feed_token: str | None,
@@ -632,20 +635,21 @@ def _calendar_section(
     base_url: str,
 ) -> None:
     """The calendar: my duties or the whole parish, a month at a time.
+    `view` is the scope shown -- the listing's, or the reader's default.
 
     Server-rendered HTML (ui/calendar_grid.py): a link changes the month or
     the view, so it needs neither JavaScript nor the websocket."""
     with ui.row().classes("w-full items-center gap-3 flex-wrap mt-4"):
         ui.html(
             calendar_grid.view_switch(
-                listing.view,
+                view,
                 {v: listing.href(view=v) for v, _ in calendar_grid.VIEWS},
             ),
             sanitize=False,
         ).mark("calendar-views")
         ui.space()
         subscribe_panel(
-            view=listing.view,
+            view=view,
             base_url=base_url,
             token=feed_token,
             calendar=calendar,
@@ -661,7 +665,7 @@ def _calendar_section(
             next_href=listing.href(month=calendar_grid.shift_month(listing.month, 1)),
             empty_note=(
                 "Nothing you are signed up for this month."
-                if listing.view == "mine"
+                if view == "mine"
                 else "No events this month."
             ),
         ),
@@ -915,6 +919,9 @@ async def events_page(
             if actor.volunteer_id is not None
             else []
         )
+        # the calendar opens on the reader's duties when they have one to
+        # come and on the parish when not, until they choose (the URL)
+        scope = listing.view or ("mine" if duties else "parish")
         claimable = await event_service.claimable_subs(session, actor, now=ctx.now)
         summaries = await event_service.list_events(
             session,
@@ -929,7 +936,7 @@ async def events_page(
         cal_from, cal_to = calendar_grid.window(listing.month, tz)
         entries = expect(
             await event_service.calendar_entries(
-                session, actor, scope=listing.view, from_=cal_from, to=cal_to
+                session, actor, scope=scope, from_=cal_from, to=cal_to
             )
         )
         # the personal feed address, minted the first time it is shown
@@ -939,7 +946,7 @@ async def events_page(
                     session, actor.account.id, token=ctx.env.rng.token()
                 )
             ).unwrap_or([])
-            if listing.view == "mine"
+            if scope == "mine"
             else None
         )
         managed_options: dict[int, str] = {}
@@ -965,6 +972,7 @@ async def events_page(
         _calendar_section(
             listing,
             entries,
+            view=scope,
             today=now.date(),
             tz=tz,
             feed_token=feed_token,
