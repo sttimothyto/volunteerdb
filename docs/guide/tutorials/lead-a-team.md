@@ -25,7 +25,7 @@ You see the team page with these extra sections, and a role box on every row of 
 4. Leave *Role* at *Member*.
 5. Click *Add*.
 
-You see the page again, with the new name in the *Roster*. The badge next to the name says *no account* if the person cannot sign in yet.
+You see the page again, with the message *Added to the roster* and the new name in the *Roster*. The badge next to the name says *no account* if the person cannot sign in yet.
 
 - If the name is not in the list, the person is not on the *Volunteers* page yet. Ask an administrator to add them.
 

@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal
 
 from nicegui import app, context, ui
 from sqlalchemy.exc import IntegrityError
@@ -49,6 +50,10 @@ from .asof import parse_as_of as parse_as_of
 
 SESSION_REMEMBER = timedelta(days=90)
 SESSION_SHORT = timedelta(days=1)
+
+# app.storage.user key for the messages waiting for the next framed page
+FLASH_KEY = "flash"
+Kind = Literal["positive", "negative", "warning", "info"]
 
 
 def establish_session(
@@ -196,6 +201,7 @@ async def run_command[T](
     *,
     reload: bool = True,
     on_ok: Callable[[T, tuple[Effect, ...], effects.EffectReport], None] | None = None,
+    success: str | None = None,
 ) -> Result[T, DomainError]:
     """One GUI action, start to finish.
 
@@ -203,10 +209,15 @@ async def run_command[T](
     service's Result. An Err rolls the transaction back and becomes a toast.
     An Ok is planned (policy.plan over its events) inside the transaction and
     committed; the effects -- mail, audit lines, throttle charges -- run AFTER
-    the commit, so mail never rides a transaction; then `on_ok` (the success
-    toast, a dialog to close: a function of the value, the effects planned
-    and how they went) and, unless told otherwise, a reload. A conflict at commit (IntegrityError)
-    is a Conflict toast.
+    the commit, so mail never rides a transaction; then `on_ok` (a dialog to
+    close, a page to go to: a function of the value, the effects planned and
+    how they went) and, unless told otherwise, a reload. A conflict at commit
+    (IntegrityError) is a Conflict toast.
+
+    `success` is the one line that says it worked. With a reload it is
+    flashed -- stored for the page that comes back, which shows it -- since
+    a toast sent just before the reload is torn down with the page. Without
+    one it is shown at once.
     """
     env = current()
     try:
@@ -230,7 +241,11 @@ async def run_command[T](
         if inspect.isawaitable(outcome):  # a tail that refreshes a widget
             await outcome
     if reload:
+        if success is not None:
+            flash(success)
         ui.navigate.reload()
+    elif success is not None:
+        notify(success, kind="positive")
     return Ok(value)
 
 
@@ -262,9 +277,71 @@ async def perform(
     )
 
 
+# --- notifications ----------------------------------------------------------------
+#
+# Every notification on the site comes through here (tests/test_ui_layer.py
+# holds ui/ to it), so each carries a `type`: Quasar draws the icon for it,
+# and the state is never told by hue alone (WCAG 1.4.1). A refusal -- a
+# warning the reader can fix, or a failure -- stays eight seconds and has a
+# close button, since it is the one the reader has to read; a success is the
+# short green line that says it worked.
+
+
+def notify(text: str, *, kind: Kind = "info", **kwargs) -> None:
+    ui.notify(text, type=kind, **kwargs)
+
+
+def success(text: str, **kwargs) -> None:
+    notify(text, kind="positive", **kwargs)
+
+
+def info(text: str, **kwargs) -> None:
+    notify(text, kind="info", **kwargs)
+
+
+# a refusal stays long enough to read, and has a close button; a caller may
+# still say otherwise
+_REFUSAL = {"timeout": 8000, "close_button": True}
+
+
+def warn(text: str, **kwargs) -> None:
+    """A rule the reader can fix: a blank field, a bad date, a throttle."""
+    notify(text, kind="warning", **(_REFUSAL | kwargs))
+
+
+def fail(text: str, **kwargs) -> None:
+    """A refusal, or something that went wrong."""
+    notify(text, kind="negative", **(_REFUSAL | kwargs))
+
+
 def toast(err: DomainError) -> None:
     """The one place a refusal becomes a toast: a rule the reader can fix
     (bad input, a weak password, a query typo, a throttle) is a warning;
     anything else is a refusal in red."""
     soft = isinstance(err, (Invalid, WeakPassword, QueryError, Throttled))
-    ui.notify(message(err), color="warning" if soft else "negative")
+    (warn if soft else fail)(message(err))
+
+
+def flash(text: str, *, kind: Kind = "positive", multi_line: bool = False) -> None:
+    """A message for the page that comes next.
+
+    A toast sent just before a reload or a navigation is torn down with
+    the page; this stores it in the session, and layout.frame() shows it
+    on the next framed page and clears it. Several can queue: a save and
+    the confirmation it also sent, say."""
+    waiting = list(app.storage.user.get(FLASH_KEY) or [])
+    waiting.append({"text": text, "kind": kind, "multi_line": multi_line})
+    app.storage.user[FLASH_KEY] = waiting
+
+
+def show_flashed() -> None:
+    """The frame's half: every message left for this page, then none."""
+    waiting = app.storage.user.pop(FLASH_KEY, None) or []
+    for item in waiting:
+        if isinstance(item, dict) and isinstance(item.get("text"), str):
+            kind = (
+                item.get("kind")
+                if item.get("kind") in ("positive", "negative", "warning", "info")
+                else "info"
+            )
+            notify(item["text"], kind=kind, multi_line=bool(item.get("multi_line")))

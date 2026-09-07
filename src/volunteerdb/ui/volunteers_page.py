@@ -22,7 +22,16 @@ from ..services.readmodels import VolunteerProfile
 from ..services.volunteers import AddressChange
 from . import column_order, invites
 from .account_status import invitable, last_login_text
-from .context import PageCtx, page_ctx, perform, rate_limit, run_command, toast
+from .context import (
+    PageCtx,
+    flash,
+    page_ctx,
+    perform,
+    rate_limit,
+    run_command,
+    toast,
+    warn,
+)
 from .date_input import date_input, time_input
 from .forms import WIDE, actions, confirm, dialog_card
 from .layout import frame
@@ -69,7 +78,7 @@ async def volunteers_page(q: str = "", band: str = ""):
     panel = VolunteerPanel("", ctx.base_url)
     with frame("Volunteers", actor):
         if query_error:
-            ui.notify(query_error, color="warning")
+            warn(query_error)
         with ui.row().classes("items-center gap-2 w-full"):
             band_select: ui.select | None = None
 
@@ -230,7 +239,7 @@ def _new_volunteer_dialog() -> None:
 
         async def save() -> None:
             if not (first.value or "").strip() or not (last.value or "").strip():
-                ui.notify("First and last name are required", color="warning")
+                warn("First and last name are required")
                 return
 
             async def command(ctx: PageCtx):
@@ -245,6 +254,7 @@ def _new_volunteer_dialog() -> None:
 
             def done(volunteer, _effects, _report) -> None:
                 dialog.close()
+                flash("Volunteer created")
                 ui.navigate.to(f"/volunteers/{volunteer.id}")
 
             await run_command(command, on_ok=done, reload=False)
@@ -260,7 +270,8 @@ def _new_volunteer_dialog() -> None:
 # draws. The handlers they drive are module-level and take ids.
 
 
-async def _reload_page() -> None:
+async def _reload_page(message: str) -> None:
+    flash(message)
     ui.navigate.reload()
 
 
@@ -482,7 +493,7 @@ async def volunteer_detail(volunteer_id: int):
 
 async def _add_to_team(volunteer_id: int, team_id: int | None, role_value: str) -> None:
     if not team_id:
-        ui.notify("Pick a team", color="warning")
+        warn("Pick a team")
         return
 
     async def command(ctx: PageCtx):
@@ -490,7 +501,7 @@ async def _add_to_team(volunteer_id: int, team_id: int | None, role_value: str) 
             ctx.session, ctx.actor, volunteer_id, team_id, TeamRole(role_value)
         )
 
-    await run_command(command, reload=True)
+    await run_command(command, reload=True, success="Added to the team")
 
 
 def _custom_widget(defn: CustomFieldDef, value):
@@ -620,10 +631,7 @@ def _edit_dialog(
                 values[key] = raw
             change = volunteer_service.address_change(actor, volunteer, email.value)
             if change is AddressChange.blank_own:
-                ui.notify(
-                    "Your own address cannot be blank — it is how you sign in.",
-                    color="warning",
-                )
+                warn("Your own address cannot be blank — it is how you sign in.")
                 return
             staged = None
             if change is AddressChange.needs_confirmation:
@@ -672,6 +680,7 @@ def _edit_dialog(
             saved = await run_command(command, reload=False)
             if isinstance(saved, Err):
                 return
+            flash("Details saved")
             if staged:
                 await _stage_own_email(staged)
             dialog.close()
@@ -697,12 +706,11 @@ async def _stage_own_email(address: str) -> None:
 
     def done(value, _effects, _report) -> None:
         account, _token = value
-        ui.notify(
+        # the caller reloads once this is done, so the line waits for the page
+        flash(
             f"Confirmation sent to {account.pending_email}. Your address changes "
             "when you open the link in it.",
-            color="positive",
             multi_line=True,
-            timeout=8000,
         )
 
     await run_command(command, on_ok=done, reload=False)
@@ -721,7 +729,8 @@ async def _unassign(membership_id: int, name: str, team: str) -> None:
     ):
         return
     await run_command(
-        lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id)
+        lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id),
+        success=f"Removed from {team}",
     )
 
 
@@ -737,6 +746,8 @@ async def _delete_volunteer(volunteer_id: int) -> None:
     async def command(ctx: PageCtx):
         return await volunteer_service.delete(ctx.session, ctx.actor, volunteer_id)
 
-    await run_command(
-        command, on_ok=lambda _v, _e, _r: ui.navigate.to("/volunteers"), reload=False
-    )
+    def done(_value, _effects, _report) -> None:
+        flash("Volunteer deleted")
+        ui.navigate.to("/volunteers")
+
+    await run_command(command, on_ok=done, reload=False)

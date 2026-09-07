@@ -8,7 +8,7 @@ from ..fp import Err, Ok
 from ..models import ROLE_LABELS, TeamRole
 from ..services import teams as team_service
 from ..services import workload as workload_service
-from .context import PageCtx, page_ctx, run_command
+from .context import PageCtx, page_ctx, run_command, success
 from .guards import deny_unless_admin
 from .layout import frame
 
@@ -118,10 +118,9 @@ async def workload_page():
                         ctx.session, ctx.actor, new_config, now=ctx.now
                     )
 
-                def done(_value, _effects, _report) -> None:
-                    ui.notify("Workload settings saved", color="positive")
-
-                await run_command(command, on_ok=done, reload=False)
+                await run_command(
+                    command, reload=False, success="Workload settings saved"
+                )
 
             ui.button("Save settings", icon="save", on_click=save_config).props("dense")
 
@@ -165,9 +164,8 @@ async def workload_page():
 
                 await run_command(
                     command,
-                    on_ok=lambda changed, _e, _r: ui.notify(
-                        f"Updated {changed} team weight{'s' if changed != 1 else ''}",
-                        color="positive",
+                    on_ok=lambda changed, _e, _r: success(
+                        f"Updated {changed} team weight{'s' if changed != 1 else ''}"
                     ),
                     reload=False,
                 )

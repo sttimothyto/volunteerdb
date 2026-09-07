@@ -129,7 +129,9 @@ def _field_dialog(defn=None) -> None:
                     **({"options": option_list} if is_select else {}),
                 )
 
-            await run_command(command, on_ok=lambda _v, _e, _r: dialog.close())
+            await run_command(
+                command, on_ok=lambda _v, _e, _r: dialog.close(), success="Field saved"
+            )
 
         actions(dialog, "Save", save)
     dialog.open()
@@ -150,4 +152,4 @@ async def _delete_field(defn) -> None:
     async def command(ctx: PageCtx):
         return await custom_field_service.delete_def(ctx.session, ctx.actor, defn.id)
 
-    await run_command(command)
+    await run_command(command, success=f"Deleted the field {defn.label}")

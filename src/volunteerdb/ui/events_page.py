@@ -50,7 +50,7 @@ from ..services.events import CalendarEntry, ClaimableSub, EventSummary, MyDuty
 from ..services.readmodels import EventWorkroom
 from . import calendar_grid, column_order
 from .calendar_panel import subscribe_panel
-from .context import PageCtx, page_ctx, run_command
+from .context import PageCtx, flash, page_ctx, run_command, warn
 from .date_input import date_input, time_input
 from .forms import WIDE, actions, confirm, dialog_card
 from .layout import frame
@@ -82,7 +82,7 @@ def _parse_local(day_s: str, time_s: str, what: str) -> datetime | None:
             date.fromisoformat(day_s or ""), time.fromisoformat(time_s or ""), _tz()
         )
     except ValueError:
-        ui.notify(f"{what}: use YYYY-MM-DD and HH:MM", color="warning")
+        warn(f"{what}: use YYYY-MM-DD and HH:MM")
         return None
 
 
@@ -236,21 +236,17 @@ async def _sub_request_dialog(assignment_id: int) -> None:
                 dialog.close()
                 capped = not any(isinstance(e, ThrottleHit) for e in effects)
                 if capped:
-                    ui.notify(
+                    flash(
                         "Your request is posted on the Events page, but this team "
                         f"has already sent its {SUB_REQUESTS_PER_TEAM_PER_DAY} "
                         "substitute emails for today — nobody was mailed. Ask a "
                         "teammate directly, or try again tomorrow.",
-                        color="warning",
+                        kind="warning",
                         multi_line=True,
-                        timeout=10000,
                     )
                 else:
                     mailed = sum(isinstance(e, SendMail) for e in effects)
-                    ui.notify(
-                        f"Asked {mailed} teammate(s) for a substitute",
-                        color="positive",
-                    )
+                    flash(f"Asked {mailed} teammate(s) for a substitute")
 
             await run_command(command, on_ok=done)
 
@@ -274,7 +270,7 @@ async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> Non
 
         async def save() -> None:
             if not pick.value:
-                ui.notify("Pick a teammate first", color="warning")
+                warn("Pick a teammate first")
                 return
 
             async def command(ctx: PageCtx):
@@ -291,7 +287,7 @@ async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> Non
             def done(value, _effects, _report) -> None:
                 _assignment, _outgoing, incoming = value
                 dialog.close()
-                ui.notify(f"{incoming.full_name} now holds the slot", color="positive")
+                flash(f"{incoming.full_name} now holds the slot")
 
             await run_command(command, on_ok=done)
 
@@ -315,7 +311,7 @@ async def _self_removal_dialog(assignment_id: int) -> None:
         async def save() -> None:
             text = (reason.value or "").strip()
             if not text:
-                ui.notify("A reason is required", color="warning")
+                warn("A reason is required")
                 return
 
             async def command(ctx: PageCtx):
@@ -337,10 +333,7 @@ async def _self_removal_dialog(assignment_id: int) -> None:
 
             def done(_event, _effects, _report) -> None:
                 dialog.close()
-                ui.notify(
-                    "You're off the slot — the leaders have been told",
-                    color="positive",
-                )
+                flash("You're off the slot — the leaders have been told")
 
             await run_command(command, on_ok=done)
 
@@ -358,12 +351,7 @@ async def _claim_sub(sub_request_id: int) -> None:
             now=ctx.now,
         )
 
-    await run_command(
-        command,
-        on_ok=lambda _v, _e, _r: ui.notify(
-            "The slot is yours — thank you!", color="positive"
-        ),
-    )
+    await run_command(command, success="The slot is yours — thank you!")
 
 
 async def _withdraw_sub(sub_request_id: int) -> None:
@@ -372,10 +360,7 @@ async def _withdraw_sub(sub_request_id: int) -> None:
             ctx.session, ctx.actor, sub_request_id, now=ctx.now
         )
 
-    await run_command(
-        command,
-        on_ok=lambda _v, _e, _r: ui.notify("Request withdrawn", color="positive"),
-    )
+    await run_command(command, success="Request withdrawn")
 
 
 async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
@@ -451,7 +436,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
 
         async def save() -> None:
             if not team.value:
-                ui.notify("Pick the team", color="warning")
+                warn("Pick the team")
                 return
             starts_at = _parse_local(day.value, start.value, "Start")
             ends_at = _parse_local(day.value, end.value, "End")
@@ -462,7 +447,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
                 try:
                     until = date.fromisoformat(repeat.value)
                 except ValueError:
-                    ui.notify("Repeat until: use YYYY-MM-DD", color="warning")
+                    warn("Repeat until: use YYYY-MM-DD")
                     return
             slots = [
                 event_service.SlotInput(
@@ -508,8 +493,11 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
 
             def done(created, _effects, _report) -> None:
                 dialog.close()
-                if len(created) > 1:
-                    ui.notify(f"{len(created)} events created", color="positive")
+                flash(
+                    f"{len(created)} events created"
+                    if len(created) > 1
+                    else "Event created"
+                )
                 ui.navigate.to(f"/events/{created[0].id}")
 
             await run_command(command, on_ok=done, reload=False)
@@ -957,7 +945,7 @@ def _edit_event_dialog(event: Event) -> None:
             def done(_value, _effects, _report) -> None:
                 dialog.close()
 
-            await run_command(command, on_ok=done, reload=True)
+            await run_command(command, on_ok=done, reload=True, success="Event saved")
 
         actions(dialog, "Save", save)
     dialog.open()
@@ -995,7 +983,7 @@ def _add_slot_dialog(event_id: int) -> None:
             def done(_value, _effects, _report) -> None:
                 dialog.close()
 
-            await run_command(command, on_ok=done, reload=True)
+            await run_command(command, on_ok=done, reload=True, success="Slot added")
 
         # marked like slot-edit-save: the button that opens this dialog
         # carries the same label, so a test needs to name this one
@@ -1055,7 +1043,7 @@ def _edit_slot_dialog(slot: EventSlot) -> None:
             def done(_value, _effects, _report) -> None:
                 dialog.close()
 
-            await run_command(command, on_ok=done, reload=True)
+            await run_command(command, on_ok=done, reload=True, success="Slot saved")
 
         actions(dialog, "Save", save, marker="slot-edit-save")
     dialog.open()
@@ -1109,13 +1097,12 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
                 if result is None or result == event_service.SeriesSignupResult(
                     0, 0, 0
                 ):
-                    ui.notify("You're on the list", color="positive")
+                    flash("You're on the list")
                 else:
                     skipped = result.skipped_full + result.skipped_conflict
-                    ui.notify(
+                    flash(
                         f"You're on the list — this week plus {result.joined} more"
-                        + (f", {skipped} week(s) skipped" if skipped else ""),
-                        color="positive",
+                        + (f", {skipped} week(s) skipped" if skipped else "")
                     )
 
             await run_command(command, on_ok=done)
@@ -1144,12 +1131,12 @@ async def _withdraw(assignment_id: int, name: str, slot: str) -> None:
             ctx.session, ctx.actor, assignment_id, now=ctx.now
         )
 
-    await run_command(command, reload=True)
+    await run_command(command, reload=True, success=f"{name} is off the slot")
 
 
 async def _assign(slot_id: int, volunteer_id: int | None) -> None:
     if not volunteer_id:
-        ui.notify("Pick a person first", color="warning")
+        warn("Pick a person first")
         return
 
     async def command(ctx: PageCtx):
@@ -1162,7 +1149,7 @@ async def _assign(slot_id: int, volunteer_id: int | None) -> None:
             now=ctx.now,
         )
 
-    await run_command(command, reload=True)
+    await run_command(command, reload=True, success="Scheduled")
 
 
 async def _delete_slot(slot_id: int, name: str) -> None:
@@ -1179,7 +1166,7 @@ async def _delete_slot(slot_id: int, name: str) -> None:
             ctx.session, ctx.actor, slot_id, now=ctx.now
         )
 
-    await run_command(command, reload=True)
+    await run_command(command, reload=True, success=f"Deleted the slot {name}")
 
 
 async def _cancel_event(event_id: int) -> None:
@@ -1204,14 +1191,14 @@ async def _cancel_event(event_id: int) -> None:
             now=ctx.now,
         )
 
-    await run_command(command)
+    await run_command(command, success="Event cancelled")
 
 
 async def _add_collaborator(event_id: int, team_id: int | None, label: str) -> None:
     """Add another team's roster to this event, after a word about what
     that creates."""
     if not team_id:
-        ui.notify("Pick a team first", color="warning")
+        warn("Pick a team first")
         return
     if not await confirm(
         f"Add {label} to this event?",
@@ -1238,12 +1225,7 @@ async def _add_collaborator(event_id: int, team_id: int | None, label: str) -> N
             tz=ctx.env.tz,
         )
 
-    await run_command(
-        command,
-        on_ok=lambda _v, _e, _r: ui.notify(
-            "Team added — their roster can sign up now", color="positive"
-        ),
-    )
+    await run_command(command, success="Team added — their roster can sign up now")
 
 
 async def _sync_rosters(event_id: int) -> None:
@@ -1253,7 +1235,7 @@ async def _sync_rosters(event_id: int) -> None:
         )
 
     def done(added, _effects, _report) -> None:
-        ui.notify(f"Rosters synced — {added} member(s) added", color="positive")
+        flash(f"Rosters synced — {added} member(s) added")
 
     await run_command(command, on_ok=done, reload=True)
 
@@ -1270,14 +1252,14 @@ async def _set_rsvp(event_id: int, available: bool, note: str) -> None:
             now=ctx.now,
         )
 
-    await run_command(command, reload=True)
+    await run_command(command, reload=True, success="Answer saved")
 
 
 async def _save_attendance(assignment_id: int, attended: bool, hours_value) -> None:
     try:
         hours = Decimal(str(hours_value)) if hours_value is not None else None
     except InvalidOperation:
-        ui.notify("Hours must be a number", color="warning")
+        warn("Hours must be a number")
         return
 
     async def command(ctx: PageCtx):
@@ -1290,10 +1272,7 @@ async def _save_attendance(assignment_id: int, attended: bool, hours_value) -> N
             now=ctx.now,
         )
 
-    def done(_value, _effects, _report) -> None:
-        ui.notify("Attendance saved", color="positive")
-
-    await run_command(command, on_ok=done, reload=True)
+    await run_command(command, reload=True, success="Attendance saved")
 
 
 async def _clear_attendance(assignment_id: int) -> None:
@@ -1309,7 +1288,7 @@ async def _clear_attendance(assignment_id: int) -> None:
             now=ctx.now,
         )
 
-    await run_command(command, reload=True)
+    await run_command(command, reload=True, success="Back to the automatic answer")
 
 
 # --- the workroom's sections ---------------------------------------------------

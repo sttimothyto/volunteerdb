@@ -23,7 +23,7 @@ from ..sheets.common import sheet_url
 from . import column_order, invites
 from .account_status import roster_account
 from .asof import parse_as_of
-from .context import PageCtx, page_ctx, run_command, toast
+from .context import PageCtx, flash, info, page_ctx, run_command, success, toast, warn
 from .forms import WIDE, actions, confirm, dialog_card
 from .layout import frame
 from .tables import count_text, wire_search
@@ -376,6 +376,7 @@ def _team_dialog(parent_options: dict[int, str], team=None) -> None:
 
             def done(saved, _effects, _report) -> None:
                 dialog.close()
+                flash("Team saved" if team is not None else "Team created")
                 ui.navigate.to(f"/teams/{saved.id}")
 
             await run_command(command, on_ok=done, reload=False)
@@ -528,7 +529,7 @@ async def _sync_sheet(team_id: int, direction: str) -> None:
     async with page_ctx() as ctx:
         user_id = ctx.actor.account.id
     env = ctx.env
-    ui.notify("Syncing with Google Sheets…")
+    info("Syncing with Google Sheets…")
     synced = await roster_sheets.sync_team(
         env, team_id, direction=direction, user_id=user_id, now=env.clock.now()
     )
@@ -537,9 +538,9 @@ async def _sync_sheet(team_id: int, direction: str) -> None:
         return
     outcome = synced.value
     if outcome.failed:
-        ui.notify(f"Sync failed: {outcome.message}", color="negative", multi_line=True)
+        flash(f"Sync failed: {outcome.message}", kind="negative", multi_line=True)
     else:
-        ui.notify(outcome.message, color="positive", multi_line=True)
+        flash(outcome.message, multi_line=True)
     ui.navigate.to(f"/teams/{team_id}")
 
 
@@ -648,7 +649,7 @@ def _sheet_import_block(is_admin: bool) -> None:
             return
         await render_report(report, content=content, filename=filename)
         if report.applied:
-            ui.notify(f"Imported {filename}", color="positive")
+            success(f"Imported {filename}")
 
     ui.upload(
         label="Drop a .csv file here (validated before anything is written)",
@@ -707,7 +708,7 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
                 return
             user_id = linked.value
             dialog.close()
-            ui.notify("Syncing with Google Sheets…")
+            info("Syncing with Google Sheets…")
             env = current_env()
             synced = await roster_sheets.sync_team(
                 env,
@@ -725,13 +726,13 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
                 return
             outcome = synced.value
             if outcome.failed:
-                ui.notify(
+                flash(
                     f"Linked, but the first sync failed: {outcome.message}",
-                    color="negative",
+                    kind="negative",
                     multi_line=True,
                 )
             else:
-                ui.notify(outcome.message, color="positive", multi_line=True)
+                flash(outcome.message, multi_line=True)
             ui.navigate.to(f"/teams/{team_id}")
 
         actions(dialog, "Save", save)
@@ -762,6 +763,11 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
 
             def done(_value, _effects, _report) -> None:
                 dialog.close()
+                flash(
+                    "Home page doc cleared"
+                    if new_value is None
+                    else "Home page doc saved"
+                )
                 ui.navigate.to(f"/teams/{team_id}")
 
             await run_command(command, on_ok=done, reload=False)
@@ -790,9 +796,9 @@ async def _fetch_home_page(team_id: int) -> None:
 
     def done(page, _effects, _report) -> None:
         if page.status == "ok":
-            ui.notify("Home page updated", color="positive")
+            flash("Home page updated")
         else:
-            ui.notify(f"Fetch failed: {page.error}", color="negative")
+            flash(f"Fetch failed: {page.error}", kind="negative")
         ui.navigate.to(f"/teams/{team_id}")
 
     await run_command(command, on_ok=done, reload=False)
@@ -807,7 +813,7 @@ async def _fetch_home_page(team_id: int) -> None:
 
 def _copy_emails(emails: list[str]) -> None:
     ui.clipboard.write(", ".join(emails))
-    ui.notify(f"{len(emails)} addresses copied", color="positive")
+    success(f"{len(emails)} addresses copied")
 
 
 def _team_actions(room: TeamRoom, *, is_admin: bool, as_of: str) -> None:
@@ -906,7 +912,7 @@ def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> None:
             "Add",
             icon="person_add",
             on_click=lambda: _add_member(team_id, who.value, role.value),
-        ).props("dense")
+        ).props("dense").mark("add-member")
 
 
 def _roster_row(
@@ -1047,7 +1053,7 @@ async def team_detail(team_id: int, as_of: str = ""):
 
 async def _add_member(team_id: int, volunteer_id: int | None, role_value: str) -> None:
     if not volunteer_id:
-        ui.notify("Pick a volunteer", color="warning")
+        warn("Pick a volunteer")
         return
 
     async def command(ctx: PageCtx):
@@ -1055,7 +1061,7 @@ async def _add_member(team_id: int, volunteer_id: int | None, role_value: str) -
             ctx.session, ctx.actor, volunteer_id, team_id, TeamRole(role_value)
         )
 
-    await run_command(command, reload=True)
+    await run_command(command, reload=True, success="Added to the roster")
 
 
 async def _change_role(membership_id: int, role_value: str) -> None:
@@ -1064,11 +1070,7 @@ async def _change_role(membership_id: int, role_value: str) -> None:
             ctx.session, ctx.actor, membership_id, TeamRole(role_value)
         )
 
-    await run_command(
-        command,
-        on_ok=lambda _v, _e, _r: ui.notify("Role updated", color="positive"),
-        reload=False,
-    )
+    await run_command(command, reload=False, success="Role updated")
 
 
 async def _remove_member(membership_id: int, name: str, team: str) -> None:
@@ -1086,7 +1088,8 @@ async def _remove_member(membership_id: int, name: str, team: str) -> None:
     ):
         return
     await run_command(
-        lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id)
+        lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id),
+        success=f"Removed from {team}",
     )
 
 
@@ -1107,6 +1110,7 @@ async def _delete_team(team_id: int, name: str, *, places: int) -> None:
         return await team_service.delete(ctx.session, ctx.actor, team_id)
 
     def done(_value, _effects, _report) -> None:
+        flash(f"Deleted the team {name}")
         ui.navigate.to("/teams")
 
     await run_command(command, on_ok=done, reload=False)

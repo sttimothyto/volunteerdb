@@ -198,7 +198,10 @@ async def test_deleting_an_empty_slot_is_asked(database):
         await user.should_see("Delete the slot Usher?", retries=SLOW)
         assert only(user.find(marker=YES)).text == "Delete the slot"
         user.find(marker=YES).click()
-        await user.should_not_see("Usher", retries=SLOW)
+        # the card is gone (its delete button with it); the success line
+        # names the slot, so the name itself is still on the page
+        await user.should_see("Deleted the slot Usher", retries=SLOW)
+        await user.should_not_see(marker=f"slot-delete-{ids['usher']}", retries=SLOW)
 
 
 async def test_deleting_a_team_names_the_roster_it_takes_with_it(database):

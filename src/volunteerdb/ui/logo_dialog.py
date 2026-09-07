@@ -16,7 +16,7 @@ from nicegui import events, ui
 from ..fp import Err
 from ..permissions import Actor
 from ..services import branding
-from .context import PageCtx, run_command, toast
+from .context import PageCtx, flash, run_command, toast, warn
 from .forms import actions, confirm, dialog_card
 
 # /logo serves the uploaded image or the shipped placeholder, so the src never
@@ -34,7 +34,7 @@ def logo_img(src: str, classes: str) -> ui.element:
     return ui.element("img").props(f'src="{src}" alt=""').classes(classes)
 
 
-def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
+def open_logo_dialog(on_change: Callable[[str], Awaitable[None]]) -> None:
     with dialog_card("Site logo") as dialog:
         ui.label(
             "Shown in this header, above the login box, and on the public "
@@ -74,7 +74,7 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
 
         async def save(image: bytes | None) -> None:
             if image is None:
-                ui.notify("Choose an image first", color="warning")
+                warn("Choose an image first")
                 return
 
             async def command(ctx: PageCtx):
@@ -84,8 +84,7 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
 
             async def done(_value, _effects, _report) -> None:
                 dialog.close()
-                ui.notify("Logo saved", color="positive")
-                await on_change()
+                await on_change("Logo saved")
 
             await run_command(command, on_ok=done, reload=False)
 
@@ -106,8 +105,7 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
 
             async def done(_value, _effects, _report) -> None:
                 dialog.close()
-                ui.notify("Logo removed", color="positive")
-                await on_change()
+                await on_change("Logo removed")
 
             await run_command(command, on_ok=done, reload=False)
 
@@ -134,8 +132,9 @@ def site_logo(actor: Actor, *, classes: str, marker: str = "site-logo") -> None:
     if not actor.is_admin:
         return
 
-    async def changed() -> None:
+    async def changed(message: str) -> None:
         # a full reload, so the header, and anything else showing it, refresh
+        flash(message)
         ui.navigate.reload()
 
     # an <img> has no on_click parameter; the generic .on() is the idiom

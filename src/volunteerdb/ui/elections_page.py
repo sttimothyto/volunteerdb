@@ -28,7 +28,7 @@ from ..services import volunteers as volunteer_service
 from ..services.readmodels import ProposalWorkroom
 from ..services.reports import CoverageRow
 from ..star import StarResult
-from .context import PageCtx, page_ctx, run_command
+from .context import PageCtx, flash, page_ctx, run_command, warn
 from .date_input import date_input
 from .forms import WIDE, actions, confirm, dialog_card
 from .layout import frame
@@ -63,7 +63,7 @@ def _parse_deadlines(d1: ui.input, d2: ui.input) -> tuple[date, date] | None:
     try:
         return date.fromisoformat(d1.value or ""), date.fromisoformat(d2.value or "")
     except ValueError:
-        ui.notify("Deadlines must be YYYY-MM-DD dates", color="warning")
+        warn("Deadlines must be YYYY-MM-DD dates")
         return None
 
 
@@ -123,7 +123,7 @@ def _create_proposal_dialog(
 
         async def save() -> None:
             if not who.value:
-                ui.notify("Pick the first candidate", color="warning")
+                warn("Pick the first candidate")
                 return
             if (deadlines := _parse_deadlines(d1, d2)) is None:
                 return
@@ -144,6 +144,7 @@ def _create_proposal_dialog(
 
             def done(proposal, _effects, _report) -> None:
                 dialog.close()
+                flash("Proposal created")
                 ui.navigate.to(f"/elections/{proposal.id}")
 
             await run_command(command, on_ok=done, reload=False)
@@ -275,7 +276,7 @@ def _edit_proposal_dialog(proposal: Proposal) -> None:
                     today=ctx.env.today(),
                 )
 
-            await run_command(command)
+            await run_command(command, success="Proposal saved")
 
         actions(dialog, "Save", save)
     dialog.open()
@@ -299,7 +300,7 @@ async def _cancel_proposal(proposal_id: int) -> None:
             now=ctx.now,
         )
 
-    await run_command(command)
+    await run_command(command, success="Proposal cancelled")
 
 
 async def _appoint(
@@ -323,7 +324,7 @@ async def _appoint(
             now=ctx.now,
         )
 
-    await run_command(command)
+    await run_command(command, success=f"{name} appointed as {role_label}")
 
 
 def _new_round_dialog(proposal_id: int) -> None:
@@ -354,6 +355,7 @@ def _new_round_dialog(proposal_id: int) -> None:
 
             def done(fresh, _effects, _report) -> None:
                 dialog.close()
+                flash("New round started")
                 ui.navigate.to(f"/elections/{fresh.id}")
 
             await run_command(command, on_ok=done, reload=False)
@@ -364,7 +366,7 @@ def _new_round_dialog(proposal_id: int) -> None:
 
 async def _nominate(proposal_id: int, volunteer_id: int | None, note: str) -> None:
     if not volunteer_id:
-        ui.notify("Pick a volunteer", color="warning")
+        warn("Pick a volunteer")
         return
 
     async def command(ctx: PageCtx):
@@ -378,7 +380,7 @@ async def _nominate(proposal_id: int, volunteer_id: int | None, note: str) -> No
             today=ctx.env.today(),
         )
 
-    await run_command(command, reload=True)
+    await run_command(command, reload=True, success="Nominated")
 
 
 async def _remove_candidate(proposal_id: int, candidate_id: int, name: str) -> None:
@@ -392,13 +394,14 @@ async def _remove_candidate(proposal_id: int, candidate_id: int, name: str) -> N
     await run_command(
         lambda ctx: elections_service.remove_candidate(
             ctx.session, ctx.actor, proposal_id, candidate_id, today=ctx.env.today()
-        )
+        ),
+        success=f"{name} is off the list",
     )
 
 
 async def _add_voter(proposal_id: int, volunteer_id: int | None) -> None:
     if not volunteer_id:
-        ui.notify("Pick a volunteer", color="warning")
+        warn("Pick a volunteer")
         return
 
     async def command(ctx: PageCtx):
@@ -411,7 +414,7 @@ async def _add_voter(proposal_id: int, volunteer_id: int | None) -> None:
             today=ctx.env.today(),
         )
 
-    await run_command(command, reload=True)
+    await run_command(command, reload=True, success="Voter added")
 
 
 async def _remove_voter(proposal_id: int, voter_id: int, name: str) -> None:
@@ -425,7 +428,8 @@ async def _remove_voter(proposal_id: int, voter_id: int, name: str) -> None:
     await run_command(
         lambda ctx: elections_service.remove_voter(
             ctx.session, ctx.actor, proposal_id, voter_id, today=ctx.env.today()
-        )
+        ),
+        success=f"{name} is off the roll",
     )
 
 
@@ -442,13 +446,11 @@ async def _cast_ballot(
             now=ctx.now,
         )
 
-    def done(_value, _effects, _report) -> None:
-        ui.notify(
-            f"Ballot recorded — you may revise it until {voting_deadline}",
-            color="positive",
-        )
-
-    await run_command(command, on_ok=done, reload=True)
+    await run_command(
+        command,
+        reload=True,
+        success=f"Ballot recorded — you may revise it until {voting_deadline}",
+    )
 
 
 # --- the workroom's sections ---------------------------------------------------

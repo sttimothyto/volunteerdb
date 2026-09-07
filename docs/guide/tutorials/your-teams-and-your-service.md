@@ -52,7 +52,7 @@ You see your own profile page. Its title is your name. On a phone the header hid
 4. Leave *Email* as it is. The email address is also how you sign in.
 5. Click *Save*.
 
-You see the page again, with the new phone number under your name. Your teams see the new number on their rosters at once.
+You see the page again, with the message *Details saved* and the new phone number under your name. Your teams see the new number on their rosters at once.
 
 - To change your email address, follow [Change your email address](../how-to/change-your-email-address.md). A confirmation link goes to the new address first.
 

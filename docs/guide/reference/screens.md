@@ -10,6 +10,8 @@ The *Who* column uses these short names:
 - *leaders*: the leaders and seconds of the team, and the leaders and seconds of its parent teams.
 - *admin*: administrators. An administrator sees everything and can do everything, on every team.
 
+After a save, a green message at the foot of the page says what happened, for example *Details saved*. A refusal is a red or amber message with an icon and a close button; it stays for 8 seconds.
+
 A dialog with fields in it stays open until you click *Cancel* or its own button. A click outside it, or the Escape key, changes nothing. A question, for example *Delete the team …?*, closes on a click outside it, and nothing happens.
 
 ## The header

@@ -25,10 +25,14 @@ from ..models import AppUser
 from ..services import users as user_service
 from .context import (
     establish_session,
+    fail,
+    flash,
+    info,
     perform,
     rate_limit,
     session_user_id,
     toast,
+    warn,
 )
 from .help_links import SIGNING_IN
 from .logo_dialog import logo_img
@@ -101,7 +105,7 @@ async def _password_sign_in(
             base_url=facts.base_url,
             now=now,
         )
-        ui.notify("Invalid email or password", color="negative")
+        fail("Invalid email or password")
         return None
     user = signed.value
     await perform(
@@ -133,7 +137,7 @@ async def _request_code(addr: str, *, facts: RequestFacts, env: Env) -> bool:
         events.extend(result.value.events)
     await perform(events, base_url=facts.base_url, now=now)
     # Identical response whether or not the account exists (no enumeration).
-    ui.notify("If that address has an account, a sign-in code is on its way.")
+    info("If that address has an account, a sign-in code is on its way.")
     return True
 
 
@@ -147,10 +151,9 @@ async def _verify_code(
         verified = await user_service.verify_otp(session, addr, code, now=now)
     if isinstance(verified, Err):
         logger.warning("auth.login_failed", method="otp", email=addr, ip=facts.ip)
-        ui.notify(
+        fail(
             "That code didn't work — it may be mistyped or expired. "
-            "Resend to get a fresh one.",
-            color="negative",
+            "Resend to get a fresh one."
         )
         return None
     user = verified.value
@@ -185,7 +188,7 @@ def login_page(request: Request, redirect_to: str = "/"):
     async def submit() -> None:
         addr = (email.value or "").strip()
         if not addr:
-            ui.notify("Enter your email address", color="warning")
+            warn("Enter your email address")
             return
         if not password.value:
             await send_code()
@@ -290,10 +293,7 @@ async def _redeem_invite(
     once the refusal has been toasted. The password is optional: given, it
     has to pass the policy and be typed twice."""
     if not agreed:
-        ui.notify(
-            "To finish setup, please agree to keep personal information confidential.",
-            color="warning",
-        )
+        warn("To finish setup, please agree to keep personal information confidential.")
         return None
     if password or again:
         # The service checks the policy too (it is the choke point); doing
@@ -301,10 +301,10 @@ async def _redeem_invite(
         # specific sentence the person needs while the form is still open.
         weak = passwords.problem(password, site_terms=env.password_terms)
         if weak:
-            ui.notify(weak, color="negative", multi_line=True, timeout=8000)
+            fail(weak, multi_line=True)
             return None
         if password != again:
-            ui.notify("The two passwords don't match", color="negative")
+            fail("The two passwords don't match")
             return None
     now = env.clock.now()
     async with transaction(env, None) as session:
@@ -318,11 +318,10 @@ async def _redeem_invite(
         )
     if isinstance(redeemed, Err):
         logger.warning("auth.invite_invalid", reason=type(redeemed.error).__name__)
-        ui.notify(
+        fail(
             "This link has expired or has already been used. You can still "
             "sign in: enter your email on the sign-in page and leave the "
             "password blank, and we'll email you a code.",
-            color="negative",
             multi_line=True,
             timeout=10000,
         )
@@ -350,11 +349,11 @@ def invite_page(token: str, request: Request):
         if user is None:
             return
         establish_session(user.id, remember=remember.value, method="invite")
-        ui.notify(
+        # the dashboard says it: a toast here would go with this page
+        flash(
             "Welcome! Your password is set."
             if pw
-            else "Welcome! We'll email you a code each time you sign in.",
-            color="positive",
+            else "Welcome! We'll email you a code each time you sign in."
         )
         ui.navigate.to("/")
 

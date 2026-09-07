@@ -32,7 +32,7 @@ from ..errors import require
 from ..models import AppUser
 from ..permissions import volunteer_team_ids
 from ..services import users as user_service
-from .context import PageCtx, run_command
+from .context import PageCtx, info, run_command, success, warn
 from .forms import WIDE, actions, confirm, dialog_card
 
 
@@ -107,7 +107,7 @@ def show_invite(
             if reveal:
                 ui.button(
                     "Copy",
-                    on_click=lambda: (ui.clipboard.write(url), ui.notify("Copied")),
+                    on_click=lambda: (ui.clipboard.write(url), info("Copied")),
                 ).props("outline")
             if on_resend is not None:
                 ui.button("Send again", icon="mail", on_click=resend).props("outline")
@@ -213,10 +213,10 @@ async def send_invite(
         account, token = value
         addr = account.email
         sent = delivered(effects, report)
-        ui.notify(
-            f"Invite emailed to {addr}" if sent else f"Invite created for {addr}",
-            color="positive" if sent else "warning",
-        )
+        if sent:
+            success(f"Invite emailed to {addr}")
+        else:
+            warn(f"Invite created for {addr}")
         show_invite(base_url, token, addr, sent, reveal=reveal, reload_on_close=True)
 
     await run_command(command, on_ok=done, reload=False)

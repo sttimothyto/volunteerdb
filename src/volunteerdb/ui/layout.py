@@ -8,7 +8,7 @@ from ..permissions import Actor
 from ..services import mail_quota
 from .a11y import heading, icon_button
 from .asof import asof_banner, asof_picker
-from .context import clear_session
+from .context import clear_session, flash, show_flashed
 from .logo_dialog import site_logo
 from .photo_dialog import photo_avatar
 from .theme import apply_theme
@@ -31,6 +31,9 @@ def frame(
     old page-wide cap was really protecting, and it does not need the layout to
     shrink around it."""
     dark = apply_theme()
+    # what the action before this page load wanted said, now that there is
+    # a page to say it on
+    show_flashed()
     nav_items = [
         ("Teams", "/teams"),
         ("Volunteers", "/volunteers"),
@@ -194,7 +197,8 @@ def _own_avatar(actor: Actor) -> None:
     if actor.volunteer_id is None:
         return
 
-    async def changed() -> None:
+    async def changed(message: str) -> None:
+        flash(message)
         ui.navigate.reload()
 
     # a plain flex div, not ui.row(): row() would claim the header's width

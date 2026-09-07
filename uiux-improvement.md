@@ -203,7 +203,7 @@ screens that changed, and ends with the full suite green in its own commit.
   two (`w-96`, `w-[32rem]`) and the seven hand-rolled button rows move to
   `forms.actions` (including the "Possible double booking" second dialog at
   `events_page.py:397`).
-- [ ] **3. Notifications carry an icon and a message that outlives the reload.**
+- [x] **3. Notifications carry an icon and a message that outlives the reload.**
   `context.toast` and a new `context.success(msg)` pass `type=` (`positive` /
   `warning` / `negative`), refusals get `timeout=8000` and a close button. `frame()`
   pops `app.storage.user["flash"]` and shows it, so `run_command(reload=True)` stores

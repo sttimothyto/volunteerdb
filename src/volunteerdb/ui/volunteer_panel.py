@@ -20,7 +20,7 @@ from . import invites
 from .a11y import icon_button
 from .account_status import invitable, last_login_text
 from .asof import parse_as_of
-from .context import page_ctx
+from .context import page_ctx, success, warn
 from .photo_dialog import photo_avatar
 from .widgets import inactive_badge, role_badge, workload_badge
 
@@ -68,15 +68,18 @@ class VolunteerPanel:
         with self.drawer:
             self.content = ui.column().classes("w-full gap-1")
 
+    async def _changed(self, volunteer_id: int, message: str) -> None:
+        """The photo dialog's outcome: said here, then the panel redraws
+        itself -- no reload, so nothing to flash."""
+        success(message)
+        await self.open(volunteer_id)
+
     async def open(self, volunteer_id: int) -> None:
         async with page_ctx() as ctx:
             session, actor = ctx.session, ctx.actor
             volunteer = await volunteer_service.get(session, volunteer_id, at=self.at)
         if volunteer is None:
-            ui.notify(
-                f"No volunteer with id {volunteer_id} at this time.",
-                color="warning",
-            )
+            warn(f"No volunteer with id {volunteer_id} at this time.")
             return
         async with page_ctx() as ctx:
             session, actor = ctx.session, ctx.actor
@@ -113,7 +116,9 @@ class VolunteerPanel:
                     volunteer.full_name,
                     photo_at,
                     on_change=(
-                        (lambda: self.open(volunteer_id)) if self.at is None else None
+                        (lambda message: self._changed(volunteer_id, message))
+                        if self.at is None
+                        else None
                     ),
                 )
                 ui.label(volunteer.full_name).classes("text-lg font-medium")

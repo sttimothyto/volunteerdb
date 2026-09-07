@@ -33,9 +33,9 @@ You can also start from the profile page of the person. Under *Add to team*, pic
 
 ## What you see
 
-- After *Add*, the page reloads and the person appears under *Roster*, in role order.
+- After *Add*, the page reloads with the message *Added to the roster*. The person appears under *Roster*, in role order.
 - If the person was already on the team, their role changes to the one you chose instead.
-- After *Remove … from …*, the row is gone.
+- After *Remove … from …*, the row is gone and the page says *Removed from …*.
 - The person stays in the parish list and on their other teams. Their sign-in account is not touched.
 - The site keeps the membership as history. An as-of view of an earlier date still shows the person on the team.
 - Neither action sends an email.

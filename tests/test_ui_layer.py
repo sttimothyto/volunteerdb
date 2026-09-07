@@ -261,3 +261,36 @@ def test_every_dialog_is_built_by_forms():
         "a ui.dialog() outside forms.py: use dialog_card (persistent, titled) "
         f"or confirm (a question) so every dialog behaves alike: {stray}"
     )
+
+
+# --- every notification carries a type ------------------------------------------------
+#
+# context.notify and its four faces (success, info, warn, fail) pass Quasar a
+# `type`, which draws the icon: a state told by hue alone is one a colour-
+# blind reader cannot tell (WCAG 1.4.1). That holds site-wide only while no
+# page calls ui.notify itself -- and a success that precedes a reload goes
+# through context.flash, so the reload cannot tear it down.
+
+
+def test_every_notification_goes_through_context():
+    stray = []
+    for path in sorted(UI.glob("*.py")):
+        if path.name == "context.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "notify"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "ui"
+            ):
+                stray.append(f"{path.name}:{node.lineno}")
+    assert not stray, (
+        "a ui.notify() outside context.py: use success/info/warn/fail (an icon "
+        f"with the colour) or flash (survives the reload): {stray}"
+    )
+    source = (UI / "context.py").read_text()
+    assert "color=" not in source.split("def notify(")[1], (
+        "context.notify passes `type`, never `color`: the type is what draws the icon"
+    )

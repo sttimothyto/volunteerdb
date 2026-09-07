@@ -37,7 +37,7 @@ You can also start from *Volunteers*: click the row of the person, then *Full pr
 
 ## What you see
 
-- The dialog closes and the page reloads. The card shows the new *Email:*, *Phone:* and *Notes:* lines. There is no message.
+- The dialog closes and the page reloads with the message *Details saved*. The card shows the new *Email:*, *Phone:* and *Notes:* lines.
 - The new details are on the roster of every team of the person, and in the next export.
 - If you changed the email address of somebody else, the change is immediate. The old address gets the email *Your VolunteerDB address was changed*, which says who to tell if the change is news to them.
 - If the person already has an account, they still sign in with the address they had. See [Change your email address](change-your-email-address.md).

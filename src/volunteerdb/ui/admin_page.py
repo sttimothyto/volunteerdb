@@ -17,7 +17,7 @@ from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from . import invites
 from .a11y import icon_button
-from .context import PageCtx, page_ctx, run_command
+from .context import PageCtx, flash, info, page_ctx, run_command
 from .forms import actions, confirm, dialog_card
 from .guards import deny_unless_admin
 from .layout import frame
@@ -47,7 +47,7 @@ async def _provision() -> None:
         created = len(report.created)
         failed = sum(isinstance(e, SendMail) for e in effects) - run.mailed
         relinked, skipped = len(report.linked), len(report.skipped)
-        ui.notify(
+        flash(
             f"Created {created} accounts ({run.mailed} invites emailed"
             + (f", {failed} failed" if failed else "")
             + ")"
@@ -57,7 +57,7 @@ async def _provision() -> None:
                 else ""
             )
             + f", skipped {skipped}",
-            color="positive",
+            multi_line=True,
         )
 
     await run_command(command, on_ok=done)
@@ -116,10 +116,9 @@ def _new_account_dialog(volunteer_names: dict[int, str], base_url: str) -> None:
                 dialog.close()
                 matched = user.volunteer_id if not link.value else None
                 if matched is not None:
-                    ui.notify(
+                    info(
                         f"Linked to {volunteer_names.get(matched, matched)} "
-                        "by email address",
-                        color="info",
+                        "by email address"
                     )
                 if token:
                     invites.show_invite(
@@ -138,7 +137,11 @@ async def _toggle_admin(user_id: int, is_admin: bool) -> None:
             ctx.session, user_id, actor=ctx.actor, is_admin=not is_admin
         )
 
-    await run_command(command, reload=True)
+    await run_command(
+        command,
+        reload=True,
+        success="Admin right revoked" if is_admin else "Admin right granted",
+    )
 
 
 async def _toggle_active(user_id: int, is_active: bool) -> None:
@@ -147,7 +150,11 @@ async def _toggle_active(user_id: int, is_active: bool) -> None:
             ctx.session, user_id, actor=ctx.actor, is_active=not is_active
         )
 
-    await run_command(command, reload=True)
+    await run_command(
+        command,
+        reload=True,
+        success="Account disabled" if is_active else "Account enabled",
+    )
 
 
 def _relink_dialog(
@@ -176,10 +183,7 @@ def _relink_dialog(
 
             def done(_value, _effects, _report) -> None:
                 dialog.close()
-                ui.notify(
-                    f"{email} → {volunteer_names.get(pick.value, 'nobody')}",
-                    color="positive",
-                )
+                flash(f"{email} → {volunteer_names.get(pick.value, 'nobody')}")
 
             await run_command(command, on_ok=done, reload=True)
 

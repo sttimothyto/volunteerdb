@@ -34,12 +34,15 @@ from ..services import users as user_service
 from .calendar_panel import subscribe_panel
 from .context import (
     PageCtx,
+    fail,
+    flash,
     page_ctx,
     perform,
     rate_limit,
     run_command,
     session_auth_method,
     toast,
+    warn,
 )
 from .forms import confirm
 from .layout import frame
@@ -54,7 +57,7 @@ async def _request_email_change(address: str, *, user_id: int, base_url: str) ->
     """Stage the new address and mail it a confirmation link."""
     addr = address.strip()
     if not addr:
-        ui.notify("Type the new address first", color="warning")
+        warn("Type the new address first")
         return
     # The budget is on *sends*, not failures: what is worth abusing here is
     # the parish's sender, one address at a time.
@@ -80,12 +83,10 @@ async def _request_email_change(address: str, *, user_id: int, base_url: str) ->
 
     def done(value, _effects, _report) -> None:
         account, _token = value
-        ui.notify(
+        flash(
             f"Confirmation sent to {account.pending_email}. Nothing changes "
             "until the link in it is opened.",
-            color="positive",
             multi_line=True,
-            timeout=8000,
         )
 
     await run_command(command, on_ok=done)
@@ -96,10 +97,7 @@ async def _drop_email_change() -> None:
         return await user_service.cancel_email_change(ctx.session, ctx.actor.account.id)
 
     await run_command(
-        command,
-        on_ok=lambda _v, _e, _r: ui.notify(
-            "Address change cancelled — the link no longer works."
-        ),
+        command, success="Address change cancelled — the link no longer works."
     )
 
 
@@ -118,10 +116,10 @@ async def _save_password(
     signed in with the old one -- once the old one is re-typed."""
     weak = passwords.problem(new, email=email, site_terms=current_env().password_terms)
     if weak:
-        ui.notify(weak, color="negative", multi_line=True, timeout=8000)
+        fail(weak, multi_line=True)
         return
     if new != again:
-        ui.notify("The two passwords don't match", color="negative")
+        fail("The two passwords don't match")
         return
     if must_retype:
         if stored_hash is None:
@@ -129,9 +127,8 @@ async def _save_password(
             # admin's reissue_invite (services.users) has since cleared it:
             # the retyped one can prove nothing now, and the link they were
             # mailed is the way back in.
-            ui.notify(
-                "Your password was reset. Use the link you were sent to set a new one.",
-                color="negative",
+            fail(
+                "Your password was reset. Use the link you were sent to set a new one."
             )
             return
         # Failed attempts here count against the same budgets as failed
@@ -151,7 +148,7 @@ async def _save_password(
             await perform(
                 [SignInFailed("password", email, ip)], base_url=base_url, now=now
             )
-            ui.notify("That is not your current password", color="negative")
+            fail("That is not your current password")
             return
 
     async def command(ctx: PageCtx):
@@ -160,11 +157,7 @@ async def _save_password(
         )
 
     await run_command(
-        command,
-        on_ok=lambda _v, _e, _r: ui.notify(
-            "Password saved. You can sign in with it from now on.",
-            color="positive",
-        ),
+        command, success="Password saved. You can sign in with it from now on."
     )
 
 
@@ -182,10 +175,7 @@ async def _remove_password() -> None:
         return await user_service.clear_password(ctx.session, ctx.actor.account.id)
 
     await run_command(
-        command,
-        on_ok=lambda _v, _e, _r: ui.notify(
-            "Password removed — you now sign in with emailed codes."
-        ),
+        command, success="Password removed — you now sign in with emailed codes."
     )
 
 

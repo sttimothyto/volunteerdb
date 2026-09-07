@@ -16,7 +16,7 @@ from nicegui import events, ui
 
 from ..fp import Err
 from ..services import photos as photo_service
-from .context import PageCtx, run_command, toast
+from .context import PageCtx, run_command, toast, warn
 from .forms import actions, confirm, dialog_card
 
 DISCLAIMER = (
@@ -29,8 +29,11 @@ def open_photo_dialog(
     volunteer_id: int,
     full_name: str,
     photo_at: datetime | None,
-    on_change: Callable[[], Awaitable[None]],
+    on_change: Callable[[str], Awaitable[None]],
 ) -> None:
+    """`on_change` is told what happened ("Photo saved") and decides how to
+    say it: a caller that reloads flashes it for the page that comes back,
+    the side panel says it and redraws itself."""
     with dialog_card(f"Photo — {full_name}") as dialog:
         # current photo until a file is picked, then the normalized preview
         preview = ui.image().classes("w-40 h-40 rounded-full object-cover self-center")
@@ -63,10 +66,10 @@ def open_photo_dialog(
 
         async def save(image: bytes | None) -> None:
             if image is None:
-                ui.notify("Choose a photo first", color="warning")
+                warn("Choose a photo first")
                 return
             if not agree.value:
-                ui.notify("Please confirm the declaration first", color="warning")
+                warn("Please confirm the declaration first")
                 return
 
             async def command(ctx: PageCtx):
@@ -81,8 +84,7 @@ def open_photo_dialog(
 
             async def done(_value, _effects, _report) -> None:
                 dialog.close()
-                ui.notify("Photo saved", color="positive")
-                await on_change()
+                await on_change("Photo saved")
 
             await run_command(command, on_ok=done, reload=False)
 
@@ -100,8 +102,7 @@ def open_photo_dialog(
 
             async def done(_value, _effects, _report) -> None:
                 dialog.close()
-                ui.notify("Photo removed", color="positive")
-                await on_change()
+                await on_change("Photo removed")
 
             await run_command(command, on_ok=done, reload=False)
 
@@ -128,7 +129,7 @@ def photo_avatar(
     volunteer_id: int,
     full_name: str,
     photo_at: datetime | None,
-    on_change: Callable[[], Awaitable[None]] | None,
+    on_change: Callable[[str], Awaitable[None]] | None,
     *,
     marker: str = "photo-avatar",
 ) -> None:
