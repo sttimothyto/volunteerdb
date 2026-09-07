@@ -162,3 +162,35 @@ async def test_invite_redemption_flow(database, sim_sent):
         await user.should_see(
             "This link has expired or has already been used", retries=SLOW
         )
+
+
+async def test_forgot_your_password_sends_the_code(database, sim_sent):
+    """Forgot password, on the login card (uiux-improvement.md, step 30): the
+    link does what the guide used to describe as a trick -- the emailed code
+    -- for the address in the box, and asks for the address first."""
+    async with db_session() as session:
+        ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                password="correct-pass-phrase",
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
+            )
+        )
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open("/login")
+        # no address yet: the field says so and nothing is sent
+        user.find(marker="forgot-password").click()
+        await user.should_see("Required", retries=SLOW)
+        assert sim_sent == []
+
+        user.find(kind=ui.input, content="Email").type("admin@example.org")
+        user.find(marker="forgot-password").click()
+        await user.should_see(
+            "Enter the 6-digit code emailed to admin@example.org", retries=SLOW
+        )
+        assert [m[0] for m in sim_sent] == ["admin@example.org"]
+        assert "sign-in code" in sim_sent[0][1]

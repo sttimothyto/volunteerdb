@@ -251,6 +251,15 @@ def login_page(request: Request, redirect_to: str = "/"):
                     "Leave the password blank and we'll email you a one-time code."
                 ).classes("text-xs text-gray-500")
                 ui.button("Sign in", on_click=submit).classes("w-full")
+                # the same emailed code, for the reader who does not know the
+                # blank-password trick: a link-styled button, since the
+                # address in the box is what it sends to
+                ui.button(
+                    "Forgot your password?",
+                    on_click=lambda: send_code() if valid(email) else None,
+                ).props("flat dense no-caps").classes("self-center text-sm").mark(
+                    "forgot-password"
+                )
             with ui.column().classes("w-full gap-3") as code_step:
                 code_hint = ui.label().classes("text-sm")
                 code_input = (

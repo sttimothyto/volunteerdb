@@ -12,12 +12,11 @@ Sign in without a password. The site emails you a 6-digit code, and you type it 
 
 1. Open the site. If you are signed out, the sign-in page opens.
 2. Type your email address in *Email*.
-3. Leave *Password (optional)* empty.
-4. If you want to stay signed in on this device, tick *Keep me signed in*.
-5. Click *Sign in*.
-6. Open your email and find the message *Your VolunteerDB sign-in code:* followed by the code.
-7. Type the 6 digits from the message in *6-digit code*.
-8. Click *Sign in with code*.
+3. If you want to stay signed in on this device, tick *Keep me signed in*.
+4. Click *Forgot your password?*. Or leave *Password (optional)* empty and click *Sign in*.
+5. Open your email and find the message *Your VolunteerDB sign-in code:* followed by the code.
+6. Type the 6 digits from the message in *6-digit code*.
+7. Click *Sign in with code*.
 
 ## What you see
 

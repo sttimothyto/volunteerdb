@@ -356,7 +356,7 @@ screens that changed, and ends with the full suite green in its own commit.
 - [x] **29. Dialog field rows stack below 40 rem.** The date/start/end row
   (`events_page.py:414-417,918-925`) and the availability note + buttons row
   (`:1409-1426`) wrap to full-width fields on the phone.
-- [ ] **30. Forgot password, on the login card.** A "Forgot your password?" link that
+- [x] **30. Forgot password, on the login card.** A "Forgot your password?" link that
   does what the guide describes (submit with the password blank → emailed code), so
   the reader does not have to know the trick.
 
