@@ -203,6 +203,34 @@ a.vdb-quiet {
   letter-spacing: 0.06em;
 }
 
+/* ---------- section headings (ui/a11y.py heading) ----------
+   Real <h2>/<h3>, sized here: Quasar's sheet gives every h2 3.75rem and every
+   h3 3rem with margins of their own, and the utilities that would cut them
+   down arrive with Tailwind's late JIT (see .vdb-page-title). The sizes are
+   the ones the section labels wore as divs, so nothing moves. */
+.vdb-h2 {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  margin: 0;
+}
+
+.vdb-h3 {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  margin: 0;
+}
+
+/* the sign-in card's title: an h1 in the brand face, at the brand size */
+h1.vdb-brand {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  margin: 0;
+}
+
 /* ---------- you are here ----------
    The header names the page the reader is on (layout.frame sets
    aria-current="page" on the matching link): an accent rule under the nav

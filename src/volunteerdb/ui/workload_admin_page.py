@@ -8,6 +8,7 @@ from ..fp import Err, Ok
 from ..models import ROLE_LABELS, TeamRole
 from ..services import teams as team_service
 from ..services import workload as workload_service
+from .a11y import heading
 from .context import PageCtx, page_ctx, run_command, success
 from .guards import deny_unless_admin
 from .layout import frame
@@ -53,7 +54,7 @@ async def workload_page():
         ).classes("text-sm text-gray-500 vdb-prose")
 
         with ui.card().classes("w-full gap-2 p-4"):
-            ui.label("Role multipliers").classes("text-lg font-medium")
+            heading("Role multipliers", level=2)
             multiplier_inputs: dict[TeamRole, ui.number] = {}
             with ui.row().classes("gap-4"):
                 for role in TeamRole:
@@ -68,7 +69,7 @@ async def workload_page():
                         .classes("w-40")
                     )
 
-            ui.label("Colour bands").classes("text-lg font-medium")
+            heading("Colour bands", level=2)
             band_rows: list[tuple[ui.input, ui.color_input, ui.number | None]] = []
             for i, b in enumerate(config.bands):
                 is_last = i == len(config.bands) - 1
@@ -125,7 +126,7 @@ async def workload_page():
             ui.button("Save settings", icon="save", on_click=save_config).props("dense")
 
         with ui.card().classes("w-full gap-2 p-4"):
-            ui.label("Team workload weights").classes("text-lg font-medium")
+            heading("Team workload weights", level=2)
             ui.label(
                 "Optional per-ministry weight; empty teams don't count towards anyone's score. "
                 "Also editable on each team's edit dialog."

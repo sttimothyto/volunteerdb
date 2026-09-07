@@ -146,3 +146,21 @@ def test_dialogs_come_in_two_widths():
         "a dialog width that is neither forms.NARROW nor forms.WIDE:\n  "
         + "\n  ".join(offenders)
     )
+
+
+def test_a_section_title_is_a_heading_not_a_label_that_looks_like_one():
+    """`text-lg font-medium` on a ui.label was the site's section title for
+    35 sections: a div that looked like a heading and was not on a screen
+    reader's list of them. a11y.heading(text, level=2) is the title now,
+    sized by theme.css; the pair is forbidden on anything else, outside the
+    dialog title in forms.py."""
+    offenders = [
+        f"{path.name}:{lineno}: {classes!r}"
+        for path, lineno, classes in _class_literals()
+        if path.name != "forms.py"
+        and {"text-lg", "font-medium"} <= set(classes.split())
+    ]
+    assert not offenders, (
+        "a label dressed as a section title; use a11y.heading(text, level=2):\n  "
+        + "\n  ".join(offenders)
+    )

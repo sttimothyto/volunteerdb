@@ -49,6 +49,7 @@ from ..services import users as user_service
 from ..services.events import CalendarEntry, ClaimableSub, EventSummary, MyDuty
 from ..services.readmodels import EventWorkroom
 from . import calendar_grid, column_order
+from .a11y import heading
 from .calendar_panel import subscribe_panel
 from .context import PageCtx, flash, page_ctx, run_command, warn
 from .date_input import date_input, time_input
@@ -179,7 +180,7 @@ def _share_panel(base_url: str, event_id: int) -> None:
         .props('popover="auto" role="dialog" aria-label="Share this event"')
         .classes("vdb-popover") as panel
     ):
-        ui.label("Event link").classes("text-lg font-medium")
+        heading("Event link", level=2)
         ui.input(value=url).props(
             'readonly outlined dense aria-label="Event link"'
         ).classes("w-full").mark("share-url")
@@ -513,7 +514,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
 
 def _duties_section(duties: list[MyDuty], tz: ZoneInfo) -> None:
     """Your upcoming duties, each with its substitution control."""
-    ui.label("Your upcoming duties").classes("text-lg font-medium")
+    heading("Your upcoming duties", level=2)
     with ui.column().classes("w-full gap-1"):
         for duty in duties:
             with ui.row().classes("w-full items-center gap-2 p-2 rounded bg-gray-50"):
@@ -545,7 +546,7 @@ def _claimable_section(
     claimable: list[ClaimableSub], panel: VolunteerPanel, tz: ZoneInfo
 ) -> None:
     """Teammates' open calls this reader could answer."""
-    ui.label("Teammates need a substitute").classes("text-lg font-medium mt-4")
+    heading("Teammates need a substitute", level=2).classes("mt-4")
     with ui.column().classes("w-full gap-1"):
         for c in claimable:
             with ui.row().classes("w-full items-center gap-2 p-2 rounded bg-amber-50"):
@@ -659,10 +660,11 @@ def _listing_controls(
     manager, the New event button. The search box stays when the list is
     empty: the row keeps its shape, and the empty state below says why."""
     with ui.row().classes("w-full items-center mt-4"):
-        ui.label(
+        heading(
             ("Past events" if listing.show_past else "Upcoming events")
-            + (" (all teams)" if is_admin else " on your teams")
-        ).classes("text-lg font-medium")
+            + (" (all teams)" if is_admin else " on your teams"),
+            level=2,
+        )
         # the search box grows into the free space and holds the buttons
         # against the right edge (the teams-page idiom)
         search = (
@@ -1345,7 +1347,7 @@ def _collaboration_card(
     Manager-only, upcoming events only — the caller gates that."""
     with ui.card().classes("w-full gap-2 p-3"):
         with ui.row().classes("w-full items-center gap-2"):
-            ui.label("Collaboration").classes("font-medium")
+            heading("Collaboration", level=3)
             if tf_view is not None:
                 ui.badge("task force", color="secondary")
             ui.space()
@@ -1402,7 +1404,7 @@ def _availability_card(event_id: int, my_rsvp: EventRsvp | None) -> None:
     """ "Can you serve?" — an answer, not a commitment; the assignment is that."""
     with ui.card().classes("w-full gap-2 p-3"):
         with ui.row().classes("w-full items-center gap-2"):
-            ui.label("Can you serve at this event?").classes("font-medium")
+            heading("Can you serve at this event?", level=3)
             if my_rsvp is not None:
                 ui.badge(
                     "you said: available"
@@ -1493,7 +1495,7 @@ def _slot_card(
     has_room = sv.open_spots is None or sv.open_spots > 0
     with ui.card().classes("w-full gap-2 p-3"):
         with ui.row().classes("w-full items-center gap-2"):
-            ui.label(slot.name).classes("font-medium")
+            heading(slot.name, level=3)
             cap = "∞" if slot.capacity is None else str(slot.capacity)
             ui.badge(f"{len(sv.entries)}/{cap}")
             ui.space()
@@ -1549,7 +1551,7 @@ def _slot_card(
 
 def _slots_section(room: EventWorkroom, panel: VolunteerPanel) -> None:
     """The slot list, and for a manager the button that adds one."""
-    ui.label("Slots").classes("text-lg font-medium mt-2")
+    heading("Slots", level=2).classes("mt-2")
     options = room.picker_options()
     for sv in room.view.slots:
         _slot_card(room, sv, panel, options)
@@ -1563,7 +1565,7 @@ def _availability_answers(
     rsvps: list[tuple[EventRsvp, Volunteer]], panel: VolunteerPanel
 ) -> None:
     """The pool a manager assigns from."""
-    ui.label("Availability answers").classes("text-lg font-medium mt-2")
+    heading("Availability answers", level=2).classes("mt-2")
     with ui.column().classes("w-full gap-1"):
         for rsvp, volunteer in rsvps:
             with ui.row().classes("w-full items-center gap-2 p-1"):
@@ -1581,7 +1583,7 @@ def _subs_wanted_section(
     slots: list[event_service.SlotView],
 ) -> None:
     """Open substitute calls this viewer could take over."""
-    ui.label("Substitutes wanted").classes("text-lg font-medium mt-2")
+    heading("Substitutes wanted", level=2).classes("mt-2")
     names = {v.id: v.full_name for sv in slots for _, v in sv.entries}
     slot_names = {sv.slot.id: sv.slot.name for sv in slots}
     for sub, a in eligible:
@@ -1608,7 +1610,7 @@ def _attendance_section(
     """Recorded after the event ends. Attendance is derived, so this section
     exists only to correct it: a row with no override shows the automatic
     answer, and Reset puts it back."""
-    ui.label("Attendance").classes("text-lg font-medium mt-2")
+    heading("Attendance", level=2).classes("mt-2")
     ui.label(
         "Everyone assigned counts as attended for the scheduled "
         f"duration ({event_service.scheduled_hours(event)} h) unless "

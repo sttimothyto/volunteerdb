@@ -23,6 +23,7 @@ from ..errors import Invalid
 from ..fp import Err, Ok
 from ..models import AppUser
 from ..services import users as user_service
+from .a11y import heading
 from .context import (
     establish_session,
     fail,
@@ -222,7 +223,7 @@ def login_page(request: Request, redirect_to: str = "/"):
         # the parish's mark above its name; /logo serves the placeholder until
         # an admin uploads one, and this page has no session to gate on
         logo_img("/logo", "h-16 w-auto object-contain")
-        ui.label("Volunteer Database (VDB)").classes("text-2xl vdb-brand")
+        heading("Volunteer Database (VDB)").classes("text-2xl vdb-brand")
         with ui.card().classes("w-80 gap-3"):
             with ui.column().classes("w-full gap-3") as credentials_step:
                 # autocomplete=: NIST SP 800-63B §3.1.1.2 — "Verifiers SHALL
@@ -363,7 +364,7 @@ def invite_page(token: str, request: Request):
     # page written for the reader who is on this one
     help_menu()
     with ui.column().classes("absolute-center items-center gap-4"):
-        ui.label("Finish your account setup").classes("text-2xl vdb-brand")
+        heading("Finish your account setup").classes("text-2xl vdb-brand")
         with ui.card().classes("w-80 gap-3"):
             ui.label(
                 "Choosing a password is optional. If you skip it, you'll sign in "
@@ -425,7 +426,7 @@ async def _apply_email_change(
     await perform(result.value.events, base_url=facts.base_url, now=now)
     body.clear()
     with body:
-        ui.label("Address confirmed").classes("text-2xl vdb-brand")
+        heading("Address confirmed").classes("text-2xl vdb-brand")
         with ui.card().classes("w-80 gap-3"):
             ui.label(user.email).classes("font-medium")
             ui.label(
@@ -471,7 +472,7 @@ async def confirm_email_page(token: str, request: Request):
         _show_dead_link(body, login_url)
         return
     with body:
-        ui.label("Confirm your new address").classes("text-2xl vdb-brand")
+        heading("Confirm your new address").classes("text-2xl vdb-brand")
         with ui.card().classes("w-80 gap-3"):
             ui.label(target).classes("font-medium")
             ui.label(
@@ -492,7 +493,7 @@ def _show_dead_link(body: ui.column, login_url: str, reason: str = "") -> None:
     redeem_invite follows."""
     body.clear()
     with body:
-        ui.label("That link did not work").classes("text-2xl vdb-brand")
+        heading("That link did not work").classes("text-2xl vdb-brand")
         with ui.card().classes("w-80 gap-3"):
             ui.label(
                 reason

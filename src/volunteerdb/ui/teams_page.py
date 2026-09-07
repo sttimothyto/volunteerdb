@@ -21,6 +21,7 @@ from ..services.readmodels import TeamRoom
 from ..sheets import importer
 from ..sheets.common import sheet_url
 from . import column_order, invites
+from .a11y import heading
 from .account_status import roster_account
 from .asof import parse_as_of
 from .context import PageCtx, flash, page_ctx, run_command, success, toast
@@ -396,7 +397,7 @@ def _home_page_section(
 ) -> None:
     """Home-page controls for leaders/seconds/core members (and admins): link a
     public Google Doc, preview-fetch it, and reach the published page."""
-    ui.label("Volunteer home page").classes("text-lg font-medium")
+    heading("Volunteer home page", level=2)
     if not team.home_doc_url:
         with ui.row().classes("items-center gap-2"):
             ui.button(
@@ -452,7 +453,7 @@ def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -
     by the caller — the link IS the access to the sheet, so who may see it is
     who may manage the roster.
     """
-    ui.label("Roster spreadsheet").classes("text-lg font-medium")
+    heading("Roster spreadsheet", level=2)
     linked = team_sheet is not None and bool(team_sheet.file_id)
     with ui.row().classes("items-center gap-2"):
         if linked:
@@ -558,7 +559,7 @@ def _sheet_import_block(is_admin: bool) -> None:
     reach anybody else's roster, and the dry-run -> preview -> apply flow is
     the one already covered by tests.
     """
-    ui.label("Import a .csv").classes("text-md font-medium mt-2")
+    heading("Import a .csv", level=3).classes("mt-2")
     ui.label(
         "1. DO NOT edit the ID Column. "
         "2. Imports never delete anything and a blank cell never clears a "
@@ -583,9 +584,7 @@ def _sheet_import_block(is_admin: bool) -> None:
         report_area.clear()
         with report_area:
             if report.applied:
-                ui.label("Import applied ✔").classes(
-                    "text-positive text-lg font-medium"
-                )
+                heading("Import applied ✔", level=3).classes("text-positive")
             elif report.has_errors:
                 ui.label("Not applied — fix the errors below and re-upload.").classes(
                     "text-negative font-medium"
@@ -905,7 +904,7 @@ def _anniversaries_banner(anniversaries: list[volunteer_service.Anniversary]) ->
 
 
 def _subteams_row(children: list[Team]) -> None:
-    ui.label("Sub-teams").classes("text-lg font-medium")
+    heading("Sub-teams", level=2)
     with ui.row().classes("gap-2"):
         for child in children:
             ui.button(child.name).props(f'outline dense href="/teams/{child.id}"')
@@ -914,7 +913,7 @@ def _subteams_row(children: list[Team]) -> None:
 def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> ui.select:
     """The picker is returned so an empty roster's button can put the cursor
     in it."""
-    ui.label("Add member").classes("text-lg font-medium")
+    heading("Add member", level=2)
     with ui.row().classes("items-center gap-2"):
         who = (
             required(ui.select(volunteer_options, label="Volunteer", with_input=True))
@@ -1010,7 +1009,7 @@ def _roster_section(
 ) -> None:
     """`picker` is the add-member row's Volunteer box, when the reader has
     one: an empty roster's button puts the cursor in it."""
-    ui.label("Roster").classes("text-lg font-medium")
+    heading("Roster", level=2)
     if not room.can_names:
         denied(
             "You are not on this team, so its roster is not visible to you.",
@@ -1029,7 +1028,7 @@ def _roster_section(
 def _upcoming_events_section(
     upcoming_events: list[event_service.EventSummary], tz: ZoneInfo
 ) -> None:
-    ui.label("Upcoming events").classes("text-lg font-medium")
+    heading("Upcoming events", level=2)
     with ui.column().classes("w-full gap-1"):
         for s in upcoming_events[:5]:
             with ui.row().classes("w-full items-center gap-2 p-2 rounded bg-gray-50"):

@@ -48,6 +48,12 @@ finding.
 - **4.1.2** every icon-only control has an accessible name
   (`ui/a11y.py: icon_button`). That covers the header gear, sign-out and
   menu, the account-row actions, and the date picker's calendar button.
+- **1.3.1 / 2.4.6** every section title is a heading (`ui/a11y.py: heading`).
+  The page title is the h1, a section of it an h2, a card or sub-section an
+  h3. The sign-in card has an h1 of its own. Thirty-five titles were divs
+  dressed as headings (`text-lg font-medium`), which a screen reader's list
+  of headings never showed. `tests/test_ui_css_invariants.py` forbids the
+  dress now.
 - **2.1.1** the keyboard can reach clickable table rows. The events and
   teams tables carry a real link in the title cell, the volunteers table a
   button in the name cell. The row click stays for the mouse.

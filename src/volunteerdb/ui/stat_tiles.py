@@ -15,13 +15,15 @@ from contextlib import ExitStack, contextmanager
 
 from nicegui import ui
 
+from .a11y import heading
+
 
 @contextmanager
 def stat_section(title: str, subtitle: str | None = None) -> Iterator[None]:
     """A titled band. Heading matches the section headings on the events and
     elections pages. The body is a column, so a section can hold a row of
     tiles and then a line of chips or links under it."""
-    ui.label(title).classes("text-lg font-medium mt-2")
+    heading(title, level=2).classes("mt-2")
     if subtitle:
         ui.label(subtitle).classes("text-sm text-gray-500 vdb-prose")
     with ui.column().classes("w-full gap-2"):

@@ -21,6 +21,7 @@ from ..services import workload as workload_service
 from ..services.readmodels import VolunteerProfile
 from ..services.volunteers import AddressChange
 from . import column_order, invites
+from .a11y import heading
 from .account_status import invitable, last_login_text
 from .context import (
     PageCtx,
@@ -119,7 +120,7 @@ async def volunteers_page(q: str = "", band: str = ""):
                 ).props("dense")
 
         if team_hits:
-            ui.label("Matching teams").classes("text-lg font-medium")
+            heading("Matching teams", level=2)
             with ui.row().classes("gap-2 w-full flex-wrap"):
                 for team, path in team_hits:
                     ui.button(path).props(f'outline dense href="/teams/{team.id}"')
@@ -348,7 +349,7 @@ def _profile_card(profile: VolunteerProfile, actor: Actor, base_url: str) -> Non
                 profile.photo_at,
                 on_change=_reload_page,
             )
-            ui.label(volunteer.full_name).classes("text-lg font-medium")
+            heading(volunteer.full_name, level=2)
             if not volunteer.is_active:
                 inactive_badge()
             if profile.workload is not None:
@@ -396,7 +397,7 @@ def _profile_card(profile: VolunteerProfile, actor: Actor, base_url: str) -> Non
 
 
 def _serves_on_section(profile: VolunteerProfile, actor: Actor) -> None:
-    ui.label("Serves on").classes("text-lg font-medium")
+    heading("Serves on", level=2)
     if not profile.assignments:
         ui.label("Not on any team.").classes("text-gray-500")
     for membership, team in profile.assignments:
@@ -420,7 +421,7 @@ def _serves_on_section(profile: VolunteerProfile, actor: Actor) -> None:
 
 
 def _add_to_team_row(volunteer_id: int, assignable: dict[int, str]) -> None:
-    ui.label("Add to team").classes("text-lg font-medium")
+    heading("Add to team", level=2)
     with ui.row().classes("items-center gap-2"):
         team_select = (
             required(ui.select(assignable, label="Team", with_input=True))
@@ -446,7 +447,7 @@ def _add_to_team_row(volunteer_id: int, assignable: dict[int, str]) -> None:
 def _timeline_section(
     profile: VolunteerProfile, *, now: datetime, tz: ZoneInfo
 ) -> None:
-    ui.label("Service timeline").classes("text-lg font-medium")
+    heading("Service timeline", level=2)
     timeline_chart(
         profile.spells,
         profile.paths,
@@ -458,7 +459,7 @@ def _timeline_section(
 
 def _impact_section(profile: VolunteerProfile) -> None:
     """The priest's question: if they leave, what holes appear?"""
-    ui.label("If they leave, what vacancies appear?").classes("text-lg font-medium")
+    heading("If they leave, what vacancies appear?", level=2)
     if not profile.impact:
         ui.label("No memberships — no holes.").classes("text-gray-500")
     for row in profile.impact:
@@ -484,7 +485,7 @@ def _impact_section(profile: VolunteerProfile) -> None:
 def _involvements_section(
     involvements: list[elections_service.ProposalInvolvement],
 ) -> None:
-    ui.label("Proposals involving them").classes("text-lg font-medium")
+    heading("Proposals involving them", level=2)
     for inv in involvements:
         proposal = inv.proposal
         with ui.row().classes("w-full items-center gap-2 p-2 rounded bg-gray-50"):

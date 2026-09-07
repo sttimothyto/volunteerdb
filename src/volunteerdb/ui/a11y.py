@@ -32,7 +32,14 @@ class Heading(TextElement):
 
     def __init__(self, text: str, *, level: int = 1) -> None:
         super().__init__(tag=f"h{level}", text=text)
+        # theme.css sizes each level; Quasar's own sheet gives an h2 3.75rem
+        self.classes(f"vdb-h{level}")
 
 
 def heading(text: str, *, level: int = 1) -> Heading:
+    """A section title is a heading: level 1 names the page (layout.frame),
+    2 a section of it, 3 a card or a sub-section. A screen reader lists them
+    to get around; a `div` that merely looks like a title is not on that
+    list (WCAG 1.3.1, 2.4.6). tests/test_ui_css_invariants.py forbids the
+    look-alike (`text-lg font-medium` on a label) outside forms.py."""
     return Heading(text, level=level)

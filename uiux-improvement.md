@@ -242,7 +242,7 @@ screens that changed, and ends with the full suite green in its own commit.
   "visible to…" sentences (`events_page.py:1649`, `elections_page.py:216,682`,
   `teams_page.py:973`) render `widgets.denied(reason, back=(label, href))`; a
   not-found profile or event likewise.
-- [ ] **10. Section titles are headings.** `a11y.heading(text, level=2)` (and 3 in
+- [x] **10. Section titles are headings.** `a11y.heading(text, level=2)` (and 3 in
   cards) replaces the 35 `text-lg font-medium` labels; the login and invite pages get
   an `h1`. A source sweep forbids the class pair on a `ui.label` outside `forms.py`.
 - [ ] **11. Help for this page.** `frame(title, actor, help="lead-a-team")` draws a

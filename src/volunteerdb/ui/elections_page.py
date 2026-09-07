@@ -28,6 +28,7 @@ from ..services import volunteers as volunteer_service
 from ..services.readmodels import ProposalWorkroom
 from ..services.reports import CoverageRow
 from ..star import StarResult
+from .a11y import heading
 from .context import PageCtx, flash, page_ctx, run_command, warn
 from .date_input import date_input
 from .forms import WIDE, actions, confirm, dialog_card, required, valid
@@ -170,7 +171,7 @@ def _vacancies_section(
 ) -> None:
     """Teams missing a leader or a second, each with the button that opens a
     proposal for the missing seat."""
-    ui.label("Vacancies").classes("text-lg font-medium mt-4")
+    heading("Vacancies", level=2).classes("mt-4")
     if not vacancies:
         ui.label("Every team has a leader and a second-in-command. 🎉").classes(
             "text-positive"
@@ -235,7 +236,7 @@ async def elections_page():
 
     with frame("Elections", actor):
         if open_rows:
-            ui.label("Open proposals").classes("text-lg font-medium")
+            heading("Open proposals", level=2)
             with ui.column().classes("w-full gap-1"):
                 for s in open_rows:
                     _summary_row(s)
@@ -255,7 +256,7 @@ async def elections_page():
             _vacancies_section(vacancy_rows, proposal_team_ids, volunteer_options)
 
         if decided_rows:
-            ui.label("Recently decided").classes("text-lg font-medium mt-4")
+            heading("Recently decided", level=2).classes("mt-4")
             with ui.column().classes("w-full gap-1"):
                 for s in decided_rows[:20]:
                     _summary_row(s)
@@ -571,7 +572,7 @@ def _candidate_card(
 
 
 def _candidates_section(room: ProposalWorkroom) -> None:
-    ui.label("Candidates").classes("text-lg font-medium mt-2")
+    heading("Candidates", level=2).classes("mt-2")
     for cv in room.view.candidates:
         _candidate_card(room, cv)
 
@@ -609,7 +610,7 @@ def _voters_section(
 ) -> None:
     """The roll, with turnout. That somebody has voted is shown; what they voted
     is not — ballots are secret, so only the flag and the count appear here."""
-    ui.label("Voting members").classes("text-lg font-medium mt-2")
+    heading("Voting members", level=2).classes("mt-2")
     voted = sum(1 for vv in voters if vv.has_voted)
     ui.label(f"{voted} of {len(voters)} ballots cast").classes("text-sm text-gray-600")
     with ui.column().classes("w-full gap-1"):
@@ -656,7 +657,7 @@ def _ballot_section(
 ) -> None:
     """One 0-5 toggle per candidate, revisable until the deadline. A candidate
     left alone is submitted as an explicit 0: STAR has no abstention."""
-    ui.label("Your ballot").classes("text-lg font-medium mt-2")
+    heading("Your ballot", level=2).classes("mt-2")
     ui.label(STAR_NOTE).classes("text-sm text-gray-500")
     toggles: dict[int, ui.toggle] = {}
     with ui.column().classes("w-full gap-1"):
@@ -679,7 +680,7 @@ def _ballot_section(
 
 
 def _result_section(tally: StarResult, names: dict[int, str]) -> None:
-    ui.label("Result").classes("text-lg font-medium mt-2")
+    heading("Result", level=2).classes("mt-2")
     count = tally.ballot_count
     ui.label(f"{count} ballot{'s' if count != 1 else ''} cast").classes(
         "text-sm text-gray-600"

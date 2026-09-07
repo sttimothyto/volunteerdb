@@ -31,6 +31,7 @@ from ..domain import EmailChangeAttempted, SignInFailed
 from ..env import current as current_env
 from ..fp import expect
 from ..services import users as user_service
+from .a11y import heading
 from .calendar_panel import subscribe_panel
 from .context import (
     PageCtx,
@@ -199,7 +200,7 @@ def _signin_card(email: str, has_password: bool) -> None:
 
 def _calendar_card(base_url: str, feed_token: str) -> None:
     with ui.card().classes("w-full max-w-xl gap-2"):
-        ui.label("Your duties in your own calendar").classes("font-medium")
+        heading("Your duties in your own calendar", level=2)
         ui.label(
             "Subscribe your phone or desktop calendar to the events you are "
             "signed up for; it stays current as you sign up and withdraw. The "
@@ -225,7 +226,7 @@ def _email_card(
     """Change the sign-in address: the change waiting to be confirmed, if
     any, and the box for a new one."""
     with ui.card().classes("w-full max-w-xl gap-3"):
-        ui.label("Change your email address")
+        heading("Change your email address", level=2)
         ui.label(
             "This is the address you sign in at, and — for volunteers — "
             "the one on every ministry roster you serve on. Both move "
@@ -277,7 +278,7 @@ def _password_card(
     """Set or change the password, and drop it."""
     has_password = stored_hash is not None
     with ui.card().classes("w-full max-w-xl gap-3"):
-        ui.label("Change your password" if has_password else "Set a password")
+        heading("Change your password" if has_password else "Set a password", level=2)
         current = None
         if must_retype:
             current = (

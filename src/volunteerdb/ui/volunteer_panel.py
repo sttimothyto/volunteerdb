@@ -17,7 +17,7 @@ from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from . import invites
-from .a11y import icon_button
+from .a11y import heading, icon_button
 from .account_status import invitable, last_login_text
 from .asof import parse_as_of
 from .context import page_ctx, success, warn
@@ -121,7 +121,7 @@ class VolunteerPanel:
                         else None
                     ),
                 )
-                ui.label(volunteer.full_name).classes("text-lg font-medium")
+                heading(volunteer.full_name, level=2)
                 ui.space()
                 icon_button("close", "Close", on_click=self.drawer.hide).props(
                     "flat dense round"
@@ -169,7 +169,7 @@ class VolunteerPanel:
                         where="detail",
                     )
 
-            ui.label("Serves on").classes("font-medium mt-2")
+            heading("Serves on", level=3).classes("mt-2")
             if not assignments:
                 ui.label("Not on any team.").classes("text-sm text-gray-500")
             for membership, team in assignments:
