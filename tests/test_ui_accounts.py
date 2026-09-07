@@ -12,7 +12,7 @@ from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import users, volunteers
 
 from tests import mint
-from tests.conftest import SIM_MAIN, SLOW, db_session, only
+from tests.conftest import SIM_MAIN, db_session, only, reloaded
 from tests.fp_helpers import ok
 
 
@@ -91,8 +91,10 @@ async def test_the_menu_actions_reach_the_account(database):
             for r in only(user.find(marker="accounts")).rows
             if r["id"] == ids["vera_u"]
         )
+        page = user.client
         user.find(marker="accounts").trigger("admin", vera)
-        await user.should_see("Admin right granted", retries=SLOW)
+        page = await reloaded(user, since=page)
+        await user.should_see("Admin right granted")
         user.notify.messages.clear()
 
         vera = next(
@@ -102,7 +104,8 @@ async def test_the_menu_actions_reach_the_account(database):
         )
         assert vera["is_admin"], "the reloaded row says so"
         user.find(marker="accounts").trigger("active", vera)
-        await user.should_see("Account disabled", retries=SLOW)
+        await reloaded(user, since=page)
+        await user.should_see("Account disabled")
 
     async with db_session() as session:
         account = await users.get(session, ids["vera_u"])

@@ -27,8 +27,9 @@ import pytest
 import sqlalchemy as sa
 import structlog
 from fastapi import FastAPI
-from nicegui import app
+from nicegui import Client, app
 from nicegui.storage import Storage
+from nicegui.testing.user import User
 from nicegui.testing.user_simulation import user_simulation
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -360,6 +361,27 @@ def only[T](found) -> T:
         f"expected exactly one element, found {len(elements)}: {elements}"
     )
     return elements[0]
+
+
+async def reloaded(user: User, since: Client | None, *, retries: int = SLOW) -> Client:
+    """The page a `ui.navigate.reload()` brought back, once it is the page
+    `user.find` reads: `since` is the client the reader was on before the
+    action that reloads.
+
+    A flashed line is shown by the reloaded page while it is built, and the
+    simulation keeps every `ui.notify` in one list across pages -- so
+    `should_see(line)` can return while `user.client` is still the page that
+    was reloaded, and a `find` right after it reads the rows the action
+    changed, unchanged (test_the_menu_actions_reach_the_account failed that
+    way once in a four-worker run: the window is the GET returning, a few
+    milliseconds, and should_see polls every hundred). The simulation
+    switches clients only after the whole page came back, so once it has
+    the rows are the new ones."""
+    for _ in range(retries):
+        if user.client is not None and user.client is not since:
+            return user.client
+        await asyncio.sleep(0.1)
+    raise AssertionError("the page did not reload")
 
 
 @pytest.fixture

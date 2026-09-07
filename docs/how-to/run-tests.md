@@ -108,6 +108,11 @@ uv run playwright show-trace test-results/*/trace.zip
   time, and the clock is reset between tests.
 - `only(user.find(...))` is the one element a `find` matched. Prefer it to
   `.elements.pop()`, which picks arbitrarily from a set.
+- `await reloaded(user, since=page)` is the page an action's
+  `ui.navigate.reload()` brought back, with `page` the `user.client` from
+  before the action. The simulation records a flashed line while the old
+  page is still the one `find` reads. So wait on this before reading the
+  rows an action changed, then `should_see` the line.
 - `mint.today()` is the parish day, `mint.now()` the instant; build dates
   from those, never from `date.today()`, which is the machine's.
 - The `real_app_client` fixture reuses that harness to reach the fully
