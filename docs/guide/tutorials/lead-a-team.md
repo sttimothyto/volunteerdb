@@ -68,7 +68,7 @@ Every team can keep its roster in a Google Sheet. If you do nothing, the site ma
 10. Leave *Overwrite it from the database* selected. The site fills your sheet from the roster.
 11. Click *Save*.
 
-You see the message *Syncing with Google Sheets…*, then a green message with the result. The section now shows the name of the sheet as a link, with *Change spreadsheet*, *Sync now* and *Overwrite sheet*. Under it is the line *Last synced*, with the date. Every night at 2:30 the site reads your edits from the sheet, and then rewrites the sheet to match.
+You see a spinner on *Save* while the site syncs, then a green message with the result. The section now shows the name of the sheet as a link, with *Change spreadsheet*, *Sync now* and *Overwrite sheet*. Under it is the line *Last synced*, with the date. Every night at 2:30 the site reads your edits from the sheet, and then rewrites the sheet to match.
 
 - Keep the link private. It holds the email address, the phone number and the notes of every member.
 - If the message says *Linked, but the first sync failed*, check the share setting in Google Sheets. Then click *Sync now*.

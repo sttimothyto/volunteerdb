@@ -31,7 +31,7 @@ Keep the roster of your team in a Google Sheet that you and your helpers edit, a
 
 ## What you see
 
-- The message *Syncing with Google Sheets…*, then a green message: *sheet rewritten from the database*, or the counts of the rows imported.
+- A spinner on *Save* while the site syncs, then a green message: *sheet rewritten from the database*, or the counts of the rows imported.
 - The section shows the name of the sheet as a link, with *Change spreadsheet*, *Sync now* and *Overwrite sheet*. Under it is *Last synced*, with the date and time.
 - The sheet has the 8 roster columns, a drop-down list in *Role* and in *Team*, a hidden *ID* column and a protected header row. See [The roster spreadsheet](../reference/roster-spreadsheet.md).
 

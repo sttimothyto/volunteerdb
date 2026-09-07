@@ -21,6 +21,7 @@ from .context import PageCtx, flash, info, page_ctx, run_command
 from .forms import actions, confirm, dialog_card
 from .guards import deny_unless_admin
 from .layout import frame
+from .widgets import busy
 
 # --- actions -------------------------------------------------------------------
 
@@ -316,10 +317,12 @@ async def users_page():
 
     with frame("Accounts", actor):
         with ui.row().classes("gap-2"):
+            # busy through the question and the work: the page button is
+            # what the reader watches while forty invites go out
             ui.button(
                 "Create accounts for all volunteers with email",
                 icon="group_add",
-                on_click=_provision,
+                on_click=busy(_provision),
             ).props("dense")
             ui.button(
                 "New account",

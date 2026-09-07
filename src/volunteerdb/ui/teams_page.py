@@ -23,12 +23,12 @@ from ..sheets.common import sheet_url
 from . import column_order, invites
 from .account_status import roster_account
 from .asof import parse_as_of
-from .context import PageCtx, flash, info, page_ctx, run_command, success, toast, warn
+from .context import PageCtx, flash, page_ctx, run_command, success, toast, warn
 from .forms import WIDE, actions, confirm, dialog_card
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
-from .widgets import ROLE_OPTIONS, inactive_badge, role_badge
+from .widgets import ROLE_OPTIONS, busy, inactive_badge, role_badge
 
 
 def _hierarchy_rows(tree, coverage, actor) -> list[dict]:
@@ -415,7 +415,7 @@ def _home_page_section(
         ui.button(
             "Fetch now",
             icon="refresh",
-            on_click=lambda: _fetch_home_page(team_id),
+            on_click=busy(lambda: _fetch_home_page(team_id)),
         ).props("dense outline")
         ui.button(
             "Change",
@@ -465,12 +465,12 @@ def _sheet_section(team_sheet: TeamSheet | None, team_id: int, is_admin: bool) -
             ui.button(
                 "Sync now",
                 icon="sync",
-                on_click=lambda: _sync_sheet(team_id, roster_sheets.IMPORT),
+                on_click=busy(lambda: _sync_sheet(team_id, roster_sheets.IMPORT)),
             ).props("dense outline")
             ui.button(
                 "Overwrite sheet",
                 icon="upload",
-                on_click=lambda: _sync_sheet(team_id, roster_sheets.EXPORT),
+                on_click=busy(lambda: _sync_sheet(team_id, roster_sheets.EXPORT)),
             ).props("dense flat").tooltip(
                 "Rewrites the spreadsheet from the database, discarding "
                 "whatever is in it — the way out of a mangled sheet."
@@ -529,7 +529,7 @@ async def _sync_sheet(team_id: int, direction: str) -> None:
     async with page_ctx() as ctx:
         user_id = ctx.actor.account.id
     env = ctx.env
-    info("Syncing with Google Sheets…")
+    # no "Syncing…" toast: the button that was clicked shows it is working
     synced = await roster_sheets.sync_team(
         env, team_id, direction=direction, user_id=user_id, now=env.clock.now()
     )
@@ -621,7 +621,7 @@ def _sheet_import_block(is_admin: bool) -> None:
                 ui.button(
                     "Apply this import",
                     icon="publish",
-                    on_click=lambda: apply_import(content, filename),
+                    on_click=busy(lambda: apply_import(content, filename)),
                 ).props("color=positive")
 
     async def _import(content: bytes, *, dry_run: bool):
@@ -707,8 +707,8 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
             if isinstance(linked, Err):
                 return
             user_id = linked.value
-            dialog.close()
-            info("Syncing with Google Sheets…")
+            # the dialog stays open, its Save button working, until the
+            # first sync has answered: that answer is what the reader waits for
             env = current_env()
             synced = await roster_sheets.sync_team(
                 env,
@@ -733,6 +733,7 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
                 )
             else:
                 flash(outcome.message, multi_line=True)
+            dialog.close()
             ui.navigate.to(f"/teams/{team_id}")
 
         actions(dialog, "Save", save)

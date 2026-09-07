@@ -2,6 +2,7 @@
 substitution flow with its emails, event creation via the dialog, and the
 attendance section on past events."""
 
+import asyncio
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -99,6 +100,15 @@ async def _parish(session):
         "noor_u": noor_u.id,
         "oda_u": oda_u.id,
     }
+
+
+async def _enabled(user, label: str) -> None:
+    """Wait for the button called `label` to take a click again."""
+    for _ in range(SLOW):
+        if all(b.enabled for b in user.find(label, kind=ui.button).elements):
+            return
+        await asyncio.sleep(0.1)
+    raise AssertionError(f"{label!r} stayed disabled")
 
 
 def _next_week(hour: int) -> datetime:
@@ -640,7 +650,11 @@ async def test_duplicate_location_warning_on_create(database):
         await user.should_see("Sunday Mass")
         user.find("Go back", kind=ui.button).click()
 
-        # the form is still open; forcing it through this time works
+        # the form is still open; forcing it through this time works. Create
+        # event is busy (widgets.busy) until the question has been answered
+        # and its handler has returned, and the simulation drops a click on a
+        # disabled button, so wait for it to take one again.
+        await _enabled(user, "Create event")
         user.find("Create event", kind=ui.button).click()
         await user.should_see("Possible double booking", retries=SLOW)
         user.find("Create anyway", kind=ui.button).click()

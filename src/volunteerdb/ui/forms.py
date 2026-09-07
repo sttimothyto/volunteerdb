@@ -18,6 +18,8 @@ from typing import Any
 
 from nicegui import ui
 
+from .widgets import busy
+
 NARROW = "w-96"
 WIDE = "w-[32rem]"
 
@@ -61,13 +63,13 @@ def actions(
     through `on_cancel`), or None drops it for a dialog that only informs.
     `extra` draws whatever sits between the two -- a Clear, a Remove, a
     Copy -- so every row still reads left to right: the way out, the side
-    doors, the deed."""
+    doors, the deed. The primary is `busy` while it works (widgets.busy)."""
     with ui.row().classes("justify-end w-full gap-2"):
         if cancel is not None:
             ui.button(cancel, on_click=on_cancel or dialog.close).props("flat")
         if extra is not None:
             extra()
-        button = ui.button(primary, icon=icon, on_click=on_primary)
+        button = ui.button(primary, icon=icon, on_click=busy(on_primary))
         if danger:
             button.props("color=negative")
         if marker:
@@ -115,4 +117,17 @@ async def confirm(
                 yes_button.props("color=negative")
             if yes_marker:
                 yes_button.mark(yes_marker)
-    return bool(await dialog)
+    return bool(await answered(dialog))
+
+
+async def answered(dialog: ui.dialog) -> Any:
+    """Await a question and take it down once it is answered.
+
+    An awaited dialog closes but stays in the page, so every question asked
+    left one more behind -- and the simulation, which clicks the lowest-id
+    match for a button's text, then answered the previous question instead
+    of the one on screen. A question is built per asking; deleting it
+    afterwards keeps the page the size it was."""
+    result = await dialog
+    dialog.delete()
+    return result

@@ -52,7 +52,7 @@ from . import calendar_grid, column_order
 from .calendar_panel import subscribe_panel
 from .context import PageCtx, flash, page_ctx, run_command, warn
 from .date_input import date_input, time_input
-from .forms import WIDE, actions, confirm, dialog_card
+from .forms import WIDE, actions, answered, confirm, dialog_card
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -386,7 +386,7 @@ async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
             cancel="Go back",
             on_cancel=lambda: dialog.submit(False),
         ).props("color=warning")
-    return bool(await dialog)
+    return bool(await answered(dialog))
 
 
 def _new_event_dialog(managed_options: dict[int, str]) -> None:

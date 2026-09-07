@@ -209,7 +209,7 @@ screens that changed, and ends with the full suite green in its own commit.
   pops `app.storage.user["flash"]` and shows it, so `run_command(reload=True)` stores
   its success line there instead of racing the reload. The guide's "There is no
   message." lines go.
-- [ ] **4. A button that is working says so.** `forms.actions` and a new
+- [x] **4. A button that is working says so.** `forms.actions` and a new
   `widgets.busy(button)` wrap the handler: `loading` + `disable` while awaited,
   restored after (or the page reloads). Applied to every `actions` primary, to
   "Sync now", "Fetch now", "Overwrite sheet", "Apply this import", "Upload" and the
