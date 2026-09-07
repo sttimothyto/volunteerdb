@@ -246,6 +246,13 @@ VDB_TEMPLATE_SHEET_URL='https://docs.google.com/…' \
   each deployment comes from the site file.
 - Add a required reviewer to the environment to turn the deploy into a manual
   approval. This too needs no change to the workflow.
+- A **second** instance — a public demo — deploys from the same repository.
+  Make a `demo` Environment that holds its own copies of those secrets. Then
+  name its site file in a `VDB_DEMO_SITE` repository variable.
+- The workflow's `deploy-demo` job runs it beside the parish, and skips when
+  that variable is unset.
+- Read [A second instance](deploy.md#a-second-instance) first: those secrets
+  belong to the environment, not to the repository.
 
 ## Verify
 

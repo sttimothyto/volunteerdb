@@ -1,8 +1,10 @@
 name: CI
 
-# Every push runs lint + tests + docs. A green push to main deploys the site
-# named by VDB_SITE below, via the same pyinfra script used by hand
-# (docs/how-to/deploy.md), from a clean checkout of that commit.
+# Every push runs lint + tests + docs. A green push to main deploys, via the
+# same pyinfra script used by hand (docs/how-to/deploy.md), from a clean
+# checkout of that commit: the parish named by VDB_SITE, and -- if the
+# repository also runs one -- the public demo named by VDB_DEMO_SITE. The two
+# deploys are independent jobs in separate GitHub Environments.
 
 on:
   push:
@@ -124,7 +126,8 @@ jobs:
     # an environment variable: a job-level `if` is evaluated before the
     # environment is chosen, so those are invisible to it. A repository that
     # has not set one -- a fork, by default -- runs lint, the tests and the
-    # docs build, and stops here.
+    # docs build, and deploys nothing. The demo below is a second job with a
+    # variable and an environment of its own.
     if: github.ref == 'refs/heads/main' && vars.VDB_SITE != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -179,6 +182,73 @@ jobs:
           # Unset expands to "" — falsy, so deploy.py keeps the key already on
           # the host. Setting it rotates the key.
           VDB_SMTP2GO_API_KEY: ${{ secrets.VDB_SMTP2GO_API_KEY }}
+          MODE: ${{ inputs.dry_run && '--dry' || '-y' }}
+        run: |
+          uvx pyinfra==3.10.0 deploy/inventory.py deploy/deploy.py \
+            --ssh-key ~/.ssh/id_deploy "$MODE"
+
+  # The public demo, deployed from the same commit by the same script. Its
+  # site file, its host and its GitHub Environment are its own, which is what
+  # keeps the two apart: a demo carries no parish data and, below, no mail key.
+  #
+  # Independent of `deploy` rather than chained after it. The demo lives on a
+  # shared host that other deploys reboot, so a demo that is down must not
+  # hold the parish's release back, and a failure is named as the job it
+  # happened in.
+  deploy-demo:
+    needs: [lint, test, docs]
+    # A *repository* variable for the same reason as VDB_SITE above: a
+    # job-level `if` is evaluated before the environment is chosen. A
+    # repository that runs no demo -- a fork, or a parish with one instance --
+    # leaves it unset, and deploys production alone.
+    if: github.ref == 'refs/heads/main' && vars.VDB_DEMO_SITE != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: demo
+      url: ${{ steps.site.outputs.url }}
+    concurrency:
+      group: deploy-demo
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Read the site file
+        id: site
+        env:
+          VDB_SITE: ${{ vars.VDB_DEMO_SITE }}
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'EOF'
+          import os, tomllib
+          with open(f"deploy/sites/{os.environ['VDB_SITE']}.toml", "rb") as f:
+              print(f"url=https://{tomllib.load(f)['host']['domain']}")
+          EOF
+
+      # These three must be secrets of the `demo` Environment, not repository
+      # secrets. Repository secrets are visible to both jobs, so a DEPLOY_HOST
+      # set at that level would point this job at the production server and
+      # install the demo over the parish.
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+
+      # No VDB_SMTP2GO_API_KEY and no VDB_ADMIN_PASSWORD: a public demo must
+      # not be able to mail anybody, and its accounts come from
+      # scripts/seed.py, which rewrites the database nightly on the host.
+      # Otherwise the production job's step, pin included -- a test fails if
+      # the two pins in this file disagree, or if either drifts from the
+      # Makefile's.
+      - name: pyinfra deploy
+        env:
+          VDB_SITE: ${{ vars.VDB_DEMO_SITE }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           MODE: ${{ inputs.dry_run && '--dry' || '-y' }}
         run: |
           uvx pyinfra==3.10.0 deploy/inventory.py deploy/deploy.py \

@@ -514,14 +514,15 @@ def test_no_parish_is_named_in_the_mechanism():
 
 def test_the_pyinfra_pin_is_written_twice_and_agrees():
     """`make deploy` and CI must run the same pyinfra: the Makefile holds the
-    pin the manual points people at, CI repeats it because a runner has no
-    make target to call with --ssh-key, and the manual itself never carries a
-    version to go stale."""
+    pin the manual points people at, CI repeats it -- once per deploy job,
+    because a runner has no make target to call with --ssh-key -- and the
+    manual itself never carries a version to go stale."""
     pin = re.compile(r"uvx pyinfra==(\S+)")
     make = pin.search((REPO / "Makefile").read_text())
-    ci = pin.search((REPO / ".github" / "workflows" / "ci.yml").read_text())
+    ci = set(pin.findall((REPO / ".github" / "workflows" / "ci.yml").read_text()))
     assert make and ci, "the pin is missing from the Makefile or ci.yml"
-    assert make.group(1) == ci.group(1), "Makefile and ci.yml pin different pyinfras"
+    assert len(ci) == 1, f"ci.yml pins more than one pyinfra: {sorted(ci)}"
+    assert {make.group(1)} == ci, "Makefile and ci.yml pin different pyinfras"
     stale = [
         str(p.relative_to(REPO))
         for p in (REPO / "docs").rglob("*.md")

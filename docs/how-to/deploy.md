@@ -33,12 +33,34 @@
   the secrets it holds and how to create them.
 - Add a required reviewer to that environment to turn the deploy into a
   manual approval. That needs no workflow change.
+- A repository that also runs a public demo deploys it in a second job,
+  `deploy-demo`, in a `demo` Environment of its own. It is the same script on
+  the same commit, with the site file named by the `VDB_DEMO_SITE` repository
+  variable. See [A second instance](#a-second-instance).
 
 To preview from CI, and change nothing:
 
 ```sh
 gh workflow run ci.yml --ref main -f dry_run=true   # runs pyinfra --dry
 ```
+
+## A second instance
+
+- Each instance is one GitHub Environment, one repository variable naming its
+  site file, and one job in the workflow.
+- The demo is that pattern: environment `demo`, variable `VDB_DEMO_SITE`, job
+  `deploy-demo`.
+- Its `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` and `DEPLOY_HOST` **must be
+  secrets of its own environment**, never repository secrets. A repository
+  secret is visible to both jobs. A repository-level `DEPLOY_HOST` therefore
+  sends the demo job at the production server, and installs the demo over the
+  parish.
+- Neither job waits for the other, and neither can cancel the other: they hold
+  separate concurrency groups. A demo host that is down does not hold a parish
+  release back.
+- The demo is deliberately given no `VDB_SMTP2GO_API_KEY` and no
+  `VDB_ADMIN_PASSWORD`. It must not be able to mail anybody, and its accounts
+  come from `scripts/seed.py`.
 
 ## Deploy or upgrade by hand
 
