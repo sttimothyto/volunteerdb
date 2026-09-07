@@ -61,6 +61,9 @@ finding.
   `aria-expanded`, and `aria-controls` to the list. The arrow keys move an
   `aria-activedescendant` through the options. Enter opens the marked one;
   Escape closes the list.
+- **4.1.3** the count under a searchable table ("3 of 12 teams") and the
+  .csv import report are `aria-live="polite"` regions. A screen reader
+  hears what the box or the upload changed.
 - **2.4.1 / 1.3.1** a skip link ("Skip to content", visible on focus) into
   the page body, and a `<nav aria-label="Main">`. The `<main>` landmark is
   NiceGUI's own page container.

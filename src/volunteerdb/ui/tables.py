@@ -91,7 +91,11 @@ def wire_search(
     under the table, never as a toast: this runs on every keystroke.
 
     Returns `apply`, the same narrowing on demand: what a section that
-    put a fresh row set into `table.every` calls next."""
+    put a fresh row set into `table.every` calls next.
+
+    The count is a polite live region: a screen reader hears "3 of 12
+    teams" as the box narrows the table, which it cannot see happen."""
+    count.props('aria-live="polite"')
 
     def apply() -> None:
         rows = table.every

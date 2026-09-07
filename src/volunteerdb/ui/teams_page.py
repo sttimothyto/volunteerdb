@@ -659,7 +659,11 @@ def _sheet_import_block(is_admin: bool) -> None:
             )
         ).classes("text-sm text-gray-500 vdb-prose")
 
-        report_area = ui.column().classes("w-full gap-2")
+        # a polite live region: the report lands after an upload, out of
+        # sight of a screen reader unless announced
+        report_area = (
+            ui.column().classes("w-full gap-2").props('aria-live="polite"')
+        ).mark("import-report")
 
         async def render_report(
             report: importer.ImportReport, *, content: bytes, filename: str

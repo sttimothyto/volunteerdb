@@ -388,7 +388,7 @@ screens that changed, and ends with the full suite green in its own commit.
   hand-rolled keyboard handling grows past ~60 lines, switch to a `QSelect
   use-input` with an `option` slot for the Teams/Volunteers headers and let Quasar
   own the ARIA — decide at implementation.
-- [ ] **36. Counts and reports are announced.** `aria-live="polite"` on the count
+- [x] **36. Counts and reports are announced.** `aria-live="polite"` on the count
   label `wire_search` updates (`tables.py:63`) and on the CSV import report.
 - [ ] **37. Clickable text is a button.** `volunteer_link` (`volunteer_panel.py:49`),
   the clickable badges (`invites.py:275`, `admin_page.py:239`), the photo
