@@ -70,3 +70,33 @@ async def test_the_teams_search_rides_in_the_address(seeded, page):
     # clearing the box clears the address too
     await page.get_by_label("Search teams…").fill("")
     await expect(page).to_have_url(re.compile(r"/teams$"))
+
+
+async def test_the_search_box_is_a_combobox_the_keyboard_can_drive(seeded, page):
+    """ui/search_box.py: the native input carries the combobox role and
+    state, and ArrowDown / Enter reach an option -- which only a browser,
+    with its focus and its keys, can show end to end."""
+    await sign_in(page, "admin@example.org", "secret-pass-phrase")
+    await ready(page)
+    search = page.get_by_role("combobox", name=SEARCH_LABEL)
+    await expect(search).to_have_attribute("aria-expanded", "false")
+    await search.fill("Alv")
+    await expect(page.locator(SUGGESTIONS)).to_be_visible()
+    await expect(search).to_have_attribute("aria-expanded", "true")
+    listbox = page.locator(SUGGESTIONS).get_by_role("listbox")
+    await expect(listbox).to_have_count(1)
+    assert await search.get_attribute("aria-controls") == await listbox.get_attribute(
+        "id"
+    )
+
+    await search.press("ArrowDown")
+    marked = page.locator(f"{SUGGESTIONS} .vdb-active")
+    await expect(marked).to_have_count(1)
+    assert await search.get_attribute("aria-activedescendant") == (
+        await marked.get_attribute("id")
+    )
+    await expect(marked).to_contain_text("Maria Alvarez")
+    await search.press("Enter")
+    drawer = page.locator(".q-drawer")
+    await expect(drawer).to_be_visible()
+    await expect(drawer.get_by_text("maria@example.org")).to_be_visible()

@@ -381,7 +381,7 @@ screens that changed, and ends with the full suite green in its own commit.
 
 ### Phase 9 — Accessibility, round two
 
-- [ ] **35. The search box is a combobox.** `role="combobox"`, `aria-expanded`,
+- [x] **35. The search box is a combobox.** `role="combobox"`, `aria-expanded`,
   `aria-controls`, and arrow keys that move an `aria-activedescendant` highlight
   through the suggestion list (`search_box.py:56-62` creates the menu `no-focus`, so
   today only the mouse reaches it). Enter opens the highlighted item. If the

@@ -9,6 +9,13 @@ result list — which is also what Enter and the Search button still do.
 The menu's children are rebuilt on every lookup rather than pre-rendered and
 toggled: NiceGUI's element filters ignore a QMenu's open/closed state, so a
 populated-but-closed menu would still count as visible to the UI tests.
+
+The box is a combobox (WAI-ARIA): role, aria-expanded, aria-controls to the
+listbox, and an aria-activedescendant the arrow keys move through the
+options; Enter opens the marked one, or runs the search when none is. The
+highlight is the input's own attribute and the options' class -- widgets,
+not a cell -- and each option carries what it does, so the keyboard's pick
+runs the same thing as a click.
 """
 
 from collections.abc import Callable
@@ -26,6 +33,23 @@ from .widgets import inactive_badge
 SUGGEST_MIN_CHARS = 2
 SUGGEST_LIMIT = 6  # per category
 SUGGEST_DEBOUNCE_MS = 250
+
+ACTIVE = "vdb-active"  # the option the keyboard is on (theme.css)
+
+
+class Option(ui.menu_item):
+    """One suggestion, with what Enter or a click does kept on it. A team is
+    a real link (`href`), so right-click and a new tab work; the others run
+    their `activate` on click."""
+
+    def __init__(
+        self, text: str = "", *, activate: Callable[[], Any], href: str = ""
+    ) -> None:
+        super().__init__(text, on_click=None if href else lambda: activate())
+        self.activate = activate
+        self.props('role="option" aria-selected="false"')
+        if href:
+            self.props(f'href="{href}"')
 
 
 def search_box(
@@ -51,6 +75,9 @@ def search_box(
     search = (
         ui.input(label, value=value)
         .props(f"outlined dense clearable debounce={SUGGEST_DEBOUNCE_MS}")
+        # QInput hands attributes that are not its props to the native input
+        .props('role="combobox" aria-autocomplete="list" aria-haspopup="listbox"')
+        .props('aria-expanded="false"')
         .classes("grow")
     )
     with search:
@@ -60,6 +87,38 @@ def search_box(
             .classes("vdb-suggest")
             .mark("suggest-menu")
         )
+    menu.on_value_change(
+        lambda e: search.props(f'aria-expanded="{"true" if e.value else "false"}"')
+    )
+
+    def options() -> list[Option]:
+        return [o for o in menu.descendants() if isinstance(o, Option)]
+
+    def highlight(step: int) -> None:
+        """Arrow keys: the mark moves one option, wrapping at either end, and
+        the input's aria-activedescendant names where it is."""
+        opts = options()
+        if not opts:
+            return
+        ids = [f"c{o.id}" for o in opts]
+        current = search.props.get("aria-activedescendant")
+        index = ids.index(current) + step if current in ids else (0 if step > 0 else -1)
+        chosen = ids[index % len(ids)]
+        for option, oid in zip(opts, ids, strict=True):
+            on = oid == chosen
+            option.classes(add=ACTIVE if on else "", remove="" if on else ACTIVE)
+            option.props(f'aria-selected="{"true" if on else "false"}"')
+        search.props(f'aria-activedescendant="{chosen}"')
+        menu.open()
+
+    def pick_or_submit() -> Any:
+        """Enter: the marked option, or the search when none is marked."""
+        current = search.props.get("aria-activedescendant")
+        for option in options():
+            if f"c{option.id}" == current:
+                menu.close()
+                return option.activate()
+        return on_submit(search.value or "")
 
     async def suggest() -> None:
         text = (search.value or "").strip()
@@ -71,11 +130,10 @@ def search_box(
         if query_lang.parse(text) is not None:
             # a WHERE filter, not a name: offer to run it instead of
             # substring-suggesting against the raw SQL text
-            menu.clear()
-            with menu:
-                ui.menu_item(
-                    f"Run query: {text}", on_click=lambda t=text: on_submit(t)
-                ).mark("suggest-query")
+            with listbox():
+                Option(f"Run query: {text}", activate=lambda t=text: on_submit(t)).mark(
+                    "suggest-query"
+                )
                 ui.menu_item("Query syntax help").props(
                     'href="/manual/reference/query-language.html" target="_blank"'
                 )
@@ -97,19 +155,19 @@ def search_box(
         if (search.value or "").strip() != text:
             return  # a later keystroke is already on its way; the box is the state
 
-        menu.clear()
-        with menu:
+        with listbox():
             if team_hits:
                 ui.item_label("Teams").props("header")
             for team, path in team_hits:
-                ui.menu_item(path).props(f'href="/teams/{team.id}{asof_query}"').mark(
+                href = f"/teams/{team.id}{asof_query}"
+                Option(path, href=href, activate=lambda h=href: ui.navigate.to(h)).mark(
                     f"suggest-team-{team.id}"
                 )
             if found:
                 ui.item_label("Volunteers").props("header")
             for volunteer in found:
-                with ui.menu_item(
-                    on_click=lambda vid=volunteer.id: on_pick_volunteer(vid)
+                with Option(
+                    activate=lambda vid=volunteer.id: on_pick_volunteer(vid)
                 ).mark(f"suggest-volunteer-{volunteer.id}"):
                     ui.item_section(volunteer.full_name)
                     if not volunteer.is_active:
@@ -119,11 +177,21 @@ def search_box(
                 ui.item("Nothing found")
             else:
                 ui.separator()
-                ui.menu_item(
+                Option(
                     f"See every match for “{text}”",
-                    on_click=lambda t=text: on_submit(t),
+                    activate=lambda t=text: on_submit(t),
                 )
         menu.open()
+
+    def listbox() -> ui.element:
+        """A fresh list for a fresh lookup: the old options go, the mark
+        with them, and the input points at the new list."""
+        menu.clear()
+        search.props(remove="aria-activedescendant")
+        with menu:
+            box = ui.element("div").props('role="listbox"')
+        search.props(f'aria-controls="c{box.id}"')
+        return box
 
     def reopen() -> None:
         """Escape and outside clicks close the dropdown; going back to a box
@@ -141,7 +209,10 @@ def search_box(
     search.on_value_change(suggest)
     search.on("focus", reopen)
     search.on("click", reopen)
-    search.on("keydown.enter", lambda: on_submit(search.value or ""))
+    # .prevent: the caret must not jump to the ends of the text
+    search.on("keydown.down.prevent", lambda: highlight(+1))
+    search.on("keydown.up.prevent", lambda: highlight(-1))
+    search.on("keydown.enter", pick_or_submit)
     search.on("keydown.esc", menu.close)
     ui.button("Search", on_click=lambda: on_submit(search.value or "")).props("dense")
     return search

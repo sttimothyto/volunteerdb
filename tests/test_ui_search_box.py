@@ -279,3 +279,60 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
         await user.open("/volunteers?q=" + quote_plus("phone LIKE '555%'"))
         await user.should_see(LIST_BOX, retries=SLOW)
         assert names() == [], "another volunteer's phone match stays invisible"
+
+
+async def test_the_arrow_keys_walk_the_suggestions_and_enter_opens_one(database):
+    """The box is a combobox (uiux-improvement.md, step 35): ArrowDown marks
+    the first option and names it in aria-activedescendant, ArrowUp wraps,
+    and Enter runs what a click on the marked option would."""
+    async with db_session() as session:
+        music = ok(await teams.create(session, SYSTEM, "Alvarado Choir"))
+        maria = ok(
+            await volunteers.create(
+                session, SYSTEM, "Maria", "Alvarez", "maria@example.org"
+            )
+        )
+        ok(
+            await memberships.assign(
+                session, SYSTEM, maria.id, music.id, TeamRole.member
+            )
+        )
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
+            )
+        )
+        maria_id, choir_id, admin_id = maria.id, music.id, admin.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{admin_id}")
+        await user.open("/")
+        box = only(user.find(kind=ui.input, content=DASHBOARD_BOX))
+        assert box.props["role"] == "combobox" and box.props["aria-expanded"] == "false"
+        user.find(kind=ui.input, content=DASHBOARD_BOX).type("Alv")
+        await user.should_see(f"suggest-volunteer-{maria_id}", retries=SLOW)
+        team = only(user.find(marker=f"suggest-team-{choir_id}"))
+        person = only(user.find(marker=f"suggest-volunteer-{maria_id}"))
+        assert team.props["role"] == "option" and box.props["aria-controls"]
+
+        # down marks the first (the team), down again the volunteer, up wraps
+        user.find(kind=ui.input, content=DASHBOARD_BOX).trigger("keydown.down.prevent")
+        assert box.props["aria-activedescendant"] == f"c{team.id}"
+        assert "vdb-active" in team.classes and team.props["aria-selected"] == "true"
+        user.find(kind=ui.input, content=DASHBOARD_BOX).trigger("keydown.down.prevent")
+        assert box.props["aria-activedescendant"] == f"c{person.id}"
+        assert "vdb-active" not in team.classes
+        user.find(kind=ui.input, content=DASHBOARD_BOX).trigger("keydown.up.prevent")
+        user.find(kind=ui.input, content=DASHBOARD_BOX).trigger("keydown.up.prevent")
+        assert box.props["aria-activedescendant"] != f"c{team.id}", "wrapped to the end"
+
+        # Enter on the volunteer opens the side panel, as a click would
+        user.find(kind=ui.input, content=DASHBOARD_BOX).trigger("keydown.down.prevent")
+        user.find(kind=ui.input, content=DASHBOARD_BOX).trigger("keydown.down.prevent")
+        assert box.props["aria-activedescendant"] == f"c{person.id}"
+        user.find(kind=ui.input, content=DASHBOARD_BOX).trigger("keydown.enter")
+        await user.should_see("Email: maria@example.org", retries=SLOW)

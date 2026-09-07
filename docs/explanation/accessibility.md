@@ -57,6 +57,10 @@ finding.
 - **2.1.1** the keyboard can reach clickable table rows. The events and
   teams tables carry a real link in the title cell, the volunteers table a
   button in the name cell. The row click stays for the mouse.
+- **4.1.2 / 2.1.1** the search box is a combobox: `role="combobox"`,
+  `aria-expanded`, and `aria-controls` to the list. The arrow keys move an
+  `aria-activedescendant` through the options. Enter opens the marked one;
+  Escape closes the list.
 - **2.4.1 / 1.3.1** a skip link ("Skip to content", visible on focus) into
   the page body, and a `<nav aria-label="Main">`. The `<main>` landmark is
   NiceGUI's own page container.

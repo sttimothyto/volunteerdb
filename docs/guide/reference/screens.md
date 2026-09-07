@@ -65,6 +65,7 @@ The *Dashboard* is the first page after sign-in. When your account is linked to 
 
 - At the top is the search box *Find volunteers or teams…* with the button *Search*.
 - After 2 letters, a list of suggestions opens under the box: up to 6 under *Teams*, up to 6 under *Volunteers*.
+- The arrow keys move through the suggestions. Enter opens the one marked.
 - A click on a team opens its page. A click on a volunteer opens the side panel. *See every match for “…”* opens the *Volunteers* page.
 - Enter, or *Search*, opens the *Volunteers* page with the search.
 
