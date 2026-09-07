@@ -44,7 +44,7 @@ from .context import (
     toast,
     warn,
 )
-from .forms import confirm
+from .forms import confirm, required, valid
 from .layout import frame
 
 logger = structlog.get_logger(__name__)
@@ -249,12 +249,14 @@ def _email_card(
                 )
 
         async def request() -> None:
+            if not valid(new_email):
+                return
             await _request_email_change(
                 new_email.value or "", user_id=user_id, base_url=base_url
             )
 
         new_email = (
-            ui.input("New email address")
+            required(ui.input("New email address"))
             .props("outlined dense autocomplete=email")
             .classes("w-full")
             .mark("new-email")
@@ -279,7 +281,7 @@ def _password_card(
         current = None
         if must_retype:
             current = (
-                ui.input("Current password", password=True)
+                required(ui.input("Current password", password=True))
                 .props("outlined dense autocomplete=current-password")
                 .classes("w-full")
                 .mark("current-password")
@@ -290,7 +292,9 @@ def _password_card(
                 "password without the old one."
             ).classes("text-sm text-gray-500")
         new_password = (
-            ui.input("New password", password=True, password_toggle_button=True)
+            required(
+                ui.input("New password", password=True, password_toggle_button=True)
+            )
             .props("outlined dense autocomplete=new-password")
             .classes("w-full")
             .mark("new-password")
@@ -298,6 +302,8 @@ def _password_card(
         ui.label(passwords.GUIDANCE).classes("text-xs text-gray-500")
 
         async def save() -> None:
+            if not valid(current, new_password, repeat):
+                return
             await _save_password(
                 new_password.value or "",
                 repeat.value or "",
@@ -310,7 +316,11 @@ def _password_card(
             )
 
         repeat = (
-            ui.input("Repeat new password", password=True, password_toggle_button=True)
+            required(
+                ui.input(
+                    "Repeat new password", password=True, password_toggle_button=True
+                )
+            )
             .props("outlined dense autocomplete=new-password")
             .classes("w-full")
             .mark("repeat-password")

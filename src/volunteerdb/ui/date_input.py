@@ -10,9 +10,35 @@ alone: the Quasar picker has one keyboard model and one look in both modes,
 where a native ``<input type=date>`` has one per browser.
 """
 
+from datetime import date, time
+
 from nicegui import ui
 
 from .a11y import icon_button
+
+DATE_RULE = "Use YYYY-MM-DD"
+TIME_RULE = "Use HH:MM"
+
+
+def _is_date(value: str | None) -> bool:
+    """Blank is fine here (forms.required says otherwise when it must be)."""
+    if not value:
+        return True
+    try:
+        date.fromisoformat(value.strip())
+    except ValueError:
+        return False
+    return True
+
+
+def _is_time(value: str | None) -> bool:
+    if not value:
+        return True
+    try:
+        time.fromisoformat(value.strip())
+    except ValueError:
+        return False
+    return True
 
 
 def date_input(label: str, *, value: str = "", clearable: bool = False) -> ui.input:
@@ -20,9 +46,13 @@ def date_input(label: str, *, value: str = "", clearable: bool = False) -> ui.in
 
     Returns the input so callers chain their own ``.classes(...)``; picking a
     date closes the menu, typing one never opens it (``no-parent-event``).
+    A typed value that is not a date says so under the field (the rule is
+    the label's own words), before the form is submitted.
     """
     props = "outlined dense" + (" clearable" if clearable else "")
-    with ui.input(label, value=value).props(props) as field:
+    with ui.input(label, value=value, validation={DATE_RULE: _is_date}).props(
+        props
+    ) as field:
         with ui.menu().props("no-parent-event") as menu:
             ui.date().bind_value(field).on_value_change(menu.close)
         with field.add_slot("append"):
@@ -38,7 +68,9 @@ def time_input(label: str, *, value: str = "", clearable: bool = False) -> ui.in
     """A ``ui.input`` whose appended clock button opens a 24-hour ``ui.time``
     picker; the value stays ``HH:MM``. Same shape as date_input."""
     props = "outlined dense" + (" clearable" if clearable else "")
-    with ui.input(label, value=value).props(props) as field:
+    with ui.input(label, value=value, validation={TIME_RULE: _is_time}).props(
+        props
+    ) as field:
         with ui.menu().props("no-parent-event") as menu:
             ui.time().props("format24h").bind_value(field).on_value_change(menu.close)
         with field.add_slot("append"):

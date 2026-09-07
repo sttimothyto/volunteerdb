@@ -14,14 +14,59 @@ the two decisions below site-wide.
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, cast
 
 from nicegui import ui
+from nicegui.elements.mixins.validation_element import ValidationElement
 
 from .widgets import busy
 
 NARROW = "w-96"
 WIDE = "w-[32rem]"
+REQUIRED = "Required"
+
+
+def _present(value: Any) -> bool:
+    """A value the reader gave: not None, not blank, not the 0 a picker
+    uses for its "— choose —" line."""
+    if value is None or value == 0:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set)):
+        return bool(value)
+    return True
+
+
+def required[F: ValidationElement](field: F) -> F:
+    """Mark a field required: " *" on its label, and a rule that refuses a
+    blank -- shown under the field as "Required" the moment it is left
+    empty, and again by `valid()` before the command runs. Comes first in
+    the field's rules, so a blank date says Required, not the format rule.
+
+        name = required(ui.input("Name")).props("outlined dense")
+    """
+    label = field.props.get("label")
+    if label:
+        field.props(f'label="{label} *"')
+    rules: dict[str, Callable[[Any], bool]] = {REQUIRED: _present}
+    current = field.validation
+    if isinstance(current, dict):
+        rules.update(cast(dict[str, Callable[[Any], bool]], current))
+    field.validation = rules
+    return field
+
+
+def valid(*fields: ValidationElement | None) -> bool:
+    """Every field's rules, run before the command; the first field that
+    fails gets the focus, so the reader lands on what to fix. A None is a
+    field the dialog does not have (a current password on a code sign-in)."""
+    present = [f for f in fields if f is not None]
+    failing = [f for f in present if not f.validate()]
+    if failing:
+        failing[0].run_method("focus")
+        return False
+    return True
 
 
 @contextmanager

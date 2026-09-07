@@ -52,7 +52,7 @@ from . import calendar_grid, column_order
 from .calendar_panel import subscribe_panel
 from .context import PageCtx, flash, page_ctx, run_command, warn
 from .date_input import date_input, time_input
-from .forms import WIDE, actions, answered, confirm, dialog_card
+from .forms import WIDE, actions, answered, confirm, dialog_card, required, valid
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -263,14 +263,13 @@ async def _substitute_dialog(assignment_id: int, options: dict[int, str]) -> Non
             "change is recorded: who made it, and when, goes into the log."
         ).classes("text-sm text-gray-500")
         pick = (
-            ui.select(options, label="Who takes it?", with_input=True)
+            required(ui.select(options, label="Who takes it?", with_input=True))
             .props("outlined dense")
             .classes("w-full")
         )
 
         async def save() -> None:
-            if not pick.value:
-                warn("Pick a teammate first")
+            if not valid(pick):
                 return
 
             async def command(ctx: PageCtx):
@@ -303,16 +302,15 @@ async def _self_removal_dialog(assignment_id: int) -> None:
             "can fill the gap."
         ).classes("text-sm text-gray-500")
         reason = (
-            ui.textarea("Why can you no longer serve?")
+            required(ui.textarea("Why can you no longer serve?"))
             .props("outlined dense rows=3")
             .classes("w-full")
         )
 
         async def save() -> None:
-            text = (reason.value or "").strip()
-            if not text:
-                warn("A reason is required")
+            if not valid(reason):
                 return
+            text = (reason.value or "").strip()
 
             async def command(ctx: PageCtx):
                 assignment = await event_service.get_assignment(
@@ -392,16 +390,20 @@ async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
 def _new_event_dialog(managed_options: dict[int, str]) -> None:
     with dialog_card("New event", width=WIDE) as dialog:
         team = (
-            ui.select(managed_options, label="Team", with_input=True)
+            required(ui.select(managed_options, label="Team", with_input=True))
             .props("outlined dense")
             .classes("w-full")
         )
-        title = ui.input("Title").props("outlined dense").classes("w-full")
+        title = required(ui.input("Title")).props("outlined dense").classes("w-full")
         tomorrow = current_env().today() + timedelta(days=1)
         with ui.row().classes("w-full gap-2"):
-            day = date_input("Date (YYYY-MM-DD)", value=str(tomorrow)).classes("grow")
-            start = time_input("Starts (HH:MM)", value="10:00").classes("w-36")
-            end = time_input("Ends (HH:MM)", value="12:00").classes("w-36")
+            day = required(
+                date_input("Date (YYYY-MM-DD)", value=str(tomorrow))
+            ).classes("grow")
+            start = required(time_input("Starts (HH:MM)", value="10:00")).classes(
+                "w-36"
+            )
+            end = required(time_input("Ends (HH:MM)", value="12:00")).classes("w-36")
         location = (
             ui.input("Location (optional)").props("outlined dense").classes("w-full")
         )
@@ -435,8 +437,7 @@ def _new_event_dialog(managed_options: dict[int, str]) -> None:
         ).classes("w-full")
 
         async def save() -> None:
-            if not team.value:
-                warn("Pick the team")
+            if not valid(team, title, day, start, end, repeat):
                 return
             starts_at = _parse_local(day.value, start.value, "Start")
             ends_at = _parse_local(day.value, end.value, "End")
@@ -901,18 +902,20 @@ def _edit_event_dialog(event: Event) -> None:
     local_end = event.ends_at.astimezone(_tz())
     with dialog_card("Edit event", width=WIDE) as dialog:
         title = (
-            ui.input("Title", value=event.title)
+            required(ui.input("Title", value=event.title))
             .props("outlined dense")
             .classes("w-full")
         )
         with ui.row().classes("w-full gap-2"):
-            day = date_input(
-                "Date (YYYY-MM-DD)", value=str(local_start.date())
+            day = required(
+                date_input("Date (YYYY-MM-DD)", value=str(local_start.date()))
             ).classes("grow")
-            start = time_input("Starts (HH:MM)", value=f"{local_start:%H:%M}").classes(
-                "w-36"
-            )
-            end = time_input("Ends (HH:MM)", value=f"{local_end:%H:%M}").classes("w-36")
+            start = required(
+                time_input("Starts (HH:MM)", value=f"{local_start:%H:%M}")
+            ).classes("w-36")
+            end = required(
+                time_input("Ends (HH:MM)", value=f"{local_end:%H:%M}")
+            ).classes("w-36")
         location = (
             ui.input("Location", value=event.location or "")
             .props("outlined dense")
@@ -925,6 +928,8 @@ def _edit_event_dialog(event: Event) -> None:
         )
 
         async def save() -> None:
+            if not valid(title, day, start, end):
+                return
             starts_at = _parse_local(day.value, start.value, "Start")
             ends_at = _parse_local(day.value, end.value, "End")
             if starts_at is None or ends_at is None:
@@ -953,7 +958,7 @@ def _edit_event_dialog(event: Event) -> None:
 
 def _add_slot_dialog(event_id: int) -> None:
     with dialog_card("Add a slot") as dialog:
-        name = ui.input("Slot name").props("outlined dense").classes("w-full")
+        name = required(ui.input("Slot name")).props("outlined dense").classes("w-full")
         capacity = (
             ui.number("Capacity (blank = unlimited)", min=1, precision=0)
             .props("outlined dense clearable")
@@ -969,6 +974,9 @@ def _add_slot_dialog(event_id: int) -> None:
         )
 
         async def save() -> None:
+            if not valid(name):
+                return
+
             async def command(ctx: PageCtx):
                 return await event_service.add_slot(
                     ctx.session,
@@ -1002,7 +1010,7 @@ def _edit_slot_dialog(slot: EventSlot) -> None:
     filled is refused by the service."""
     with dialog_card("Edit slot") as dialog:
         name = (
-            ui.input("Slot name", value=slot.name)
+            required(ui.input("Slot name", value=slot.name))
             .props("outlined dense")
             .classes("w-full")
             .mark("slot-edit-name")
@@ -1029,6 +1037,9 @@ def _edit_slot_dialog(slot: EventSlot) -> None:
         )
 
         async def save() -> None:
+            if not valid(name):
+                return
+
             async def command(ctx: PageCtx):
                 return await event_service.update_slot(
                     ctx.session,
@@ -1135,8 +1146,7 @@ async def _withdraw(assignment_id: int, name: str, slot: str) -> None:
 
 
 async def _assign(slot_id: int, volunteer_id: int | None) -> None:
-    if not volunteer_id:
-        warn("Pick a person first")
+    if not volunteer_id:  # the picker's own rule said so already (forms.valid)
         return
 
     async def command(ctx: PageCtx):
@@ -1197,8 +1207,7 @@ async def _cancel_event(event_id: int) -> None:
 async def _add_collaborator(event_id: int, team_id: int | None, label: str) -> None:
     """Add another team's roster to this event, after a word about what
     that creates."""
-    if not team_id:
-        warn("Pick a team first")
+    if not team_id:  # the picker's own rule said so already (forms.valid)
         return
     if not await confirm(
         f"Add {label} to this event?",
@@ -1365,10 +1374,12 @@ def _collaboration_card(
         if collaborator_options:
             with ui.row().classes("w-full items-center gap-2"):
                 pick = (
-                    ui.select(
-                        collaborator_options,
-                        label="Add collaborating team",
-                        with_input=True,
+                    required(
+                        ui.select(
+                            collaborator_options,
+                            label="Add collaborating team",
+                            with_input=True,
+                        )
                     )
                     .props("outlined dense")
                     .classes("w-72")
@@ -1376,10 +1387,14 @@ def _collaboration_card(
                 ui.button(
                     "Add",
                     icon="group_add",
-                    on_click=lambda: _add_collaborator(
-                        event_id,
-                        pick.value,
-                        collaborator_options.get(pick.value, "that team"),
+                    on_click=lambda: (
+                        _add_collaborator(
+                            event_id,
+                            pick.value,
+                            collaborator_options.get(pick.value, "that team"),
+                        )
+                        if valid(pick)
+                        else None
                     ),
                 ).props("dense outline").mark("add-collaborator")
 
@@ -1519,13 +1534,17 @@ def _slot_card(
         if room.can_manage and room.upcoming and options and has_room:
             with ui.row().classes("w-full items-center gap-2"):
                 pick = (
-                    ui.select(options, label="Schedule someone", with_input=True)
+                    required(
+                        ui.select(options, label="Schedule someone", with_input=True)
+                    )
                     .props("outlined dense")
                     .classes("w-64")
                 )
                 ui.button(
                     "Assign",
-                    on_click=lambda _, sid=slot.id, p=pick: _assign(sid, p.value),
+                    on_click=lambda _, sid=slot.id, p=pick: (
+                        _assign(sid, p.value) if valid(p) else None
+                    ),
                 ).props("dense outline")
 
 

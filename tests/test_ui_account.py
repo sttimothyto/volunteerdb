@@ -45,12 +45,15 @@ async def test_otp_session_sets_a_password_without_the_old_one(database, sim_sen
         await user.should_see("without the old one")
 
         # the policy speaks in the form, with the reason and the guidance
+        # (both boxes are required, so the repeat is typed too)
         user.find(marker="new-password").type("hunter2")
+        user.find(marker="repeat-password").type("hunter2")
         user.find("Save password", kind=ui.button).click()
         await user.should_see("That password is too short", retries=SLOW)
 
         user.find(marker="new-password").clear()
         user.find(marker="new-password").type("thistle brook lantern")
+        user.find(marker="repeat-password").clear()
         user.find(marker="repeat-password").type("thistle brook lantern")
         user.find("Save password", kind=ui.button).click()
         await user.should_see("Password saved", retries=SLOW)

@@ -53,9 +53,9 @@ The *New event* dialog takes a name and a capacity for each slot. To add a note 
 
 ## If something goes wrong
 
-- *Pick the team*: nothing was chosen in *Team*.
+- *Required* under *Team* or *Title*: the box is empty.
 - *a title is required*: fill in *Title*.
-- *Start: use YYYY-MM-DD and HH:MM*, or the same for *End*: the date or a time is not in that shape.
+- *Use YYYY-MM-DD* under the date, or *Use HH:MM* under a time: the value is not in that shape. Use the picker beside the box.
 - *the event must end after it starts*: check the 2 times.
 - *slot names must be unique within the event*: 2 slots have the same name.
 - *slot capacity must be at least 1 (or blank for unlimited)*: type 1 or more, or clear the box.

@@ -215,7 +215,7 @@ screens that changed, and ends with the full suite green in its own commit.
   "Sync now", "Fetch now", "Overwrite sheet", "Apply this import", "Upload" and the
   bulk "Create and email invites". Replaces the "Syncing…" toast at
   `teams_page.py:531,710`.
-- [ ] **5. Required fields say so before submit.** `ui.input(validation=…)` on
+- [x] **5. Required fields say so before submit.** `ui.input(validation=…)` on
   required fields (marked in the label with " *" and a one-line "Required" rule), and
   handlers call `.validate()` before the command; the ~20 post-submit toasts become
   field errors with focus moved to the first failing field. Date/time fields keep

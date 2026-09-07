@@ -23,8 +23,8 @@ from ..sheets.common import sheet_url
 from . import column_order, invites
 from .account_status import roster_account
 from .asof import parse_as_of
-from .context import PageCtx, flash, page_ctx, run_command, success, toast, warn
-from .forms import WIDE, actions, confirm, dialog_card
+from .context import PageCtx, flash, page_ctx, run_command, success, toast
+from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -296,7 +296,7 @@ def _team_dialog(parent_options: dict[int, str], team=None) -> None:
     """Create (team=None) or edit a team. Admin only — enforced server-side on save."""
     with dialog_card("Edit team" if team else "New team") as dialog:
         name = (
-            ui.input("Name", value=team.name if team else "")
+            required(ui.input("Name", value=team.name if team else ""))
             .props("outlined dense")
             .classes("w-full")
         )
@@ -348,6 +348,8 @@ def _team_dialog(parent_options: dict[int, str], team=None) -> None:
             )
 
         async def save() -> None:
+            if not valid(name):
+                return
             parent_id = parent.value or None
             weight_value = (
                 Decimal(str(weight.value)) if weight.value is not None else None
@@ -677,7 +679,7 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
             "the people who help run this team."
         ).classes("text-sm text-negative vdb-prose")
         url = (
-            ui.input("Google Sheets link")
+            required(ui.input("Google Sheets link"))
             .props("outlined dense maxlength=500")
             .classes("w-full")
         )
@@ -695,6 +697,9 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
         ).classes("text-sm text-gray-500")
 
         async def save() -> None:
+            if not valid(url):
+                return
+
             async def command(ctx: PageCtx):
                 linked = await team_service.set_roster_sheet(
                     ctx.session, ctx.actor, team_id, url.value or ""
@@ -750,7 +755,7 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
             "refreshed nightly."
         ).classes("text-sm text-gray-500")
         url = (
-            ui.input("Google Doc link", value=current or "")
+            required(ui.input("Google Doc link", value=current or ""))
             .props("outlined dense")
             .classes("w-full")
         )
@@ -779,7 +784,13 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
                     "flat color=negative"
                 )
 
-        actions(dialog, "Save", lambda: save(url.value), extra=clear_button)
+        # Clear bypasses the rule on purpose: it is the way to a blank
+        actions(
+            dialog,
+            "Save",
+            lambda: save(url.value) if valid(url) else None,
+            extra=clear_button,
+        )
     dialog.open()
 
 
@@ -900,7 +911,7 @@ def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> None:
     ui.label("Add member").classes("text-lg font-medium")
     with ui.row().classes("items-center gap-2"):
         who = (
-            ui.select(volunteer_options, label="Volunteer", with_input=True)
+            required(ui.select(volunteer_options, label="Volunteer", with_input=True))
             .props("outlined dense")
             .classes("w-64")
         )
@@ -912,7 +923,9 @@ def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> None:
         ui.button(
             "Add",
             icon="person_add",
-            on_click=lambda: _add_member(team_id, who.value, role.value),
+            on_click=lambda: (
+                _add_member(team_id, who.value, role.value) if valid(who) else None
+            ),
         ).props("dense").mark("add-member")
 
 
@@ -1053,8 +1066,7 @@ async def team_detail(team_id: int, as_of: str = ""):
 
 
 async def _add_member(team_id: int, volunteer_id: int | None, role_value: str) -> None:
-    if not volunteer_id:
-        warn("Pick a volunteer")
+    if not volunteer_id:  # the picker's own rule said so already (forms.valid)
         return
 
     async def command(ctx: PageCtx):

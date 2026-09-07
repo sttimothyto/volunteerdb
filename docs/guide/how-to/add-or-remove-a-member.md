@@ -42,7 +42,7 @@ You can also start from the profile page of the person. Under *Add to team*, pic
 
 ## If something goes wrong
 
-- If the page says *Pick a volunteer*, no name was chosen in *Volunteer*.
+- If *Volunteer* says *Required* under it, no name was chosen.
 - If the name is not in the *Volunteer* list, the person is not in the parish list yet. See above.
 - If you see no *Add member* section, you do not manage this team, or you are on an as-of view.
 

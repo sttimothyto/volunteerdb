@@ -34,6 +34,7 @@ from .context import (
     toast,
     warn,
 )
+from .forms import required, valid
 from .help_links import SIGNING_IN
 from .logo_dialog import logo_img
 from .theme import apply_theme
@@ -186,10 +187,9 @@ def login_page(request: Request, redirect_to: str = "/"):
         ui.navigate.to(_safe_target(redirect_to))
 
     async def submit() -> None:
-        addr = (email.value or "").strip()
-        if not addr:
-            warn("Enter your email address")
+        if not valid(email):
             return
+        addr = (email.value or "").strip()
         if not password.value:
             await send_code()
             return
@@ -205,6 +205,8 @@ def login_page(request: Request, redirect_to: str = "/"):
             show_step(code_step)
 
     async def verify() -> None:
+        if not valid(code_input):
+            return
         # the address the code went to is the one still in the (hidden) box
         addr = (email.value or "").strip()
         user_id = await _verify_code(addr, code_input.value or "", facts=facts, env=env)
@@ -229,7 +231,7 @@ def login_page(request: Request, redirect_to: str = "/"):
                 # look for; password_toggle_button is the same section's
                 # "SHOULD offer an option to display the password".
                 email = (
-                    ui.input("Email")
+                    required(ui.input("Email"))
                     .props("outlined dense autocomplete=username")
                     .classes("w-full")
                     .on("keydown.enter", submit)
@@ -251,7 +253,7 @@ def login_page(request: Request, redirect_to: str = "/"):
             with ui.column().classes("w-full gap-3") as code_step:
                 code_hint = ui.label().classes("text-sm")
                 code_input = (
-                    ui.input("6-digit code")
+                    required(ui.input("6-digit code"))
                     .props(
                         "outlined dense inputmode=numeric autofocus "
                         "autocomplete=one-time-code"

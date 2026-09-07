@@ -52,7 +52,7 @@ The message *You're off the slot — the leaders have been told* appears. Every 
 
 ## If something goes wrong
 
-- *Pick a person first* or *Pick a teammate first*: nothing was chosen in the list.
+- *Required* under the list: nothing was chosen in it.
 - *they already serve at this event*: a person holds 1 slot per event. Remove them from the other slot first.
 - A slot name followed by *is full*: raise the capacity with the pencil icon on the slot, or pick another slot.
 - *only members of the event's team can take part*: the person is not on the roster of the team of the event.

@@ -30,7 +30,7 @@ from ..services.reports import CoverageRow
 from ..star import StarResult
 from .context import PageCtx, flash, page_ctx, run_command, warn
 from .date_input import date_input
-from .forms import WIDE, actions, confirm, dialog_card
+from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
 from .widgets import ROLE_OPTIONS, phase_badge, role_badge, workload_badge
 
@@ -50,12 +50,12 @@ Phase = elections_service.ProposalPhase
 
 
 def _deadline_inputs(d1_default: date, d2_default: date) -> tuple[ui.input, ui.input]:
-    d1 = date_input("Nominations close (YYYY-MM-DD)", value=str(d1_default)).classes(
-        "w-full"
-    )
-    d2 = date_input("Voting closes (YYYY-MM-DD)", value=str(d2_default)).classes(
-        "w-full"
-    )
+    d1 = required(
+        date_input("Nominations close (YYYY-MM-DD)", value=str(d1_default))
+    ).classes("w-full")
+    d2 = required(
+        date_input("Voting closes (YYYY-MM-DD)", value=str(d2_default))
+    ).classes("w-full")
     return d1, d2
 
 
@@ -94,7 +94,9 @@ def _create_proposal_dialog(
             .classes("w-full")
         )
         who = (
-            ui.select(volunteer_options, label="First candidate", with_input=True)
+            required(
+                ui.select(volunteer_options, label="First candidate", with_input=True)
+            )
             .props("outlined dense")
             .classes("w-full")
         )
@@ -122,8 +124,7 @@ def _create_proposal_dialog(
         ).classes("text-xs text-gray-500")
 
         async def save() -> None:
-            if not who.value:
-                warn("Pick the first candidate")
+            if not valid(who, d1, d2):
                 return
             if (deadlines := _parse_deadlines(d1, d2)) is None:
                 return
@@ -261,6 +262,8 @@ def _edit_proposal_dialog(proposal: Proposal) -> None:
         )
 
         async def save() -> None:
+            if not valid(d1, d2):
+                return
             if (deadlines := _parse_deadlines(d1, d2)) is None:
                 return
             dialog.close()
@@ -338,6 +341,8 @@ def _new_round_dialog(proposal_id: int) -> None:
         )
 
         async def save() -> None:
+            if not valid(d1, d2):
+                return
             if (deadlines := _parse_deadlines(d1, d2)) is None:
                 return
 
@@ -365,8 +370,7 @@ def _new_round_dialog(proposal_id: int) -> None:
 
 
 async def _nominate(proposal_id: int, volunteer_id: int | None, note: str) -> None:
-    if not volunteer_id:
-        warn("Pick a volunteer")
+    if not volunteer_id:  # the picker's own rule said so already (forms.valid)
         return
 
     async def command(ctx: PageCtx):
@@ -400,8 +404,7 @@ async def _remove_candidate(proposal_id: int, candidate_id: int, name: str) -> N
 
 
 async def _add_voter(proposal_id: int, volunteer_id: int | None) -> None:
-    if not volunteer_id:
-        warn("Pick a volunteer")
+    if not volunteer_id:  # the picker's own rule said so already (forms.valid)
         return
 
     async def command(ctx: PageCtx):
@@ -563,7 +566,9 @@ def _nominate_row(proposal_id: int, volunteer_options: dict[int, str]) -> None:
         # label must not contain the button text "Nominate": the UI
         # tests match elements by content substring
         who = (
-            ui.select(volunteer_options, label="New candidate", with_input=True)
+            required(
+                ui.select(volunteer_options, label="New candidate", with_input=True)
+            )
             .props("outlined dense")
             .classes("w-64")
         )
@@ -571,7 +576,9 @@ def _nominate_row(proposal_id: int, volunteer_options: dict[int, str]) -> None:
         ui.button(
             "Nominate",
             icon="person_add",
-            on_click=lambda: _nominate(proposal_id, who.value, why.value),
+            on_click=lambda: (
+                _nominate(proposal_id, who.value, why.value) if valid(who) else None
+            ),
         ).props("dense")
 
 
@@ -607,14 +614,20 @@ def _voters_section(
         if can_manage and nominating:
             with ui.row().classes("w-full items-center gap-2"):
                 extra = (
-                    ui.select(volunteer_options, label="Add a voter", with_input=True)
+                    required(
+                        ui.select(
+                            volunteer_options, label="Add a voter", with_input=True
+                        )
+                    )
                     .props("outlined dense")
                     .classes("w-64")
                 )
                 ui.button(
                     "Add voter",
                     icon="person_add",
-                    on_click=lambda: _add_voter(proposal_id, extra.value),
+                    on_click=lambda: (
+                        _add_voter(proposal_id, extra.value) if valid(extra) else None
+                    ),
                 ).props("dense")
 
 

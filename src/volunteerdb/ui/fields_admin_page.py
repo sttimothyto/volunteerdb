@@ -5,7 +5,7 @@ from nicegui import ui
 from ..models import FIELD_TYPE_LABELS, FieldType
 from ..services import custom_fields as custom_field_service
 from .context import PageCtx, page_ctx, run_command
-from .forms import actions, confirm, dialog_card
+from .forms import actions, confirm, dialog_card, required, valid
 from .guards import deny_unless_admin
 from .layout import frame
 from .widgets import inactive_badge
@@ -61,7 +61,7 @@ def _field_dialog(defn=None) -> None:
     """Create (defn=None) or edit a field definition. Type and key are immutable."""
     with dialog_card("Edit field" if defn else "New field") as dialog:
         label = (
-            ui.input("Label", value=defn.label if defn else "")
+            required(ui.input("Label", value=defn.label if defn else ""))
             .props("outlined dense")
             .classes("w-full")
         )
@@ -102,6 +102,8 @@ def _field_dialog(defn=None) -> None:
         active = ui.switch("Active", value=defn.is_active) if defn else None
 
         async def save() -> None:
+            if not valid(label):
+                return
             option_list = [
                 line for line in (options.value or "").splitlines() if line.strip()
             ]

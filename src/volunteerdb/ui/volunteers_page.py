@@ -33,7 +33,7 @@ from .context import (
     warn,
 )
 from .date_input import date_input, time_input
-from .forms import WIDE, actions, confirm, dialog_card
+from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
 from .photo_dialog import photo_avatar
 from .search_box import search_box
@@ -232,14 +232,15 @@ async def volunteers_page(q: str = "", band: str = ""):
 
 def _new_volunteer_dialog() -> None:
     with dialog_card("New volunteer") as dialog:
-        first = ui.input("First name").props("outlined dense").classes("w-full")
-        last = ui.input("Last name").props("outlined dense").classes("w-full")
+        first = (
+            required(ui.input("First name")).props("outlined dense").classes("w-full")
+        )
+        last = required(ui.input("Last name")).props("outlined dense").classes("w-full")
         email = ui.input("Email").props("outlined dense").classes("w-full")
         phone = ui.input("Phone").props("outlined dense").classes("w-full")
 
         async def save() -> None:
-            if not (first.value or "").strip() or not (last.value or "").strip():
-                warn("First and last name are required")
+            if not valid(first, last):
                 return
 
             async def command(ctx: PageCtx):
@@ -387,7 +388,7 @@ def _add_to_team_row(volunteer_id: int, assignable: dict[int, str]) -> None:
     ui.label("Add to team").classes("text-lg font-medium")
     with ui.row().classes("items-center gap-2"):
         team_select = (
-            ui.select(assignable, label="Team", with_input=True)
+            required(ui.select(assignable, label="Team", with_input=True))
             .props("outlined dense")
             .classes("w-64")
         )
@@ -399,8 +400,10 @@ def _add_to_team_row(volunteer_id: int, assignable: dict[int, str]) -> None:
         ui.button(
             "Add",
             icon="group_add",
-            on_click=lambda: _add_to_team(
-                volunteer_id, team_select.value, role_select.value
+            on_click=lambda: (
+                _add_to_team(volunteer_id, team_select.value, role_select.value)
+                if valid(team_select)
+                else None
             ),
         ).props("dense")
 
@@ -492,8 +495,7 @@ async def volunteer_detail(volunteer_id: int):
 
 
 async def _add_to_team(volunteer_id: int, team_id: int | None, role_value: str) -> None:
-    if not team_id:
-        warn("Pick a team")
+    if not team_id:  # the picker's own rule said so already (forms.valid)
         return
 
     async def command(ctx: PageCtx):
@@ -584,12 +586,12 @@ def _edit_dialog(
     is_self = actor.volunteer_id == volunteer.id
     with dialog_card(f"Edit {volunteer.full_name}", width=WIDE) as dialog:
         first = (
-            ui.input("First name", value=volunteer.first_name)
+            required(ui.input("First name", value=volunteer.first_name))
             .props("outlined dense")
             .classes("w-full")
         )
         last = (
-            ui.input("Last name", value=volunteer.last_name)
+            required(ui.input("Last name", value=volunteer.last_name))
             .props("outlined dense")
             .classes("w-full")
         )
@@ -599,6 +601,8 @@ def _edit_dialog(
             .classes("w-full")
             .mark("edit-email")
         )
+        if is_self:
+            required(email)  # it is how you sign in
         if is_self:
             ui.label(
                 "Changing your own address sends a confirmation link to the "
@@ -623,6 +627,8 @@ def _edit_dialog(
         )
 
         async def save() -> None:
+            if not valid(first, last, email):
+                return
             values = {}
             for key, widget in custom_widgets.items():
                 raw = widget.value

@@ -18,7 +18,7 @@ from ..services import volunteers as volunteer_service
 from . import invites
 from .a11y import icon_button
 from .context import PageCtx, flash, info, page_ctx, run_command
-from .forms import actions, confirm, dialog_card
+from .forms import actions, confirm, dialog_card, required, valid
 from .guards import deny_unless_admin
 from .layout import frame
 from .widgets import busy
@@ -66,7 +66,11 @@ async def _provision() -> None:
 
 def _new_account_dialog(volunteer_names: dict[int, str], base_url: str) -> None:
     with dialog_card("New account") as dialog:
-        email = ui.input("Email (login)").props("outlined dense").classes("w-full")
+        email = (
+            required(ui.input("Email (login)"))
+            .props("outlined dense")
+            .classes("w-full")
+        )
         link = (
             ui.select(
                 {0: "— match by email —"} | volunteer_names,
@@ -84,6 +88,9 @@ def _new_account_dialog(volunteer_names: dict[int, str], base_url: str) -> None:
         admin_flag = ui.switch("Parish admin (full access)")
 
         async def save() -> None:
+            if not valid(email):
+                return
+
             async def command(ctx: PageCtx):
                 made = await user_service.create(
                     ctx.session,
