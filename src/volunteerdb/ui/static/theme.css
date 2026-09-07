@@ -581,6 +581,20 @@ body.body--dark .text-amber-900 { color: #e5c08a; }
 body.body--dark .bg-red-50 { background-color: #362222; }
 body.body--dark .bg-blue-50 { background-color: #26303a; }
 
+/* ---------- the team-weights table (ui/workload_admin_page.py) ---------- */
+
+.vdb-weights .vdb-weight {
+  width: 7rem;
+}
+
+/* a button row that stays in reach at the foot of a long card */
+.vdb-sticky-actions {
+  position: sticky;
+  bottom: 0;
+  padding: 0.5rem 0;
+  background-color: var(--vdb-surface);
+}
+
 /* ---------- empty states (ui/widgets.py empty_state) ---------- */
 
 .vdb-empty {

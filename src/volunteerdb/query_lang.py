@@ -638,6 +638,18 @@ _ACCOUNT_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
 }
 
 
+_WEIGHT_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
+    "team": (FieldType.text, _text_of("path")),
+    "ministry": (FieldType.text, _text_of("ministry")),
+    "weight": (FieldType.number, lambda row: row.get("weight")),
+}
+
+
+def compile_weights(ast: exp.Expression) -> Result[Callable[[dict], bool], QueryError]:
+    """`weight > 1` over the team-weights rows."""
+    return _compile(ast, False, _PyBackend(_WEIGHT_FIELDS))
+
+
 def compile_accounts(ast: exp.Expression) -> Result[Callable[[dict], bool], QueryError]:
     """`status = 'invite expired' AND admin = false` over the accounts rows."""
     return _compile(ast, False, _PyBackend(_ACCOUNT_FIELDS))

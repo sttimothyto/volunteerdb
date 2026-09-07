@@ -403,8 +403,8 @@ Shown to *admin* only, under the title *Workload*. Anyone else sees *Admins only
 | Card | What is on it |
 |---|---|
 | *Role multipliers* | 1 number per role: *Ministry leader*, *Second-in-command*, *Core team member*, *Member*. |
-| *Colour bands* | 1 row per band: *Label*, *Colour*, *badge text N:1* (how well the label reads on the colour), and *up to score*. The last band reads *everything above*. Under them: *Save settings*. |
-| *Team workload weights* | 1 number per team. A cleared box is weight 0: the team does not count. Under them: *Save weights*. |
+| *Colour bands* | 1 row per band: *Label*, *Colour*, *badge text N:1* (how well the label reads on the colour), and *up to score*. The last band reads *everything above*. A note says that saving recolours the volunteers list, the graph and the dashboard chips. Under them: *Save settings*. |
+| *Team workload weights* | A table with the columns *Ministry*, *Team* and *Weight*, 1 row per team, and the box *Search teams…* above it. A cleared box is weight 0: the team does not count. *Save weights* stays at the foot of the card. |
 
 - After a save: *Workload settings saved* or *Updated N team weights*.
 - The number of bands cannot change on this page.

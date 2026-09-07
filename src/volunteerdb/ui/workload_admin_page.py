@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from nicegui import ui
 
+from .. import query_lang
 from ..fp import Err, Ok
 from ..models import ROLE_LABELS, TeamRole
 from ..services import teams as team_service
@@ -12,6 +13,7 @@ from .a11y import heading
 from .context import PageCtx, page_ctx, run_command, success
 from .guards import deny_unless_admin
 from .layout import frame
+from .tables import count_text, wire_search
 
 
 def _contrast_note(color: ui.color_input) -> None:
@@ -70,6 +72,10 @@ async def workload_page():
                     )
 
             heading("Colour bands", level=2)
+            ui.label(
+                "Saving recolours the badges on the volunteers list, the dots on "
+                "the graph and the workload chips on the dashboard."
+            ).classes("text-sm text-gray-500 vdb-prose")
             band_rows: list[tuple[ui.input, ui.color_input, ui.number | None]] = []
             for i, b in enumerate(config.bands):
                 is_last = i == len(config.bands) - 1
@@ -131,44 +137,147 @@ async def workload_page():
                 "Optional per-ministry weight; empty teams don't count towards anyone's score. "
                 "Also editable on each team's edit dialog."
             ).classes("text-sm text-gray-500 vdb-prose")
-            weight_inputs: dict[int, ui.number] = {}
-            originals: dict[int, Decimal] = {}
-            for team in sorted(all_teams, key=lambda t: paths[t.id].lower()):
-                with ui.row().classes("w-full items-center gap-3"):
-                    ui.label(paths[team.id]).classes("w-96")
-                    originals[team.id] = team.workload_weight
-                    weight_inputs[team.id] = (
-                        ui.number(
-                            value=float(team.workload_weight),
-                            min=0,
-                            step=0.5,
-                        )
-                        .props("outlined dense clearable")
-                        .classes("w-32")
+            _weights_table(all_teams, paths)
+
+
+# --- the weights: a table whose rows are the state -----------------------------------
+#
+# One number per team was a row of widgets per team -- 36 here, 66 at a
+# large parish -- with no search and a label pinned at w-96 that a phone
+# could not show. The table's rows carry the weight; the input in each
+# Weight cell emits the typed value with its row, the handler writes it back
+# into the table's rows (the widget is the state, as ever), and Save diffs
+# the rows against what the page loaded.
+
+_WEIGHT_CELL = """
+<q-td key="weight" :props="props">
+    <q-input type="number" dense outlined clearable step="0.5" min="0" class="vdb-weight"
+             :model-value="props.row.weight" debounce="300"
+             :aria-label="'Weight of ' + props.row.path"
+             @update:model-value="v => $parent.$emit('weight', {id: props.row.id, value: v})" />
+</q-td>
+"""
+WEIGHT_COLUMNS = [
+    {
+        "name": "ministry",
+        "label": "Ministry",
+        "field": "ministry",
+        "align": "left",
+        "sortable": True,
+    },
+    {
+        "name": "team",
+        "label": "Team",
+        "field": "path",
+        "align": "left",
+        "sortable": True,
+    },
+    {
+        "name": "weight",
+        "label": "Weight",
+        "field": "weight",
+        "align": "left",
+        "sortable": True,
+    },
+]
+
+
+def _weight_rows(all_teams, paths: dict[int, str]) -> list[dict]:
+    """One row per team, grouped by its top-level ministry (the first
+    segment of its path), in path order."""
+    rows = []
+    for team in sorted(all_teams, key=lambda t: paths[t.id].lower()):
+        path = paths[team.id]
+        rows.append(
+            {
+                "id": team.id,
+                "ministry": path.split(" / ", 1)[0],
+                "path": path,
+                "weight": float(team.workload_weight),
+            }
+        )
+    return rows
+
+
+def _matching_teams(rows: list[dict], text: str) -> list[dict]:
+    return [r for r in rows if text in r["path"].lower()]
+
+
+def _weights_table(all_teams, paths: dict[int, str]) -> None:
+    with ui.row().classes("items-center gap-2 w-full"):
+        search = (
+            ui.input("Search teams…")
+            .props("outlined dense clearable debounce=200")
+            .classes("grow")
+            .mark("weights-search")
+        )
+    table = (
+        ui.table(
+            columns=WEIGHT_COLUMNS,
+            rows=_weight_rows(all_teams, paths),
+            row_key="id",
+            pagination=0,
+        )
+        .props("hide-no-data")
+        .classes("w-full vdb-weights")
+        .mark("weights")
+    )
+    table.add_slot("body-cell-weight", _WEIGHT_CELL)
+    # the table copies the rows it is handed, so its own list is the one
+    # state: the search narrows it to subsets of these dicts, a typed weight
+    # lands in them, and Save reads them all
+    rows = table.rows
+    originals = {r["id"]: Decimal(str(r["weight"])) for r in rows}
+
+    def typed(e) -> None:
+        """A typed weight lands in the table's rows: the widget is the state."""
+        row = next((r for r in rows if r["id"] == e.args.get("id")), None)
+        if row is None:
+            return
+        value = e.args.get("value")
+        try:
+            row["weight"] = float(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return
+
+    table.on("weight", typed)
+    count = ui.label(count_text(len(rows), None, "team")).classes(
+        "text-sm text-gray-500"
+    )
+    wire_search(
+        search,
+        count,
+        table,
+        rows,
+        noun="team",
+        compile=query_lang.compile_weights,
+        text_filter=_matching_teams,
+    )
+
+    async def save_weights() -> None:
+        async def command(ctx: PageCtx):
+            changed = 0
+            for row in rows:
+                # a cleared box is weight 0, which is what excluding a
+                # ministry from the scores has always meant
+                new = Decimal(str(row["weight"] if row["weight"] is not None else 0))
+                if new != originals[row["id"]]:
+                    put = await team_service.update(
+                        ctx.session, ctx.actor, row["id"], workload_weight=new
                     )
+                    if isinstance(put, Err):
+                        return put
+                    changed += 1
+            return Ok(changed)
 
-            async def save_weights() -> None:
-                async def command(ctx: PageCtx):
-                    changed = 0
-                    for team_id, inp in weight_inputs.items():
-                        # a cleared box is weight 0, which is what excluding a
-                        # ministry from the scores has always meant
-                        new = Decimal(str(inp.value or 0))
-                        if new != originals[team_id]:
-                            put = await team_service.update(
-                                ctx.session, ctx.actor, team_id, workload_weight=new
-                            )
-                            if isinstance(put, Err):
-                                return put
-                            changed += 1
-                    return Ok(changed)
+        await run_command(
+            command,
+            on_ok=lambda changed, _e, _r: success(
+                f"Updated {changed} team weight{'s' if changed != 1 else ''}"
+            ),
+            reload=False,
+        )
 
-                await run_command(
-                    command,
-                    on_ok=lambda changed, _e, _r: success(
-                        f"Updated {changed} team weight{'s' if changed != 1 else ''}"
-                    ),
-                    reload=False,
-                )
-
-            ui.button("Save weights", icon="save", on_click=save_weights).props("dense")
+    # sticky at the foot of the card: the button is in reach at any scroll
+    with ui.row().classes("w-full justify-end vdb-sticky-actions"):
+        ui.button("Save weights", icon="save", on_click=save_weights).props("dense")

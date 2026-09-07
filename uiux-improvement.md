@@ -289,7 +289,7 @@ screens that changed, and ends with the full suite green in its own commit.
   the badge column, and a row-end "⋯" menu with the four actions named in words
   ("Change linked volunteer", "Make admin", "Disable", "New invite link (resets the
   password)") instead of four icons; "invite pending" opens the dialog it does now.
-- [ ] **18. Team weights are a table.** Grouped by top-level team, searchable, the
+- [x] **18. Team weights are a table.** Grouped by top-level team, searchable, the
   label cell full-width on the phone (`w-96` today), "Save weights" sticky at the
   bottom of the card. The band editor gains a one-line note that saving recolours the
   volunteers list, the graph and the dashboard chips.

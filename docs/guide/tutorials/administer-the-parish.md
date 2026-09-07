@@ -54,7 +54,7 @@ You see the page *Custom fields* with the new field in the list. It has a badge 
 2. Read the text at the top. A score is the sum, over the teams of a volunteer, of the team weight times the role multiplier.
 3. Find *Role multipliers*: one box for each of the 4 roles.
 4. Find *Colour bands*: a *Label*, a *Colour* and *up to score* for each band. The last band says *everything above*.
-5. Find *Team workload weights*: one box for each team.
+5. Find *Team workload weights*: a table with 1 row per team, and a search box above it.
 6. Type 2 in the box of a team whose work is heavier than most.
 7. Click *Save weights*.
 
