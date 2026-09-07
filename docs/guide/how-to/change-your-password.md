@@ -34,6 +34,7 @@ Set a new password for your own account, or add one if you sign in with emailed 
 - If the page says *That password is a well-known one*, choose a different phrase.
 - If the page says *That password is your email address or the name of this site*, choose something unrelated to the account.
 - If the page says *That is not your current password*, type the old password again. After 5 wrong tries in 15 minutes, wait.
+- If the page says *Your password was reset. Use the link you were sent to set a new one.*, an administrator reset your access. Open the link in the email the site sent you.
 - If the two new passwords are not the same, the page says so. Type them again.
 - To stop the use of a password, click *Remove password* on the same card. You then sign in with emailed codes.
 

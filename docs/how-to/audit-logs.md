@@ -24,7 +24,9 @@ This is the *readable operational* trail.
 
 `user`
 : `id:email` of the account that acts, a bare `id` where only the session
-  id is known, or `-` for anonymous flows (login pages, bootstrap scripts).
+  id is known, or `-` where no account acts. That is the login pages, the
+  bootstrap scripts and the nightly jobs. The roster sync's row writes are
+  the exception: they carry the bare id of the `drive-sync@` bot account.
 
 `via`
 : `gui` (browser session), `api` (Bearer-token request), or `-` (scripts,
@@ -67,8 +69,9 @@ Events to know, all at `AUDIT` unless noted:
   views leave no row-level trail.
 - Bulk reads do leave a trail, because those are the reads that carry the
   parish off the premises.
-- Every roster export is one `export.roster` line at `AUDIT`, on both the
-  GUI and the API, whatever the verbosity.
+- Every roster export is one `export.roster` line at `AUDIT`, whatever the
+  verbosity: the GUI, the API, and the nightly sync's write-back to the
+  sheets.
 - That line carries `scope` (`parish`, or the list of team ids exported),
   `as_of` when the file is a snapshot, and `notes_included`. The export
   leaves out the notes column for a viewer who cannot read notes.

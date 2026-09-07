@@ -289,4 +289,8 @@ Actor
   A frozen view of the signed-in account, with its team-id sets precomputed
   (managed, people, full-view, names-view). `actors.load_actor` builds it,
   and it answers every permission question ([permissions](permissions.md)).
+  Two actors are nobody's account. `permissions.SYSTEM` is the app acting
+  for itself, with an admin's rights and no identity: the nightly jobs, the
+  roster sync, the seed. `permissions.ANONYMOUS` has no rights at all; the
+  public calendar feed reads as it.
 ```

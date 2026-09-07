@@ -41,7 +41,10 @@ finding.
 
 ## The rest of AA that cost little
 
-- **3.1.1** `<html lang="en">` on every page (`ui.run(language="en")`).
+- **3.1.1** `<html lang="en-GB">` on every page (`ui.run(language="en-GB")`).
+  Not plain `en`: NiceGUI ships Quasar's `en-GB` and `en-US` language packs
+  and nothing plainer. It requests the pack on every page load, so `en` was
+  a 404 per page.
 - **4.1.2** every icon-only control has an accessible name
   (`ui/a11y.py: icon_button`). That covers the header gear, sign-out and
   menu, the account-row actions, and the date picker's calendar button.

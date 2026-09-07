@@ -59,6 +59,14 @@ cannot exist in the web interface without an identical right in the API. The
 interaction from the memberships. So a role change takes effect on the next
 action, with no cached grants to invalidate.
 
+Two actors are nobody's account, and each call site writes them out.
+`permissions.SYSTEM` is the app acting for itself: the nightly jobs, the
+roster sync, the seed. It has an admin's rights and nobody's identity. So it
+can do everything an admin can, and nothing a person does for themselves: a
+sign-up, an RSVP, a ballot. `permissions.ANONYMOUS` has no rights at all,
+and the public calendar feed reads as it. Every service takes an actor, so a
+forgotten one is a type error rather than a silent bypass.
+
 ## Accounts enter the model at the edge
 
 No self-signup exists. Somebody else creates an account for a person, who

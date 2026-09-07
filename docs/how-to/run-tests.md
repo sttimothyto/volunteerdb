@@ -59,6 +59,12 @@ fails on the first regression and names the line at fault:
 | `test_effects_layer.py` | an `audit_log(` or throttle charge under `api/`, `ui/` or `services/` — effects go through the interpreter |
 | `test_ui_layer.py` | a `ui.*` call inside a session block, a `nonlocal`, a nested handler that writes into its parent's container |
 
+One more ratchet is not a test. `make types` runs `ty check src/` and holds
+the count of diagnostics to `CEILING` in `scripts/typecheck.py`. Above it
+the build fails and prints every diagnostic. Below it the build passes and
+asks you to lower the ceiling in the same commit. CI's lint job runs the
+same script ([Commands and scripts](../reference/cli.md)).
+
 The browser tests take the same arguments plus Playwright's own:
 
 ```sh

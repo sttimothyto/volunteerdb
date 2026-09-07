@@ -246,6 +246,9 @@ from a sheet is simply restored by the write-back.
   arguments with `make test ARGS="-k roster"`, and `make test WORKERS=0` for a
   serial run. The browser tests under `tests/e2e/` need Chromium once per
   machine: `uv run playwright install --with-deps chromium`.
+- **Types**: `make types` — `ty check src/`, held to the ceiling in
+  `scripts/typecheck.py` (above it the build fails; below it, lower the
+  ceiling in the same commit). CI's lint job runs the same script.
 - **Start over**: `make fresh` wipes the database volume, re-migrates, re-seeds
 - Dev auto-reload: `make dev` (`VDB_RELOAD=true uv run python -m
   volunteerdb.main`). It must be the `python -m` form — under the

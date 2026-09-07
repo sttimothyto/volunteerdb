@@ -143,6 +143,7 @@ uv run python scripts/share_roster_sheets.py
 ```sh
 uv run python scripts/bench.py setup --scale 500
 uv run python scripts/bench.py run --json bench-results/base-500.json [--explain] [--only NAME] [--runs N]
+uv run python scripts/bench.py profile PATTERN [--runs N] [--sort tottime|cumtime] [--limit N]
 uv run python scripts/bench.py compare bench-results/base-500.json bench-results/after-500.json
 ```
 
@@ -156,6 +157,10 @@ uv run python scripts/bench.py compare bench-results/base-500.json bench-results
   is the N+1 headline.
 - `--explain` prints `EXPLAIN (ANALYZE, BUFFERS)` for every `SELECT`,
   exactly as the app issued it.
+- `profile` warms one pattern, then runs it under cProfile and prints the
+  hottest functions. `run` counts round trips; `profile` shows what Python
+  then did with the rows, which is often the larger half. The roster
+  re-import once spent two thirds of its time in a flush that issued no SQL.
 - `compare` diffs two run files.
 - `bench-results/` is gitignored.
 
@@ -277,11 +282,32 @@ make deploy SITE=<site>       # apply
 ## `pytest` — test suite
 
 ```sh
-uv run pytest
+make test                              # four workers, a scratch database each
+uv run pytest -n 4 --dist loadgroup    # the same, by hand
+uv run pytest                          # serial
 ```
 
 - The development database container must be up.
 - See [Run the test suite](../how-to/run-tests.md).
+
+## `scripts/typecheck.py` — the type gate
+
+```sh
+make types
+uv run python scripts/typecheck.py
+```
+
+- Runs `ty check src/`, the same checker the editor's LSP runs, and counts
+  the diagnostics.
+- `CEILING` in the script is the exact count the tree carried when the gate
+  was written. Above it the build fails and prints every diagnostic. Below
+  it the build passes and asks you to lower `CEILING` in the same commit. So
+  the number only falls.
+- `ty` is pinned exactly in `pyproject.toml`. A new release can add a rule,
+  and that would move the count with no change to the code.
+- The script's comment says what the remainder is. Most of it is the
+  checker's blind spots, not bugs.
+- CI's lint job runs the same script.
 
 ## Documentation build
 
@@ -307,9 +333,12 @@ uv run --group docs sphinx-build -W --keep-going -b html docs docs/_build/html
 | `make seed` | migrate, then load the demo parish and print its logins |
 | `make dev` | serve `http://localhost:8080`, restarting on source changes |
 | `make serve` | serve without auto-reload |
-| `make test ARGS="…"` | the test suite, `ARGS` passed to pytest |
+| `make test ARGS="…" WORKERS=n` | the test suite on `WORKERS` pytest-xdist workers (default 4; `0` is serial), `ARGS` passed to pytest |
+| `make coverage` | the same with coverage, held to the floor in `pyproject.toml` |
 | `make lint` / `make format` | ruff check, or reformat in place |
+| `make types` | `ty check src/`, held to the ceiling in `scripts/typecheck.py` |
 | `make docs` | build this manual into `docs/_build/html` |
+| `make model` | fetch the manual's search model into `.models/` (30 MB, once) |
 | `make fresh` | wipe the database volume, then migrate and seed from scratch |
 | `make down` / `make clean` | stop the containers, keeping or deleting the data volume |
 | `make deploy-dry SITE=…` / `make deploy SITE=…` | preview or apply the production deploy |
