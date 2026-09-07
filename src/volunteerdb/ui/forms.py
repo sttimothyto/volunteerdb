@@ -5,6 +5,11 @@ the right: Cancel, and the one thing the dialog does. A confirmation is the
 same card with a question in it and two answers. These helpers draw those
 shapes so a page only writes what is particular to its own dialog -- the
 fields and the command -- and every dialog reads and behaves alike.
+
+Two widths and no more: the narrow card for a question or a short form,
+the wide one for a form with a paragraph in it. Every ``ui.dialog()`` in
+ui/ is built here (tests/test_ui_layer.py holds that), which is what makes
+the two decisions below site-wide.
 """
 
 from collections.abc import Callable, Iterator
@@ -13,13 +18,26 @@ from typing import Any
 
 from nicegui import ui
 
+NARROW = "w-96"
+WIDE = "w-[32rem]"
+
 
 @contextmanager
-def dialog_card(title: str, *, width: str = "w-96") -> Iterator[ui.dialog]:
+def dialog_card(
+    title: str, *, width: str = NARROW, persistent: bool = True
+) -> Iterator[ui.dialog]:
     """A dialog around a titled card. The body is built inside the block;
     the caller opens the dialog (`dialog.open()`) once it is built, or
-    awaits it for an answer (see `confirm`)."""
-    with ui.dialog() as dialog, ui.card().classes(f"{width} gap-3"):
+    awaits it for an answer (see `confirm`).
+
+    Persistent by default: a dialog with fields in it does not vanish on a
+    click beside it or on Escape, because that click was as likely a slip
+    as a decision, and the half-typed form went with it. Cancel is on every
+    button row (`actions`), so closing is one deliberate click away."""
+    dialog = ui.dialog()
+    if persistent:
+        dialog.props("persistent")
+    with dialog, ui.card().classes(f"{width} gap-3"):
         ui.label(title).classes("text-lg font-medium")
         yield dialog
 
@@ -32,12 +50,23 @@ def actions(
     icon: str | None = None,
     danger: bool = False,
     marker: str | None = None,
-    cancel: str = "Cancel",
+    cancel: str | None = "Cancel",
+    on_cancel: Callable[..., Any] | None = None,
+    extra: Callable[[], Any] | None = None,
 ) -> ui.button:
     """The button row: Cancel closes, `primary` does the thing. `danger`
-    paints the primary as destructive; `marker` names it for the tests."""
+    paints the primary as destructive; `marker` names it for the tests.
+
+    `cancel` renames the way out (a dialog that is awaited answers False
+    through `on_cancel`), or None drops it for a dialog that only informs.
+    `extra` draws whatever sits between the two -- a Clear, a Remove, a
+    Copy -- so every row still reads left to right: the way out, the side
+    doors, the deed."""
     with ui.row().classes("justify-end w-full gap-2"):
-        ui.button(cancel, on_click=dialog.close).props("flat")
+        if cancel is not None:
+            ui.button(cancel, on_click=on_cancel or dialog.close).props("flat")
+        if extra is not None:
+            extra()
         button = ui.button(primary, icon=icon, on_click=on_primary)
         if danger:
             button.props("color=negative")
@@ -56,7 +85,7 @@ async def confirm(
     danger: bool = False,
     yes_marker: str = "confirm-yes",
     no_marker: str = "confirm-no",
-    width: str = "w-96",
+    width: str = NARROW,
 ) -> bool:
     """Ask before acting: True when the reader chose `yes`. `detail` is a
     quieter second line for what the action entails.
@@ -67,7 +96,10 @@ async def confirm(
     the object again ("Delete the team", "Remove Maria Alvarez from
     Hospitality"), and `no` is "Cancel" -- or "Keep it" where the action is
     itself a cancellation. The two markers are the same on every question,
-    so a test can answer any of them."""
+    so a test can answer any of them.
+
+    Not persistent, unlike a form: there is nothing typed to lose, and a
+    click beside the question is the same answer as Cancel."""
     with ui.dialog() as dialog, ui.card().classes(f"{width} gap-3"):
         ui.label(question).classes("font-medium")
         if detail:

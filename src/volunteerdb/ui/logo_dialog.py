@@ -17,7 +17,7 @@ from ..fp import Err
 from ..permissions import Actor
 from ..services import branding
 from .context import PageCtx, run_command, toast
-from .forms import confirm, dialog_card
+from .forms import actions, confirm, dialog_card
 
 # /logo serves the uploaded image or the shipped placeholder, so the src never
 # has to be decided at render time (ui/logo_route.py explains why it must not).
@@ -111,15 +111,16 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
 
             await run_command(command, on_ok=done, reload=False)
 
-        actions = ui.row().classes("justify-end w-full gap-2")
+        row = ui.element("div").classes("w-full")
+
+        def remove_button() -> None:
+            ui.button("Remove logo", on_click=remove).props("flat color=negative")
 
         def render_actions(image: bytes | None) -> None:
             """The buttons, rebuilt with the picked image captured."""
-            actions.clear()
-            with actions:
-                ui.button("Cancel", on_click=dialog.close).props("flat")
-                ui.button("Remove logo", on_click=remove).props("flat color=negative")
-                ui.button("Upload", on_click=lambda: save(image))
+            row.clear()
+            with row:
+                actions(dialog, "Upload", lambda: save(image), extra=remove_button)
 
         render_actions(None)
     dialog.open()

@@ -234,3 +234,30 @@ def test_the_removing_sweep_sees_the_handlers_it_holds():
             if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 seen.update(_removing_calls(fn, aliases))
     assert seen >= {"teams.delete", "memberships.remove", "events.delete_slot"}, seen
+
+
+# --- every dialog is built by forms.py ---------------------------------------------
+#
+# dialog_card makes a dialog with fields in it persistent (a click beside it
+# is not a decision) and confirm keeps a question dismissible; both decisions
+# are site-wide only while nothing else in ui/ calls ui.dialog() itself.
+
+
+def test_every_dialog_is_built_by_forms():
+    stray = []
+    for path in sorted(UI.glob("*.py")):
+        if path.name == "forms.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "dialog"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "ui"
+            ):
+                stray.append(f"{path.name}:{node.lineno}")
+    assert not stray, (
+        "a ui.dialog() outside forms.py: use dialog_card (persistent, titled) "
+        f"or confirm (a question) so every dialog behaves alike: {stray}"
+    )

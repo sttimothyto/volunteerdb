@@ -33,7 +33,7 @@ from ..models import AppUser
 from ..permissions import volunteer_team_ids
 from ..services import users as user_service
 from .context import PageCtx, run_command
-from .forms import confirm
+from .forms import WIDE, actions, confirm, dialog_card
 
 
 def invite_url(base_url: str, token: str) -> str:
@@ -64,8 +64,7 @@ def show_invite(
     was copied. "Send again" closes this dialog without a reload and opens the
     fresh link's own, whose Close does it.
     """
-    with ui.dialog() as dialog, ui.card().classes("gap-2 w-[34rem]"):
-        ui.label(f"Invite link for {email}").classes("font-medium")
+    with dialog_card(f"Invite link for {email}", width=WIDE) as dialog:
         url = invite_url(base_url, token)
         if reveal:
             ui.input(value=url).props("readonly outlined dense").classes("w-full")
@@ -98,28 +97,29 @@ def show_invite(
                 "text-negative",
             )
         ui.label(note).classes(f"text-sm {color}")
-        with ui.row().classes("justify-end w-full gap-2"):
+
+        async def resend() -> None:
+            dialog.close()
+            if on_resend is not None:
+                await on_resend()
+
+        def side_doors() -> None:
             if reveal:
                 ui.button(
                     "Copy",
                     on_click=lambda: (ui.clipboard.write(url), ui.notify("Copied")),
-                ).props("dense")
+                ).props("outline")
             if on_resend is not None:
+                ui.button("Send again", icon="mail", on_click=resend).props("outline")
 
-                async def resend() -> None:
-                    dialog.close()
-                    await on_resend()
+        def close() -> None:
+            dialog.close()
+            if reload_on_close:
+                ui.navigate.reload()
 
-                ui.button("Send again", icon="mail", on_click=resend).props(
-                    "dense outline"
-                )
-
-            def close() -> None:
-                dialog.close()
-                if reload_on_close:
-                    ui.navigate.reload()
-
-            ui.button("Close", on_click=close).props("flat dense")
+        # the link is the one thing on this dialog, and the one moment to
+        # copy it: persistent, so a slip beside the card does not take it away
+        actions(dialog, "Close", close, cancel=None, extra=side_doors)
     dialog.open()
 
 
@@ -135,8 +135,7 @@ def show_outstanding_invite(
     an admin) can recover one already sent. "Send again" mints a fresh link,
     mails it, and kills the previous one — which is the same trade every
     password-reset flow makes, and the reason this dialog exists at all."""
-    with ui.dialog() as dialog, ui.card().classes("gap-2 w-[30rem]"):
-        ui.label(f"An invite is already out to {email}").classes("font-medium")
+    with dialog_card(f"An invite is already out to {email}", width=WIDE) as dialog:
         ui.label(
             f"It can be used until {until:%Y-%m-%d %H:%M}."
             if until
@@ -147,17 +146,17 @@ def show_outstanding_invite(
             "of the database is not a set of keys. To hand one over now, send a "
             "fresh link: the one already mailed stops working."
         ).classes("text-sm text-gray-500")
-        with ui.row().classes("justify-end w-full gap-2"):
+
+        async def resend() -> None:
+            dialog.close()
             if on_resend is not None:
+                await on_resend()
 
-                async def resend() -> None:
-                    dialog.close()
-                    await on_resend()
+        def send_again() -> None:
+            if on_resend is not None:
+                ui.button("Send again", icon="mail", on_click=resend).props("outline")
 
-                ui.button("Send again", icon="mail", on_click=resend).props(
-                    "dense outline"
-                )
-            ui.button("Close", on_click=dialog.close).props("flat dense")
+        actions(dialog, "Close", dialog.close, cancel=None, extra=send_again)
     dialog.open()
 
 

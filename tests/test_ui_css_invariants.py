@@ -129,3 +129,20 @@ def test_every_date_or_time_field_offers_a_picker():
         if path.name != "date_input.py" and ("YYYY-MM-DD" in label or "HH:MM" in label)
     ]
     assert not offenders, "date/time fields typed by hand:\n" + "\n".join(offenders)
+
+
+def test_dialogs_come_in_two_widths():
+    """A dialog is `forms.NARROW` (w-96) or `forms.WIDE` (w-[32rem]) and
+    nothing in between: five widths read as five kinds of dialog, and there
+    are two -- a question or a short form, and a form with a paragraph in
+    it. Arbitrary-value widths are what a third one would be written as."""
+    offenders = [
+        f"{path.name}:{lineno}: {token}"
+        for path, lineno, classes in _class_literals()
+        for token in classes.split()
+        if token.startswith("w-[") and token != "w-[32rem]"
+    ]
+    assert not offenders, (
+        "a dialog width that is neither forms.NARROW nor forms.WIDE:\n  "
+        + "\n  ".join(offenders)
+    )

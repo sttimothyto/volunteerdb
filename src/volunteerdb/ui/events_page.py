@@ -52,7 +52,7 @@ from . import calendar_grid, column_order
 from .calendar_panel import subscribe_panel
 from .context import PageCtx, page_ctx, run_command
 from .date_input import date_input, time_input
-from .forms import actions, confirm, dialog_card
+from .forms import WIDE, actions, confirm, dialog_card
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -382,7 +382,7 @@ async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
     """The double-booking warning: advisory, never a block. A masked title
     means the colliding event belongs to a team outside the creator's view —
     the when/where is the warning; the details stay theirs."""
-    with dialog_card("Possible double booking", width="w-[28rem]") as dialog:
+    with dialog_card("Possible double booking", width=WIDE) as dialog:
         ui.label(
             "Something similar is already on the calendar at that location "
             "on the same day:"
@@ -394,16 +394,18 @@ async def _confirm_similar(hits: list[event_service.SimilarEvent]) -> bool:
                     f"{timefmt.event_when(hit.starts_at, hit.ends_at, tz=_tz())} · "
                     f"{hit.location} · {hit.team_path}"
                 ).classes("text-sm text-gray-600")
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Go back", on_click=lambda: dialog.submit(False)).props("flat")
-            ui.button("Create anyway", on_click=lambda: dialog.submit(True)).props(
-                "color=warning"
-            )
+        actions(
+            dialog,
+            "Create anyway",
+            lambda: dialog.submit(True),
+            cancel="Go back",
+            on_cancel=lambda: dialog.submit(False),
+        ).props("color=warning")
     return bool(await dialog)
 
 
 def _new_event_dialog(managed_options: dict[int, str]) -> None:
-    with dialog_card("New event", width="w-[30rem]") as dialog:
+    with dialog_card("New event", width=WIDE) as dialog:
         team = (
             ui.select(managed_options, label="Team", with_input=True)
             .props("outlined dense")
@@ -909,7 +911,7 @@ async def events_page(past: str = "", team: str = "", view: str = "", month: str
 def _edit_event_dialog(event: Event) -> None:
     local_start = event.starts_at.astimezone(_tz())
     local_end = event.ends_at.astimezone(_tz())
-    with dialog_card("Edit event", width="w-[28rem]") as dialog:
+    with dialog_card("Edit event", width=WIDE) as dialog:
         title = (
             ui.input("Title", value=event.title)
             .props("outlined dense")
@@ -995,11 +997,9 @@ def _add_slot_dialog(event_id: int) -> None:
 
             await run_command(command, on_ok=done, reload=True)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            # marked like slot-edit-save: the button that opens this dialog
-            # carries the same label, so a test needs to name this one
-            ui.button("Add slot", on_click=save).mark("slot-add-save")
+        # marked like slot-edit-save: the button that opens this dialog
+        # carries the same label, so a test needs to name this one
+        actions(dialog, "Add slot", save, marker="slot-add-save")
     dialog.open()
 
 
@@ -1120,11 +1120,7 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
 
             await run_command(command, on_ok=done)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Sign up", icon="person_add", on_click=save).mark(
-                "signup-confirm"
-            )
+        actions(dialog, "Sign up", save, icon="person_add", marker="signup-confirm")
     dialog.open()
 
 

@@ -156,8 +156,7 @@ def _relink_dialog(
     current_volunteer_id: int | None,
     volunteer_names: dict[int, str],
 ) -> None:
-    with ui.dialog() as dialog, ui.card().classes("w-96 gap-3"):
-        ui.label(f"Linked volunteer for {email}").classes("font-medium")
+    with dialog_card(f"Linked volunteer for {email}") as dialog:
         pick = (
             ui.select(
                 {0: "— not linked —"} | volunteer_names,

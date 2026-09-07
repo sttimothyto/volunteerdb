@@ -24,7 +24,7 @@ from . import column_order, invites
 from .account_status import roster_account
 from .asof import parse_as_of
 from .context import PageCtx, page_ctx, run_command, toast
-from .forms import actions, confirm, dialog_card
+from .forms import WIDE, actions, confirm, dialog_card
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -665,7 +665,7 @@ _OVERWRITE = "Overwrite it from the database"
 def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
     """Link the team to a roster spreadsheet. Leaders/seconds and admins —
     enforced server-side on save."""
-    with dialog_card("Roster spreadsheet", width="w-[32rem]") as dialog:
+    with dialog_card("Roster spreadsheet", width=WIDE) as dialog:
         ui.label(
             "Paste the link of a Google Sheet shared as “anyone with the link "
             "can edit” — copy the roster template to make one."
@@ -741,7 +741,7 @@ def _roster_sheet_dialog(team_id: int, linked: bool) -> None:
 def _home_doc_dialog(team_id: int, current: str | None) -> None:
     """Set or clear the home-page doc. Leader/second/core/admin — enforced
     server-side on save."""
-    with dialog_card("Team home page doc", width="w-[30rem]") as dialog:
+    with dialog_card("Team home page doc", width=WIDE) as dialog:
         ui.label(
             "Paste the link of a Google Doc shared as “anyone with the link can "
             "view”. Its content is published on the public ministries index and "
@@ -766,13 +766,13 @@ def _home_doc_dialog(team_id: int, current: str | None) -> None:
 
             await run_command(command, on_ok=done, reload=False)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
+        def clear_button() -> None:
             if current:
                 ui.button("Clear", on_click=lambda: save(None)).props(
                     "flat color=negative"
                 )
-            ui.button("Save", on_click=lambda: save(url.value))
+
+        actions(dialog, "Save", lambda: save(url.value), extra=clear_button)
     dialog.open()
 
 

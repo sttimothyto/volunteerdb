@@ -30,7 +30,7 @@ from ..services.reports import CoverageRow
 from ..star import StarResult
 from .context import PageCtx, page_ctx, run_command
 from .date_input import date_input
-from .forms import actions, confirm, dialog_card
+from .forms import WIDE, actions, confirm, dialog_card
 from .layout import frame
 from .widgets import ROLE_OPTIONS, phase_badge, role_badge, workload_badge
 
@@ -87,7 +87,7 @@ def _summary_row(s: elections_service.ProposalSummary) -> None:
 def _create_proposal_dialog(
     team_id: int, path: str, default_role: TeamRole, volunteer_options: dict[int, str]
 ) -> None:
-    with dialog_card(f"Propose for {path}", width="w-[28rem]") as dialog:
+    with dialog_card(f"Propose for {path}", width=WIDE) as dialog:
         role = (
             ui.select(ROLE_OPTIONS, label="Role", value=default_role.value)
             .props("outlined dense")
@@ -148,11 +148,9 @@ def _create_proposal_dialog(
 
             await run_command(command, on_ok=done, reload=False)
 
-        with ui.row().classes("justify-end w-full gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            # not "Open proposal": that is a substring of the section
-            # header "Open proposals" and would confuse content matching
-            ui.button("Create proposal", icon="how_to_vote", on_click=save)
+        # not "Open proposal": that is a substring of the section header
+        # "Open proposals" and would confuse content matching
+        actions(dialog, "Create proposal", save, icon="how_to_vote")
     dialog.open()
 
 
@@ -251,7 +249,7 @@ async def elections_page():
 
 
 def _edit_proposal_dialog(proposal: Proposal) -> None:
-    with dialog_card("Edit proposal", width="w-[30rem]") as dialog:
+    with dialog_card("Edit proposal", width=WIDE) as dialog:
         d1, d2 = _deadline_inputs(
             proposal.nomination_deadline, proposal.voting_deadline
         )

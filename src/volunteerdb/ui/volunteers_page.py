@@ -24,7 +24,7 @@ from . import column_order, invites
 from .account_status import invitable, last_login_text
 from .context import PageCtx, page_ctx, perform, rate_limit, run_command, toast
 from .date_input import date_input, time_input
-from .forms import actions, confirm, dialog_card
+from .forms import WIDE, actions, confirm, dialog_card
 from .layout import frame
 from .photo_dialog import photo_avatar
 from .search_box import search_box
@@ -571,7 +571,7 @@ def _edit_dialog(
     that decides when is the service's (volunteers.address_change); this
     dialog only acts on its answer. Everything else saves immediately."""
     is_self = actor.volunteer_id == volunteer.id
-    with dialog_card(f"Edit {volunteer.full_name}", width="w-[34rem]") as dialog:
+    with dialog_card(f"Edit {volunteer.full_name}", width=WIDE) as dialog:
         first = (
             ui.input("First name", value=volunteer.first_name)
             .props("outlined dense")

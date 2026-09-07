@@ -10,6 +10,8 @@ The *Who* column uses these short names:
 - *leaders*: the leaders and seconds of the team, and the leaders and seconds of its parent teams.
 - *admin*: administrators. An administrator sees everything and can do everything, on every team.
 
+A dialog with fields in it stays open until you click *Cancel* or its own button. A click outside it, or the Escape key, changes nothing. A question, for example *Delete the team …?*, closes on a click outside it, and nothing happens.
+
 ## The header
 
 - The header sits at the top of every page. On a narrow screen the page names fold into 1 *Menu* button.

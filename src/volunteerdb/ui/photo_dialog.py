@@ -17,7 +17,7 @@ from nicegui import events, ui
 from ..fp import Err
 from ..services import photos as photo_service
 from .context import PageCtx, run_command, toast
-from .forms import confirm, dialog_card
+from .forms import actions, confirm, dialog_card
 
 DISCLAIMER = (
     "I confirm this is an appropriate professional photo. "
@@ -105,21 +105,20 @@ def open_photo_dialog(
 
             await run_command(command, on_ok=done, reload=False)
 
-        actions = ui.row().classes("justify-end w-full gap-2")
+        row = ui.element("div").classes("w-full")
+
+        def remove_button() -> None:
+            if photo_at is not None:
+                ui.button("Remove photo", on_click=remove).props("flat color=negative")
 
         def render_actions(image: bytes | None) -> None:
             """The buttons, rebuilt with the picked image captured: the
             widgets are the state, so nothing is stored on the side."""
-            actions.clear()
-            with actions:
-                ui.button("Cancel", on_click=dialog.close).props("flat")
-                if photo_at is not None:
-                    ui.button("Remove photo", on_click=remove).props(
-                        "flat color=negative"
-                    )
-                ui.button("Upload", on_click=lambda: save(image)).bind_enabled_from(
-                    agree, "value"
-                )
+            row.clear()
+            with row:
+                actions(
+                    dialog, "Upload", lambda: save(image), extra=remove_button
+                ).bind_enabled_from(agree, "value")
 
         render_actions(None)
     dialog.open()

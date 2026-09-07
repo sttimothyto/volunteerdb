@@ -197,7 +197,7 @@ screens that changed, and ends with the full suite green in its own commit.
   `events.remove_assignment`, `events.delete_slot`, `users.reinvite`,
   `photos.remove`, `branding.remove_logo`) and asserts each GUI handler that calls
   one contains an `await confirm(`.
-- [ ] **2. Dialogs with input do not vanish on a backdrop click.** `forms.dialog_card`
+- [x] **2. Dialogs with input do not vanish on a backdrop click.** `forms.dialog_card`
   gains `persistent=True` (Quasar `persistent`) as its default; `confirm` stays
   dismissible. Cancel is already on every `actions` row. The five widths collapse to
   two (`w-96`, `w-[32rem]`) and the seven hand-rolled button rows move to
