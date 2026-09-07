@@ -63,7 +63,8 @@ The settings menu holds:
 
 The *Dashboard* is the first page after sign-in. When your account is linked to a volunteer, its bands run from you outward: *My service*, *My teams*, *Needs attention*, *Parish*. An administrator with no volunteer record sees *Parish*, then *Needs attention*. A band you have no right to is absent, not empty.
 
-- At the top is the search box *Find volunteers or teams…* with the button *Search*.
+- At the top is the search box *Find volunteers or teams — text or a SQL 'WHERE' clause* with the button *Search*.
+- The box takes a name, or a SQL `WHERE` filter such as `team = 'Liturgy' AND role = 'leader'`. A filter opens the *Ministry graph* with only the people it matches. Every search box in the site takes one: see [Search query filters](../../reference/query-language.md).
 - After 2 letters, a list of suggestions opens under the box: up to 6 under *Teams*, up to 6 under *Volunteers*.
 - The arrow keys move through the suggestions. Enter opens the one marked.
 - A click on a team opens its page. A click on a volunteer opens the side panel. *See every match for “…”* opens the *Volunteers* page.
@@ -137,7 +138,7 @@ Shown to *everyone*. It can show a past date.
 
 | Control | What it does | Who |
 |---|---|---|
-| *Search teams…* | Narrows the table as you type. A parent's name keeps its sub-teams. The address carries the text, so a reload or a bookmark lands where you were. | *everyone* |
+| *Search teams — text or a SQL 'WHERE' clause* | Narrows the table as you type, on plain text or on a SQL `WHERE` filter such as `gaps > 0` ([Search query filters](../../reference/query-language.md)). A parent's name keeps its sub-teams. The address carries the text, so a reload or a bookmark lands where you were. | *everyone* |
 | *View Team Homepages* | Opens the public *Ministries* pages. | *everyone* |
 | *New team* | Opens the dialog *New team*: *Name*, *Parent team* (*— top level —* or a team), *Description*, *Workload weight*, *Cancel*, *Save*. | *admin*, not on a past date |
 | *Export team(s)* | Downloads a `.csv` file with the rosters of the teams you have full-roster rights on. An administrator gets the whole parish. | *admin*, *leaders*, *core* |
@@ -171,12 +172,12 @@ The sections, from the top:
 - *Volunteer home page* (*core*, not on a past date): a panel under the roster. A click on its title opens or closes it. It is open when a doc is linked or the last fetch failed. The line under the title says which.
 - Inside the panel *Volunteer home page*: *Set home page doc* opens the dialog *Team home page doc*. The dialog has the field *Google Doc link*, *Clear* and *Save*. With a doc set, the section shows the links *Google Doc* and *Public page*. It also shows the buttons *Download QR Code to Public page*, *Fetch now* and *Change the doc*. Under them: *Not published yet — …*, *Refreshed nightly · last fetched …*, or *Last fetch failed: …*.
 - *Add member* (*leaders*): the lists *Volunteer* and *Role*, and the button *Add*.
-- *Roster* (*members*): a table with 1 row per person and the columns *Name*, *Role*, *Account* and *Since*. *core* also see *Email* and *Phone*. A click on a column heading sorts. Drag a heading to move a column. *Search the roster…* narrows the table as you type. 25 rows per page; *All* shows every row.
+- *Roster* (*members*): a table with 1 row per person and the columns *Name*, *Role*, *Account* and *Since*. *core* also see *Email* and *Phone*. A click on a column heading sorts. Drag a heading to move a column. *Search the roster — text or a SQL 'WHERE' clause* narrows the table as you type. 25 rows per page; *All* shows every row.
 - The name opens the side panel. *Since* is the day the person joined the team, as far as the site's records go. On a narrow screen the *Email*, *Phone* and *Since* columns are hidden; the side panel has the first two.
 - The role is a badge. For *leaders* it is a button: a click opens the dialog *Change the role of …*, with the list *Role* and *Save*. They also see the icon *Remove from team* at the end of the row. It asks *Remove … from the … roster?* first.
 - Every member sees the account badge: *no account*, *disabled*, *invite sent*, *invite expired* or *account*. Next to it: *never signed in*, or *last login* with the date.
 - For *core*, the button *Invite* or *Re-invite* sits beside the badge when an invitation makes sense.
-- A role change, a removal or an invite redraws the roster in place. The text in *Search the roster…*, the sort and the page stay.
+- A role change, a removal or an invite redraws the roster in place. The text in *Search the roster*, the sort and the page stay.
 - A reader not on the team sees *You are not on this team, so its roster is not visible to you.* and the button *Teams*. An empty roster says *Nobody on this team yet.* For *leaders*, the button *Add the first member* under it puts the cursor in *Volunteer*.
 - *Roster spreadsheet* (*leaders*, not on a past date): a panel under the roster, open when a sheet is linked or the last sync failed. Inside: *Link a spreadsheet* opens the dialog *Roster spreadsheet*. The dialog has *Google Sheets link*, the choice *Overwrite it from the database* or *Import its rows into the database*, and *Save*. With a sheet linked, the section shows the link to the sheet, *Change the spreadsheet*, *Sync now* and *Overwrite sheet*. It also shows *Roster template (Google Sheets)*. Under them: *Last synced …* or *Last sync failed: …*.
 - *Import a .csv* (*leaders*): a panel of its own, closed until you click its title. Inside: the box *Drop a .csv file here (validated before anything is written)*. A clean file gets the report *Dry run — nothing written yet.* and the button *Apply this import*. A file with problems gets *Not applied — fix the errors below and re-upload.* and 1 line per problem. After the apply: *Import applied ✔*.
@@ -189,7 +190,7 @@ Shown to *everyone*. Everyone can search every name; the details of people outsi
 
 | Control | What it does | Who |
 |---|---|---|
-| *Search volunteers…* and *Search* | Search by name, and by email, phone, notes or custom field among the people you can see. The suggestion list works as on the *Dashboard*. | *everyone* |
+| *Search volunteers — text or a SQL 'WHERE' clause* and *Search* | Search by name, and by email, phone, notes or custom field among the people you can see. A SQL `WHERE` filter such as `team = 'Liturgy'` searches the same people ([Search query filters](../../reference/query-language.md)). The suggestion list works as on the *Dashboard*. | *everyone* |
 | *Workload* | A list of the workload bands. Filters the table to 1 band. | *admin*, *leaders* |
 | *New volunteer* | Opens the dialog *New volunteer*: *First name*, *Last name*, *Email*, *Phone*, *Create*. It then opens the new profile. | *admin* |
 | *Matching teams* | Buttons for the teams whose names match the search. Each opens the team page. | *everyone* |
@@ -251,7 +252,7 @@ Shown to *everyone*. The list holds the events of the teams whose roster names y
 | *Add to your calendar* | Opens a panel with a link to subscribe your own calendar and a `.ics` file to download. Your own feed also has the *Feed address* to paste and *Reset the address*. The parish panel has *Add to Google Calendar* once the parish calendar exists. | *everyone*; in the *Whole parish* panel, *admin* also sees the state of the parish Google calendar |
 | The month grid | 1 cell per day, Sunday first, with the time and name of each event. A link at each end, *← July* for example, moves to the month before or after. | *everyone* |
 | *Upcoming events on your teams* | The heading of the table. For *admin* it reads *Upcoming events (all teams)*. With *Show past* on, *Upcoming* becomes *Past*. | *everyone* |
-| *Search events…* | Narrows the table as you type, on the name, the team, the place and the date. The address carries the text, so a reload or a bookmark lands where you were. | *everyone* |
+| *Search events — text or a SQL 'WHERE' clause* | Narrows the table as you type, on the name, the team, the place and the date. A SQL `WHERE` filter such as `filled = 0` narrows it too ([Search query filters](../../reference/query-language.md)). The address carries the text, so a reload or a bookmark lands where you were. | *everyone* |
 | *All teams* | A list to show 1 team's events. Shown when the table holds more than 1 team. | *everyone* |
 | *Show past* / *Show upcoming* | Switches the table between events to come and past or cancelled events. | *everyone* |
 | *New event* | Opens the dialog *New event*, below. | *admin*, *leaders* |
@@ -379,7 +380,7 @@ Shown to *admin* only. Anyone else sees *Admins only.* and the button *Dashboard
 | *Create accounts for all volunteers with email* | Asks, then *Create and email invites* makes an account for every active volunteer with an email address and no account, and emails each an invitation. |
 | *New account* | Opens the dialog *New account*: *Email (login)*, *Linked volunteer* (*— match by email —* or a name), the switch *Parish admin (full access)*, *Create*. |
 | *Invite link for …* | The dialog after a new account or a new link: the link, how long it works, whether the email went out, *Copy*, *Close*. |
-| *Search accounts…* | Narrows the table as you type, on the address, the linked name and the status. | 
+| *Search accounts — text or a SQL 'WHERE' clause* | Narrows the table as you type, on the address, the linked name and the status. A SQL `WHERE` filter such as `status = 'invite expired'` narrows it too ([Search query filters](../../reference/query-language.md)). | 
 | The badge *invite pending* | A click opens *An invite is already out to …* with the date it runs out. The link itself is not kept. |
 | The *⋯* menu at the end of a row | Opens the 4 actions of that account, below. |
 | *Change linked volunteer* | Opens *Linked volunteer for …*: a list with *— not linked —* and every volunteer, *Save*. |
@@ -416,7 +417,7 @@ Shown to *admin* only, under the title *Workload*. Anyone else sees *Admins only
 |---|---|
 | *Role multipliers* | 1 number per role: *Ministry leader*, *Second-in-command*, *Core team member*, *Member*. |
 | *Colour bands* | 1 row per band: *Label*, *Colour*, *badge text N:1* (how well the label reads on the colour), and *up to score*. The last band reads *everything above*. A note says that saving recolours the volunteers list, the graph and the dashboard chips. Under them: *Save settings*. |
-| *Team workload weights* | A table with the columns *Ministry*, *Team* and *Weight*, 1 row per team, and the box *Search teams…* above it. A click on a column heading sorts. Drag a heading to move a column. A cleared box is weight 0: the team does not count. *Save weights* stays at the foot of the card. |
+| *Team workload weights* | A table with the columns *Ministry*, *Team* and *Weight*, 1 row per team, and the box *Search teams — text or a SQL 'WHERE' clause* above it. It takes a name or a filter such as `weight > 1`. A click on a column heading sorts. Drag a heading to move a column. A cleared box is weight 0: the team does not count. *Save weights* stays at the foot of the card. |
 
 - After a save: *Workload settings saved* or *Updated N team weights*.
 - The number of bands cannot change on this page.

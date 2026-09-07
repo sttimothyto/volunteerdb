@@ -1,8 +1,11 @@
 # Search query filters
 
-- The search boxes on the dashboard, the volunteers list, the teams list,
-  and the events list accept SQL `WHERE`-clause filters alongside plain
-  text.
+- Every search box in the app accepts SQL `WHERE`-clause filters alongside
+  plain text. Each label says so.
+- The boxes are: the dashboard, the volunteers list, the teams list, a
+  team's roster, the events list, the accounts table, and the team workload
+  weights.
+- A filter reads the fields of its own box. The field lists below say which.
 - Text that does not read as a complete boolean condition (a name, a
   half-typed clause, a sentence) runs as the usual substring search.
 - A well-formed filter with a problem (an unknown field, a bad value)
@@ -13,7 +16,7 @@
 
 ```text
 phone LIKE '555%' AND team = 'Liturgy'
-years_served > 2 AND role IN ('leader', 'second')
+is_active = true AND role IN ('leader', 'second')
 NOT (notes IS NULL)
 created > '2025-01-01'
 ```
@@ -72,6 +75,28 @@ created > '2025-01-01'
 - The list is already scoped to the teams you can see, so the filter never
   reveals more than the unfiltered page.
 
+## Roster fields (a team's roster)
+
+- Text fields: `name`, `role`, `account`.
+- `role` holds the label as the table prints it: `Ministry leader`,
+  `Second-in-command`, `Core team member`, `Member`.
+- `account` holds the badge text, like `invite expired` or `no account`.
+- `since` (date), quoted ISO like `since < '2024-01-01'`.
+- `email` and `phone` are on the rows of a full-roster viewer only. For
+  anybody else they are absent, so a condition on them never matches.
+
+## Account fields (the accounts table)
+
+- Text fields: `email`, `name` (the linked volunteer), `status` (the badge).
+- True/false fields: `admin`, `active`.
+- `last_login` (date). It is absent for an account that has never signed in.
+- The page is administrators only, so the filter redacts nothing.
+
+## Weight fields (team workload weights)
+
+- Text fields: `team` (the full path), `ministry`.
+- `weight` (number). A team with a cleared box has weight 0.
+
 ## What each role's filter can see
 
 - Filters obey the same visibility rules as everything else. A filter
@@ -96,5 +121,5 @@ created > '2025-01-01'
 - Comparisons with an absent value (`NULL`) never match, as in SQL.
   `field IS NULL` asks for absence explicitly.
 - Admins see everything, everywhere, as usual.
-- Accounts, sessions, ballots, and history are not queryable at all: those
-  names do not exist in the filter language.
+- A filter names fields, never tables. Sessions, ballots and history have
+  no fields in the language, and no box reads them.

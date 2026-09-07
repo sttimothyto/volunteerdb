@@ -82,7 +82,7 @@ async def test_an_empty_events_list_keeps_the_search_box_and_offers_new_event(
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open("/events")
         await user.should_see("Nothing scheduled yet.")
-        await user.should_see("Search events…")
+        await user.should_see("Search events")
         assert only(user.find(marker="empty-action")).text == "New event"
         user.find(marker="empty-action").click()
         await user.should_see("Repeat weekly until")  # the New event dialog

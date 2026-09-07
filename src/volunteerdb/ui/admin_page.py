@@ -436,7 +436,7 @@ def _accounts_table(
     nobody scrolls."""
     with ui.row().classes("items-center gap-2 w-full"):
         search = (
-            ui.input("Search accounts…")
+            ui.input(f"Search accounts — {query_lang.LABEL_HINT}")
             .props("outlined dense clearable debounce=200")
             .classes("grow")
             .mark("accounts-search")

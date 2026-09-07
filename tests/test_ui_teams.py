@@ -20,7 +20,7 @@ from tests.conftest import SIM_MAIN, SLOW, db_session, only
 from tests.fp_helpers import ok
 
 COUNT_FIELDS = ("leader", "second", "core", "member", "total")
-SEARCH_BOX = "Search teams…"
+SEARCH_BOX = "Search teams"
 
 
 async def _parish(session) -> dict[str, int]:

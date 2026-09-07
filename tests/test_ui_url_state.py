@@ -52,7 +52,7 @@ async def test_teams_open_narrowed_to_the_address(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin_id}")
         await user.open("/teams?q=music")
-        box = only(user.find(kind=ui.input, content="Search teams…"))
+        box = only(user.find(kind=ui.input, content="Search teams"))
         assert box.value == "music"
         table = only(user.find(kind=ui.table))
         assert [r["name"] for r in table.rows] == ["Liturgy", "Music"]
@@ -69,7 +69,7 @@ async def test_events_open_narrowed_to_the_address(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open("/events?q=choir")
-        box = only(user.find(kind=ui.input, content="Search events…"))
+        box = only(user.find(kind=ui.input, content="Search events"))
         assert box.value == "choir"
         table = only(user.find(kind=ui.table))
         assert [r["title"] for r in table.rows] == ["Choir practice"]

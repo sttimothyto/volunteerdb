@@ -51,7 +51,8 @@ Every active volunteer with an email address and no account gets an account and 
 ## What you see
 
 - Each row shows the email address, the linked volunteer and a badge for the sign-in state. Once the person has signed in, the row also shows the day under *Last login*.
-- *Search accounts…* narrows the table as you type. A click on a column heading sorts it.
+- *Search accounts* narrows the table as you type. A click on a column heading sorts it.
+- The box also takes a filter, such as `status = 'invite expired' AND admin = false`. See [Search query filters](../../reference/query-language.md).
 - The badge *invite pending* means the invitation link is out and still works. *invite expired* means it ran out.
 - The badge *email-code sign-in* means the person has no password and signs in with an emailed code.
 - The icon at the left of a row is a shield for an administrator, and a grey person for everyone else.

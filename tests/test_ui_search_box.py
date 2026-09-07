@@ -16,8 +16,8 @@ from tests import mint
 from tests.conftest import SIM_MAIN, SLOW, db_session, only, should_see_detail
 from tests.fp_helpers import done, ok
 
-DASHBOARD_BOX = "Find volunteers or teams…"
-LIST_BOX = "Search volunteers…"
+DASHBOARD_BOX = "Find volunteers or teams"
+LIST_BOX = "Search volunteers"
 
 
 async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):

@@ -63,7 +63,7 @@ async def test_anonymous_redirect_and_login_guards(database):
             "correct-pass-phrase"
         )
         user.find(kind=ui.input, content="Password (optional)").trigger("keydown.enter")
-        await user.should_see("Find volunteers or teams…", retries=SLOW)
+        await user.should_see("Find volunteers or teams", retries=SLOW)
 
 
 async def test_a_signed_in_browser_is_sent_on_from_the_login_page(real_app_client):
@@ -147,7 +147,7 @@ async def test_invite_redemption_flow(database, sim_sent):
         user.find(kind=ui.input, content="Repeat password").clear()
         user.find(kind=ui.input, content="Repeat password").type("long-enough-phrase-1")
         user.find("Finish setup and sign in", kind=ui.button).click()
-        await user.should_see("Find volunteers or teams…", retries=SLOW)
+        await user.should_see("Find volunteers or teams", retries=SLOW)
         _to, subject, body = await mail_to(sent, "new@example.org")
         assert subject == "Your VolunteerDB account is ready"
         assert "with your email and password" in body

@@ -154,7 +154,7 @@ async def teams_page(as_of: str = "", q: str = ""):
     with frame("Teams", actor, help="teams", as_of=at, asof_path="/teams"):
         with ui.row().classes("items-center gap-2 w-full"):
             search = (
-                ui.input("Search teams…", value=q)
+                ui.input(f"Search teams — {query_lang.LABEL_HINT}", value=q)
                 .props("outlined dense clearable debounce=200")
                 .classes("grow")
                 if rows
@@ -1222,7 +1222,7 @@ def _roster_table(
     with ui.column().classes("w-full") as block:
         with ui.row().classes("items-center gap-2 w-full"):
             search = (
-                ui.input("Search the roster…")
+                ui.input(f"Search the roster — {query_lang.LABEL_HINT}")
                 .props("outlined dense clearable debounce=200")
                 .classes("grow")
                 .mark("roster-search")

@@ -56,6 +56,10 @@ from .permissions import Actor
 
 _PUBLIC, _PRIVATE, _ROSTER = "public", "private", "roster"
 
+# every search box says the same thing about what it takes, in the tail of
+# its label: "Search teams — text or a SQL 'WHERE' clause"
+LABEL_HINT = "text or a SQL 'WHERE' clause"
+
 _COMPARISONS = (
     exp.EQ,
     exp.NEQ,

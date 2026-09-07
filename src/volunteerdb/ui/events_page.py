@@ -734,7 +734,7 @@ def _listing_controls(
         # the search box grows into the free space and holds the buttons
         # against the right edge (the teams-page idiom)
         search = (
-            ui.input("Search events…", value=listing.q)
+            ui.input(f"Search events — {query_lang.LABEL_HINT}", value=listing.q)
             .props("outlined dense clearable debounce=200")
             .classes("grow")
         )

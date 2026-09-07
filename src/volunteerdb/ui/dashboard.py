@@ -97,7 +97,7 @@ async def dashboard(as_of: str = "", q: str = "", graph: str = ""):
     with frame("Dashboard", actor, help="dashboard", as_of=at, asof_path="/"):
         with ui.row().classes("items-center gap-2 w-full"):
             search_box(
-                "Find volunteers or teams…",
+                f"Find volunteers or teams — {query_lang.LABEL_HINT}",
                 on_submit=submit,
                 on_pick_volunteer=panel.open,
                 at=at,

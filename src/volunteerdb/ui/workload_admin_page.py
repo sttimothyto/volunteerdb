@@ -207,7 +207,7 @@ def _matching_teams(rows: list[dict], text: str) -> list[dict]:
 def _weights_table(all_teams, paths: dict[int, str]) -> None:
     with ui.row().classes("items-center gap-2 w-full"):
         search = (
-            ui.input("Search teams…")
+            ui.input(f"Search teams — {query_lang.LABEL_HINT}")
             .props("outlined dense clearable debounce=200")
             .classes("grow")
             .mark("weights-search")

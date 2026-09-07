@@ -94,7 +94,7 @@ async def volunteers_page(q: str = "", band: str = ""):
                 ui.navigate.to(target)
 
             search = search_box(
-                "Search volunteers…",
+                f"Search volunteers — {query_lang.LABEL_HINT}",
                 on_submit=go,
                 on_pick_volunteer=panel.open,
                 value=q,

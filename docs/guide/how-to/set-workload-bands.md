@@ -19,7 +19,7 @@ Decide how the site scores a volunteer's workload, and which colour each score g
 4. Pick the colour of each band in *Colour*.
 5. Type the highest score of each band in *up to score*. The last band takes everything above.
 6. Click *Save settings*.
-7. Under *Team workload weights*, type a weight in the *Weight* box of each team. *Search teams…* finds a team. Clear the box of a team that must not count.
+7. Under *Team workload weights*, type a weight in the *Weight* box of each team. *Search teams* finds a team. Clear the box of a team that must not count.
 8. Click *Save weights*.
 
 ## What you see
@@ -34,6 +34,7 @@ Decide how the site scores a volunteer's workload, and which colour each score g
   - the *Workload:* row under *Needs attention* on the *Dashboard*;
   - the badge beside each candidate on an election page.
 - A team's weight is also on its *Edit team* dialog.
+- *Search teams* also takes a filter, such as `weight > 1` or `ministry = 'Liturgy'`. See [Search query filters](../../reference/query-language.md).
 
 ## If something goes wrong
 

@@ -228,7 +228,7 @@ async def test_the_print_sheet_is_the_page_without_its_chrome(seeded, page):
 
     await page.emulate_media(media="print")
     await expect(page.locator(".q-header")).to_be_hidden()
-    await expect(page.get_by_label("Search the roster…")).to_be_hidden()
+    await expect(page.get_by_label("Search the roster")).to_be_hidden()
     await expect(
         page.get_by_role("button", name="Edit team", exact=True)
     ).to_be_hidden()

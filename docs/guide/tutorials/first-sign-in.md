@@ -39,7 +39,7 @@ You see a green message that starts with *Welcome!*, and then the *Dashboard*. T
 
 The *Dashboard* is the first page after you sign in. What it shows depends on your teams and your role.
 
-1. Find the search box *Find volunteers or teams…* at the top.
+1. Find the search box *Find volunteers or teams* at the top.
 2. Find the section *My teams*. Each line is a team you serve on, with your role on it.
 3. Find the section *My service*. It shows *Upcoming duties* and *Hours served*.
 4. Scroll to the bottom. Find the section *Guides*. Each link opens a page of this manual.

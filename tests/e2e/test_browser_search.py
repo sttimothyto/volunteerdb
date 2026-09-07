@@ -14,7 +14,7 @@ from playwright.async_api import expect
 
 from .conftest import ready, sign_in
 
-SEARCH_LABEL = "Find volunteers or teams…"  # the dashboard's box
+SEARCH_LABEL = "Find volunteers or teams"  # the dashboard's box
 SUGGESTIONS = ".vdb-suggest"  # the QMenu under it (search_box.py)
 
 
@@ -57,18 +57,18 @@ async def test_the_teams_search_rides_in_the_address(seeded, page):
     await ready(page)
     await page.goto("/teams")
     await ready(page)
-    box = page.get_by_label("Search teams…")
+    box = page.get_by_label("Search teams")
     await box.fill("zzz")
     await expect(page).to_have_url(re.compile(r"/teams\?q=zzz$"))
     await expect(page.get_by_text("0 of 1 teams")).to_be_visible()
 
     await page.reload()
     await ready(page)
-    await expect(page.get_by_label("Search teams…")).to_have_value("zzz")
+    await expect(page.get_by_label("Search teams")).to_have_value("zzz")
     await expect(page.get_by_text("0 of 1 teams")).to_be_visible()
 
     # clearing the box clears the address too
-    await page.get_by_label("Search teams…").fill("")
+    await page.get_by_label("Search teams").fill("")
     await expect(page).to_have_url(re.compile(r"/teams$"))
 
 

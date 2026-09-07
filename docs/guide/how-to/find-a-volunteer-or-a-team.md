@@ -11,7 +11,7 @@ Find a person or a team by name, from the *Dashboard* or from the lists.
 ## Steps
 
 1. Click *Dashboard* in the header.
-2. Click the box *Find volunteers or teams…* at the top of the page.
+2. Click the box *Find volunteers or teams* at the top of the page.
 3. Type 2 or more letters of the name.
 4. Read the list that opens under the box. It has the headings *Teams* and *Volunteers*.
 5. Click a team to open its page.
@@ -25,15 +25,17 @@ Find a person or a team by name, from the *Dashboard* or from the lists.
 - On the *Volunteers* page, teams that match appear above the table, under *Matching teams*. Each is a button.
 - Click a row of the table to open the side panel. The line under the table counts the volunteers found.
 - Where you cannot see an email address or a phone number, the table shows *•••*.
-- The *Volunteers* page has its own box, *Search volunteers…*, with the same list of suggestions.
-- The *Teams* page has a box *Search teams…*. It narrows the list of teams as you type.
+- The *Volunteers* page has its own box, *Search volunteers*, with the same list of suggestions.
+- The *Teams* page has a box *Search teams*. It narrows the list of teams as you type.
+- Every search box takes a filter as well as a name. The label says so: *text or a SQL 'WHERE' clause*.
+- A filter such as `team = 'Liturgy' AND role = 'leader'` narrows the page to the rows it matches. See [Search query filters](../../reference/query-language.md).
 
 ## If something goes wrong
 
 - If the list closes, click the box again. It opens again with the same suggestions.
 - To close the list, press Escape.
-- If you type a filter, such as `team = 'Liturgy'`, the list offers *Run query* instead. Filters are for the people who run the site.
-- If the page says that a filter has a problem, remove it and type a name instead.
+- If you type a filter, such as `team = 'Liturgy'`, the list of names gives way to *Run query*. Press Enter to run it.
+- If the page says that a filter has a problem, read the message. It names the field or the value it cannot read.
 
 ## Related pages
 
