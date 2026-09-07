@@ -51,7 +51,7 @@ Add a piece of information that the parish records for every volunteer, for exam
 - If the page says *label must contain letters or digits*, then the name needs at least 1 letter or digit.
 - If the page says *a choice field needs at least one option*, then type at least 1 option.
 - To hide a field and keep its values, click the pencil icon on its row, switch *Active* off, and click *Save*.
-- To remove a field, click the red delete icon on its row, then *Delete*. The values stay in the history but are no longer shown.
+- To remove a field, click the red delete icon on its row, then *Delete the field*. The values stay in the history but are no longer shown.
 
 ## Related pages
 

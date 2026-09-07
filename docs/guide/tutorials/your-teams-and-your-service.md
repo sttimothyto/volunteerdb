@@ -68,7 +68,7 @@ You see the page again, with the new phone number under your name. Your teams se
 You see the message *Photo saved*. Your photo now shows beside your name on your profile, in the header on every page, and in the side panel your teammates open.
 
 - If *Upload* stays grey, you have not ticked the checkbox.
-- To take the photo away later, open the same dialog and click *Remove photo*.
+- To take the photo away later, open the same dialog and click *Remove photo*, then *Remove the photo*.
 
 ## What you learned
 

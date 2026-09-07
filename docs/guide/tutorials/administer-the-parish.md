@@ -73,7 +73,7 @@ You see the message *Updated 1 team weight*. The badges on the *Volunteers* page
 5. Look at the preview. The picture is scaled to fit, never cropped.
 6. Click *Upload*.
 
-You see the message *Logo saved*, and every page now shows the logo in the header. The sign-in page and the public ministry pages show it too. *Remove logo* in the same dialog goes back to the plain placeholder.
+You see the message *Logo saved*, and every page now shows the logo in the header. The sign-in page and the public ministry pages show it too. *Remove logo* in the same dialog asks first, then goes back to the plain placeholder.
 
 ## 6. Read the email banner
 

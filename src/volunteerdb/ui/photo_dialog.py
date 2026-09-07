@@ -17,7 +17,7 @@ from nicegui import events, ui
 from ..fp import Err
 from ..services import photos as photo_service
 from .context import PageCtx, run_command, toast
-from .forms import dialog_card
+from .forms import confirm, dialog_card
 
 DISCLAIMER = (
     "I confirm this is an appropriate professional photo. "
@@ -87,6 +87,13 @@ def open_photo_dialog(
             await run_command(command, on_ok=done, reload=False)
 
         async def remove() -> None:
+            if not await confirm(
+                f"Remove the photo of {full_name}?",
+                detail="The person icon takes its place everywhere it showed.",
+                yes="Remove the photo",
+                danger=True,
+            ):
+                return
 
             async def command(ctx: PageCtx):
                 return await photo_service.delete_photo(ctx.session, volunteer_id)

@@ -16,9 +16,10 @@ Do not use this on an account that already works. The new link removes the passw
 1. Click *Accounts* in the header.
 2. Find the account in the list.
 3. Click the mail icon *New invite link (resets password)* on its row.
-4. Read the dialog *Invite link for …*.
-5. Click *Copy* if you must give the link to the volunteer yourself.
-6. Click *Close*.
+4. Read the question *Send … a new invite link?*. Click *Send a new invite link*.
+5. Read the dialog *Invite link for …*.
+6. Click *Copy* if you must give the link to the volunteer yourself.
+7. Click *Close*.
 
 ## What you see
 

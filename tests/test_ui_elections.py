@@ -217,7 +217,7 @@ async def test_concluded_tally_and_appointment(database):
 
         user.find("Appoint", kind=ui.button).click()
         await user.should_see("This assigns the role immediately")
-        user.find("Yes, appoint", kind=ui.button).click()
+        user.find(marker="confirm-yes").click()
         await user.should_see("Appointed", retries=SLOW)
 
         await user.open(f"/teams/{ids['liturgy']}")

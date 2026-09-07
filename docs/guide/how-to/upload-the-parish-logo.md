@@ -22,7 +22,7 @@ Put the parish's own logo in the header in place of the standard one.
 - The logo appears in the header of every page, above the box on the sign-in page, and at the top of the public ministry pages.
 - The manual does not carry the logo.
 - A logo on a plain white card loses the card. The site makes the card see-through, so the logo sits on the header colour without a white box.
-- To go back to the standard logo, open the dialog again and click *Remove logo*.
+- To go back to the standard logo, open the dialog again and click *Remove logo*, then *Remove the logo*.
 
 ## If something goes wrong
 

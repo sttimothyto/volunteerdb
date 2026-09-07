@@ -17,7 +17,7 @@ The *Who* column uses these short names:
 
 | Control | What it does | Who |
 |---|---|---|
-| The logo | Shows the parish logo. A click opens the dialog *Site logo*. | Everyone sees it; *admin* can click it. |
+| The logo | Shows the parish logo. A click opens the dialog *Site logo*: the box *Drop a logo here (stored as PNG, at most 1000×1000)*, *Remove logo* and *Upload*. *Remove logo* asks *Remove the parish logo?* first. | Everyone sees it; *admin* can click it. |
 | *Dash* | Opens the *Dashboard*. | *everyone* |
 | *Teams* | Opens the *Teams* page. | *everyone* |
 | *Volunteers* | Opens the *Volunteers* page. | *everyone* |
@@ -137,7 +137,7 @@ The title is the team's full name, with its parent teams before it. Under it: th
 | Control | What it does | Who |
 |---|---|---|
 | *Edit team* | Opens the dialog *Edit team*: the fields of *New team*, plus the switch *Active*. Off, the team is archived. | *admin*, not on a past date |
-| *Delete* | Deletes the team and every place on its roster. The history keeps them. | *admin*, not on a past date |
+| *Delete* | Asks *Delete the team …?*, then *Delete the team* deletes the team and every place on its roster. The history keeps them. | *admin*, not on a past date |
 | *Export roster (.csv)* | Downloads this roster as a `.csv` file. A core member gets it without the notes. | *core* |
 | *Copy email list* | Copies every email address on the roster. | *core*, not on a past date |
 | *Email all (BCC)* | Opens your mail app with everyone in *BCC*. | *core*, not on a past date |
@@ -149,7 +149,7 @@ The sections, from the top:
 - *Volunteer home page* (*core*, not on a past date). *Set home page doc* opens the dialog *Team home page doc*, with the field *Google Doc link*, *Clear* and *Save*. With a doc set, the section shows the links *Google Doc* and *Public page*. It also shows the buttons *Download QR Code to Public page*, *Fetch now* and *Change*. Under them: *Not published yet — …*, *Refreshed nightly · last fetched …*, or *Last fetch failed: …*.
 - *Add member* (*leaders*): the lists *Volunteer* and *Role*, and the button *Add*.
 - *Roster* (*members*): 1 row per person. The name opens the side panel. *core* also see the email address and the phone number.
-- The role is a badge. For *leaders* it is a list, and a new choice changes the role at once. They also see the icon *Remove from team* at the end of the row.
+- The role is a badge. For *leaders* it is a list, and a new choice changes the role at once. They also see the icon *Remove from team* at the end of the row. It asks *Remove … from the … roster?* first.
 - Every member sees the account badge: *no account*, *disabled*, *invite sent*, *invite expired* or *account*. Next to it: *never signed in*, or *last login* with the date.
 - For *core*, the badges *no account* and *invite expired* turn into a button on hover: *invite to create account* or *send a new invite*.
 - A reader not on the team sees *You are not on this team, so its roster is not visible to you.* An empty roster says *Nobody on this team yet.*
@@ -183,10 +183,10 @@ The title is the person's name. A reader who is not *core* on one of the person'
 
 | Control | What it does | Who |
 |---|---|---|
-| The photo | Opens the dialog *Photo — …*: the box *Drop a headshot here (stored as 400×400 JPEG)*, a declaration to tick, *Remove photo* and *Upload*. | *everyone* |
+| The photo | Opens the dialog *Photo — …*: the box *Drop a headshot here (stored as 400×400 JPEG)*, a declaration to tick, *Remove photo* and *Upload*. *Remove photo* asks *Remove the photo of …?* first. | *everyone* |
 | *Edit* | Opens the dialog *Edit …*: *First name*, *Last name*, *Email*, *Phone*, *Notes*, 1 field per custom field, *Cancel*, *Save*. *admin* also gets the switch *Active*. | the person, *leaders*, *admin* |
-| *Delete* | Asks *Delete this volunteer and all their memberships?*, then removes the person. The history keeps them. | *admin* |
-| The icon *Remove from team* | Takes the person off that team, on the row under *Serves on*. | *leaders* of that team |
+| *Delete* | Asks *Delete this volunteer and all their memberships?*, then *Delete the volunteer* removes the person. The history keeps them. | *admin* |
+| The icon *Remove from team* | Asks *Remove … from the … roster?*, then takes the person off that team, on the row under *Serves on*. | *leaders* of that team |
 | *Add to team* | The lists *Team* and *Role*, and the button *Add*. The list holds the teams you manage. | *leaders*, *admin* |
 
 The sections, from the top:
@@ -251,7 +251,7 @@ The title is the event's name. Under it: the team (a link), a badge with the dat
 |---|---|---|
 | *Share* | Opens the panel *Event link* with the address, *Copy* and *Close*. The link asks for a sign-in. | *everyone* who can see the event |
 | *Edit* | Opens the dialog *Edit event*: *Title*, *Date (YYYY-MM-DD)*, *Starts (HH:MM)*, *Ends (HH:MM)*, *Location*, *Description*, *Save*. | *leaders*, before the event is cancelled |
-| *Cancel event* | Asks *Keep it* or *Yes, cancel it*. Everyone signed up is emailed, if the event has not ended yet. | *leaders*, before the event is cancelled |
+| *Cancel event* | Asks *Keep it* or *Cancel the event*. Everyone signed up is emailed, if the event has not ended yet. | *leaders*, before the event is cancelled |
 | *Add slot* | Opens the dialog *Add a slot*: *Slot name*, *Capacity (blank = unlimited)*, *Description (optional)*, *Add slot*. | *leaders*, event still to come |
 
 The sections, from the top:
@@ -269,12 +269,12 @@ On a slot card:
 |---|---|---|
 | *Sign up* | Opens the dialog *Sign up — …*: *Also sign me up for the later weeks of this series* (weekly events only), *Email me a reminder:* *7 days before* and *24 hours before*, and *Sign up*. | *members* with no shift at the event, while there is space |
 | The pencil icon | Opens the dialog *Edit slot* with the name, the capacity and the description. | *leaders*, event still to come |
-| The bin icon *Remove this empty slot* | Removes a slot with nobody on it. The last slot of an event cannot be removed. | *leaders*, event still to come |
+| The bin icon *Remove this empty slot* | Asks *Delete the slot …?*, then removes a slot with nobody on it. The last slot of an event cannot be removed. | *leaders*, event still to come |
 | A name | Opens the side panel. Badges: *substitute*, *marked unavailable*, *sub wanted*. | everyone who can see the event |
 | *Need a sub* | Opens the dialog *Ask for a substitute*. | the person on that row |
 | *Hand off* | Opens the dialog *Hand this slot to a teammate*: the list *Who takes it?* and *Hand it over*. The teammate is emailed. | the person on that row |
 | *Withdraw* | Opens the dialog *Take yourself off this slot*: *Why can you no longer serve?* and *Take me off*. The leaders are emailed the reason. | the person on that row |
-| *Remove* | Takes that person off the slot. | *leaders* |
+| *Remove* | Asks *Remove … from the … slot?*, then takes that person off the slot. Nobody is emailed. | *leaders* |
 | *Schedule someone* and *Assign* | A list of the roster, the people who said *available* first, and the button that puts the chosen person on the slot. | *leaders*, while there is space |
 
 A reader who cannot see the event sees *This event is visible to the members of its team.*
@@ -306,11 +306,11 @@ The title is the team and the seat. Under it: the team (a link), the seat and th
 | Control | What it does | Who |
 |---|---|---|
 | *Edit deadlines & notes* | Opens the dialog *Edit proposal*: the 2 dates, *Notes*, *Save*. | *leaders*, while the election is open |
-| *Cancel proposal* | Asks *Keep it* or *Yes, cancel it*. | *leaders*, while the election is open |
-| *Remove* on a candidate | Takes the candidate off the list. | *leaders*, while nominations are open |
-| *Appoint* on a candidate | Asks *Yes, appoint*, then gives the candidate the seat at once. | *leaders*, under *Awaiting decision* |
+| *Cancel proposal* | Asks *Keep it* or *Cancel the proposal*. | *leaders*, while the election is open |
+| *Remove* on a candidate | Asks *Remove … from the candidates?*, then takes the candidate off the list. | *leaders*, while nominations are open |
+| *Appoint* on a candidate | Asks *Appoint …*, then gives the candidate the seat at once. | *leaders*, under *Awaiting decision* |
 | *New candidate*, *Why them?*, *Nominate* | Put a name forward. | *leaders* and voters, while nominations are open |
-| *Remove* on a voter | Takes the person off the roll. | *leaders*, while nominations are open |
+| *Remove* on a voter | Asks *Remove … from the roll?*, then takes the person off the roll. | *leaders*, while nominations are open |
 | *Add a voter* and *Add voter* | Put a person on the roll. | *leaders*, while nominations are open |
 | The scores and *Submit ballot* | 1 score from 0 to 5 per candidate. You can change the ballot until voting closes. | voters, while voting is open |
 | *Start new round* | Opens the dialog *Start a new round* with the 2 dates and *Start round*. Candidates and the roll carry over; the ballots do not. | *leaders*, under *Awaiting decision* |
@@ -354,7 +354,7 @@ Shown to *admin* only. Anyone else sees *Admins only.* The page lists every acco
 | The link icon *Change linked volunteer* | Opens *Linked volunteer for …*: a list with *— not linked —* and every volunteer, *Save*. |
 | The key icon *Make admin* / *Revoke admin* | Gives or takes the administrator right. |
 | The icon *Disable* / *Enable* | Switches the account off or on. A switched-off account cannot sign in. |
-| The mail icon *New invite link (resets password)* | Makes a fresh invitation link, emails it, and removes the password. |
+| The mail icon *New invite link (resets password)* | Asks *Send … a new invite link?*, then makes a fresh invitation link, emails it, and removes the password. |
 
 Each row shows:
 
@@ -371,7 +371,7 @@ Shown to *admin* only, under the title *Custom fields*. Anyone else sees *Admins
 |---|---|
 | *New field* | Opens the dialog *New field*: *Label*, *Type*, *Options (one per line)* for a *Choice* field, the switch *Show as a column on the volunteers list*, *Sort position*, *Save*. |
 | The pencil icon | Opens the dialog *Edit field*: the same fields, plus the switch *Active*. The type is shown as text and cannot change. |
-| The red bin icon | Asks *Delete the field “…”?*, then *Delete* removes it. The values stay in the history. |
+| The red bin icon | Asks *Delete the field “…”?*, then *Delete the field* removes it. The values stay in the history. |
 
 - 1 row per field: the label, a badge with the type, and the options of a *Choice* field. The badge *in list* marks a column on the *Volunteers* page; *inactive* marks a hidden field.
 - With no fields: *No custom fields defined yet.*

@@ -12,7 +12,7 @@ Call off an event and tell everyone who signed up.
 1. Open *Events* and click the event.
 2. Click *Cancel event*, at the top right of the page.
 3. Read the question: *Cancel this event? Everyone signed up is emailed, and open substitute requests are closed with it.*
-4. Click *Yes, cancel it*. *Keep it* closes the question and changes nothing.
+4. Click *Cancel the event*. *Keep it* closes the question and changes nothing.
 
 ## What you see
 

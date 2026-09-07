@@ -719,7 +719,7 @@ async def test_cancel_event_mails_assignees(database, sent_mail):
         await user.open(f"/events/{event_id}")
         user.find("Cancel event", kind=ui.button).click()
         await user.should_see("Cancel this event?")
-        user.find("Yes, cancel it", kind=ui.button).click()
+        user.find("Cancel the event", kind=ui.button).click()
         await user.should_see("Cancelled", retries=SLOW)
 
     assert [m[0] for m in sent_mail] == ["mia@example.org"]

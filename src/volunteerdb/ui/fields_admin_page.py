@@ -142,7 +142,7 @@ async def _delete_field(defn) -> None:
             "Stored values stay in volunteer history but will no longer be shown. "
             "Consider deactivating instead if you may want it back."
         ),
-        yes="Delete",
+        yes="Delete the field",
         danger=True,
     ):
         return

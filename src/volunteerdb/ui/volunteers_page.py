@@ -364,8 +364,12 @@ def _serves_on_section(profile: VolunteerProfile, actor: Actor) -> None:
             if actor.can_manage_team(team.id):
                 ui.button(
                     icon="person_remove",
-                    on_click=lambda _, mid=membership.id: _unassign(mid),
-                ).props("dense flat color=negative").tooltip("Remove from team")
+                    on_click=lambda _, mid=membership.id, t=team.name: _unassign(
+                        mid, profile.volunteer.full_name, t
+                    ),
+                ).props("dense flat color=negative").mark(
+                    f"remove-member-{membership.id}"
+                ).tooltip("Remove from team")
 
 
 def _add_to_team_row(volunteer_id: int, assignable: dict[int, str]) -> None:
@@ -704,7 +708,18 @@ async def _stage_own_email(address: str) -> None:
     await run_command(command, on_ok=done, reload=False)
 
 
-async def _unassign(membership_id: int) -> None:
+async def _unassign(membership_id: int, name: str, team: str) -> None:
+    """The same question the roster asks (teams_page._remove_member)."""
+    if not await confirm(
+        f"Remove {name} from the {team} roster?",
+        detail=(
+            "They stay in the parish list and on their other teams. "
+            "The history keeps the membership."
+        ),
+        yes=f"Remove {name} from {team}",
+        danger=True,
+    ):
+        return
     await run_command(
         lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id)
     )
@@ -714,7 +729,7 @@ async def _delete_volunteer(volunteer_id: int) -> None:
     if not await confirm(
         "Delete this volunteer and all their memberships?",
         detail="History is preserved and visible in as-of views.",
-        yes="Delete",
+        yes="Delete the volunteer",
         danger=True,
     ):
         return

@@ -132,3 +132,105 @@ def test_the_transition_helpers_are_gone():
                     if alias.name in GONE:
                         seen.append(f"{path.name}:{node.lineno} import {alias.name}")
     assert not seen, f"page_ctx() and run_command() are the whole vocabulary: {seen}"
+
+
+# --- anything that removes a record or takes a person off something asks first ---
+#
+# The rule of uiux-improvement.md's Decisions, held mechanically: a GUI handler
+# that reaches one of these service functions awaits forms.confirm somewhere
+# in its own body (the command closure inside it counts as its body), or its
+# own dialog is the question. (service module, function), by the name the
+# module is imported under in ui/.
+REMOVING = frozenset(
+    {
+        ("teams", "delete"),
+        ("memberships", "remove"),
+        ("events", "remove_assignment"),
+        ("events", "delete_slot"),
+        ("events", "cancel_event"),
+        ("users", "reissue_invite"),
+        ("users", "clear_password"),
+        ("photos", "delete_photo"),
+        ("branding", "delete_logo"),
+        ("volunteers", "delete"),
+        ("custom_fields", "delete_def"),
+        ("elections", "remove_candidate"),
+        ("elections", "remove_voter"),
+        ("elections", "cancel"),
+    }
+)
+# Handlers whose own dialog is the question: the reason box a volunteer
+# fills in to take themselves off a slot is what they confirm with.
+ASKS_WITH_A_DIALOG = frozenset({"events_page.py:_self_removal_dialog"})
+
+
+def _service_aliases(tree: ast.Module) -> dict[str, str]:
+    """Local name -> services module, for `from ..services import X [as Y]`."""
+    aliases: dict[str, str] = {}
+    for node in tree.body:
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and (node.module == "services" or node.module.endswith(".services"))
+        ):
+            for alias in node.names:
+                aliases[alias.asname or alias.name] = alias.name
+    return aliases
+
+
+def _removing_calls(fn: ast.AST, aliases: dict[str, str]) -> list[str]:
+    found = []
+    for node in ast.walk(fn):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and (aliases.get(node.func.value.id), node.func.attr) in REMOVING
+        ):
+            found.append(f"{aliases[node.func.value.id]}.{node.func.attr}")
+    return found
+
+
+def _awaits_confirm(fn: ast.AST) -> bool:
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Await) and isinstance(node.value, ast.Call):
+            func = node.value.func
+            name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+            if name == "confirm":
+                return True
+    return False
+
+
+def test_every_removing_action_asks_first():
+    unasked = []
+    for path in sorted(UI.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        aliases = _service_aliases(tree)
+        if not aliases:
+            continue
+        for fn in tree.body:
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            calls = _removing_calls(fn, aliases)
+            if not calls or f"{path.name}:{fn.name}" in ASKS_WITH_A_DIALOG:
+                continue
+            if not _awaits_confirm(fn):
+                unasked.append(f"{path.name}:{fn.name} calls {', '.join(calls)}")
+    assert not unasked, (
+        "a handler removes a record, or takes a person off something, without "
+        f"`await confirm(...)` (ui/forms.py) in its body: {unasked}"
+    )
+
+
+def test_the_removing_sweep_sees_the_handlers_it_holds():
+    """The sweep matches on import aliases; a rename of one would make it
+    match nothing and pass. So it has to find the handlers it was written
+    for."""
+    seen = set()
+    for path in sorted(UI.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        aliases = _service_aliases(tree)
+        for fn in tree.body:
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                seen.update(_removing_calls(fn, aliases))
+    assert seen >= {"teams.delete", "memberships.remove", "events.delete_slot"}, seen

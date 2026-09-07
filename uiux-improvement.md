@@ -188,7 +188,7 @@ screens that changed, and ends with the full suite green in its own commit.
 
 ### Phase 1 — Safety and feedback
 
-- [ ] **1. Every removing action asks first.** `forms.confirm(danger=True)` at the
+- [x] **1. Every removing action asks first.** `forms.confirm(danger=True)` at the
   eight sites in the table, with the wording rule from Decisions ("Delete the team
   Hospitality?" / detail: "Its 59 roster places go with it. The history keeps them."
   / yes "Delete the team"). The leader's "Remove" on a shift gets the same confirm

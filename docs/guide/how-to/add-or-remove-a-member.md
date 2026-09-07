@@ -29,12 +29,13 @@ You can also start from the profile page of the person. Under *Add to team*, pic
 
 1. On the team page, find the person under *Roster*.
 2. Click the icon of a person with a minus sign, at the right end of the row. Its tooltip says *Remove from team*.
+3. Read the question *Remove … from the … roster?*. Click *Remove … from …*. *Cancel* changes nothing.
 
 ## What you see
 
 - After *Add*, the page reloads and the person appears under *Roster*, in role order.
 - If the person was already on the team, their role changes to the one you chose instead.
-- After a removal, the row is gone at once. There is no confirmation step.
+- After *Remove … from …*, the row is gone.
 - The person stays in the parish list and on their other teams. Their sign-in account is not touched.
 - The site keeps the membership as history. An as-of view of an earlier date still shows the person on the team.
 - Neither action sends an email.

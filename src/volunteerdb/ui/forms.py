@@ -54,12 +54,20 @@ async def confirm(
     detail: str | None = None,
     icon: str | None = None,
     danger: bool = False,
-    yes_marker: str | None = None,
-    no_marker: str | None = None,
+    yes_marker: str = "confirm-yes",
+    no_marker: str = "confirm-no",
     width: str = "w-96",
 ) -> bool:
     """Ask before acting: True when the reader chose `yes`. `detail` is a
-    quieter second line for what the action entails."""
+    quieter second line for what the action entails.
+
+    Every action that removes a record or takes a person off something comes
+    through here first (tests/test_ui_layer.py holds the GUI to it). The
+    wording rule: the question names the object, `yes` names the verb and
+    the object again ("Delete the team", "Remove Maria Alvarez from
+    Hospitality"), and `no` is "Cancel" -- or "Keep it" where the action is
+    itself a cancellation. The two markers are the same on every question,
+    so a test can answer any of them."""
     with ui.dialog() as dialog, ui.card().classes(f"{width} gap-3"):
         ui.label(question).classes("font-medium")
         if detail:

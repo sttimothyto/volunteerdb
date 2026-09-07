@@ -24,7 +24,7 @@ from . import column_order, invites
 from .account_status import roster_account
 from .asof import parse_as_of
 from .context import PageCtx, page_ctx, run_command, toast
-from .forms import actions, dialog_card
+from .forms import actions, confirm, dialog_card
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
@@ -824,7 +824,11 @@ def _team_actions(room: TeamRoom, *, is_admin: bool, as_of: str) -> None:
                 on_click=lambda: _team_dialog(options, room.team),
             ).props("dense outline")
             ui.button(
-                "Delete", icon="delete", on_click=lambda: _delete_team(team_id)
+                "Delete",
+                icon="delete",
+                on_click=lambda: _delete_team(
+                    team_id, room.team.name, places=len(room.roster)
+                ),
             ).props("dense outline color=negative")
         if room.can_full:
             # a link to a route (ui/team_files_route.py); the exporter
@@ -961,8 +965,12 @@ def _roster_row(
         if room.can_manage:
             ui.button(
                 icon="person_remove",
-                on_click=lambda _, mid=membership.id: _remove_member(mid),
-            ).props("dense flat color=negative").tooltip("Remove from team")
+                on_click=lambda _, mid=membership.id, who=volunteer.full_name: (
+                    _remove_member(mid, who, room.team.name)
+                ),
+            ).props("dense flat color=negative").mark(
+                f"remove-member-{membership.id}"
+            ).tooltip("Remove from team")
 
 
 def _roster_section(
@@ -1063,13 +1071,38 @@ async def _change_role(membership_id: int, role_value: str) -> None:
     )
 
 
-async def _remove_member(membership_id: int) -> None:
+async def _remove_member(membership_id: int, name: str, team: str) -> None:
+    """Take somebody off the roster, once the leader has said so twice: the
+    icon is small, the row is one of sixty, and the wrong one is a phone
+    call to make."""
+    if not await confirm(
+        f"Remove {name} from the {team} roster?",
+        detail=(
+            "They stay in the parish list and on their other teams. "
+            "The history keeps the membership."
+        ),
+        yes=f"Remove {name} from {team}",
+        danger=True,
+    ):
+        return
     await run_command(
         lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id)
     )
 
 
-async def _delete_team(team_id: int) -> None:
+async def _delete_team(team_id: int, name: str, *, places: int) -> None:
+    if places == 0:
+        detail = "Nobody is on its roster. The history keeps the team."
+    else:
+        detail = (
+            f"Its {places} roster place{'s' if places != 1 else ''} "
+            f"go{'' if places != 1 else 'es'} with it. The history keeps them."
+        )
+    if not await confirm(
+        f"Delete the team {name}?", detail=detail, yes="Delete the team", danger=True
+    ):
+        return
+
     async def command(ctx: PageCtx):
         return await team_service.delete(ctx.session, ctx.actor, team_id)
 

@@ -189,7 +189,20 @@ def _relink_dialog(
 
 
 async def _reinvite(user_id: int, email: str, base_url: str) -> None:
-    """A fresh link (which resets the password), shown and mailed."""
+    """A fresh link (which resets the password), shown and mailed -- after a
+    question, because the icon sits beside three harmless ones and this one
+    locks a person out until they open their mail."""
+    if not await confirm(
+        f"Send {email} a new invite link?",
+        detail=(
+            "Their password is removed and any link already mailed stops "
+            "working. The new link is emailed to them and shown to you."
+        ),
+        yes="Send a new invite link",
+        icon="mail",
+        danger=True,
+    ):
+        return
 
     async def command(ctx: PageCtx):
         return await user_service.reissue_invite(
@@ -278,7 +291,7 @@ def _account_row(
             "mail",
             "New invite link (resets password)",
             on_click=lambda: _reinvite(account.id, account.email, base_url),
-        ).props("dense flat")
+        ).props("dense flat").mark(f"reinvite-{account.id}")
 
 
 @ui.page("/admin/users")

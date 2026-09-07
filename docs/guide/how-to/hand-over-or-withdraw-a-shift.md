@@ -20,8 +20,9 @@ The name appears on the slot at once. The person gets the nightly email *Volunte
 ## Take a member off a slot
 
 1. On the row of the person, click *Remove*.
+2. Read the question *Remove … from the … slot?*. Click *Remove … from …*.
 
-The row is gone at once. There is no question, no reason to give, and nobody is emailed. Tell the person yourself. To move a shift from one member to another, click *Remove*, then *Assign* the other.
+The row is gone. There is no reason to give, and nobody is emailed. Tell the person yourself. To move a shift from one member to another, click *Remove*, then *Assign* the other.
 
 ## Hand over your own shift
 

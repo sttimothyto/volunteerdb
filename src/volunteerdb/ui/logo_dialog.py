@@ -17,7 +17,7 @@ from ..fp import Err
 from ..permissions import Actor
 from ..services import branding
 from .context import PageCtx, run_command, toast
-from .forms import dialog_card
+from .forms import confirm, dialog_card
 
 # /logo serves the uploaded image or the shipped placeholder, so the src never
 # has to be decided at render time (ui/logo_route.py explains why it must not).
@@ -90,6 +90,16 @@ def open_logo_dialog(on_change: Callable[[], Awaitable[None]]) -> None:
             await run_command(command, on_ok=done, reload=False)
 
         async def remove() -> None:
+            if not await confirm(
+                "Remove the parish logo?",
+                detail=(
+                    "The header, the sign-in page and the public ministry "
+                    "pages go back to the placeholder."
+                ),
+                yes="Remove the logo",
+                danger=True,
+            ):
+                return
 
             async def command(ctx: PageCtx):
                 return await branding.delete_logo(ctx.session, ctx.actor)

@@ -22,7 +22,7 @@ Fill a leader or second-in-command seat by nomination and vote.
 ### While nominations are open
 
 - Anyone on the roll can add a candidate: pick a name in *New candidate*, fill in *Why them?*, click *Nominate*.
-- Under *Voting members*, you can add a voter (*Add a voter*, then *Add voter*) or *Remove* one. The roll freezes when voting starts.
+- Under *Voting members*, you can add a voter (*Add a voter*, then *Add voter*) or *Remove* one. *Remove* asks first. The roll freezes when voting starts.
 - *Edit deadlines & notes* moves either date.
 
 ### After voting closes
@@ -30,7 +30,7 @@ Fill a leader or second-in-command seat by nomination and vote.
 1. Open the proposal. Its badge says *Awaiting decision*.
 2. Read *Result*: the points per candidate, and the *STAR winner* or a tie.
 3. Talk it over with the roll.
-4. Click *Appoint* on the chosen candidate, then *Yes, appoint*. Any candidate can be appointed, not only the winner.
+4. Click *Appoint* on the chosen candidate, then *Appoint …* in the question. Any candidate can be appointed, not only the winner.
 
 Or click *Start new round* to vote again with the same candidates and roll, or *Cancel proposal*.
 

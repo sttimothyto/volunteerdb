@@ -35,7 +35,7 @@ You see the page again, with the new name in the *Roster*. The badge next to the
 2. Click the role box on that row. It says *Member*.
 3. Click *Core team member*.
 
-You see the message *Role updated*. A core team member now sees the full roster with contact details, and can invite teammates to create an account. To take someone off the team, click the icon at the right end of their row. A tooltip says *Remove from team*.
+You see the message *Role updated*. A core team member now sees the full roster with contact details, and can invite teammates to create an account. To take someone off the team, click the icon at the right end of their row. A tooltip says *Remove from team*. The site asks first.
 
 ## 4. Invite a member to create an account
 

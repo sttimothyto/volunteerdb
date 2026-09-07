@@ -286,7 +286,7 @@ def _edit_proposal_dialog(proposal: Proposal) -> None:
 async def _cancel_proposal(proposal_id: int) -> None:
     if not await confirm(
         "Cancel this proposal? Ballots are discarded with it.",
-        yes="Yes, cancel it",
+        yes="Cancel the proposal",
         no="Keep it",
         danger=True,
     ):
@@ -309,7 +309,7 @@ async def _appoint(
 ) -> None:
     if not await confirm(
         f"Appoint {name} as {role_label}? This assigns the role immediately.",
-        yes="Yes, appoint",
+        yes=f"Appoint {name}",
         no="Back",
     ):
         return
@@ -383,7 +383,14 @@ async def _nominate(proposal_id: int, volunteer_id: int | None, note: str) -> No
     await run_command(command, reload=True)
 
 
-async def _remove_candidate(proposal_id: int, candidate_id: int) -> None:
+async def _remove_candidate(proposal_id: int, candidate_id: int, name: str) -> None:
+    if not await confirm(
+        f"Remove {name} from the candidates?",
+        detail="They can be nominated again while nominations are open.",
+        yes=f"Remove {name}",
+        danger=True,
+    ):
+        return
     await run_command(
         lambda ctx: elections_service.remove_candidate(
             ctx.session, ctx.actor, proposal_id, candidate_id, today=ctx.env.today()
@@ -409,7 +416,14 @@ async def _add_voter(proposal_id: int, volunteer_id: int | None) -> None:
     await run_command(command, reload=True)
 
 
-async def _remove_voter(proposal_id: int, voter_id: int) -> None:
+async def _remove_voter(proposal_id: int, voter_id: int, name: str) -> None:
+    if not await confirm(
+        f"Remove {name} from the roll?",
+        detail="They can be added again while nominations are open.",
+        yes=f"Remove {name}",
+        danger=True,
+    ):
+        return
     await run_command(
         lambda ctx: elections_service.remove_voter(
             ctx.session, ctx.actor, proposal_id, voter_id, today=ctx.env.today()
@@ -511,8 +525,10 @@ def _candidate_card(
             if room.can_manage and room.phase is Phase.nominating:
                 ui.button(
                     "Remove",
-                    on_click=lambda _, c=cid: _remove_candidate(p.id, c),
-                ).props("dense flat color=negative")
+                    on_click=lambda _, c=cid, who=cv.volunteer.full_name: (
+                        _remove_candidate(p.id, c, who)
+                    ),
+                ).props("dense flat color=negative").mark(f"remove-candidate-{cid}")
             if room.can_manage and room.phase is Phase.concluded:
                 ui.button(
                     "Appoint",
@@ -584,8 +600,10 @@ def _voters_section(
                 if can_manage and nominating:
                     ui.button(
                         "Remove",
-                        on_click=lambda _, v=vv.voter.id: _remove_voter(proposal_id, v),
-                    ).props("dense flat")
+                        on_click=lambda _, v=vv.voter.id, who=vv.volunteer.full_name: (
+                            _remove_voter(proposal_id, v, who)
+                        ),
+                    ).props("dense flat").mark(f"remove-voter-{vv.voter.id}")
         if can_manage and nominating:
             with ui.row().classes("w-full items-center gap-2"):
                 extra = (

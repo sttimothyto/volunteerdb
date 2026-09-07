@@ -1131,7 +1131,18 @@ def _signup_dialog(slot_id: int, slot_name: str, *, series: bool) -> None:
 # --- the workroom's actions ----------------------------------------------------
 
 
-async def _withdraw(assignment_id: int) -> None:
+async def _withdraw(assignment_id: int, name: str, slot: str) -> None:
+    """A manager takes somebody off a slot. The volunteer taking themselves
+    off goes through _self_removal_dialog, whose reason box is its question;
+    this is the leader's side, and it asks the plain way."""
+    if not await confirm(
+        f"Remove {name} from the {slot} slot?",
+        detail="Nobody is emailed. Tell them yourself.",
+        yes=f"Remove {name} from {slot}",
+        danger=True,
+    ):
+        return
+
     async def command(ctx: PageCtx):
         return await event_service.remove_assignment(
             ctx.session, ctx.actor, assignment_id, now=ctx.now
@@ -1158,7 +1169,15 @@ async def _assign(slot_id: int, volunteer_id: int | None) -> None:
     await run_command(command, reload=True)
 
 
-async def _delete_slot(slot_id: int) -> None:
+async def _delete_slot(slot_id: int, name: str) -> None:
+    if not await confirm(
+        f"Delete the slot {name}?",
+        detail="It is empty, so nobody loses a place.",
+        yes="Delete the slot",
+        danger=True,
+    ):
+        return
+
     async def command(ctx: PageCtx):
         return await event_service.delete_slot(
             ctx.session, ctx.actor, slot_id, now=ctx.now
@@ -1168,20 +1187,17 @@ async def _delete_slot(slot_id: int) -> None:
 
 
 async def _cancel_event(event_id: int) -> None:
-    """Confirm, then cancel: the mail goes out from `_do_cancel`, after commit."""
-    if await confirm(
+    """Confirm, then cancel. The policy mails everyone signed up, after the
+    commit — unless the event was already over, when nobody needs mail
+    about it."""
+    if not await confirm(
         "Cancel this event? Everyone signed up is emailed, and open "
         "substitute requests are closed with it.",
-        yes="Yes, cancel it",
+        yes="Cancel the event",
         no="Keep it",
         danger=True,
     ):
-        await _do_cancel(event_id)
-
-
-async def _do_cancel(event_id: int) -> None:
-    """The policy mails everyone signed up — unless the event was already
-    over, when nobody needs mail about it."""
+        return
 
     async def command(ctx: PageCtx):
         return await event_service.cancel_event(
@@ -1432,6 +1448,8 @@ def _assignment_row(
     volunteer: Volunteer,
     panel: VolunteerPanel,
     options: dict[int, str],
+    *,
+    slot_name: str,
 ) -> None:
     """One person on a slot: their name and badges, then the controls --
     the assignee's own (a substitute call, a hand-off, withdrawing) or the
@@ -1467,8 +1485,10 @@ def _assignment_row(
         elif room.upcoming and room.can_manage:
             ui.button(
                 "Remove",
-                on_click=lambda _, aid=assignment.id: _withdraw(aid),
-            ).props("dense flat")
+                on_click=lambda _, aid=assignment.id, who=volunteer.full_name: (
+                    _withdraw(aid, who, slot_name)
+                ),
+            ).props("dense flat").mark(f"remove-assignment-{assignment.id}")
 
 
 def _slot_card(
@@ -1511,12 +1531,16 @@ def _slot_card(
             if room.can_manage and room.upcoming and not sv.entries:
                 ui.button(
                     icon="delete",
-                    on_click=lambda _, sid=slot.id: _delete_slot(sid),
-                ).props("dense flat").tooltip("Remove this empty slot")
+                    on_click=lambda _, sid=slot.id, sn=slot.name: _delete_slot(sid, sn),
+                ).props("dense flat").mark(f"slot-delete-{slot.id}").tooltip(
+                    "Remove this empty slot"
+                )
         if slot.description:
             ui.label(slot.description).classes("text-sm text-gray-600")
         for assignment, volunteer in sv.entries:
-            _assignment_row(room, assignment, volunteer, panel, options)
+            _assignment_row(
+                room, assignment, volunteer, panel, options, slot_name=slot.name
+            )
         if room.can_manage and room.upcoming and options and has_room:
             with ui.row().classes("w-full items-center gap-2"):
                 pick = (

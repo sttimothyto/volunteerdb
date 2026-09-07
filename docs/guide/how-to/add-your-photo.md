@@ -32,7 +32,7 @@ Put a picture of your face on your record. It shows in the header, on your profi
 - If the page says *image file larger than 10 MB*, pick a smaller picture.
 - If the page says *not a readable image*, the file is not a picture. Pick a JPEG or PNG file.
 - If the page says *image does not compress to a storable size*, pick a simpler picture.
-- To take your photo away, open the dialog and click *Remove photo*. The page says *Photo removed*.
+- To take your photo away, open the dialog and click *Remove photo*, then *Remove the photo*. The page says *Photo removed*.
 - To leave without a change, click *Cancel*.
 
 ## Related pages
