@@ -90,7 +90,7 @@ async def test_a_phone_gets_one_header_row_paired_tiles_and_a_panel_that_fits(
     await ready(page)
 
     # one row: the sign-out button sits level with the brand, not under it
-    brand = await page.locator("header").get_by_text("Dash").bounding_box()
+    brand = await page.locator("header").get_by_text("Dashboard").bounding_box()
     sign_out = await icon_button(page, "logout").bounding_box()
     assert brand and sign_out
     assert abs(brand["y"] - sign_out["y"]) < brand["height"], (

@@ -10,7 +10,7 @@ In this tutorial you lead a team: you add a member, change a role, and invite a 
 
 ## 1. Open your team page
 
-1. Click *Dash* in the header.
+1. Click *Dashboard* in the header.
 2. Under *My teams*, click the team you lead.
 3. Find the sections that only a leader or a second sees: *Add member* and *Roster spreadsheet*.
 4. Find the section *Volunteer home page*. Core team members see this one too.

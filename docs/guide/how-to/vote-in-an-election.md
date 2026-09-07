@@ -11,7 +11,7 @@ Score the candidates for a leadership seat on a team, while the vote is open.
 
 ## Steps
 
-1. Click *Dash* in the header.
+1. Click *Dashboard* in the header.
 2. Under *My service*, click the tile *Ballots waiting*. Or click *Elections* in the header.
 3. Under *Open proposals*, click the proposal. Its badge says *Voting until* followed by the date.
 4. Read the cards under *Candidates*. Each shows the note of the nominator and the *Current commitments*.

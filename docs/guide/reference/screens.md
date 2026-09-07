@@ -22,7 +22,8 @@ A dialog with fields in it stays open until you click *Cancel* or its own button
 | Control | What it does | Who |
 |---|---|---|
 | The logo | Shows the parish logo. A click opens the dialog *Site logo*: the box *Drop a logo here (stored as PNG, at most 1000×1000)*, *Remove logo* and *Upload*. *Remove logo* asks *Remove the parish logo?* first. | Everyone sees it; *admin* can click it. |
-| *Dash* | Opens the *Dashboard*. | *everyone* |
+| *Dashboard* | Opens the *Dashboard*. | *everyone* |
+| The page names | The name of the page you are on carries a line under it, in the header and in the *Menu*. | *everyone* |
 | *Teams* | Opens the *Teams* page. | *everyone* |
 | *Volunteers* | Opens the *Volunteers* page. | *everyone* |
 | *Events* | Opens the *Events* page. | *everyone* |

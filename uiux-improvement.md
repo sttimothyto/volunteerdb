@@ -229,7 +229,7 @@ screens that changed, and ends with the full suite green in its own commit.
 
 ### Phase 2 — Wayfinding
 
-- [ ] **7. The header says where you are.** `frame()` reads the request path and
+- [x] **7. The header says where you are.** `frame()` reads the request path and
   sets `aria-current="page"` on the matching nav button (and menu item on the phone);
   `theme.css` underlines it in the accent. The home link reads "Dashboard" in the
   same Cinzel face ("Dash" survives nowhere else in the copy).

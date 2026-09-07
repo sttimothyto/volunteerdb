@@ -11,7 +11,7 @@ Take over a slot that a teammate can no longer fill.
 
 ## Steps
 
-1. Click *Dash* in the header.
+1. Click *Dashboard* in the header.
 2. Under *My service*, click the tile *Shifts I could cover*. Or click *Events* in the header.
 3. Find the section *Teammates need a substitute*.
 4. Read the line: the name of your teammate, the slot, the event, the time and the note.

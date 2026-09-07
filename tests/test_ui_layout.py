@@ -46,7 +46,7 @@ async def test_settings_menu_carries_reading_preferences(database):
 
         # the two standalone header buttons are gone; their contents moved here
         await user.open("/volunteers")
-        await user.should_see("Dash")  # the brand, next to the nav links
+        await user.should_see("Dashboard")  # the brand, next to the nav links
         await user.should_see("Dark mode")
         await user.should_see("Manual")
         await user.should_not_see(PICKER)  # the volunteer list cannot time-travel
@@ -291,3 +291,39 @@ async def test_a_spent_day_reads_louder_than_one_merely_projected(database):
         await user.should_see(marker="mail-quota-banner")
         await user.should_see("is over its limit")
         await user.should_see("including sign-in codes")
+
+
+async def test_the_header_marks_the_page_you_are_on(database):
+    """aria-current="page" on the nav link for this page (and the pages
+    under it: a team page is the Teams page's), on nothing else."""
+    async with db_session() as session:
+        liturgy = ok(await teams.create(session, SYSTEM, "Liturgy"))
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
+            )
+        )
+
+    def current(user) -> set[str]:
+        return {
+            b.text
+            for b in user.find(kind=ui.button).elements
+            if b.props.get("aria-current") == "page" and b.props.get("href")
+        }
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{admin.id}")
+        await user.open("/volunteers")
+        assert current(user) == {"Volunteers"}
+        await user.open(f"/teams/{liturgy.id}")
+        assert current(user) == {"Teams"}, "a team page is the Teams page's"
+        await user.open("/admin/users")
+        assert current(user) == {"Accounts"}
+        await user.open("/")
+        assert current(user) == set(), "on the dashboard the brand word is marked"
+        home = only(user.find(kind=ui.link, content="Dashboard"))
+        assert home.props.get("aria-current") == "page"

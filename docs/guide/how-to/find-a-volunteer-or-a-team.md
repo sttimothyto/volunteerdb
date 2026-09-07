@@ -10,7 +10,7 @@ Find a person or a team by name, from the *Dashboard* or from the lists.
 
 ## Steps
 
-1. Click *Dash* in the header.
+1. Click *Dashboard* in the header.
 2. Click the box *Find volunteers or teams…* at the top of the page.
 3. Type 2 or more letters of the name.
 4. Read the list that opens under the box. It has the headings *Teams* and *Volunteers*.

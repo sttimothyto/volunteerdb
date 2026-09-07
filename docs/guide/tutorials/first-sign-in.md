@@ -53,11 +53,11 @@ You see the page of that team. If you are on no team yet, the *Dashboard* has no
 The header is the coloured bar at the top of every page.
 
 1. Find the parish logo at the left end of the header.
-2. Click *Dash*, the word next to the logo.
-3. Find the buttons *Teams*, *Volunteers* and *Events* next to *Dash*.
+2. Click *Dashboard*, the word next to the logo.
+3. Find the buttons *Teams*, *Volunteers* and *Events* next to *Dashboard*. The name of the page you are on carries a line under it.
 4. Click *Teams*.
 
-You see the *Teams* page, a list of every team in the parish. *Dash* takes you back to the *Dashboard* from any page. On a narrow screen the buttons fold into one *Menu* button with 3 lines.
+You see the *Teams* page, a list of every team in the parish. *Dashboard* takes you back to the *Dashboard* from any page. On a narrow screen the buttons fold into one *Menu* button with 3 lines.
 
 ## 5. The right side of the header
 
@@ -88,7 +88,7 @@ You see the *Dashboard*. If the code does not work, click *Resend code* and type
 
 - The invitation link opens your account once. After that, you sign in with your email address.
 - A password is optional. Without one, the site emails you a 6-digit code each time.
-- The *Dashboard* shows your teams and your service. *Dash* in the header brings you back to it.
+- The *Dashboard* shows your teams and your service. *Dashboard* in the header brings you back to it.
 - The gear icon opens *Dark mode*, *Password & sign-in* and *Manual*. The icon at the far right signs you out.
 
 ## Next steps

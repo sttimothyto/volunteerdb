@@ -10,7 +10,7 @@ Put the parish's own logo in the header in place of the standard one.
 
 ## Steps
 
-1. Click the logo at the left end of the header, before the word *Dash*.
+1. Click the logo at the left end of the header, before the word *Dashboard*.
 2. In the dialog *Site logo*, drop the file on the upload box, or click the box and pick the file.
 3. Check the preview. It sits on the header's own colour.
 4. Click *Upload*.

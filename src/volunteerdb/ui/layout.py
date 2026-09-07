@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from datetime import datetime
 
-from nicegui import ui
+from nicegui import context, ui
 
 from ..env import current as current_env
 from ..permissions import Actor
@@ -34,6 +34,7 @@ def frame(
     # what the action before this page load wanted said, now that there is
     # a page to say it on
     show_flashed()
+    here = _current_path()
     nav_items = [
         ("Teams", "/teams"),
         ("Volunteers", "/volunteers"),
@@ -53,7 +54,9 @@ def frame(
         # the parish's own mark, ahead of the brand word it belongs to;
         # clickable for an admin, which is how a logo gets replaced
         site_logo(actor, classes="h-8 w-auto mr-2")
-        ui.link("Dash", "/").classes("text-lg vdb-brand vdb-quiet")
+        home = ui.link("Dashboard", "/").classes("text-lg vdb-brand vdb-quiet")
+        if here == "/":
+            home.props('aria-current="page"')
         # the nav cluster sits against the brand, split from it by a double rule
         # echoing the header's own bottom border; only the spacer below the nav
         # is left, so the account controls still hold the right edge
@@ -69,8 +72,12 @@ def frame(
         ):
             for label, target in nav_items:
                 # href renders the QBtn as a real <a>: right-click / middle-click
-                # open-in-new-tab work, left click still navigates in place
-                ui.button(label).props(f'flat color=white dense href="{target}"')
+                # open-in-new-tab work, left click still navigates in place.
+                # aria-current names the page the reader is on; theme.css
+                # underlines it in the accent (2.4.8, and the eye's own map)
+                ui.button(label).props(
+                    f'flat color=white dense href="{target}"' + _current(here, target)
+                )
         with (
             ui.button(icon="menu")
             .props('flat color=white dense round aria-label="Menu"')
@@ -78,7 +85,9 @@ def frame(
         ):
             with ui.menu():
                 for label, target in nav_items:
-                    ui.menu_item(label).props(f'href="{target}"')
+                    ui.menu_item(label).props(
+                        f'href="{target}"' + _current(here, target)
+                    )
         ui.space()
         _own_email(actor)
         _own_avatar(actor)
@@ -100,6 +109,23 @@ def frame(
             asof_banner(as_of, asof_path)
         _mail_quota_banner(actor)
         yield
+
+
+def _current_path() -> str:
+    """The path this page was asked for -- what the header marks as "you
+    are here". Empty outside a request (a background task): nothing marked."""
+    try:
+        return context.client.request.url.path
+    except Exception:
+        return ""
+
+
+def _current(here: str, target: str) -> str:
+    """The aria-current prop when `here` is `target` or a page under it:
+    /teams/15 is the Teams page's, /admin/users is Accounts'."""
+    if here == target or here.startswith(target.rstrip("/") + "/"):
+        return ' aria-current="page"'
+    return ""
 
 
 def _mail_quota_banner(actor: Actor) -> None:

@@ -10,7 +10,7 @@ In this tutorial you find your teams, read a roster, and complete your own profi
 
 ## 1. Find your teams on the Dashboard
 
-1. Click *Dash* in the header.
+1. Click *Dashboard* in the header.
 2. Find the section *My teams*.
 3. Read the badge next to each team name. It is your role on that team.
 4. Click the name of one of your teams.

@@ -55,7 +55,7 @@ async def test_dark_mode_is_kept_by_the_browser_across_a_sign_out(seeded, page):
     this browser likes to read, whoever is signed in". Nothing headless can see
     it, because what applies it is Quasar toggling a class on <body>."""
     await sign_in(page, "admin@example.org", "secret-pass-phrase")
-    await expect(page.get_by_text("Dashboard")).to_be_visible()
+    await expect(page.get_by_role("heading", name="Dashboard")).to_be_visible()
     await ready(page)
     body = page.locator("body")
     await expect(body).not_to_have_class(re.compile(r"body--dark"))
