@@ -9,6 +9,7 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..db import any_of
 from ..history import entity
 from ..models import Membership, TeamRole, Volunteer
 from ..permissions import Actor
@@ -66,7 +67,7 @@ async def elements(
     if volunteer_ids:
         all_memberships = await session.execute(
             sa.select(M.volunteer_id, M.team_id).where(
-                M.volunteer_id.in_(volunteer_ids)
+                any_of(M.volunteer_id, volunteer_ids)
             )
         )
         for v_id, t_id in all_memberships:

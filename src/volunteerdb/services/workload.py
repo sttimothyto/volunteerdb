@@ -18,6 +18,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..db import any_of
 from ..errors import DomainError, Invalid, invalid, require
 from ..fp import Err, Ok, Result
 from ..history import entity
@@ -250,7 +251,7 @@ async def scores(
         .group_by(M.volunteer_id)
     )
     if volunteer_ids is not None:
-        stmt = stmt.where(M.volunteer_id.in_(volunteer_ids))
+        stmt = stmt.where(any_of(M.volunteer_id, volunteer_ids))
     result = {vid: Decimal(total) for vid, total in (await session.execute(stmt)).all()}
     for vid in volunteer_ids or ():
         result.setdefault(vid, Decimal(0))

@@ -77,13 +77,25 @@ async def assign(
     membership = (
         await find(session, volunteer_id, team_id) if existing is UNSET else existing
     )
-    if membership is None:
+    # `is None` in spirit: `existing` is annotated `| object` only to carry the
+    # UNSET sentinel, so the resolved value is statically wider than the
+    # Membership | None it actually is. Spelling the test as isinstance narrows
+    # it back, which is what lets the no-op branch below read `.role`.
+    if not isinstance(membership, Membership):
         membership = Membership(
             volunteer_id=volunteer_id,
             team_id=team_id,
             role=role,
         )
         session.add(membership)
+    elif membership.role == role:
+        # Already on the team in this role: nothing to write. Assigning the
+        # attribute anyway would mark the row dirty, and the flush below would
+        # then walk the whole unit of work to discover there was no change --
+        # which is what a re-import mostly is. A roster sheet is re-imported
+        # nightly and almost every row is unchanged, so this early return is
+        # the difference between a flush per row and a flush per real edit.
+        return Ok(membership)
     else:
         membership.role = role
     await session.flush()

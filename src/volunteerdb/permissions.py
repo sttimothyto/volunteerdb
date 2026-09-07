@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .db import any_of
 from .history import entity
 from .models import (
     AppUser,
@@ -148,7 +149,9 @@ async def team_ids_map(
         return {}
     M = entity(Membership, at)
     rows = await session.execute(
-        sa.select(M.volunteer_id, M.team_id).where(M.volunteer_id.in_(volunteer_ids))
+        sa.select(M.volunteer_id, M.team_id).where(
+            any_of(M.volunteer_id, volunteer_ids)
+        )
     )
     result: dict[int, set[int]] = {vid: set() for vid in volunteer_ids}
     for v_id, t_id in rows:

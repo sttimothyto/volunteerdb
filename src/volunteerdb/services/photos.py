@@ -16,6 +16,7 @@ import sqlalchemy as sa
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..db import any_of
 from ..errors import DomainError, Invalid, invalid, not_found
 from ..fp import Err, Ok, Result
 from ..models import Volunteer, VolunteerPhoto
@@ -119,7 +120,7 @@ async def versions(
         ids = list(volunteer_ids)
         if not ids:
             return {}
-        stmt = stmt.where(VolunteerPhoto.volunteer_id.in_(ids))
+        stmt = stmt.where(any_of(VolunteerPhoto.volunteer_id, ids))
     return dict((await session.execute(stmt)).all())  # type: ignore[arg-type]
 
 
