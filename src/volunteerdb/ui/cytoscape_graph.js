@@ -13,9 +13,11 @@ export default {
       container: this.$el,
       elements: this.annotated(this.elements),
       style: this.styleFor(this.themeColors()),
-      layout: this.layoutOptions(),
+      // laid out just below, once there is an instance to settle() against
+      layout: { name: "null" },
       wheelSensitivity: 0.2,
     });
+    this.layOut(300, true);
     this.cy.on("tap", "node", (e) => this.$emit("node_click", e.target.data()));
     // hovering a node isolates its neighbourhood: at parish scale the whole
     // map is a mesh, and "who is actually on this team" is unanswerable
@@ -217,30 +219,121 @@ export default {
         },
       ];
     },
-    layoutOptions(numIter = 300) {
+    layoutOptions(numIter = 300, randomize = false) {
       // cose defaults to numIter 1000; the layout runs synchronously on the
-      // main thread, so iterations are paid for in time-to-first-render.
-      // The spacing values are wider than cose's defaults: a parish is mostly
-      // disconnected islands (66 teams sharing few people), and at the
-      // defaults they pile into one another.
+      // main thread, so iterations are paid for in time-to-first-render
+      // (about 2 s for 500 people at 300). The spacing values are several
+      // times cose's defaults (idealEdgeLength 32, nodeRepulsion 2048,
+      // nodeOverlap 4): a parish is mostly disconnected islands (66 teams
+      // sharing few people), and where the teams do share people the plaques
+      // are hubs that the defaults pile into one another in the middle of
+      // the map. Repulsion in cose acts on the gap between node borders, so
+      // a wide plaque pushes its neighbours further than a dot does — but
+      // cose caps each node's move at its cooling temperature, so whatever
+      // overlap it still has once it has cooled it can no longer resolve;
+      // that is separate()'s job.
       return {
         name: "cose",
         animate: false,
-        nodeOverlap: 16,
-        idealEdgeLength: 80,
-        nodeRepulsion: 4500,
+        // layOut() fits after settle(), not before it
+        fit: false,
+        randomize,
+        nodeOverlap: 40,
+        idealEdgeLength: 120,
+        nodeRepulsion: 20000,
         componentSpacing: 120,
-        gravity: 0.6,
-        padding: 20,
+        gravity: 0.25,
         numIter,
       };
+    },
+    // The force layout, then made to fit the window it is drawn in and made
+    // overlap-free, then brought into view. `randomize` scatters the nodes
+    // across the container before the first pass; a refresh keeps the
+    // positions it carried over and refines them instead.
+    layOut(numIter, randomize) {
+      this.cy.layout(this.layoutOptions(numIter, randomize)).run();
+      this.settle();
+      this.cy.fit(undefined, 30);
+    },
+    settle() {
+      const cy = this.cy;
+      const w = cy.width();
+      const h = cy.height();
+      const bb = cy.elements().boundingBox({ includeLabels: false });
+      if (w > 0 && h > 0 && bb.w > 1 && bb.h > 1) {
+        // cose leaves a roughly round graph, and the container is a wide
+        // band, so as much as half its width sat empty and the fit zoom was
+        // set by the graph's height alone. Stretch one axis and squeeze the
+        // other by the same factor: the graph keeps its area and takes the
+        // container's aspect. Clamped, so three nodes in a line cannot be
+        // flattened into one; derived from the extent each time, so a
+        // refresh starting from already stretched positions is left alone
+        // rather than stretched again.
+        const k = Math.max(0.6, Math.min(1.6, Math.sqrt(w / h / (bb.w / bb.h))));
+        if (Math.abs(k - 1) > 0.02) {
+          const cx = (bb.x1 + bb.x2) / 2;
+          const cy0 = (bb.y1 + bb.y2) / 2;
+          cy.nodes().positions((n) => {
+            const p = n.position();
+            return { x: cx + (p.x - cx) * k, y: cy0 + (p.y - cy0) / k };
+          });
+        }
+      }
+      this.separate(8, 300);
+    },
+    // Push overlapping nodes apart until none overlap. Pairs are compared on
+    // their body boxes (a name under a dot is hidden at overview zoom and
+    // arrives on hover, so it claims no room) widened by `pad` on every
+    // side; each collision moves both nodes along whichever axis frees them
+    // with the smaller move. Sweeping in x order keeps a pass cheap enough
+    // that 300 of them cost well under a tenth of a second at 500 nodes.
+    // The hard requirement — no two bodies overlapping — is met within the
+    // first fifty or so; the padding is a wish, and in the dense middle of
+    // the map some pairs stay closer than that when the passes run out.
+    separate(pad, maxIter) {
+      const ns = this.cy.nodes().map((n) => ({
+        n,
+        x: n.position("x"),
+        y: n.position("y"),
+        w: n.outerWidth() + 2 * pad,
+        h: n.outerHeight() + 2 * pad,
+      }));
+      const widest = ns.reduce((m, e) => Math.max(m, e.w), 0);
+      for (let iter = 0; iter < maxIter; iter++) {
+        ns.sort((a, b) => a.x - b.x);
+        let moved = 0;
+        for (let i = 0; i < ns.length; i++) {
+          const a = ns[i];
+          for (let j = i + 1; j < ns.length; j++) {
+            const b = ns[j];
+            if (b.x - a.x >= (a.w + widest) / 2) break;
+            const ox = (a.w + b.w) / 2 - Math.abs(a.x - b.x);
+            if (ox <= 0) continue;
+            const oy = (a.h + b.h) / 2 - Math.abs(a.y - b.y);
+            if (oy <= 0) continue;
+            if (ox < oy) {
+              const s = a.x <= b.x ? 1 : -1;
+              a.x -= (s * ox) / 2;
+              b.x += (s * ox) / 2;
+            } else {
+              const s = a.y <= b.y ? 1 : -1;
+              a.y -= (s * oy) / 2;
+              b.y += (s * oy) / 2;
+            }
+            moved += 1;
+          }
+        }
+        if (!moved) break;
+      }
+      this.cy.batch(() => ns.forEach((e) => e.n.position({ x: e.x, y: e.y })));
     },
     refresh(elements) {
       if (!this.cy) return;
       this.clearFocus();
-      // carry surviving nodes' positions across the swap: cose keeps
-      // randomize:false, so it refines from where nodes already are instead
-      // of re-annealing the whole map (and re-scrambling it) on every filter
+      // carry surviving nodes' positions across the swap: the layout runs
+      // without randomize, so it refines from where nodes already are
+      // instead of re-annealing the whole map (and re-scrambling it) on
+      // every filter
       const pos = {};
       this.cy.nodes().forEach((n) => {
         pos[n.id()] = { ...n.position() };
@@ -252,8 +345,7 @@ export default {
         if (pos[n.id()]) n.position(pos[n.id()]);
         else fresh += 1;
       });
-      this.cy.layout(this.layoutOptions(fresh ? 300 : 100)).run();
-      this.cy.fit(undefined, 30);
+      this.layOut(fresh ? 300 : 100, false);
     },
     fit() {
       if (this.cy) this.cy.fit(undefined, 30);
