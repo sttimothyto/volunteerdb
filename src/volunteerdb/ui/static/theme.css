@@ -270,6 +270,7 @@ h1.vdb-brand {
   font-family: var(--vdb-serif);
   letter-spacing: 0;
   text-transform: none;
+  flex: none; /* the header squeezes its items on a phone; this one holds */
 }
 
 .vdb-account .q-btn__content {

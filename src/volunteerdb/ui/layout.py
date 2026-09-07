@@ -230,7 +230,9 @@ def _account_menu(actor: Actor) -> None:
         .classes("vdb-account")
         .mark("account-menu")
     ):
-        with ui.element("div").classes("flex items-center gap-2"):
+        # Quasar's own .flex wraps; no-wrap keeps the caret beside the face
+        # when the header squeezes the button on a phone
+        with ui.element("div").classes("flex no-wrap items-center gap-2"):
             _headshot(actor)
             # at 80% opacity the address read 3.7:1; the class keeps it plain
             ui.label(actor.account.email).classes("text-sm gt-sm").mark("header-email")
