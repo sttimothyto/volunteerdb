@@ -14,11 +14,12 @@ from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
 from volunteerdb.permissions import SYSTEM
-from volunteerdb.services import memberships, teams, users, volunteers
+from volunteerdb.services import memberships, photos, teams, users, volunteers
 
 from .conftest import SIM_MAIN, SLOW, mail_to
+from .test_photos_service import _png
 from tests import mint
-from tests.conftest import db_session
+from tests.conftest import db_session, only
 from tests.fp_helpers import ok
 
 
@@ -268,3 +269,79 @@ async def test_the_address_change_form_refuses_a_typo_and_a_taken_address(databa
 
     async with db_session() as session:
         assert (await users.get(session, user_id)).pending_email is None
+
+
+# --- the photo card ------------------------------------------------------------
+
+
+async def test_a_linked_account_changes_its_photo_from_the_account_page(database):
+    """The header's menu has offered Change photo all along; this page is
+    the other door, for the person who goes to their settings for it. The
+    card shows what there is -- the person icon, then the picture -- and
+    its button opens the one photo dialog."""
+    async with db_session() as session:
+        vera = ok(
+            await volunteers.create(
+                session, SYSTEM, "Vera", "Volunteer", "vera@example.org"
+            )
+        )
+        vera_u, _ = ok(
+            await users.create(
+                session,
+                "vera@example.org",
+                volunteer_id=vera.id,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
+            )
+        )
+        vera_id, user_id = vera.id, vera_u.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{user_id}")
+        await user.open("/account")
+        await user.should_see("Your photo")
+        assert isinstance(only(user.find(marker="account-photo")), ui.icon), (
+            "no photo yet: the person icon stands in"
+        )
+        assert only(user.find(marker="account-photo-button")).text == "Add a photo"
+        user.find(marker="account-photo-button").click()
+        await user.should_see("Photo — Vera Volunteer")
+
+        async with db_session() as session:
+            ok(
+                await photos.set_photo(
+                    session,
+                    vera_id,
+                    _png(500, 500),
+                    uploaded_by=user_id,
+                    now=mint.now(),
+                )
+            )
+
+        await user.open("/account")
+        assert isinstance(only(user.find(marker="account-photo")), ui.image), (
+            "the picture, once there is one"
+        )
+        assert only(user.find(marker="account-photo-button")).text == "Change photo"
+
+
+async def test_an_account_with_no_volunteer_record_has_no_photo_card(database):
+    """The sync bot, and any admin nobody linked: there is no volunteer row
+    a photo could hang off, so the page does not offer one."""
+    async with db_session() as session:
+        admin, _ = ok(
+            await users.create(
+                session,
+                "admin@example.org",
+                is_admin=True,
+                invite=mint.fresh_invite(),
+                actor=SYSTEM,
+            )
+        )
+        admin_id = admin.id
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{admin_id}")
+        await user.open("/account")
+        await user.should_see("Change your email address")
+        await user.should_not_see("Your photo")

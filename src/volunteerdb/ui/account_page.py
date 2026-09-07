@@ -15,8 +15,10 @@ thing a reset link proves and is not asked again. Either way the account's
 address gets a notification, which §4.1.2 requires to be independent of the
 transaction that made the change.
 
-The page is four cards, one function each; the work behind their buttons is
-module-level and takes the typed values and the facts the page knew at load.
+The page is one card per thing about you -- the address you sign in at, your
+photo, your calendar feed, the address change, the password -- one function
+each; the work behind their buttons is module-level and takes the typed values
+and the facts the page knew at load.
 """
 
 from datetime import datetime
@@ -30,6 +32,7 @@ from ..auth import async_verify_password
 from ..domain import EmailChangeAttempted, SignInFailed
 from ..env import current as current_env
 from ..fp import expect
+from ..services import photos as photo_service
 from ..services import users as user_service
 from .a11y import heading
 from .calendar_panel import subscribe_panel
@@ -47,6 +50,7 @@ from .context import (
 )
 from .forms import confirm, required, valid
 from .layout import frame
+from .photo_dialog import open_photo_dialog
 
 logger = structlog.get_logger(__name__)
 
@@ -162,6 +166,13 @@ async def _save_password(
     )
 
 
+async def _photo_changed(message: str) -> None:
+    """The photo dialog's outcome: said on the page that comes back, since
+    the card, the header and the menu all show the picture."""
+    flash(message)
+    ui.navigate.reload()
+
+
 async def _remove_password() -> None:
     if not await confirm(
         "Remove the password from this account? You'll sign in by "
@@ -196,6 +207,36 @@ def _signin_card(email: str, has_password: bool) -> None:
                 "Setting a password is optional — the emailed code works "
                 "forever. It is only needed to use the JSON API."
             ).classes("text-sm text-gray-500")
+
+
+def _photo_card(volunteer_id: int, name: str, photo_at: datetime | None) -> None:
+    """Your headshot and the button that changes it: the same dialog, with
+    the same declaration, that the profile page and the header's menu open.
+    Here too because this is the page a person comes to for what is theirs,
+    and a menu item under a small picture is not where everyone looks."""
+    with ui.card().classes("w-full max-w-xl gap-3"):
+        heading("Your photo", level=2)
+        ui.label(
+            "Shown at the right of the header, on your profile, in the side "
+            "panel that opens from a roster, and on the ministry graph. A "
+            "headshot is best; it is stored as a 400×400 square."
+        ).classes("text-sm text-gray-500")
+        with ui.row().classes("items-center gap-4 no-wrap"):
+            if photo_at is not None:
+                ui.image(photo_service.photo_url(volunteer_id, photo_at)).props(
+                    'loading="lazy"'
+                ).classes("w-24 h-24 rounded-full object-cover").mark("account-photo")
+            else:
+                ui.icon("person").classes("text-6xl text-gray-400").mark(
+                    "account-photo"
+                )
+            ui.button(
+                "Change photo" if photo_at is not None else "Add a photo",
+                icon="add_a_photo",
+                on_click=lambda: open_photo_dialog(
+                    volunteer_id, name, photo_at, _photo_changed
+                ),
+            ).props("dense outline").mark("account-photo-button")
 
 
 def _calendar_card(base_url: str, feed_token: str) -> None:
@@ -360,6 +401,12 @@ async def account_page():
 
     with frame("Your account", actor, help="account"):
         _signin_card(user.email, user.password_hash is not None)
+        # a photo hangs off a volunteer record; an account without one (the
+        # sync bot, an admin nobody linked) has nowhere to put a picture
+        if actor.volunteer_id is not None:
+            _photo_card(
+                actor.volunteer_id, actor.volunteer_name or user.email, actor.photo_at
+            )
         _calendar_card(ctx.base_url, feed_token)
         _email_card(
             user_id=user.id,

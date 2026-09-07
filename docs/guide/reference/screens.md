@@ -357,11 +357,12 @@ A reader who cannot see the election sees *This proposal is visible to its votin
 
 ## Your account
 
-Shown to *everyone*, from *Your account* in the account menu. It has 4 cards.
+Shown to *everyone*, from *Your account* in the account menu. It has 5 cards.
 
 | Card | What is on it |
 |---|---|
 | Your address | Your email address, and *You sign in with your email address and a password.* or *You sign in with a one-time code emailed to this address.* Without a password, a note says a password is optional. |
+| *Your photo* | Your photo, or the person icon, and the button *Add a photo* or *Change photo*. The button opens the dialog *Photo — …*, the same as on your profile. The card needs a linked volunteer record. |
 | *Your duties in your own calendar* | The button *Add to your calendar*, the same panel as on the *Events* page. |
 | *Change your email address* | The field *New email address* and the button *Send confirmation*. While a change waits: *Waiting for … to confirm — the link stops working …* and the button *Cancel*. |
 | *Change your password* or *Set a password* | *Current password* (only if you signed in with a password), *New password*, *Repeat new password*, *Save password*. With a password set: *Remove password*. |
