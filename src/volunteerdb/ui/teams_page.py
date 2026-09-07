@@ -1476,17 +1476,15 @@ async def team_detail(team_id: int, as_of: str = ""):
         )
         if room.upcoming_events:
             _upcoming_events_section(room.upcoming_events, tz)
-        # the plumbing, folded under what the reader came for (4a2603d's
-        # order: chrome, then the roster, then the plumbing)
-        if room.can_manage:
-            _sheet_section(room.sheet, team_id, actor.is_admin, tz=tz)
-            _sheet_import_block(actor.is_admin)
         # core members included on purpose: leaders are often elderly and a
         # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
         if room.can_full and room.live:
             _home_page_section(
                 room.team, room.page, team_id, room.slug, ctx.base_url, tz=tz
             )
+        if room.can_manage:
+            _sheet_section(room.sheet, team_id, actor.is_admin, tz=tz)
+            _sheet_import_block(actor.is_admin)
 
 
 async def _add_member(team_id: int, volunteer_id: int | None, role_value: str) -> None:
