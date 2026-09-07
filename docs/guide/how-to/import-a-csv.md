@@ -26,7 +26,7 @@ A blank cell never clears a field. To clear a phone number, edit the person in t
 ## Steps
 
 1. Open *Teams* and click the team.
-2. Under *Roster spreadsheet*, find *Import a .csv*.
+2. Under the roster, open the panel *Import a .csv*.
 3. Drop your file on the box *Drop a .csv file here (validated before anything is written)*.
 4. Or click the box and pick the file.
 5. Read the report. Nothing is written yet.

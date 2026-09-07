@@ -293,7 +293,7 @@ screens that changed, and ends with the full suite green in its own commit.
   label cell full-width on the phone (`w-96` today), "Save weights" sticky at the
   bottom of the card. The band editor gains a one-line note that saving recolours the
   volunteers list, the graph and the dashboard chips.
-- [ ] **19. The team page folds its plumbing.** After the roster, "Roster
+- [x] **19. The team page folds its plumbing.** After the roster, "Roster
   spreadsheet", "Import a .csv" and "Volunteer home page" become `ui.expansion`
   panels, closed unless something is linked or the last sync failed. Sub-teams stay
   above the roster (`8383242`); the page still reads chrome → roster → plumbing

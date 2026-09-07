@@ -25,7 +25,7 @@ Read the email addresses and the phone numbers of the members of your team, and 
 - Above the roster are the buttons *Export roster (.csv)*, *Copy email list* and *Email all (BCC)*.
 - *Copy email list* copies every address on the roster. The page says how many addresses it copied.
 - *Email all (BCC)* opens your mail app with every address in BCC. For a very large team, use *Copy email list*.
-- The section *Volunteer home page* is on the page for you too.
+- The panel *Volunteer home page*, under the roster, is on the page for you too.
 - On the *Volunteers* page, the columns *Email* and *Phone* show the details of the people on your teams. For everyone else they show *•••*.
 - A row with the badge *no account* offers to invite that person. See [Invite a volunteer to create an account](invite-a-volunteer.md).
 

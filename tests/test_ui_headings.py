@@ -5,6 +5,7 @@ page title is the h1, every section under it an h2, a card or sub-section
 an h3. The source sweep in test_ui_css_invariants forbids the look-alike;
 this reads the tree of two pages and the sign-in card, which had no h1."""
 
+from nicegui import ui
 from nicegui.testing.user_simulation import user_simulation
 
 from volunteerdb.models import TeamRole
@@ -52,8 +53,11 @@ async def test_a_team_page_reads_as_an_outline(database):
         await user.open(f"/teams/{music.id}")
         found = _headings(user)
         assert found[1] == ["Music"], "one h1: the page title"
-        assert {"Add member", "Roster", "Roster spreadsheet"} <= set(found[2])
-        assert "Import a .csv" in found[3], "a sub-section is an h3"
+        assert {"Add member", "Roster"} <= set(found[2])
+        # the plumbing under the roster is a row of panels, whose titles are
+        # the panels' own headers rather than headings of the page
+        panels = {e.props["label"] for e in user.find(kind=ui.expansion).elements}
+        assert {"Roster spreadsheet", "Import a .csv"} <= panels
 
         await user.open("/account")
         found = _headings(user)

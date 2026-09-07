@@ -13,7 +13,7 @@ Give your team a public web page, written in a Google Doc, that anyone can read 
 1. In Google Docs, share the doc so that anyone with the link can view it.
 2. Copy the link of the doc. It starts with `https://docs.google.com/document/d/`.
 3. Open *Teams* and click the team.
-4. Under *Volunteer home page*, click *Set home page doc*.
+4. Open the panel *Volunteer home page* under the roster. Click *Set home page doc*.
 5. Paste the link into *Google Doc link*.
 6. Click *Save*.
 7. Click *Fetch now*.

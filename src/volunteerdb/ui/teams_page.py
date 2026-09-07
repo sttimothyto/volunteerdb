@@ -392,59 +392,88 @@ def _team_dialog(parent_options: dict[int, str], team=None) -> None:
     dialog.open()
 
 
+def _plumbing(
+    title: str, *, caption: str, icon: str, open: bool, marker: str
+) -> ui.expansion:
+    """One of the panels under the roster -- the spreadsheet, the .csv
+    import, the home page: the plumbing a leader touches once a season.
+    Closed unless something is linked or the last sync failed, and its
+    caption says the state, so a closed panel is still read at a glance."""
+    return (
+        ui.expansion(title, caption=caption, icon=icon, value=open)
+        .classes("w-full vdb-plumbing")
+        .mark(marker)
+    )
+
+
 def _home_page_section(
     team, team_page, team_id: int, slug: str | None, base_url: str, *, tz: ZoneInfo
 ) -> None:
     """Home-page controls for leaders/seconds/core members (and admins): link a
     public Google Doc, preview-fetch it, and reach the published page."""
-    heading("Volunteer home page", level=2)
     if not team.home_doc_url:
-        with ui.row().classes("items-center gap-2"):
-            ui.button(
-                "Set home page doc",
-                icon="add_link",
-                on_click=lambda: _home_doc_dialog(team_id, None),
-            ).props("dense outline")
-            ui.label(
-                "Link a public Google Doc to publish this team's page under "
-                "/ministries/ — no sign-in needed to read it."
-            ).classes("text-sm text-gray-500 vdb-prose")
-        return
+        caption = "Publish a Google Doc as this team's public page"
+    elif team_page is not None and team_page.status == "error":
+        caption = "The last fetch failed"
+    elif team_page is not None and team_page.html:
+        caption = "Published · refreshed nightly"
+    else:
+        caption = "Doc linked · not published yet"
+    failed = team_page is not None and team_page.status == "error"
+    with _plumbing(
+        "Volunteer home page",
+        caption=caption,
+        icon="public",
+        open=bool(team.home_doc_url) or failed,
+        marker="panel-home-page",
+    ):
+        if not team.home_doc_url:
+            with ui.row().classes("items-center gap-2"):
+                ui.button(
+                    "Set home page doc",
+                    icon="add_link",
+                    on_click=lambda: _home_doc_dialog(team_id, None),
+                ).props("dense outline")
+                ui.label(
+                    "Link a public Google Doc to publish this team's page under "
+                    "/ministries/ — no sign-in needed to read it."
+                ).classes("text-sm text-gray-500 vdb-prose")
+            return
 
-    published = team_page is not None and team_page.html
-    with ui.row().classes("items-center gap-2"):
-        ui.link("Google Doc", team.home_doc_url, new_tab=True)
-        if published and slug:
-            ui.link("Public page", f"/ministries/{slug}.html", new_tab=True)
-            ui.button("Download QR Code to Public page", icon="qr_code_2").props(
-                f'dense outline href="/teams/{team_id}/qr.png"'
+        published = team_page is not None and team_page.html
+        with ui.row().classes("items-center gap-2"):
+            ui.link("Google Doc", team.home_doc_url, new_tab=True)
+            if published and slug:
+                ui.link("Public page", f"/ministries/{slug}.html", new_tab=True)
+                ui.button("Download QR Code to Public page", icon="qr_code_2").props(
+                    f'dense outline href="/teams/{team_id}/qr.png"'
+                )
+            ui.button(
+                "Fetch now",
+                icon="refresh",
+                on_click=busy(lambda: _fetch_home_page(team_id)),
+            ).props("dense outline")
+            ui.button(
+                # its object, like the spreadsheet section's Change: the two sit a
+                # few lines apart on the same page
+                "Change the doc",
+                icon="edit",
+                on_click=lambda: _home_doc_dialog(team_id, team.home_doc_url),
+            ).props("dense flat")
+        if team_page is not None and team_page.status == "error":
+            ui.label(f"Last fetch failed: {team_page.error}").classes(
+                "text-negative text-sm"
             )
-        ui.button(
-            "Fetch now",
-            icon="refresh",
-            on_click=busy(lambda: _fetch_home_page(team_id)),
-        ).props("dense outline")
-        ui.button(
-            # its object, like the spreadsheet section's Change: the two sit a
-            # few lines apart on the same page
-            "Change the doc",
-            icon="edit",
-            on_click=lambda: _home_doc_dialog(team_id, team.home_doc_url),
-        ).props("dense flat")
-    if team_page is not None and team_page.status == "error":
-        ui.label(f"Last fetch failed: {team_page.error}").classes(
-            "text-negative text-sm"
-        )
-    elif not published:
-        ui.label(
-            "Not published yet — Fetch now downloads the doc, or wait for the "
-            "nightly refresh (3:00)."
-        ).classes("text-sm text-gray-500")
-    elif team_page.fetched_at is not None:
-        ui.label(
-            "Refreshed nightly · last fetched "
-            f"{timefmt.when_short(team_page.fetched_at, tz)}"
-        ).classes("text-sm text-gray-500")
+        elif not published:
+            ui.label(
+                "Not published yet — Fetch now downloads the doc, or wait for the "
+                "nightly refresh (3:00)."
+            ).classes("text-sm text-gray-500")
+        elif team_page.fetched_at is not None:
+            ui.label(
+                "Refreshed nightly · last fetched "
+                f"{timefmt.when_short(team_page.fetched_at, tz)}"
+            ).classes("text-sm text-gray-500")
 
 
 def _sheet_section(
@@ -458,77 +487,94 @@ def _sheet_section(
     by the caller — the link IS the access to the sheet, so who may see it is
     who may manage the roster.
     """
-    heading("Roster spreadsheet", level=2)
     linked = team_sheet is not None and bool(team_sheet.file_id)
-    with ui.row().classes("items-center gap-2"):
-        if linked:
-            ui.link(
-                team_sheet.file_name or "Google Sheet",
-                sheet_url(team_sheet.file_id),
-                new_tab=True,
-            )
-            ui.button(
-                # its object, like the home-page section's Change the doc: the
-                # two sit a few lines apart on the same page
-                "Change the spreadsheet",
-                icon="edit",
-                on_click=lambda: _roster_sheet_dialog(team_id, linked=True),
-            ).props("dense flat")
-            ui.button(
-                "Sync now",
-                icon="sync",
-                on_click=busy(lambda: _sync_sheet(team_id, roster_sheets.IMPORT)),
-            ).props("dense outline")
-            ui.button(
-                "Overwrite sheet",
-                icon="upload",
-                on_click=busy(lambda: _sync_sheet(team_id, roster_sheets.EXPORT)),
-            ).props("dense flat").tooltip(
-                "Rewrites the spreadsheet from the database, discarding "
-                "whatever is in it — the way out of a mangled sheet."
-            )
-        else:
-            ui.button(
-                "Link a spreadsheet",
-                icon="add_link",
-                on_click=lambda: _roster_sheet_dialog(team_id, linked=False),
-            ).props("dense outline")
-        template_url = current_env().settings.template_sheet_url
-        if template_url:
-            # The decorated Google Sheet (role dropdown, hidden ID column,
-            # structure warning) replaces the bare CSV: copy it, share the
-            # copy, link it here — the decoration comes along with the copy.
-            ui.button("Roster template (Google Sheets)", icon="open_in_new").props(
-                f'outline dense href="{template_url}" target="_blank"'
-            )
-        else:  # dev fallback: no Drive template configured
-            ui.button("Empty template", icon="description").props(
-                'outline dense href="/export/roster-template.csv"'
-            )
-    if linked:
-        ui.label(
-            "Edits sync into the database nightly (2:30), and the sheet is "
-            "rewritten to match. Nobody is ever removed by a sync — take a "
-            "member off the roster above instead. Anyone holding this link "
-            "can edit the sheet, so keep it among the people who help run "
-            "this team."
-        ).classes("text-sm text-gray-500 vdb-prose")
+    failed = team_sheet is not None and team_sheet.last_status == "error"
+    if failed:
+        caption = "The last sync failed"
+    elif linked and team_sheet is not None and team_sheet.last_synced_at is not None:
+        caption = (
+            f"Linked · last synced {timefmt.when_short(team_sheet.last_synced_at, tz)}"
+        )
+    elif linked:
+        caption = "Linked · not synced yet"
     else:
-        ui.label(
-            "The nightly sync (2:30) creates a Google Sheet for this team's "
-            "roster; the link will appear here. Or copy the template, share "
-            "it as “anyone with the link can edit”, and link it yourself."
-        ).classes("text-sm text-gray-500 vdb-prose")
-    if team_sheet is not None:
-        if team_sheet.last_status == "error":
-            ui.label(f"Last sync failed: {team_sheet.last_error}").classes(
-                "text-negative text-sm"
-            )
-        elif team_sheet.last_synced_at is not None:
+        caption = "Link a Google Sheet, or let the nightly sync make one"
+    with _plumbing(
+        "Roster spreadsheet",
+        caption=caption,
+        icon="table_chart",
+        open=linked or failed,
+        marker="panel-sheet",
+    ):
+        linked = team_sheet is not None and bool(team_sheet.file_id)
+        with ui.row().classes("items-center gap-2"):
+            if linked:
+                ui.link(
+                    team_sheet.file_name or "Google Sheet",
+                    sheet_url(team_sheet.file_id),
+                    new_tab=True,
+                )
+                ui.button(
+                    # its object, like the home-page section's Change the doc: the
+                    # two sit a few lines apart on the same page
+                    "Change the spreadsheet",
+                    icon="edit",
+                    on_click=lambda: _roster_sheet_dialog(team_id, linked=True),
+                ).props("dense flat")
+                ui.button(
+                    "Sync now",
+                    icon="sync",
+                    on_click=busy(lambda: _sync_sheet(team_id, roster_sheets.IMPORT)),
+                ).props("dense outline")
+                ui.button(
+                    "Overwrite sheet",
+                    icon="upload",
+                    on_click=busy(lambda: _sync_sheet(team_id, roster_sheets.EXPORT)),
+                ).props("dense flat").tooltip(
+                    "Rewrites the spreadsheet from the database, discarding "
+                    "whatever is in it — the way out of a mangled sheet."
+                )
+            else:
+                ui.button(
+                    "Link a spreadsheet",
+                    icon="add_link",
+                    on_click=lambda: _roster_sheet_dialog(team_id, linked=False),
+                ).props("dense outline")
+            template_url = current_env().settings.template_sheet_url
+            if template_url:
+                # The decorated Google Sheet (role dropdown, hidden ID column,
+                # structure warning) replaces the bare CSV: copy it, share the
+                # copy, link it here — the decoration comes along with the copy.
+                ui.button("Roster template (Google Sheets)", icon="open_in_new").props(
+                    f'outline dense href="{template_url}" target="_blank"'
+                )
+            else:  # dev fallback: no Drive template configured
+                ui.button("Empty template", icon="description").props(
+                    'outline dense href="/export/roster-template.csv"'
+                )
+        if linked:
             ui.label(
-                f"Last synced {timefmt.when_short(team_sheet.last_synced_at, tz)}"
-            ).classes("text-sm text-gray-500")
-    _sheet_import_block(is_admin)
+                "Edits sync into the database nightly (2:30), and the sheet is "
+                "rewritten to match. Nobody is ever removed by a sync — take a "
+                "member off the roster above instead. Anyone holding this link "
+                "can edit the sheet, so keep it among the people who help run "
+                "this team."
+            ).classes("text-sm text-gray-500 vdb-prose")
+        else:
+            ui.label(
+                "The nightly sync (2:30) creates a Google Sheet for this team's "
+                "roster; the link will appear here. Or copy the template, share "
+                "it as “anyone with the link can edit”, and link it yourself."
+            ).classes("text-sm text-gray-500 vdb-prose")
+        if team_sheet is not None:
+            if team_sheet.last_status == "error":
+                ui.label(f"Last sync failed: {team_sheet.last_error}").classes(
+                    "text-negative text-sm"
+                )
+            elif team_sheet.last_synced_at is not None:
+                ui.label(
+                    f"Last synced {timefmt.when_short(team_sheet.last_synced_at, tz)}"
+                ).classes("text-sm text-gray-500")
 
 
 async def _sync_sheet(team_id: int, direction: str) -> None:
@@ -564,109 +610,115 @@ def _sheet_import_block(is_admin: bool) -> None:
     reach anybody else's roster, and the dry-run -> preview -> apply flow is
     the one already covered by tests.
     """
-    heading("Import a .csv", level=3).classes("mt-2")
-    ui.label(
-        "1. DO NOT edit the ID Column. "
-        "2. Imports never delete anything and a blank cell never clears a "
-        "field; they only add and update. "
-        "3. Ensure import is congruent with provided template; "
-        "system will not accept any errors."
-        + (
-            ""
-            if is_admin
-            else " Rows are limited to the teams you lead; new volunteers must "
-            "be put on one of your teams in the same file."
-        )
-    ).classes("text-sm text-gray-500 vdb-prose")
-
-    report_area = ui.column().classes("w-full gap-2")
-
-    async def render_report(
-        report: importer.ImportReport, *, content: bytes, filename: str
-    ) -> None:
-        """The report, and -- for a clean dry run -- the Apply button with the
-        very file it will apply captured, so nothing has to be remembered."""
-        report_area.clear()
-        with report_area:
-            if report.applied:
-                heading("Import applied ✔", level=3).classes("text-positive")
-            elif report.has_errors:
-                ui.label("Not applied — fix the errors below and re-upload.").classes(
-                    "text-negative font-medium"
-                )
-            else:
-                ui.label("Dry run — nothing written yet.").classes(
-                    "text-amber-700 font-medium"
-                )
-            reactivated = (
-                f", {report.volunteers_reactivated} reactivated"
-                if report.volunteers_reactivated
-                else ""
+    with _plumbing(
+        "Import a .csv",
+        caption="Add and update members from a file; nothing is ever removed",
+        icon="upload_file",
+        open=False,
+        marker="panel-import",
+    ):
+        ui.label(
+            "1. DO NOT edit the ID Column. "
+            "2. Imports never delete anything and a blank cell never clears a "
+            "field; they only add and update. "
+            "3. Ensure import is congruent with provided template; "
+            "system will not accept any errors."
+            + (
+                ""
+                if is_admin
+                else " Rows are limited to the teams you lead; new volunteers must "
+                "be put on one of your teams in the same file."
             )
-            ui.label(
-                f"volunteers: +{report.volunteers_created} new, "
-                f"{report.volunteers_updated} updated{reactivated} · "
-                f"memberships: +{report.memberships_created} new, "
-                f"{report.memberships_updated} updated"
-            )
-            if report.warnings:
-                count = len(report.warnings)
-                # Warnings never block an import, so the ones that flag
-                # possible duplicates or a suspect ID are easy to scroll
-                # past. Put the count where the eye already is.
+        ).classes("text-sm text-gray-500 vdb-prose")
+
+        report_area = ui.column().classes("w-full gap-2")
+
+        async def render_report(
+            report: importer.ImportReport, *, content: bytes, filename: str
+        ) -> None:
+            """The report, and -- for a clean dry run -- the Apply button with the
+            very file it will apply captured, so nothing has to be remembered."""
+            report_area.clear()
+            with report_area:
+                if report.applied:
+                    heading("Import applied ✔", level=3).classes("text-positive")
+                elif report.has_errors:
+                    ui.label(
+                        "Not applied — fix the errors below and re-upload."
+                    ).classes("text-negative font-medium")
+                else:
+                    ui.label("Dry run — nothing written yet.").classes(
+                        "text-amber-700 font-medium"
+                    )
+                reactivated = (
+                    f", {report.volunteers_reactivated} reactivated"
+                    if report.volunteers_reactivated
+                    else ""
+                )
                 ui.label(
-                    f"⚠️ {count} warning{'' if count == 1 else 's'} — these do not "
-                    "stop the import. Possible duplicates and suspect IDs all "
-                    "appear here."
-                ).classes("text-amber-700 font-medium")
-            for issue in report.errors:
-                ui.label(f"❌ {issue.sheet} row {issue.row}: {issue.message}").classes(
-                    "text-negative text-sm"
+                    f"volunteers: +{report.volunteers_created} new, "
+                    f"{report.volunteers_updated} updated{reactivated} · "
+                    f"memberships: +{report.memberships_created} new, "
+                    f"{report.memberships_updated} updated"
                 )
-            for issue in report.warnings:
-                ui.label(f"⚠️ {issue.sheet} row {issue.row}: {issue.message}").classes(
-                    "text-amber-700 text-sm"
-                )
-            if not report.applied and not report.has_errors and content:
-                ui.button(
-                    "Apply this import",
-                    icon="publish",
-                    on_click=busy(lambda: apply_import(content, filename)),
-                ).props("color=positive")
+                if report.warnings:
+                    count = len(report.warnings)
+                    # Warnings never block an import, so the ones that flag
+                    # possible duplicates or a suspect ID are easy to scroll
+                    # past. Put the count where the eye already is.
+                    ui.label(
+                        f"⚠️ {count} warning{'' if count == 1 else 's'} — these do not "
+                        "stop the import. Possible duplicates and suspect IDs all "
+                        "appear here."
+                    ).classes("text-amber-700 font-medium")
+                for issue in report.errors:
+                    ui.label(
+                        f"❌ {issue.sheet} row {issue.row}: {issue.message}"
+                    ).classes("text-negative text-sm")
+                for issue in report.warnings:
+                    ui.label(
+                        f"⚠️ {issue.sheet} row {issue.row}: {issue.message}"
+                    ).classes("text-amber-700 text-sm")
+                if not report.applied and not report.has_errors and content:
+                    ui.button(
+                        "Apply this import",
+                        icon="publish",
+                        on_click=busy(lambda: apply_import(content, filename)),
+                    ).props("color=positive")
 
-    async def _import(content: bytes, *, dry_run: bool):
-        """run_import is an orchestrator with a unit of work of its own, so it
-        is not a command; the refusal to import at all is toasted here."""
-        async with page_ctx() as ctx:
-            user_id = ctx.actor.account.id  # run_import checks the right itself
-        report = await importer.run_import(
-            ctx.env, content, dry_run=dry_run, user_id=user_id
-        )
-        if isinstance(report, Err):
-            toast(report.error)
-            return None
-        return report.value
+        async def _import(content: bytes, *, dry_run: bool):
+            """run_import is an orchestrator with a unit of work of its own, so it
+            is not a command; the refusal to import at all is toasted here."""
+            async with page_ctx() as ctx:
+                user_id = ctx.actor.account.id  # run_import checks the right itself
+            report = await importer.run_import(
+                ctx.env, content, dry_run=dry_run, user_id=user_id
+            )
+            if isinstance(report, Err):
+                toast(report.error)
+                return None
+            return report.value
 
-    async def on_upload(e: events.UploadEventArguments) -> None:
-        content, filename = await e.file.read(), e.file.name
-        report = await _import(content, dry_run=True)
-        if report is not None:
+        async def on_upload(e: events.UploadEventArguments) -> None:
+            content, filename = await e.file.read(), e.file.name
+            report = await _import(content, dry_run=True)
+            if report is not None:
+                await render_report(report, content=content, filename=filename)
+
+        async def apply_import(content: bytes, filename: str) -> None:
+            report = await _import(content, dry_run=False)
+            if report is None:
+                return
             await render_report(report, content=content, filename=filename)
+            if report.applied:
+                success(f"Imported {filename}")
 
-    async def apply_import(content: bytes, filename: str) -> None:
-        report = await _import(content, dry_run=False)
-        if report is None:
-            return
-        await render_report(report, content=content, filename=filename)
-        if report.applied:
-            success(f"Imported {filename}")
-
-    ui.upload(
-        label="Drop a .csv file here (validated before anything is written)",
-        on_upload=on_upload,
-        auto_upload=True,
-        max_file_size=10_000_000,
-    ).props('accept=".csv"').classes("w-full")
+        ui.upload(
+            label="Drop a .csv file here (validated before anything is written)",
+            on_upload=on_upload,
+            auto_upload=True,
+            max_file_size=10_000_000,
+        ).props('accept=".csv"').classes("w-full")
 
 
 _IMPORT_ROWS = "Import its rows into the database"
@@ -1299,12 +1351,6 @@ async def team_detail(team_id: int, as_of: str = ""):
         _team_actions(room, is_admin=actor.is_admin, as_of=as_of)
         if room.anniversaries:
             _anniversaries_banner(room.anniversaries)
-        # core members included on purpose: leaders are often elderly and a
-        # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
-        if room.can_full and room.live:
-            _home_page_section(
-                room.team, room.page, team_id, room.slug, ctx.base_url, tz=tz
-            )
         if room.children:
             _subteams_row(room.children)
         picker = (
@@ -1321,10 +1367,19 @@ async def team_detail(team_id: int, as_of: str = ""):
             tz=tz,
             picker=picker,
         )
-        if room.can_manage:
-            _sheet_section(room.sheet, team_id, actor.is_admin, tz=tz)
         if room.upcoming_events:
             _upcoming_events_section(room.upcoming_events, tz)
+        # the plumbing, folded under what the reader came for (4a2603d's
+        # order: chrome, then the roster, then the plumbing)
+        if room.can_manage:
+            _sheet_section(room.sheet, team_id, actor.is_admin, tz=tz)
+            _sheet_import_block(actor.is_admin)
+        # core members included on purpose: leaders are often elderly and a
+        # public page nobody can refresh goes stale (api/teams.py:set_home_doc)
+        if room.can_full and room.live:
+            _home_page_section(
+                room.team, room.page, team_id, room.slug, ctx.base_url, tz=tz
+            )
 
 
 async def _add_member(team_id: int, volunteer_id: int | None, role_value: str) -> None:

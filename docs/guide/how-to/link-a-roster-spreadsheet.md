@@ -5,7 +5,7 @@ Keep the roster of your team in a Google Sheet that you and your helpers edit, a
 ## Before you start
 
 - You are signed in as a leader or second-in-command of the team, or of a team above it.
-- You look at today, not at a past date. The *Roster spreadsheet* section is hidden on an as-of view.
+- You look at today, not at a past date. The *Roster spreadsheet* panel is hidden on an as-of view.
 - You have a Google account.
 - If you do nothing, the site makes a sheet for the team at the nightly sync (2:30), and the link appears in the section. Follow the steps to use your own copy of the template instead.
 
@@ -14,7 +14,7 @@ Keep the roster of your team in a Google Sheet that you and your helpers edit, a
 ### Make the sheet
 
 1. Open *Teams* and click the team.
-2. Under *Roster spreadsheet*, click *Roster template (Google Sheets)*.
+2. Open the panel *Roster spreadsheet* under the roster. Click *Roster template (Google Sheets)*.
 3. In Google Sheets, click *File*, then *Make a copy*.
 4. In the copy, click *Share*.
 5. Choose *Anyone with the link*, with the right *Editor*. *Viewer* is not enough.

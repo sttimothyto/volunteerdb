@@ -581,6 +581,26 @@ body.body--dark .text-amber-900 { color: #e5c08a; }
 body.body--dark .bg-red-50 { background-color: #362222; }
 body.body--dark .bg-blue-50 { background-color: #26303a; }
 
+/* ---------- the plumbing panels under a roster (ui/teams_page.py) ---------- */
+
+.vdb-plumbing {
+  border: 1px solid var(--vdb-rule);
+  border-radius: 4px;
+  background-color: var(--vdb-surface);
+}
+
+.vdb-plumbing .q-item__label {
+  font-family: var(--vdb-display);
+  letter-spacing: 0.04em;
+  color: var(--vdb-heading);
+}
+
+.vdb-plumbing .q-item__label--caption {
+  font-family: var(--vdb-serif);
+  letter-spacing: normal;
+  color: var(--vdb-muted);
+}
+
 /* ---------- the team-weights table (ui/workload_admin_page.py) ---------- */
 
 .vdb-weights .vdb-weight {

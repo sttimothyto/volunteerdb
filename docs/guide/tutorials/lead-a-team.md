@@ -12,8 +12,8 @@ In this tutorial you lead a team: you add a member, change a role, and invite a 
 
 1. Click *Dashboard* in the header.
 2. Under *My teams*, click the team you lead.
-3. Find the sections that only a leader or a second sees: *Add member* and *Roster spreadsheet*.
-4. Find the section *Volunteer home page*. Core team members see this one too.
+3. Find the section *Add member*, which only a leader or a second sees.
+4. Under the roster, find the panels *Roster spreadsheet*, *Import a .csv* and *Volunteer home page*. A click on a title opens the panel.
 
 You see the team page with these extra sections, and a role button on every row of the *Roster*. At the top are the buttons *Export roster (.csv)*, *Copy email list* and *Email all (BCC)*.
 
@@ -54,7 +54,7 @@ You see the badge *invite sent* on that row. The link went to the mailbox of the
 
 Every team can keep its roster in a Google Sheet. If you do nothing, the site makes one for your team at the nightly sync (2:30). In this section you link your own copy of the template instead.
 
-1. Find the section *Roster spreadsheet*.
+1. Find the panel *Roster spreadsheet* under the roster, and open it.
 2. Click *Roster template (Google Sheets)*.
 3. In Google Sheets, click *File*, then *Make a copy*.
 4. In the copy, click *Share*.
@@ -78,7 +78,7 @@ You see a spinner on *Save* while the site syncs, then a green message with the 
 2. Click *Share*.
 3. Choose *Anyone with the link*, with the right *Viewer*.
 4. Copy the link of the document.
-5. On the team page, find the section *Volunteer home page*.
+5. On the team page, find the panel *Volunteer home page* under the roster, and open it.
 6. Click *Set home page doc*.
 7. Paste the link in *Google Doc link* in the dialog *Team home page doc*.
 8. Click *Save*.
