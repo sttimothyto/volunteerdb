@@ -161,12 +161,21 @@ async def test_a_finger_gets_44px_targets(seeded, browser, base_url):
         await ready(page)
         await page.goto("/teams/%d" % seeded["team_id"])
         await ready(page)
-        remove = page.get_by_role("button", name=re.compile("^Remove .* from the team"))
-        box = await remove.first.bounding_box()
-        assert box and box["width"] >= 44 and box["height"] >= 44, box
-        name = page.locator(".vdb-rowbtn").first
-        box = await name.bounding_box()
-        assert box and box["height"] >= 44, box
+        # the roster arrives after the handshake and Quasar lays the table
+        # out in its own time: poll the boxes rather than measure once
+        await page.wait_for_function(
+            """() => {
+                const b = document.querySelector('button[aria-label^="Remove "]');
+                const r = b && b.getBoundingClientRect();
+                return !!r && r.width >= 44 && r.height >= 44;
+            }"""
+        )
+        await page.wait_for_function(
+            """() => {
+                const n = document.querySelector('.vdb-rowbtn');
+                return !!n && n.getBoundingClientRect().height >= 44;
+            }"""
+        )
     finally:
         await context.close()
 
