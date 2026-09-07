@@ -15,11 +15,32 @@
   src: url("/static/fonts/cinzel-v11-latin-regular.woff2") format("woff2");
 }
 
+/* the body serif, self-hosted so a phone and a Linux desktop read the same
+   face as a Mac with Palatino (static/fonts/README.md); bold is a real
+   face too, since font-medium is everywhere, and italic is synthesised */
+@font-face {
+  font-family: "TeX Gyre Pagella";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/texgyrepagella-regular-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "TeX Gyre Pagella";
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url("/static/fonts/texgyrepagella-bold-latin.woff2") format("woff2");
+}
+
 /* ---------- tokens ---------- */
 
 :root {
-  --vdb-serif: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  --vdb-display: "Cinzel", Palatino, "Palatino Linotype", Georgia, serif;
+  --vdb-serif: "TeX Gyre Pagella", Palatino, "Palatino Linotype", "Book Antiqua",
+    Georgia, serif;
+  --vdb-display: "Cinzel", "TeX Gyre Pagella", Palatino, "Palatino Linotype",
+    Georgia, serif;
 
   --vdb-bg: #fdf6e3;
   --vdb-surface: #fffbee;

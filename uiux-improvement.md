@@ -374,7 +374,7 @@ screens that changed, and ends with the full suite green in its own commit.
   (`layout.py:128-143`) and the pending-email line (`account_page.py:255`);
   `test_theme_contrast.py` gains a sweep asserting every Tailwind tint class used in
   `ui/` is remapped for dark in `theme.css`.
-- [ ] **34. (Optional, Ben's call) A self-hosted body serif.** `--vdb-serif` falls
+- [x] **34. (Optional, Ben's call) A self-hosted body serif.** `--vdb-serif` falls
   through to a generic serif on Linux and Android, so the site reads differently per
   device. One libre Palatino-alike (TeX Gyre Pagella, ~60 KB woff2, latin subset)
   preloaded like Cinzel would make the face the same everywhere. Yes, do this.

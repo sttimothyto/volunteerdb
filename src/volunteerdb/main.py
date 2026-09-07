@@ -314,11 +314,12 @@ def create_app(env: env_mod.Env | None = None) -> None:
         info="#4C7086",
         muted="#6B6255",
     )
-    ui.add_head_html(
-        '<link rel="preload" href="/static/fonts/cinzel-v11-latin-regular.woff2" '
-        'as="font" type="font/woff2" crossorigin>',
-        shared=True,
-    )
+    for font in ("cinzel-v11-latin-regular", "texgyrepagella-regular-latin"):
+        ui.add_head_html(
+            f'<link rel="preload" href="/static/fonts/{font}.woff2" '
+            'as="font" type="font/woff2" crossorigin>',
+            shared=True,
+        )
     ui.add_head_html(
         f'<link rel="stylesheet" href="{static_url("theme.css")}">', shared=True
     )
