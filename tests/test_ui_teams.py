@@ -356,6 +356,20 @@ async def test_asof_snapshot_announces_itself_and_offers_a_way_back(database):
         await user.should_see("Read-only snapshot as of")
         await user.should_see("Back to now")
 
+        # the snapshot does not end silently: the links to the pages that can
+        # show it carry the date, and the banner names the ones that show today
+        await user.should_see("Volunteers, Events and Elections show today.")
+        hrefs = {
+            b.text: b.props["href"]
+            for b in user.find(kind=ui.button).elements
+            if b.props.get("href") and b.text in ("Teams", "Volunteers", "Events")
+        }
+        assert hrefs["Teams"] == f"/teams?as_of={today}"
+        assert hrefs["Volunteers"] == "/volunteers"
+        assert hrefs["Events"] == "/events"
+        home = only(user.find(kind=ui.link, content="Dashboard"))
+        assert home.props["href"] == f"/?as_of={today}"
+
 
 async def test_a_snapshot_from_before_the_team_existed_says_so(database):
     """/teams/{id}?as_of=<a date before it was created> is a page that says

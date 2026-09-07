@@ -50,7 +50,7 @@ The settings menu holds:
 | *Manual* | Opens this manual in a new tab. |
 | *View as of (YYYY-MM-DD)* and *View* | Show the page as it was on a past date. Only the *Dashboard*, the *Teams* page and a team page have it. |
 
-- With a past date set, the gear turns amber. The page shows the banner *Read-only snapshot as of …* with the button *Back to now*.
+- With a past date set, the gear turns amber. The page shows the banner *Read-only snapshot as of …* with the button *Back to now*. The banner also says *Volunteers, Events and Elections show today.*: the links *Dashboard* and *Teams* keep the date, the other links do not.
 - An administrator also sees a banner when the site nears its email limit. It reads *Email sending is heading over its limit*, or *Email sending is over its limit*.
 
 ## Dashboard

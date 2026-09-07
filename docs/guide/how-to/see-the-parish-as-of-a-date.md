@@ -22,6 +22,7 @@ Open the *Dashboard*, the *Teams* page or a team page as it was at the end of a 
 - The gear icon turns yellow while you read a snapshot.
 - A date means the end of that day. The page includes every change made on that day.
 - The team pages, the roster and the side panel of a volunteer follow the snapshot. Links between them keep the date.
+- The header's links *Dashboard* and *Teams* keep the date too. *Volunteers*, *Events* and *Elections* show today, and the banner says so.
 - On the *Dashboard*, the note under *Parish* says that shifts, elections and sign-ins are left out.
 - You cannot change anything on a snapshot. The buttons that edit are not on the page.
 

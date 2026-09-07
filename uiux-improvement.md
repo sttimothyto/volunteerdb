@@ -249,7 +249,7 @@ screens that changed, and ends with the full suite green in its own commit.
   small `?` icon button at the end of the title row that opens the manual page for
   this screen in a new tab (`help_links.py` already maps topics). Every framed page
   passes a slug. The dashboard's Guides band shrinks in step 25 because of this.
-- [ ] **12. A snapshot does not silently end.** While `as_of` is set, the header's
+- [x] **12. A snapshot does not silently end.** While `as_of` is set, the header's
   links to the pages that support it (`/`, `/teams`, `/teams/{id}`) carry the
   parameter (`layout.py:35-46`), and the as-of banner says which pages show today
   ("Volunteers, Events and Elections show today"). The panel's *Full profile* keeps

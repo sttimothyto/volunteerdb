@@ -180,8 +180,14 @@ class VolunteerPanel:
                     ).classes("text-sm")
                     role_badge(membership.role)
 
-            ui.button("Full profile", icon="open_in_new").props(
-                # the detail page is live-only now: no as-of query to carry over
-                f'dense outline href="/volunteers/{volunteer_id}"'
-            ).classes("mt-3")
+            full = (
+                ui.button("Full profile", icon="open_in_new")
+                .props(
+                    # the detail page is live-only now: no as-of query to carry over
+                    f'dense outline href="/volunteers/{volunteer_id}"'
+                )
+                .classes("mt-3")
+            )
+            if self.at is not None:
+                full.tooltip("The profile page shows today, not the snapshot")
         self.drawer.show()

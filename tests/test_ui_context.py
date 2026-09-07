@@ -66,3 +66,24 @@ def test_parse_as_of_rejects_garbage():
     assert parse_as_of("not-a-date", TZ) is None
     assert parse_as_of("2024-13-45", TZ) is None
     assert parse_as_of(None, TZ) is None
+
+
+def test_as_of_query_reads_back_as_the_same_instant():
+    """The header carries a snapshot on its links as the shortest value
+    parse_as_of maps back to it: a bare date for the end of a parish day
+    (what a typed date means), the full timestamp otherwise."""
+    from urllib.parse import unquote
+
+    from volunteerdb.ui.asof import as_of_query
+
+    tz = ZoneInfo("America/Toronto")
+    typed = parse_as_of("2026-07-30", tz)
+    assert typed is not None
+    assert as_of_query(typed) == "2026-07-30"
+    assert parse_as_of(as_of_query(typed), tz) == typed
+
+    exact = parse_as_of("2026-07-30T10:15:00-04:00", tz)
+    assert exact is not None
+    query = as_of_query(exact)
+    assert "T10:15" in unquote(query) and "+" not in query and " " not in query
+    assert parse_as_of(unquote(query), tz) == exact

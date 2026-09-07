@@ -9,7 +9,7 @@ from ..services import mail_quota
 from ..services import photos as photo_service
 from . import help_links
 from .a11y import heading, icon_button
-from .asof import asof_banner, asof_picker
+from .asof import as_of_query, asof_banner, asof_picker, with_as_of
 from .context import clear_session, flash, show_flashed
 from .logo_dialog import site_logo
 from .photo_dialog import open_photo_dialog
@@ -43,6 +43,9 @@ def frame(
     # a page to say it on
     show_flashed()
     here = _current_path()
+    # while a snapshot is open, the links to the pages that can show it
+    # carry the date; the others show today, and the banner says so
+    snapshot = as_of_query(as_of) if as_of is not None else ""
     nav_items = [
         ("Teams", "/teams"),
         ("Volunteers", "/volunteers"),
@@ -62,7 +65,9 @@ def frame(
         # the parish's own mark, ahead of the brand word it belongs to;
         # clickable for an admin, which is how a logo gets replaced
         site_logo(actor, classes="h-8 w-auto mr-2")
-        home = ui.link("Dashboard", "/").classes("text-lg vdb-brand vdb-quiet")
+        home = ui.link("Dashboard", with_as_of("/", snapshot)).classes(
+            "text-lg vdb-brand vdb-quiet"
+        )
         if here == "/":
             home.props('aria-current="page"')
         # the nav cluster sits against the brand, split from it by a double rule
@@ -84,7 +89,8 @@ def frame(
                 # aria-current names the page the reader is on; theme.css
                 # underlines it in the accent (2.4.8, and the eye's own map)
                 ui.button(label).props(
-                    f'flat color=white dense href="{target}"' + _current(here, target)
+                    f'flat color=white dense href="{with_as_of(target, snapshot)}"'
+                    + _current(here, target)
                 )
         with (
             ui.button(icon="menu")
@@ -94,7 +100,8 @@ def frame(
             with ui.menu():
                 for label, target in nav_items:
                     ui.menu_item(label).props(
-                        f'href="{target}"' + _current(here, target)
+                        f'href="{with_as_of(target, snapshot)}"'
+                        + _current(here, target)
                     )
         ui.space()
         _account_menu(actor)
