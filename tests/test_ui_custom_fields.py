@@ -14,7 +14,7 @@ from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import custom_fields, users, volunteers
 
 from tests import mint
-from tests.conftest import SIM_MAIN, db_session, only
+from tests.conftest import SIM_MAIN, db_session, details_on, only
 from tests.fp_helpers import ok
 
 
@@ -78,9 +78,9 @@ async def test_the_profile_reads_values_by_type_and_names_the_rest(database):
         await user.should_not_see("PT3H30M")
         await user.should_not_see("16:00:00")
         # the two empty fields are one line, not two dashes
-        assert (
-            only(user.find(marker="not-recorded")).text
-            == "Not recorded: Previous parish, T-shirt size"
+        assert details_on(user)["Not recorded"] == "Previous parish, T-shirt size"
+        assert only(user.find(marker="not-recorded")).text == (
+            "Previous parish, T-shirt size"
         )
         await user.should_not_see("Previous parish: —")
 

@@ -43,6 +43,8 @@ from .volunteer_panel import VolunteerPanel, custom_field_lines, format_custom
 from .widgets import (
     ROLE_OPTIONS,
     denied,
+    detail,
+    details,
     empty_state,
     inactive_badge,
     phase_badge,
@@ -330,19 +332,21 @@ async def _reload_page(message: str) -> None:
 
 
 def _contact_details(profile: VolunteerProfile, tz: ZoneInfo) -> None:
+    """The lines of the card's details list (widgets.details) that only
+    those who may read contact details see."""
     volunteer = profile.volunteer
-    ui.label(f"Email: {volunteer.email or '—'}").classes("text-sm text-gray-700")
-    ui.label(f"Phone: {volunteer.phone or '—'}").classes("text-sm text-gray-700")
+    detail("Email", volunteer.email or "—")
+    detail("Phone", volunteer.phone or "—")
     custom_field_lines(profile.field_defs, volunteer.custom, tz)
     if profile.can_edit and volunteer.notes:
-        ui.label(f"Notes: {volunteer.notes}").classes("text-sm text-gray-700")
+        detail("Notes", volunteer.notes)
     hours = profile.hours
     if hours is not None and hours.events_attended:
-        ui.label(
-            f"Service hours: {hours.total_hours:g} h across "
-            f"{hours.events_attended} event"
-            f"{'s' if hours.events_attended != 1 else ''}"
-        ).classes("text-sm text-gray-700").tooltip(
+        detail(
+            "Service hours",
+            f"{hours.total_hours:g} h across {hours.events_attended} event"
+            f"{'s' if hours.events_attended != 1 else ''}",
+        ).tooltip(
             "Derived from event attendance: scheduled duration "
             "unless a leader recorded an exception"
         )
@@ -384,31 +388,30 @@ def _profile_card(
                     icon="delete",
                     on_click=lambda: _delete_volunteer(volunteer.id),
                 ).props("dense outline color=negative")
-        if profile.can_view:
-            _contact_details(profile, tz)
-        else:
+        if not profile.can_view:
             ui.label(
                 "Contact details visible to their team leaders and core members."
             ).classes("text-sm text-gray-400 italic")
-        with ui.row().classes("items-center gap-2 no-wrap"):
-            ui.label(f"Last login: {last_login_text(profile.account)}").classes(
-                "text-sm text-gray-700"
-            )
-            # just the control here: the line above already says the status
-            if (
-                actor.can_invite_volunteer(profile.team_ids)
-                and volunteer.is_active
-                and invitable(profile.account)
-            ):
-                invites.invite_control(
-                    volunteer.id,
-                    volunteer.full_name,
-                    volunteer.email,
-                    profile.account,
-                    base_url,
-                    reveal=actor.is_admin,
-                    where="profile",
-                )
+        with details():
+            if profile.can_view:
+                _contact_details(profile, tz)
+            with detail("Last login"), ui.row().classes("items-center gap-2 no-wrap"):
+                ui.label(last_login_text(profile.account))
+                # just the control here: the words beside it say the status
+                if (
+                    actor.can_invite_volunteer(profile.team_ids)
+                    and volunteer.is_active
+                    and invitable(profile.account)
+                ):
+                    invites.invite_control(
+                        volunteer.id,
+                        volunteer.full_name,
+                        volunteer.email,
+                        profile.account,
+                        base_url,
+                        reveal=actor.is_admin,
+                        where="profile",
+                    )
 
 
 def _serves_on_section(profile: VolunteerProfile, actor: Actor) -> None:

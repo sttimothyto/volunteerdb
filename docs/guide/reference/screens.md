@@ -219,7 +219,7 @@ The title is the person's name. A reader who is not *core* on one of the person'
 The sections, from the top:
 
 - The top card: the photo, the name, the badge *inactive*, and for *admin* and *leaders* the badge *workload: band · score*.
-- Under them, for *core* and the person: *Email:*, *Phone:*, 1 line per custom field with a value, and *Service hours: N h across N events*. The line *Not recorded:* names the custom fields with no value. A duration reads *3 h 30 min*, a time *4:00 PM*, a date *May 5, 2021*. *Notes:* shows for *leaders*, *admin* and the person. Others see *Contact details visible to their team leaders and core members.*
+- Under them, for *core* and the person: *Email:*, *Phone:*, 1 line per custom field with a value, and *Service hours: N h across N events*. The line *Not recorded:* names the custom fields with no value. The values stand in 1 column, past the longest label, and on a phone each pair is 1 line. A duration reads *3 h 30 min*, a time *4:00 PM*, a date *May 5, 2021*. *Notes:* shows for *leaders*, *admin* and the person. Others see *Contact details visible to their team leaders and core members.*
 - *Last login:* the date and time, *never signed in*, *no VolunteerDB account*, or the date with *— account disabled*. Everyone sees it. Next to it, *core* see the button *Invite* or *Re-invite* when an invitation makes sense.
 - In the *Edit* dialog, your own *Email* is different. The site sends a confirmation link to the new address, and nothing changes until you open it.
 - *Serves on*: 1 row per team, with the role. *Not on any team.* when there is none.

@@ -10,6 +10,7 @@ from typing import Any
 
 from nicegui import helpers, ui
 from nicegui.elements.mixins.disableable_element import DisableableElement
+from nicegui.elements.mixins.text_element import TextElement
 from nicegui.events import ClickEventArguments
 
 from .. import timefmt
@@ -97,6 +98,31 @@ def busy(
                     button.enable()
 
     return run
+
+
+def details() -> ui.element:
+    """A list of labelled values -- "Email:", "Phone:", "Last login:" and
+    what each one is -- as the `dl` it is to a screen reader, laid out by
+    theme.css (.vdb-details) so every value starts at one x, just past the
+    longest label: the label column is as wide as its widest entry,
+    whichever that is on this page, so a custom field with a longer name
+    moves the values over together. Where the list is narrow (a phone,
+    the side panel) each pair is one flowing line, "Email: x". Filled with
+    `detail`; the size and colour of the words are set here once and
+    inherited."""
+    return ui.element("dl").classes("vdb-details w-full text-sm text-gray-700")
+
+
+def detail(label: str, text: str = "", *, classes: str = "") -> TextElement:
+    """One line of a `details` list: the label, with its colon, and the
+    value. Returns the value's element (a `dd`) for a tooltip or a marker,
+    or -- left empty, `text` "" -- for the caller to fill: the Last login
+    line keeps its Invite button beside its words. `classes` go on the
+    value: `font-mono` for a UUID, `text-gray-500` for the fields not
+    recorded."""
+    with ui.element("div"):  # the pair: one grid row, or one line
+        TextElement(tag="dt", text=f"{label}:")
+        return TextElement(tag="dd", text=text).classes(classes)
 
 
 def role_badge(role: TeamRole) -> ui.badge:

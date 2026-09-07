@@ -28,6 +28,8 @@ import sqlalchemy as sa
 import structlog
 from fastapi import FastAPI
 from nicegui import Client, app
+from nicegui.element import Element
+from nicegui.elements.mixins.text_element import TextElement
 from nicegui.storage import Storage
 from nicegui.testing.user import User
 from nicegui.testing.user_simulation import user_simulation
@@ -347,6 +349,45 @@ def env_sent(env) -> list[tuple[str, str, str]]:
     """What the Env's mailer (the API's, a job's) sent: fresh per test, since
     the Env is."""
     return env.mailer.sent
+
+
+def _words(element: Element) -> str:
+    """The element's text and its descendants', in order, joined by spaces."""
+    own = element.text if isinstance(element, TextElement) else ""
+    kids = [_words(child) for child in element.default_slot.children]
+    return " ".join(words for words in (own, *kids) if words)
+
+
+def details_on(user: User) -> dict[str, str]:
+    """Every labelled value on the page (ui/widgets.py detail) by its label,
+    without the colon: {"Email": "maria@example.org", ...}. A value the
+    caller filled with elements of its own -- Last login's words and its
+    Invite button -- reads as their texts joined: "never signed in Invite"."""
+    found: dict[str, str] = {}
+    for term in user.find(kind=TextElement).elements:
+        if term.tag != "dt" or term.parent_slot is None:
+            continue
+        pair = term.parent_slot.parent.default_slot.children
+        found[term.text.removesuffix(":")] = _words(pair[pair.index(term) + 1])
+    return found
+
+
+async def should_see_detail(
+    user: User, label: str, value: str, *, retries: int = 3
+) -> None:
+    """The page's details list (ui/widgets.py detail) has a `label` line
+    and it says `value`: ("Email", "maria@example.org"). A substring, as
+    should_see's is, and the same `retries` of a tenth of a second for a
+    page still drawing. These lines were one string each, "Email:
+    maria@example.org", until the label and the value became two cells;
+    should_see matches one element at a time and cannot join them back."""
+    found: dict[str, str] = {}
+    for _ in range(retries):
+        found = details_on(user)
+        if value in found.get(label, ""):
+            return
+        await asyncio.sleep(0.1)
+    raise AssertionError(f"expected the {label} line to say {value!r}; saw {found}")
 
 
 def only[T](found) -> T:

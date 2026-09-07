@@ -25,7 +25,7 @@ from .account_status import invitable, last_login_text
 from .asof import parse_as_of
 from .context import page_ctx, success, warn
 from .photo_dialog import photo_avatar
-from .widgets import inactive_badge, role_badge, workload_badge
+from .widgets import detail, details, inactive_badge, role_badge, workload_badge
 
 
 def format_custom(defn: CustomFieldDef, value, tz: ZoneInfo) -> str:
@@ -39,7 +39,8 @@ def custom_field_lines(
     """The custom fields of a record, one line each for those with a value,
     then one muted line naming the empty ones ("Not recorded: T-shirt
     size, Years in the parish"): a core member still sees what could be
-    filled in, without ten "—" lines ahead of the notes. Shared by the
+    filled in, without ten "—" lines ahead of the notes. Lines of a
+    `details` list (ui/widgets.py), so called inside one; shared by the
     profile card and the side panel."""
     unset: list[str] = []
     for defn in defs:
@@ -47,20 +48,16 @@ def custom_field_lines(
         if value is None:
             unset.append(defn.label)
             continue
-        text = format_custom(defn, value, tz)
-        with ui.row().classes("items-baseline gap-1 no-wrap"):
-            ui.label(f"{defn.label}:").classes("text-sm text-gray-700")
-            ui.label(text).classes(
-                "text-sm text-gray-700"
-                + (
-                    " font-mono"
-                    if fieldcodec.is_mono(FieldType(defn.field_type))
-                    else ""
-                )
-            )
+        detail(
+            defn.label,
+            format_custom(defn, value, tz),
+            classes=(
+                "font-mono" if fieldcodec.is_mono(FieldType(defn.field_type)) else ""
+            ),
+        )
     if unset:
-        ui.label(f"Not recorded: {', '.join(unset)}").classes(
-            "text-sm text-gray-500 vdb-prose"
+        detail(
+            "Not recorded", ", ".join(unset), classes="text-gray-500 vdb-prose"
         ).mark("not-recorded")
 
 
@@ -157,38 +154,33 @@ class VolunteerPanel:
                         inactive_badge()
                     if volunteer_id in wl:
                         workload_badge(*wl[volunteer_id], prefix="workload: ")
-            if can_view:
-                ui.label(f"Email: {volunteer.email or '—'}").classes(
-                    "text-sm text-gray-700"
-                )
-                ui.label(f"Phone: {volunteer.phone or '—'}").classes(
-                    "text-sm text-gray-700"
-                )
-                custom_field_lines(field_defs, volunteer.custom, tz)
-                if can_edit and volunteer.notes:
-                    ui.label(f"Notes: {volunteer.notes}").classes(
-                        "text-sm text-gray-700"
-                    )
-            else:
+            if not can_view:
                 ui.label(
                     "Contact details visible to their team leaders and core members."
                 ).classes("text-sm text-gray-400 italic")
-
-            # outside the can_view gate, like the profile page's Last login line
-            with ui.row().classes("items-center gap-2 no-wrap"):
-                ui.label(f"Last login: {last_login_text(account)}").classes(
-                    "text-sm text-gray-700"
-                )
-                if can_invite and invitable(account):
-                    invites.invite_control(
-                        volunteer_id,
-                        volunteer.full_name,
-                        volunteer.email,
-                        account,
-                        self.base_url,
-                        reveal=reveal_invite,
-                        where="detail",
-                    )
+            with details():
+                if can_view:
+                    detail("Email", volunteer.email or "—")
+                    detail("Phone", volunteer.phone or "—")
+                    custom_field_lines(field_defs, volunteer.custom, tz)
+                    if can_edit and volunteer.notes:
+                        detail("Notes", volunteer.notes)
+                # outside the can_view gate, like the profile page's Last login line
+                with (
+                    detail("Last login"),
+                    ui.row().classes("items-center gap-2 no-wrap"),
+                ):
+                    ui.label(last_login_text(account))
+                    if can_invite and invitable(account):
+                        invites.invite_control(
+                            volunteer_id,
+                            volunteer.full_name,
+                            volunteer.email,
+                            account,
+                            self.base_url,
+                            reveal=reveal_invite,
+                            where="detail",
+                        )
 
             heading("Serves on", level=3).classes("mt-2")
             if not assignments:

@@ -20,7 +20,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
-from .conftest import SIM_MAIN, SLOW, mail_to
+from .conftest import SIM_MAIN, SLOW, mail_to, should_see_detail
 from tests import mint
 from tests.conftest import db_session
 from tests.fp_helpers import done, ok, otp_started, refused
@@ -516,7 +516,7 @@ async def test_a_leader_correcting_someone_elses_address_applies_at_once(databas
         user.find(marker="edit-email").type("felix@example.org")
         user.find("Save", kind=ui.button).click()
         # the profile behind the dialog redraws with the corrected address
-        await user.should_see("Email: felix@example.org", retries=SLOW)
+        await should_see_detail(user, "Email", "felix@example.org", retries=SLOW)
 
     async with db_session() as session:
         assert (await volunteers.get(session, member_id)).email == "felix@example.org"

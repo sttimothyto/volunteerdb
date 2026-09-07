@@ -23,7 +23,7 @@ from volunteerdb.models import TeamRole
 from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
-from .conftest import SIM_MAIN, SLOW, mail_to, only
+from .conftest import SIM_MAIN, SLOW, mail_to, only, should_see_detail
 from tests import mint
 from tests.conftest import db_session
 from tests.fakes import SIM_MAILER
@@ -245,7 +245,7 @@ async def test_the_profile_page_offers_the_same_control(database, sent):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['lena_u']}")
         await user.open(f"/volunteers/{ids['nils']}")
-        await user.should_see("Last login: no VolunteerDB account")
+        await should_see_detail(user, "Last login", "no VolunteerDB account")
 
         user.find(marker=f"invite-profile-{ids['nils']}").click()
         await user.should_see("Send an invite to Nils Nobody?", retries=SLOW)
@@ -352,7 +352,9 @@ async def test_the_side_panel_offers_the_same_button(database, sent):
         user.find(marker="roster").trigger(
             "rowClick", args=[None, {"volunteer_id": ids["nils"]}, 0]
         )
-        await user.should_see("Last login: no VolunteerDB account", retries=SLOW)
+        await should_see_detail(
+            user, "Last login", "no VolunteerDB account", retries=SLOW
+        )
         button = only(user.find(marker=f"invite-detail-{ids['nils']}"))
         assert isinstance(button, ui.button) and button.text == "Invite"
         assert button.props.get("outline"), "a plain button, no hover face"

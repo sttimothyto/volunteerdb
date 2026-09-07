@@ -15,7 +15,7 @@ from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
-from tests.conftest import SIM_MAIN, db_session, only
+from tests.conftest import SIM_MAIN, db_session, only, should_see_detail
 from tests.fp_helpers import ok
 
 # late morning in Toronto, so the rendered date is the same day in any
@@ -141,13 +141,13 @@ async def test_last_login_shows_on_a_profile_the_viewer_cannot_read(database):
 
         await user.open(f"/volunteers/{ids['nils']}")
         await user.should_see("Contact details visible to their team leaders")
-        await user.should_see("Last login: no VolunteerDB account")
+        await should_see_detail(user, "Last login", "no VolunteerDB account")
 
         await user.open(f"/volunteers/{ids['opal']}")
-        await user.should_see("Last login: Sun, Mar 1")
+        await should_see_detail(user, "Last login", "Sun, Mar 1")
 
         await user.open(f"/volunteers/{ids['quin']}")
         await user.should_see("account disabled")
 
         await user.open(f"/volunteers/{ids['mia']}")
-        await user.should_see("Last login: never signed in")
+        await should_see_detail(user, "Last login", "never signed in")

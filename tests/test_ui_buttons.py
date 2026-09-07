@@ -10,7 +10,7 @@ from volunteerdb.services import events as event_service
 
 from tests import mint
 from tests.actors import as_volunteer
-from tests.conftest import SIM_MAIN, SLOW, db_session, only
+from tests.conftest import SIM_MAIN, SLOW, db_session, only, should_see_detail
 from tests.fp_helpers import ok
 from tests.test_ui_events import _parish, _seed_event
 
@@ -38,7 +38,7 @@ async def test_names_photos_and_the_logo_are_buttons(database):
         assert "vdb-namebtn" in name.classes
         assert name.props["aria-label"].startswith("Mia Member")
         user.find("Mia Member", kind=ui.button).click()
-        await user.should_see("Email: mia@example.org", retries=SLOW)
+        await should_see_detail(user, "Email", "mia@example.org", retries=SLOW)
 
         # the photo on the profile page, for somebody who may change it
         await user.open(f"/volunteers/{ids['mia']}")

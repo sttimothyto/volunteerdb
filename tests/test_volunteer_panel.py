@@ -18,7 +18,7 @@ from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
-from .conftest import SIM_MAIN, SLOW, mail_to, only
+from .conftest import SIM_MAIN, SLOW, mail_to, only, should_see_detail
 from tests import mint
 from tests.conftest import db_session
 from tests.fp_helpers import ok
@@ -97,14 +97,14 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, sim_sent):
         user.find(marker="roster").trigger(
             "rowClick", args=[None, {"volunteer_id": maria_id}, 0]
         )
-        await user.should_see("Email: maria@example.org")
-        await user.should_see("Phone: 555-1234")
+        await should_see_detail(user, "Email", "maria@example.org")
+        await should_see_detail(user, "Phone", "555-1234")
         await user.should_see("Serves on")
 
         # volunteers list: a table rowClick does the same
         await user.open("/volunteers")
         user.find(kind=ui.table).trigger("rowClick", args=[None, {"id": maria_id}, 0])
-        await user.should_see("Email: maria@example.org")
+        await should_see_detail(user, "Email", "maria@example.org")
 
         # dashboard graph: clicking a volunteer node does the same (the
         # panel is folded until asked for; ?graph=all opens it with the page)
@@ -112,7 +112,7 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, sim_sent):
         user.find(kind=CytoscapeGraph).trigger(
             "node_click", args={"type": "volunteer", "volunteer_id": maria_id}
         )
-        await user.should_see("Email: maria@example.org")
+        await should_see_detail(user, "Email", "maria@example.org")
 
         # volunteer detail: Gantt timeline replaced the as-of box
         await user.open(f"/volunteers/{maria_id}")

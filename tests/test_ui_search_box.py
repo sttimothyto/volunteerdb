@@ -13,7 +13,7 @@ from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
 
 from tests import mint
-from tests.conftest import SIM_MAIN, SLOW, db_session, only
+from tests.conftest import SIM_MAIN, SLOW, db_session, only, should_see_detail
 from tests.fp_helpers import done, ok
 
 DASHBOARD_BOX = "Find volunteers or teams…"
@@ -99,7 +99,7 @@ async def test_dashboard_typeahead_suggests_teams_and_volunteers(database):
         user.find(kind=ui.input, content=DASHBOARD_BOX).type("Alvarez")
         await user.should_see(f"suggest-volunteer-{maria_id}", retries=SLOW)
         user.find(marker=f"suggest-volunteer-{maria_id}").click()
-        await user.should_see("Email: maria@example.org", retries=SLOW)
+        await should_see_detail(user, "Email", "maria@example.org", retries=SLOW)
 
         # a team suggestion is a real link to its page (so right-click / new
         # tab work); the simulated user follows the href like a browser would
@@ -161,7 +161,7 @@ async def test_volunteers_page_search_box_also_suggests(database):
         await user.should_see(f"suggest-volunteer-{maria_id}", retries=SLOW)
 
         user.find(marker=f"suggest-volunteer-{maria_id}").click()
-        await user.should_see("Email: maria@example.org", retries=SLOW)
+        await should_see_detail(user, "Email", "maria@example.org", retries=SLOW)
 
 
 async def test_query_text_offers_run_and_filters_the_graph(database):
@@ -335,4 +335,4 @@ async def test_the_arrow_keys_walk_the_suggestions_and_enter_opens_one(database)
         user.find(kind=ui.input, content=DASHBOARD_BOX).trigger("keydown.down.prevent")
         assert box.props["aria-activedescendant"] == f"c{person.id}"
         user.find(kind=ui.input, content=DASHBOARD_BOX).trigger("keydown.enter")
-        await user.should_see("Email: maria@example.org", retries=SLOW)
+        await should_see_detail(user, "Email", "maria@example.org", retries=SLOW)

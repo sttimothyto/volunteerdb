@@ -16,7 +16,13 @@ import re
 
 from playwright.async_api import expect
 
+from volunteerdb.models import FieldType
+from volunteerdb.permissions import SYSTEM
+from volunteerdb.services import custom_fields
+
 from .conftest import icon_button, ready, sign_in
+from tests.conftest import db_session
+from tests.fp_helpers import ok
 
 DESKTOP = {"width": 1280, "height": 900}
 # Below Quasar's md breakpoint (1024px), which is where gt-sm stops and lt-md
@@ -233,3 +239,76 @@ async def test_the_print_sheet_is_the_page_without_its_chrome(seeded, page):
     )
     await page.emulate_media(media="screen")
     await expect(page.locator(".q-header")).to_be_visible()
+
+
+# Each pair of the profile card's details list (ui/widgets.py detail): the
+# label, where its words end, where the value's box begins, and the top of
+# each. The words of the label, not its box: a grid stretches every label's
+# box to the column's width, so the boxes all end at one x whatever they
+# say. The first line box of the value, not the union of them: a value that
+# wraps has a box per line, and the union starts at the margin.
+DETAIL_PAIRS = """() => [...document.querySelectorAll('.q-card dl.vdb-details > div')].map(pair => {
+    const [label, value] = pair.children;
+    const words = document.createRange();
+    words.selectNodeContents(label);
+    const dt = words.getClientRects()[0], dd = value.getClientRects()[0];
+    return {label: label.textContent,
+            label_right: dt.right, value_left: dd.left,
+            label_top: dt.top, value_top: dd.top};
+})"""
+
+
+async def test_the_profile_card_lines_its_values_up_past_the_longest_label(
+    seeded, page
+):
+    """Email, Phone, the custom fields, Last login: every value starts at
+    one x, just past the longest label -- whichever label that is, so a
+    custom field with a long name moves the whole column rather than
+    wrapping (theme.css .vdb-details). On a phone a column of labels would
+    leave the values a sliver, so there each pair is one flowing line,
+    "Email: x", and a value starts wherever its own label ends."""
+    async with db_session() as session:
+        defn = ok(
+            await custom_fields.create_def(
+                session, SYSTEM, "Registration form received", FieldType.text
+            )
+        )
+        ok(
+            await custom_fields.set_values(
+                session, SYSTEM, seeded["volunteer_id"], {defn.key: "by hand"}
+            )
+        )
+
+    await page.set_viewport_size(DESKTOP)
+    await sign_in(page, "admin@example.org", "secret-pass-phrase")
+    await page.goto(f"/volunteers/{seeded['volunteer_id']}")
+    await ready(page)
+
+    pairs = await page.evaluate(DETAIL_PAIRS)
+    labels = [pair["label"] for pair in pairs]
+    assert labels[:2] == ["Email:", "Phone:"] and labels[-1] == "Last login:", labels
+    longest = max(pairs, key=lambda pair: pair["label_right"])
+    assert longest["label"] == "Registration form received:", labels
+    lefts = {round(pair["value_left"], 1) for pair in pairs}
+    assert len(lefts) == 1, f"one x for every value: {pairs}"
+    left = lefts.pop()
+    assert longest["label_right"] < left <= longest["label_right"] + 24, (
+        f"just past the longest label: {pairs}"
+    )
+
+    # a fresh load at the phone's width, not a resize: the timeline chart
+    # under the card shrinks to a resize on its own time, and until it does
+    # it holds the page, and so the card, at the width it had
+    await page.set_viewport_size({"width": 390, "height": 844})
+    await page.goto(f"/volunteers/{seeded['volunteer_id']}")
+    await ready(page)
+    pairs = await page.evaluate(DETAIL_PAIRS)
+    assert len(pairs) >= 4, pairs
+    for pair in pairs:
+        assert pair["label_right"] <= pair["value_left"] <= pair["label_right"] + 8, (
+            f"on a phone a value follows its own label: {pair}"
+        )
+        assert abs(pair["value_top"] - pair["label_top"]) < 2, (
+            f"and sits on its line: {pair}"
+        )
+    assert len({round(pair["value_left"], 1) for pair in pairs}) > 1, "no column"

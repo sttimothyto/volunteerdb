@@ -554,6 +554,60 @@ a.vdb-quiet .vdb-stat-chip:hover {
   min-height: 0;
 }
 
+/* ---------- a list of labelled values ----------
+   The profile card's and the side panel's "Email:", "Phone:", the custom
+   fields, "Not recorded:", "Notes:", "Last login:" (ui/widgets.py details
+   and detail): a dl of pairs. Two columns, the values starting at one x
+   just past the longest label -- the first column is as wide as its
+   widest entry, whichever that is, and never more than half the list, so
+   a long custom-field label wraps rather than squeezing the values. Each
+   pair is a div whose dt and dd are the grid's items (display: contents).
+   Where the list itself is narrower than 30rem -- a phone, the 380px
+   drawer -- a column of labels would leave the values a sliver, so each
+   pair flows as one line, "Email: x", the label and value inline. A
+   container query rather than a media query: it is the list's width that
+   decides, and the drawer is narrow on the widest screen. A browser
+   without container queries keeps the columns at every width. */
+dl.vdb-details {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: fit-content(50%) minmax(0, 1fr);
+  column-gap: 1rem;
+  row-gap: 0.25rem;
+  align-items: baseline;
+  margin: 0;
+}
+
+dl.vdb-details > div {
+  display: contents;
+}
+
+dl.vdb-details dd {
+  margin: 0; /* the browser's 40px indent */
+}
+
+@container (max-width: 30rem) {
+  dl.vdb-details > div {
+    display: block;
+    grid-column: 1 / -1;
+  }
+
+  dl.vdb-details > div > dt,
+  dl.vdb-details > div > dd {
+    display: inline;
+  }
+
+  dl.vdb-details > div > dt {
+    margin-inline-end: 0.3em; /* the space "Email: x" had */
+  }
+
+  /* a value that is a row of things (Last login's words and its Invite
+     button) stays on its label's line */
+  dl.vdb-details > div > dd > .row {
+    display: inline-flex;
+  }
+}
+
 /* the suggestion the keyboard is on (ui/search_box.py) */
 .vdb-suggest .vdb-active {
   background-color: var(--vdb-row-hover);
