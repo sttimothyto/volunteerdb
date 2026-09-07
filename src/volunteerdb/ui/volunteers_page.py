@@ -412,45 +412,36 @@ def _profile_card(
 
 
 def _serves_on_section(profile: VolunteerProfile, actor: Actor) -> None:
-    """One line per team: the team and the role, then what there is to
-    say or do about it. Two columns, both left-aligned (theme.css
-    .vdb-two-col): the second starts where the longest first entry ends,
-    not at the far edge of the page, so the eye finds it without a
-    journey. Same shape as _impact_section."""
     heading("Serves on", level=2)
     if not profile.assignments:
         ui.label("Not on any team.").classes("text-gray-500")
-        return
-    with ui.element("div").classes("vdb-two-col w-full"):
-        for membership, team in profile.assignments:
-            with ui.element("div").classes(
-                "vdb-two-col-row p-2 rounded hover:bg-gray-100"
-            ):
-                with ui.row().classes("items-center gap-2"):
-                    ui.link(
-                        profile.paths.get(team.id, team.name), f"/teams/{team.id}"
-                    ).classes("font-medium")
-                    role_badge(membership.role)
-                if actor.can_manage_team(team.id):
-                    ui.button(
-                        icon="person_remove",
-                        on_click=lambda _, mid=membership.id, t=team.name: _unassign(
-                            mid, profile.volunteer.full_name, t
-                        ),
-                    ).props("dense flat color=negative").mark(
-                        f"remove-member-{membership.id}"
-                    ).tooltip("Remove from team")
+    for membership, team in profile.assignments:
+        with ui.row().classes(
+            "w-full items-center gap-2 p-2 rounded hover:bg-gray-100"
+        ):
+            ui.link(profile.paths.get(team.id, team.name), f"/teams/{team.id}").classes(
+                "font-medium"
+            )
+            role_badge(membership.role)
+            ui.space()
+            if actor.can_manage_team(team.id):
+                ui.button(
+                    icon="person_remove",
+                    on_click=lambda _, mid=membership.id, t=team.name: _unassign(
+                        mid, profile.volunteer.full_name, t
+                    ),
+                ).props("dense flat color=negative").mark(
+                    f"remove-member-{membership.id}"
+                ).tooltip("Remove from team")
 
 
 def _add_to_team_row(volunteer_id: int, assignable: dict[int, str]) -> None:
     heading("Add to team", level=2)
     with ui.row().classes("items-center gap-2"):
-        # vdb-inline: the picker is as tall as Role and Add, not 20px taller
-        # for a "Required" line it is not showing (teams_page._add_member_row)
         team_select = (
             required(ui.select(assignable, label="Team", with_input=True))
             .props("outlined dense")
-            .classes("w-64 vdb-inline")
+            .classes("w-64")
         )
         role_select = (
             ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
@@ -486,30 +477,24 @@ def _impact_section(profile: VolunteerProfile) -> None:
     heading("If they leave, what vacancies appear?", level=2)
     if not profile.impact:
         ui.label("No memberships — no holes.").classes("text-gray-500")
-        return
-    # two left-aligned columns, like _serves_on_section: the team and the
-    # role, then what is left of its leadership
-    with ui.element("div").classes("vdb-two-col w-full"):
-        for row in profile.impact:
-            critical = row.leadership_left == 0
-            warn = row.leaders_left == 0 and not critical
-            color = (
-                "bg-red-50" if critical else ("bg-amber-50" if warn else "bg-gray-50")
+    for row in profile.impact:
+        critical = row.leadership_left == 0
+        warn = row.leaders_left == 0 and not critical
+        color = "bg-red-50" if critical else ("bg-amber-50" if warn else "bg-gray-50")
+        with ui.row().classes(f"w-full items-center gap-2 p-2 rounded {color}"):
+            ui.label(profile.paths.get(row.team.id, row.team.name)).classes(
+                "font-medium"
             )
-            with ui.element("div").classes(f"vdb-two-col-row p-2 rounded {color}"):
-                with ui.row().classes("items-center gap-2"):
-                    ui.label(profile.paths.get(row.team.id, row.team.name)).classes(
-                        "font-medium"
-                    )
-                    role_badge(row.role)
-                if critical:
-                    ui.badge("team left with NO leadership", color="negative")
-                elif warn:
-                    ui.badge("no leader left (second remains)", color="warning")
-                else:
-                    ui.label(
-                        f"{row.leaders_left} leader(s), {row.leadership_left} leadership total remain"
-                    ).classes("text-sm text-gray-600")
+            role_badge(row.role)
+            ui.space()
+            if critical:
+                ui.badge("team left with NO leadership", color="negative")
+            elif warn:
+                ui.badge("no leader left (second remains)", color="warning")
+            else:
+                ui.label(
+                    f"{row.leaders_left} leader(s), {row.leadership_left} leadership total remain"
+                ).classes("text-sm text-gray-600")
 
 
 def _involvements_section(

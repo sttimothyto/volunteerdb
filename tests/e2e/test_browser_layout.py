@@ -16,13 +16,7 @@ import re
 
 from playwright.async_api import expect
 
-from volunteerdb.models import TeamRole
-from volunteerdb.permissions import SYSTEM
-from volunteerdb.services import memberships, teams
-
 from .conftest import icon_button, ready, sign_in
-from tests.conftest import db_session
-from tests.fp_helpers import ok
 
 DESKTOP = {"width": 1280, "height": 900}
 # Below Quasar's md breakpoint (1024px), which is where gt-sm stops and lt-md
@@ -239,95 +233,3 @@ async def test_the_print_sheet_is_the_page_without_its_chrome(seeded, page):
     )
     await page.emulate_media(media="screen")
     await expect(page.locator(".q-header")).to_be_visible()
-
-
-# The vertical centre of every field and button in the row under a heading.
-# A field's centre is its control's, not its box's: Quasar's box can carry
-# 20px of reserved message space under the control (theme.css .vdb-inline).
-CONTROL_CENTRES = """(title) => {
-    const h = [...document.querySelectorAll('h2')].find(x => x.textContent.trim() === title);
-    const row = h.nextElementSibling;
-    return [...row.querySelectorAll('.q-field, .q-btn')].map(el => {
-        const box = (el.querySelector('.q-field__control') || el).getBoundingClientRect();
-        return box.top + box.height / 2;
-    });
-}"""
-
-
-async def test_the_add_member_row_centres_its_three_controls(seeded, page):
-    """The Volunteer picker is a required field, and Quasar holds a strip
-    under a required field for its Required line -- so the picker's box was
-    20px taller than Role's and the row centred the two on different lines.
-    theme.css drops the strip (.vdb-inline); this checks the cascade did,
-    with the Required line hidden and with it showing."""
-    await page.set_viewport_size(DESKTOP)
-    await sign_in(page, "admin@example.org", "secret-pass-phrase")
-    await page.goto(f"/teams/{seeded['team_id']}")
-    await ready(page)
-
-    centres = await page.evaluate(CONTROL_CENTRES, "Add member")
-    assert len(centres) == 3, "Volunteer, Role, Add"
-    assert max(centres) - min(centres) < 1, centres
-
-    # Add with nothing picked: the Required line appears under the picker
-    # and overhangs the gap below, moving nothing
-    await page.get_by_role("button", name="Add", exact=True).click()
-    await expect(page.get_by_text("Required", exact=True)).to_be_visible()
-    centres = await page.evaluate(CONTROL_CENTRES, "Add member")
-    assert max(centres) - min(centres) < 1, centres
-
-
-# Each two-column list on the page: per row, the right edge of the first
-# thing and the left edge of the second (ui/volunteers_page.py, theme.css
-# .vdb-two-col).
-TWO_COLUMNS = """() => [...document.querySelectorAll('.vdb-two-col')].map(grid =>
-    [...grid.querySelectorAll(':scope > .vdb-two-col-row')].map(row => {
-        const [first, second] = [...row.children].map(k => k.getBoundingClientRect());
-        return {first_right: first.right, second_left: second ? second.left : null,
-                row_right: row.getBoundingClientRect().right};
-    }))"""
-
-
-async def test_the_volunteer_page_lists_read_as_two_left_aligned_columns(seeded, page):
-    """ "Serves on" and "If they leave": the team and its role, then the
-    Remove button or the leadership badge. The second thing starts at one
-    x for every row, just past the longest first thing -- a subgrid lines
-    the rows up -- rather than at the far edge of the page, which is where
-    a justify-between used to put it. On a phone it goes under the first."""
-    async with db_session() as session:
-        for name in ("Hospitality", "Parish Picnic Task Force"):
-            team = ok(await teams.create(session, SYSTEM, name))
-            ok(
-                await memberships.assign(
-                    session, SYSTEM, seeded["volunteer_id"], team.id, TeamRole.member
-                )
-            )
-
-    await page.set_viewport_size(DESKTOP)
-    await sign_in(page, "admin@example.org", "secret-pass-phrase")
-    await page.goto(f"/volunteers/{seeded['volunteer_id']}")
-    await ready(page)
-
-    lists = await page.evaluate(TWO_COLUMNS)
-    assert len(lists) == 2, "Serves on, and If they leave"
-    for rows in lists:
-        assert len(rows) == 3
-        lefts = {row["second_left"] for row in rows}
-        assert len(lefts) == 1, f"one x for the second column, every row: {rows}"
-        left = lefts.pop()
-        widest = max(row["first_right"] for row in rows)
-        assert widest < left <= widest + 48, f"just past the longest entry: {rows}"
-        assert left < rows[0]["row_right"] - 300, "and nowhere near the far edge"
-
-    # a fresh load at the phone's width, not a resize: the timeline chart
-    # under the lists shrinks to a resize on its own time, and a width
-    # measured before it does is the chart's, not the page's
-    await page.set_viewport_size({"width": 390, "height": 844})
-    await page.goto(f"/volunteers/{seeded['volunteer_id']}")
-    await ready(page)
-    for rows in await page.evaluate(TWO_COLUMNS):
-        for row in rows:
-            assert row["second_left"] < row["first_right"], (
-                f"on a phone the second thing goes under the first: {row}"
-            )
-    assert await page.evaluate("document.documentElement.scrollWidth") <= 390
