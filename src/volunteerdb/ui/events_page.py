@@ -23,6 +23,7 @@ they draw, so each can be read without the page around it.
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
+from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
 from nicegui import ui
@@ -66,7 +67,7 @@ from .context import (
 from .date_input import date_input, iso_date, iso_time, time_input
 from .forms import WIDE, actions, answered, confirm, dialog_card, required, valid
 from .layout import frame
-from .tables import SearchedTable, count_text, wire_search
+from .tables import SearchedTable, count_text, in_address, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
 from .widgets import denied, empty_state
 
@@ -108,11 +109,13 @@ def _events_href(
     *,
     view: str | None = None,
     month: date | None = None,
+    q: str = "",
 ) -> str:
     """/events with only the parameters that differ from the defaults, so the
     plain page stays the plain address. Every control on the page navigates
     through here — the past/upcoming toggle, the team filter, the calendar's
-    view switch and month links — so each keeps the others' state."""
+    view switch and month links — so each keeps the others' state, the
+    search box's text included."""
     parts = [
         p
         for p in (
@@ -120,6 +123,7 @@ def _events_href(
             f"team={team_filter}" if team_filter else "",
             f"view={view}" if view and view != "mine" else "",
             f"month={month:%Y-%m}" if month else "",
+            f"q={quote_plus(q)}" if q else "",
         )
         if p
     ]
@@ -137,22 +141,26 @@ class Listing:
     team_filter: int | None
     view: str  # the calendar's scope: mine or parish
     month: date  # the calendar's month, as its first day
+    q: str = ""  # the search box's text, as the page was opened
 
     @classmethod
     def parse(
-        cls, past: str, team: str, view: str, month: str, *, today: date
+        cls, past: str, team: str, view: str, month: str, *, today: date, q: str = ""
     ) -> "Listing":
         return cls(
             show_past=past == "1",
             team_filter=int(team) if team.isdigit() else None,
             view=view if view in dict(calendar_grid.VIEWS) else "mine",
             month=calendar_grid.parse_month(month, today),
+            q=q.strip(),
         )
 
     def href(self, **changes) -> str:
         """The address of this listing with `changes` (field names) applied."""
         it = replace(self, **changes)
-        return _events_href(it.show_past, it.team_filter, view=it.view, month=it.month)
+        return _events_href(
+            it.show_past, it.team_filter, view=it.view, month=it.month, q=it.q
+        )
 
 
 def _matching_events(rows: list[dict], text: str) -> list[dict]:
@@ -717,7 +725,7 @@ def _listing_controls(
         # the search box grows into the free space and holds the buttons
         # against the right edge (the teams-page idiom)
         search = (
-            ui.input("Search events…")
+            ui.input("Search events…", value=listing.q)
             .props("outlined dense clearable debounce=200")
             .classes("grow")
         )
@@ -871,7 +879,7 @@ def _events_table(rows: list[dict], *, show_past: bool, search: ui.input) -> Non
     count = ui.label(count_text(len(rows), None, "event")).classes(
         "text-sm text-gray-500"
     )
-    wire_search(
+    apply = wire_search(
         search,
         count,
         table,
@@ -879,21 +887,29 @@ def _events_table(rows: list[dict], *, show_past: bool, search: ui.input) -> Non
         compile=query_lang.compile_events,
         text_filter=_matching_events,
     )
+    in_address(search)
+    if search.value:
+        apply()
 
 
 @ui.page("/events")
-async def events_page(past: str = "", team: str = "", view: str = "", month: str = ""):
+async def events_page(
+    past: str = "", team: str = "", view: str = "", month: str = "", q: str = ""
+):
     """The listing had two hardcoded modes — upcoming, or past-and-cancelled —
     while the API took a free `team_id`. `?team=` narrows to one ministry (and
     its sub-teams are separate rows, as they are separate teams), which is what
     a leader of several wants when they are looking at one of them.
 
     `?view=` picks the calendar's scope (mine, the default, or parish) and
-    `?month=YYYY-MM` the month it shows; both are links, not widgets."""
+    `?month=YYYY-MM` the month it shows; both are links, not widgets. `?q=`
+    is the search box's text, written there as the reader types
+    (tables.in_address) and read back here, so a reload lands where they
+    were and the other controls' links keep it."""
     async with page_ctx() as ctx:
         session, actor, tz = ctx.session, ctx.actor, ctx.env.tz
         now = ctx.now.astimezone(tz)
-        listing = Listing.parse(past, team, view, month, today=now.date())
+        listing = Listing.parse(past, team, view, month, today=now.date(), q=q)
         duties = (
             await event_service.my_upcoming(session, actor.volunteer_id, now=ctx.now)
             if actor.volunteer_id is not None

@@ -324,7 +324,7 @@ screens that changed, and ends with the full suite green in its own commit.
   all in one transaction. "Take this slot" (`events_page.py:569`) gets a one-line
   confirm — it is a commitment, and signing up for the same slot from the event page
   takes a dialog.
-- [ ] **23. Listings carry their state in the URL.** `/volunteers` carries `?q=` and
+- [x] **23. Listings carry their state in the URL.** `/volunteers` carries `?q=` and
   `?band=`; `/teams` carries `?q=`; the search boxes read their initial value from
   the URL, as `/events` already does with `Listing`. A reload lands where the reader
   was.

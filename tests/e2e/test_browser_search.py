@@ -48,3 +48,25 @@ async def test_suggestions_open_and_close_and_open_again(seeded, page):
     await expect(drawer).to_be_visible()
     await expect(drawer.get_by_text("maria@example.org")).to_be_visible()
     await expect(page).to_have_url(re.compile(r":\d+/$"))  # still the dashboard
+
+
+async def test_the_teams_search_rides_in_the_address(seeded, page):
+    """tables.in_address: typing writes ?q= with history.replaceState, which
+    only a browser has; a reload then reads it back into the box."""
+    await sign_in(page, "admin@example.org", "secret-pass-phrase")
+    await ready(page)
+    await page.goto("/teams")
+    await ready(page)
+    box = page.get_by_label("Search teams…")
+    await box.fill("zzz")
+    await expect(page).to_have_url(re.compile(r"/teams\?q=zzz$"))
+    await expect(page.get_by_text("0 of 1 teams")).to_be_visible()
+
+    await page.reload()
+    await ready(page)
+    await expect(page.get_by_label("Search teams…")).to_have_value("zzz")
+    await expect(page.get_by_text("0 of 1 teams")).to_be_visible()
+
+    # clearing the box clears the address too
+    await page.get_by_label("Search teams…").fill("")
+    await expect(page).to_have_url(re.compile(r"/teams$"))

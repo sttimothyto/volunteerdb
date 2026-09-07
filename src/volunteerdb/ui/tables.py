@@ -7,6 +7,7 @@ text is a substring match the page defines, and a SQL-shaped filter
 under the table says how many of the rows are showing.
 """
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -40,6 +41,25 @@ class SearchedTable(ui.table):
             columns=columns, rows=rows, row_key=row_key, pagination=pagination
         )
         self.every: Rows = rows
+
+
+def in_address(search: ui.input, *, key: str = "q") -> None:
+    """What is typed into `search` goes into the address bar as `?key=`:
+    history.replaceState, so no navigation and no history entry, and a
+    reload, a bookmark or the back button lands where the reader was.
+    The page reads it back as its `q` parameter into the box's value."""
+
+    def remember() -> None:
+        value = (search.value or "").strip()
+        ui.run_javascript(
+            "const u = new URL(location.href);"
+            f"const v = {json.dumps(value)};"
+            f"if (v) u.searchParams.set({json.dumps(key)}, v);"
+            f"else u.searchParams.delete({json.dumps(key)});"
+            "history.replaceState(history.state, '', u);"
+        )
+
+    search.on_value_change(remember)
 
 
 def count_text(shown: int, total: int | None, noun: str) -> str:

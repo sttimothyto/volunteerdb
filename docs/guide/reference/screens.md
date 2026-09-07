@@ -131,7 +131,7 @@ Shown to *everyone*. It can show a past date.
 
 | Control | What it does | Who |
 |---|---|---|
-| *Search teams…* | Narrows the table as you type. A parent's name keeps its sub-teams. | *everyone* |
+| *Search teams…* | Narrows the table as you type. A parent's name keeps its sub-teams. The address carries the text, so a reload or a bookmark lands where you were. | *everyone* |
 | *View Team Homepages* | Opens the public *Ministries* pages. | *everyone* |
 | *New team* | Opens the dialog *New team*: *Name*, *Parent team* (*— top level —* or a team), *Description*, *Workload weight*, *Cancel*, *Save*. | *admin*, not on a past date |
 | *Export team(s)* | Downloads a `.csv` file with the rosters of the teams you have full-roster rights on. An administrator gets the whole parish. | *admin*, *leaders*, *core* |
@@ -245,7 +245,7 @@ Shown to *everyone*. The list holds the events of the teams whose roster names y
 | *Add to your calendar* | Opens a panel with a link to subscribe your own calendar and a `.ics` file to download. Your own feed also has the *Feed address* to paste and *Reset the address*. The parish panel has *Add to Google Calendar* once the parish calendar exists. | *everyone*; in the *Whole parish* panel, *admin* also sees the state of the parish Google calendar |
 | The month grid | 1 cell per day, Sunday first, with the time and name of each event. A link at each end, *← July* for example, moves to the month before or after. | *everyone* |
 | *Upcoming events on your teams* | The heading of the table. For *admin* it reads *Upcoming events (all teams)*. With *Show past* on, *Upcoming* becomes *Past*. | *everyone* |
-| *Search events…* | Narrows the table as you type, on the name, the team, the place and the date. | *everyone* |
+| *Search events…* | Narrows the table as you type, on the name, the team, the place and the date. The address carries the text, so a reload or a bookmark lands where you were. | *everyone* |
 | *All teams* | A list to show 1 team's events. Shown when the table holds more than 1 team. | *everyone* |
 | *Show past* / *Show upcoming* | Switches the table between events to come and past or cancelled events. | *everyone* |
 | *New event* | Opens the dialog *New event*, below. | *admin*, *leaders* |

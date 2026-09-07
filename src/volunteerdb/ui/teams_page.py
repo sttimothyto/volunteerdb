@@ -38,7 +38,7 @@ from .context import (
 )
 from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
-from .tables import SearchedTable, count_text, wire_search
+from .tables import SearchedTable, count_text, in_address, wire_search
 from .volunteer_panel import VolunteerPanel
 from .widgets import ROLE_OPTIONS, busy, denied, empty_state, inactive_badge
 
@@ -134,7 +134,9 @@ def _filtered_rows(rows: list[dict], pred) -> list[dict]:
 
 
 @ui.page("/teams")
-async def teams_page(as_of: str = ""):
+async def teams_page(as_of: str = "", q: str = ""):
+    """`?q=` is the search box's text: written there as the reader types
+    (tables.in_address), read back here, so a reload lands where they were."""
     at = parse_as_of(as_of, current_env().tz)
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
@@ -152,7 +154,7 @@ async def teams_page(as_of: str = ""):
     with frame("Teams", actor, help="teams", as_of=at, asof_path="/teams"):
         with ui.row().classes("items-center gap-2 w-full"):
             search = (
-                ui.input("Search teams…")
+                ui.input("Search teams…", value=q)
                 .props("outlined dense clearable debounce=200")
                 .classes("grow")
                 if rows
@@ -295,7 +297,7 @@ async def teams_page(as_of: str = ""):
             "text-sm text-gray-500"
         )
         if search is not None:
-            wire_search(
+            apply = wire_search(
                 search,
                 count,
                 table,
@@ -304,6 +306,9 @@ async def teams_page(as_of: str = ""):
                 text_filter=_matching_rows,
                 query_filter=_filtered_rows,
             )
+            in_address(search)
+            if q:
+                apply()
 
 
 def _parent_options(tree, exclude_id: int | None = None) -> dict[int, str]:
