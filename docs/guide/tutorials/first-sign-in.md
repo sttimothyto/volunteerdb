@@ -42,9 +42,9 @@ The *Dashboard* is the first page after you sign in. What it shows depends on yo
 1. Find the search box *Find volunteers or teams…* at the top.
 2. Find the section *My teams*. Each line is a team you serve on, with your role on it.
 3. Find the section *My service*. It shows *Upcoming duties* and *Hours served*.
-4. Scroll down to the graph. Each team is a rounded box, and each volunteer is a dot.
-5. Scroll to the bottom. Find the section *Guides*. Each link opens a page of this manual.
-6. Scroll back up and click a team in the graph.
+4. Scroll to the bottom. Find the section *Guides*. Each link opens a page of this manual.
+5. Under it, click *Ministry graph*. The panel opens. Each team is a rounded box, and each volunteer is a dot.
+6. Click a team in the graph.
 
 You see the page of that team. If you are on no team yet, the *Dashboard* has no *My teams* section, and the graph shows nothing for you. In *Guides*, a badge *Tutorial* marks the pages like this one.
 

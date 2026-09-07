@@ -331,7 +331,7 @@ screens that changed, and ends with the full suite green in its own commit.
 
 ### Phase 6 — The dashboard
 
-- [ ] **24. The graph is one click away.** It renders inside a closed
+- [x] **24. The graph is one click away.** It renders inside a closed
   `ui.expansion("Ministry graph")` at the foot of the page, so the 300-iteration
   layout (`cytoscape_graph.js:220-237`) runs only when opened; the caption is rewritten
   for touch ("tap a node"). The focus select and fit button move inside it. On the

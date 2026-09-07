@@ -1,3 +1,5 @@
+from datetime import datetime
+from functools import partial
 from urllib.parse import quote_plus, urlencode
 
 from nicegui import ui
@@ -30,24 +32,33 @@ AS_OF_NOTE = (
 )
 
 
-def _dashboard_href(*, as_of: str = "", q: str = "") -> str:
+def _dashboard_href(*, as_of: str = "", q: str = "", graph: str = "") -> str:
     """The dashboard with its graph filter in the URL -- the one place the
-    filter lives, so a reload, a shared link and the back button all agree."""
-    params = {k: v for k, v in (("as_of", as_of), ("q", q)) if v}
+    filter lives, so a reload, a shared link and the back button all agree.
+    `graph` opens the Ministry graph panel: a team id focuses it, "all"
+    shows the parish."""
+    params = {k: v for k, v in (("as_of", as_of), ("q", q), ("graph", graph)) if v}
     return "/" + (f"?{urlencode(params)}" if params else "")
 
 
 @ui.page("/")
-async def dashboard(as_of: str = "", q: str = ""):
-    # the graph library is loaded via dynamic import() at Vue mount, far too
-    # late for the browser's preload scanner — announce it in the head instead
-    ui.add_head_html(
-        f'<link rel="modulepreload" href="{static_url("cytoscape.esm.min.js")}">'
-    )
+async def dashboard(as_of: str = "", q: str = "", graph: str = ""):
     at = parse_as_of(as_of, current_env().tz)
     # ?q= is a WHERE filter narrowing the graph in place (plain text goes to
     # the volunteers list instead, see submit); an unparsable one is ignored
     query = q.strip() if query_lang.parse(q.strip()) is not None else ""
+    # the graph is drawn with the page only when asked for: by a WHERE
+    # filter, or by ?graph= (a team id to focus on, or "all")
+    opened = bool(query) or bool(graph)
+    focus = int(graph) if graph.isdigit() else 0
+    if opened:
+        # the graph library is loaded via dynamic import() at Vue mount, far
+        # too late for the browser's preload scanner — announce it in the
+        # head instead. A closed panel imports it on opening, and nobody
+        # who came for the figures pays for the 400 KB.
+        ui.add_head_html(
+            f'<link rel="modulepreload" href="{static_url("cytoscape.esm.min.js")}">'
+        )
     async with page_ctx() as ctx:
         session, actor = ctx.session, ctx.actor
         filtered_ids: set[int] | None = None
@@ -60,16 +71,6 @@ async def dashboard(as_of: str = "", q: str = ""):
                 query = ""
             else:
                 filtered_ids = {v.id for v in found.value}
-        elements = await graph_service.elements(
-            session, actor, at=at, volunteer_ids=filtered_ids
-        )
-        tree = await team_service.tree(session, at=at)
-        paths = tree.paths
-        team_options = {0: "— whole parish —"} | {
-            t.id: paths[t.id]
-            for t in tree.teams
-            if actor.is_admin or actor.can_view_roster_names(t.id)
-        }
         my_assignments = (
             await volunteer_service.assignments(session, actor.volunteer_id, at=at)
             if actor.volunteer_id
@@ -82,25 +83,8 @@ async def dashboard(as_of: str = "", q: str = ""):
             now=ctx.now,
             today=ctx.env.today(),
         )
-        # band chips in the legend, for the viewers who see coloured dots at all
-        bands = (
-            (await workload_service.read_config(session)).bands
-            if actor.is_admin or actor.managed_team_ids
-            else []
-        )
 
     panel = VolunteerPanel(as_of, ctx.base_url)
-
-    async def refresh_graph() -> None:
-        async with page_ctx() as ctx:
-            new_elements = await graph_service.elements(
-                ctx.session,
-                ctx.actor,
-                team_id=team_filter.value or None,
-                at=at,
-                volunteer_ids=filtered_ids,
-            )
-        graph.refresh(new_elements)
 
     async def submit(text: str) -> None:
         # a WHERE filter narrows the graph in place, by way of the URL; plain
@@ -122,10 +106,11 @@ async def dashboard(as_of: str = "", q: str = ""):
 
         # Statistics run widest-audience first — the parish, then what the
         # people who run ministries must act on — and then narrow to the
-        # reader: their teams, then their own service. All four bands sit
-        # above the graph, which is the exploratory tail rather than the
-        # answer most readers came for. Each block is absent, not empty, for a
-        # viewer without the right to it; the service never ran its queries.
+        # reader: their teams, then their own service. The guides follow, and
+        # the graph, the exploratory tail rather than the answer most readers
+        # came for, is folded at the foot. Each block is absent, not empty,
+        # for a viewer without the right to it; the service never ran its
+        # queries.
         if figures.parish is not None:
             _parish_section(figures.parish, live=figures.live)
         if figures.leadership is not None:
@@ -136,14 +121,127 @@ async def dashboard(as_of: str = "", q: str = ""):
             _my_teams_section(my_assignments, as_of=as_of)
         if figures.personal is not None:
             _my_service_section(figures.personal)
+        _guides_section(actor)
+        await _graph_panel(
+            panel,
+            at=at,
+            as_of=as_of,
+            query=query,
+            filtered_ids=filtered_ids,
+            focus=focus,
+            opened=opened,
+        )
 
+
+async def _graph_panel(
+    panel: VolunteerPanel,
+    *,
+    at: datetime | None,
+    as_of: str,
+    query: str,
+    filtered_ids: set[int] | None,
+    focus: int,
+    opened: bool,
+) -> None:
+    """The ministry graph, folded at the foot of the page and drawn on
+    demand: the 400 KB library and its 300-iteration layout
+    (cytoscape_graph.js) are paid for by the reader who opens the panel,
+    not by everyone who came for the figures. Opened with the page when
+    the address asks (?graph=, or a WHERE filter narrowing it)."""
+    with (
+        ui.expansion(
+            "Ministry graph",
+            icon="hub",
+            caption="Every team you can see and who serves on it, as a map",
+            value=opened,
+        )
+        .classes("w-full vdb-plumbing")
+        .mark("graph-panel") as fold
+    ):
+        holder = ui.column().classes("w-full gap-2")
+    draw = partial(
+        _graph_block,
+        holder,
+        panel,
+        at=at,
+        as_of=as_of,
+        query=query,
+        filtered_ids=filtered_ids,
+        focus=focus,
+    )
+    if opened:
+        await draw()
+    else:
+        # drawn once, on the first opening; the holder's children are the
+        # record of whether it has been
+        fold.on_value_change(
+            lambda e: draw() if e.value and not holder.default_slot.children else None
+        )
+
+
+async def _graph_block(
+    holder: ui.column,
+    panel: VolunteerPanel,
+    *,
+    at: datetime | None,
+    as_of: str,
+    query: str,
+    filtered_ids: set[int] | None,
+    focus: int,
+) -> None:
+    """What the panel holds: the focus select, the fit button, the query
+    chip, the legend, the graph itself and a line on how to read it. Its
+    rows are read in their own unit of work, since the panel may open long
+    after the page did."""
+    async with page_ctx() as ctx:
+        actor = ctx.actor
+        elements = await graph_service.elements(
+            ctx.session, actor, team_id=focus or None, at=at, volunteer_ids=filtered_ids
+        )
+        tree = await team_service.tree(ctx.session, at=at)
+        team_options = {0: "— whole parish —"} | {
+            t.id: tree.paths[t.id]
+            for t in tree.teams
+            if actor.is_admin or actor.can_view_roster_names(t.id)
+        }
+        # band chips in the legend, for the viewers who see coloured dots at all
+        bands = (
+            (await workload_service.read_config(ctx.session)).bands
+            if actor.is_admin or actor.managed_team_ids
+            else []
+        )
+
+    async def refresh_graph() -> None:
+        async with page_ctx() as ctx:
+            new_elements = await graph_service.elements(
+                ctx.session,
+                ctx.actor,
+                team_id=team_filter.value or None,
+                at=at,
+                volunteer_ids=filtered_ids,
+            )
+        graph.refresh(new_elements)
+
+    async def on_node_click(e) -> None:
+        data = e.args
+        if data.get("type") == "volunteer":
+            await panel.open(data["volunteer_id"])
+            return
+        suffix = f"?as_of={as_of}" if as_of else ""
+        ui.navigate.to(f"/teams/{data['team_id']}{suffix}")
+
+    with holder:
         with ui.row().classes("items-center gap-2 w-full"):
             team_filter = (
-                ui.select(team_options, label="Focus on team", value=0, with_input=True)
+                ui.select(
+                    team_options,
+                    label="Focus on team",
+                    value=focus if focus in team_options else 0,
+                    with_input=True,
+                )
                 .props("outlined dense")
                 .classes("w-72")
             )
-
             team_filter.on_value_change(refresh_graph)
             icon_button(
                 "fit_screen",
@@ -153,7 +251,10 @@ async def dashboard(as_of: str = "", q: str = ""):
             if query:
                 ui.chip(query, removable=True, icon="filter_alt").mark(
                     "graph-query-chip"
-                ).on("remove", lambda _: ui.navigate.to(_dashboard_href(as_of=as_of)))
+                ).on(
+                    "remove",
+                    lambda _: ui.navigate.to(_dashboard_href(as_of=as_of, graph="all")),
+                )
             ui.space()
             with ui.row().classes("items-center gap-3 flex-wrap"):
                 _legend_entry("team", "background: var(--vdb-graph-team)")
@@ -169,24 +270,14 @@ async def dashboard(as_of: str = "", q: str = ""):
                 for band in bands:
                     _legend_entry(band.label, f"background: {band.color}", dot=True)
 
-        async def on_node_click(e) -> None:
-            data = e.args
-            if data.get("type") == "volunteer":
-                await panel.open(data["volunteer_id"])
-                return
-            suffix = f"?as_of={as_of}" if as_of else ""
-            ui.navigate.to(f"/teams/{data['team_id']}{suffix}")
-
         graph = CytoscapeGraph(elements, on_node_click=on_node_click).classes(
             "w-full border rounded"
         )
         ui.label(
-            "Click a team to open its page; click a volunteer to open their side "
-            "panel. Zoom in to read names, or hover a node to isolate its "
-            "connections."
+            "Tap a team to open its page, or a volunteer to open their side "
+            "panel. Zoom in to read the names; tap or hover a node to see only "
+            "its connections."
         ).classes("text-sm text-gray-400")
-
-        _guides_section(actor)
 
 
 def _parish_section(p: stats_service.ParishStats, *, live: bool) -> None:
@@ -352,8 +443,8 @@ def _my_service_section(mine: stats_service.PersonalStats) -> None:
 
 def _guides_section(actor: Actor) -> None:
     """The user guide, for what this reader can do -- the tail of the page,
-    after the graph, where somebody who has run out of things to click will
-    look for what else there is. Tiers accumulate with reach (help_links);
+    above the folded graph, where somebody who has run out of things to click
+    will look for what else there is. Tiers accumulate with reach (help_links);
     each link is a real anchor into a new tab, like the Manual entry in the
     settings menu, so the page they were on stays where it was."""
     with stat_section(

@@ -7,6 +7,8 @@ that has to find its way back over the socket — and nothing headless runs a
 line of it. So this asks the drawn graph what it is showing, and clicks it.
 """
 
+from urllib.parse import urlparse
+
 import pytest
 from playwright.async_api import expect
 
@@ -143,6 +145,9 @@ async def test_the_graph_draws_the_parish_and_opens_a_volunteer_on_a_click(
     await sign_in(page, "admin@example.org", "secret-pass-phrase")
     await ready(page)
 
+    # the panel is folded and empty until opened (step 24): no canvas yet
+    await expect(page.locator(NODE_LAYER)).to_have_count(0)
+    await page.get_by_text("Ministry graph").click()
     # the library loads by dynamic import() at mount, so the canvas appearing
     # is the proof that /static/cytoscape.esm.min.js arrived and ran
     await expect(page.locator(NODE_LAYER)).to_be_visible()
@@ -181,10 +186,14 @@ async def test_the_graph_library_is_fetched_once(parish, page):
 
     await sign_in(page, "admin@example.org", "secret-pass-phrase")
     await ready(page)
+    # the preload is announced only when the graph draws with the page
+    await page.goto("/?graph=all")
+    await ready(page)
     await expect(page.locator(NODE_LAYER)).to_be_visible()
 
     preload = await page.get_attribute('link[rel="modulepreload"]', "href")
-    assert set(requested) == {f"{page.url.rstrip('/')}{preload}"}, (
+    origin = "{0.scheme}://{0.netloc}".format(urlparse(page.url))
+    assert set(requested) == {f"{origin}{preload}"}, (
         "the preload and the import() disagree, so the browser fetched the "
         f"graph library more than once: {sorted(set(requested))}"
     )

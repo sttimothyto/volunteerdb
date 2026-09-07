@@ -52,7 +52,7 @@ async def test_admin_pages_render(database):
         await user.should_see("Role multipliers")
 
         await user.open("/")
-        await user.should_see("Focus on team")  # the merged ministry graph
+        await user.should_see("Ministry graph")  # folded at the foot (step 24)
 
         await user.open("/teams")
         user.find(kind=ui.table)  # the coverage table moved here

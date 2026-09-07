@@ -13,7 +13,6 @@ from nicegui.testing.user_simulation import user_simulation
 from volunteerdb.models import TeamRole
 from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import memberships, teams, users, volunteers
-from volunteerdb.ui.cytoscape_element import CytoscapeGraph
 
 from tests import mint
 from tests.conftest import SIM_MAIN, SLOW, db_session, only
@@ -141,17 +140,15 @@ async def test_plain_member_sees_only_their_own_service(database):
         # workload is a leadership signal and never turns up on one's own page
         await user.should_not_see("Workload:")
 
-        # My teams, then My service, then the graph. NiceGUI hands out element
-        # ids in creation order, which is render order down the page — the only
-        # handle a headless run has on "above".
+        # My teams, then My service, then the guides, then the folded graph.
+        # NiceGUI hands out element ids in creation order, which is render
+        # order down the page — the only handle a headless run has on "above".
         teams_head = only(user.find("My teams", kind=ui.label))
         service_head = only(user.find("My service", kind=ui.label))
-        graph = only(user.find(kind=CytoscapeGraph))
-        assert teams_head.id < service_head.id < graph.id
+        guides_head = only(user.find("Guides", kind=ui.label))
+        graph = only(user.find(marker="graph-panel"))
+        assert teams_head.id < service_head.id < guides_head.id < graph.id
 
-        # the guides are the tail of the page, after the graph, and a plain
-        # member gets the two groups anybody with a volunteer record gets
+        # a plain member gets the two groups anybody with a volunteer record gets
         await user.should_see("For team members")
         await user.should_not_see("For core members")
-        guides_head = only(user.find("Guides", kind=ui.label))
-        assert graph.id < guides_head.id

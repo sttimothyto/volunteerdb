@@ -111,11 +111,12 @@ Shown when your account is linked to a volunteer, and not on a past date.
 
 ### The ministry graph
 
+- A closed panel, *Ministry graph*, at the foot of the page. A click on its title opens it and draws the graph.
 - The graph draws the teams whose roster names you can see, and the people on them.
 - *Focus on team* narrows the graph to 1 team and its sub-teams. *— whole parish —* shows everything you can see.
 - The button *Fit the whole graph in view* brings the whole graph back on screen.
-- Zoom in to read names. Hover over a node to see only its connections.
-- A click on a team opens its page. A click on a volunteer opens the side panel.
+- Zoom in to read names. Tap or hover a node to see only its connections.
+- A tap on a team opens its page. A tap on a volunteer opens the side panel.
 - The legend: *team*, *volunteer*, *leadership* (a line from a leader or second to their team), *sub-team* (a line from a team to its parent).
 - *admin* and *leaders* also see 1 legend entry per workload band. The volunteers whose workload they can read are coloured by band.
 

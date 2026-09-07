@@ -216,7 +216,7 @@ async def test_query_text_offers_run_and_filters_the_graph(database):
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{admin_id}")
         await user.should_see("dev-login ok")
-        await user.open("/")
+        await user.open("/?graph=all")  # the graph panel, open with the page
         await user.should_see(DASHBOARD_BOX, retries=SLOW)
 
         # query-shaped text offers to run the query instead of suggesting rows

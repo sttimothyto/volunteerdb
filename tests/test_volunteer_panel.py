@@ -106,8 +106,9 @@ async def test_panel_opens_from_team_roster_table_and_graph(database, sim_sent):
         user.find(kind=ui.table).trigger("rowClick", args=[None, {"id": maria_id}, 0])
         await user.should_see("Email: maria@example.org")
 
-        # dashboard graph: clicking a volunteer node does the same
-        await user.open("/")
+        # dashboard graph: clicking a volunteer node does the same (the
+        # panel is folded until asked for; ?graph=all opens it with the page)
+        await user.open("/?graph=all")
         user.find(kind=CytoscapeGraph).trigger(
             "node_click", args={"type": "volunteer", "volunteer_id": maria_id}
         )
