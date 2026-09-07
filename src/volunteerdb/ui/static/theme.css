@@ -1098,3 +1098,80 @@ body.body--dark .q-badge.bg-muted {
 .q-drawer {
   max-width: 100vw;
 }
+
+/* ---------- print ----------
+   The sheet a leader pins up: the team roster, an event page. The chrome
+   goes -- header, nav, gear, the skip link, the "?" -- and so does
+   everything that only works on a screen: buttons, fields, the folded
+   panels, dialogs, the drawer, pagination. White ground, black ink, tables
+   with rules. The padding Quasar sets inline for the header's height is the
+   one place !important is needed. */
+@media print {
+  .q-header,
+  .q-drawer,
+  .q-footer,
+  .vdb-skip,
+  .vdb-help,
+  .q-btn,
+  .q-field,
+  .q-select,
+  .vdb-plumbing,
+  .q-dialog,
+  .q-menu,
+  .q-tooltip,
+  .q-notifications,
+  .q-table__bottom {
+    display: none;
+  }
+
+  .q-page-container {
+    padding-top: 0 !important;
+  }
+
+  html,
+  body,
+  .q-page,
+  .q-card,
+  .vdb-page {
+    background: #fff;
+    color: #000;
+  }
+
+  body {
+    font-size: 12pt;
+  }
+
+  .q-card {
+    box-shadow: none;
+    border: 1px solid #999;
+    break-inside: avoid;
+  }
+
+  .q-table__container {
+    overflow: visible;
+    box-shadow: none;
+  }
+
+  .q-table th,
+  .q-table td {
+    border: 1px solid #999;
+    color: #000;
+  }
+
+  .q-table tr {
+    break-inside: avoid;
+  }
+
+  a,
+  a.vdb-quiet {
+    color: #000;
+    text-decoration: none;
+  }
+
+  .vdb-page-title,
+  .vdb-h2,
+  .vdb-h3 {
+    color: #000;
+    break-after: avoid;
+  }
+}

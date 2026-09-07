@@ -16,6 +16,8 @@ A field marked with * is required. Left blank, it says *Required* under it, and 
 
 On a narrow screen, fields that sit side by side stack one under the other.
 
+To print a page, use the print command of your browser. The header, the buttons, the search boxes and the folded panels are left off, and the page prints in black on white. A team page prints its roster as a sheet; an event page prints its slots.
+
 A dialog with fields in it stays open until you click *Cancel* or its own button. A click outside it, or the Escape key, changes nothing. A question, for example *Delete the team …?*, closes on a click outside it, and nothing happens.
 
 ## The header

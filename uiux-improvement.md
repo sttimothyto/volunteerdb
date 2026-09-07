@@ -366,7 +366,7 @@ screens that changed, and ends with the full suite green in its own commit.
   `None` until the switch is used; `ui.dark_mode(None)` is Quasar's auto mode. The
   anti-FOUC style adapts; `test_browser_session`'s "persists across sign-out" keeps
   passing for an explicit choice.
-- [ ] **32. A print stylesheet.** `@media print` in `theme.css`: header, nav, gear,
+- [x] **32. A print stylesheet.** `@media print` in `theme.css`: header, nav, gear,
   search, action rows, graph and drawer hidden; white ground, black ink, tables with
   rules; the team roster and an event page print as the sheet a leader pins up.
 - [ ] **33. The four unremapped tints become tokens.** `--vdb-warn-bg/-ink` and

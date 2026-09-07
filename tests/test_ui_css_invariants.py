@@ -195,3 +195,16 @@ def test_touch_targets_reach_44px():
     block = css[start : css.index("\n}\n", start)]
     assert ".q-btn.q-btn--dense" in block and ".vdb-rowbtn" in block
     assert "min-height: 44px" in block and "min-width: 44px" in block
+
+
+def test_the_print_sheet_drops_the_chrome():
+    """uiux-improvement.md step 32: `@media print` hides what only works on
+    a screen and paints white. The cascade is a browser's to prove
+    (tests/e2e/test_browser_layout.py); this holds the source to the list."""
+    css = THEME_CSS.read_text()
+    start = css.index("@media print")
+    block = css[start:]
+    hidden = block[: block.index("display: none")]
+    for selector in (".q-header", ".q-drawer", ".q-btn", ".q-field", ".vdb-plumbing"):
+        assert selector in hidden, f"{selector} prints"
+    assert "background: #fff" in block and "color: #000" in block

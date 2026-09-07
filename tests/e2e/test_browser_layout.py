@@ -199,3 +199,28 @@ async def test_a_dialogs_field_row_stacks_on_a_phone(seeded, page):
     assert a and b and b["y"] > a["y"] + a["height"] - 1, "one under the other"
     card = await page.locator(".q-dialog .q-card").first.bounding_box()
     assert card and a["width"] > card["width"] * 0.8, "the full width of the card"
+
+
+async def test_the_print_sheet_is_the_page_without_its_chrome(seeded, page):
+    """theme.css `@media print`: the header, the buttons and the fields go,
+    the ground turns white, and the roster table stays -- what a leader
+    pins up. Playwright's print emulation is the only headless way to ask."""
+    await sign_in(page, "admin@example.org", "secret-pass-phrase")
+    await ready(page)
+    await page.goto("/teams/%d" % seeded["team_id"])
+    await ready(page)
+    await expect(page.locator("thead th", has_text="Name")).to_be_visible()
+
+    await page.emulate_media(media="print")
+    await expect(page.locator(".q-header")).to_be_hidden()
+    await expect(page.get_by_label("Search the roster…")).to_be_hidden()
+    await expect(
+        page.get_by_role("button", name="Edit team", exact=True)
+    ).to_be_hidden()
+    await expect(page.locator("thead th", has_text="Name")).to_be_visible()
+    assert await page.evaluate("getComputedStyle(document.body).backgroundColor") in (
+        "rgb(255, 255, 255)",
+        "rgba(0, 0, 0, 0)",
+    )
+    await page.emulate_media(media="screen")
+    await expect(page.locator(".q-header")).to_be_visible()
