@@ -172,20 +172,10 @@ def _mail_quota_banner(actor: Actor) -> None:
     # scans the source for the classes to keep. asof_banner beside this does
     # the same.
     if critical:
-        box, ink, faint, icon = (
-            "bg-red-100",
-            "text-red-900",
-            "text-red-800",
-            "mark_email_unread",
-        )
+        box, ink, icon = "vdb-crit-box", "vdb-crit-ink", "mark_email_unread"
         headline = "Email sending is over its limit"
     else:
-        box, ink, faint, icon = (
-            "bg-amber-100",
-            "text-amber-900",
-            "text-amber-800",
-            "outgoing_mail",
-        )
+        box, ink, icon = "vdb-warn-box", "vdb-warn-ink", "outgoing_mail"
         headline = "Email sending is heading over its limit"
     contact = mail_quota.support_contact(current_env().settings)
     reach = (
@@ -209,7 +199,7 @@ def _mail_quota_banner(actor: Actor) -> None:
             ui.label(
                 f"So far: {quota.today:,} today, {quota.month_to_date:,} this "
                 f"month (on course for about {quota.projected_month:,})."
-            ).classes(f"text-xs {faint}")
+            ).classes(f"text-xs {ink}")
 
 
 def _account_menu(actor: Actor) -> None:

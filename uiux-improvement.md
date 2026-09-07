@@ -369,7 +369,7 @@ screens that changed, and ends with the full suite green in its own commit.
 - [x] **32. A print stylesheet.** `@media print` in `theme.css`: header, nav, gear,
   search, action rows, graph and drawer hidden; white ground, black ink, tables with
   rules; the team roster and an event page print as the sheet a leader pins up.
-- [ ] **33. The four unremapped tints become tokens.** `--vdb-warn-bg/-ink` and
+- [x] **33. The four unremapped tints become tokens.** `--vdb-warn-bg/-ink` and
   `--vdb-crit-bg/-ink` in both modes for the mail-quota banner
   (`layout.py:128-143`) and the pending-email line (`account_page.py:255`);
   `test_theme_contrast.py` gains a sweep asserting every Tailwind tint class used in

@@ -89,6 +89,8 @@ def _remap(cls: str, dark: bool = False) -> str:
         ("--vdb-graph-leader", "--vdb-bg", NON_TEXT, "leader nodes"),
         ("--vdb-graph-label", "--vdb-graph-node", TEXT, "node labels"),
         ("--vdb-graph-team-label", "--vdb-graph-team", TEXT, "team labels"),
+        ("--vdb-warn-ink", "--vdb-warn-bg", TEXT, "the warning banner"),
+        ("--vdb-crit-ink", "--vdb-crit-bg", TEXT, "the critical banner"),
     ],
 )
 def test_light_tokens(fg, bg, floor, what):
@@ -108,6 +110,8 @@ def test_light_tokens(fg, bg, floor, what):
         ("--vdb-muted", "--vdb-surface", TEXT, "secondary text on a card"),
         ("--vdb-graph-edge", "--vdb-bg", NON_TEXT, "graph edges"),
         ("--vdb-graph-label", "--vdb-graph-node", TEXT, "node labels"),
+        ("--vdb-warn-ink", "--vdb-warn-bg", TEXT, "the warning banner"),
+        ("--vdb-crit-ink", "--vdb-crit-bg", TEXT, "the critical banner"),
     ],
 )
 def test_dark_tokens(fg, bg, floor, what):
@@ -194,3 +198,26 @@ def test_text_colour_picks_the_darker_or_lighter_label():
     assert workload.text_colour("#ffb300") == workload.INK
     assert workload.text_colour("#1a237e") == "#ffffff"
     assert workload.contrast_with_label("#ffb300") == pytest.approx(9.74, abs=0.05)
+
+
+# Every fixed Tailwind tint the pages use (a class like text-amber-700 or
+# bg-gray-50, chosen for white) has a dark-mode remap in theme.css, or it
+# paints a white-page colour onto a dark one. The banners that used to be
+# the four unremapped ones now draw on --vdb-warn-* / --vdb-crit-* instead
+# (uiux-improvement.md, step 33).
+_TINT = re.compile(
+    r"\b(?:hover:)?(?:bg|text|border)-(?:gray|amber|red|blue|green|yellow)-\d{2,3}\b"
+)
+
+
+def test_every_tailwind_tint_in_the_pages_is_remapped_for_dark():
+    used: set[str] = set()
+    for path in sorted((ROOT / "ui").glob("*.py")):
+        used |= set(_TINT.findall(path.read_text()))
+    assert used, "the sweep found nothing: the pattern drifted from the pages"
+    missing = [
+        cls
+        for cls in sorted(used)
+        if f"body.body--dark .{cls.replace(':', chr(92) + ':')}" not in THEME
+    ]
+    assert not missing, f"tints with no dark remap in theme.css: {missing}"

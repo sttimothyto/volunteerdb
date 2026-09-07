@@ -37,6 +37,14 @@
   /* secondary text: captions, timestamps, the day numbers of the month
      before — AA against every light surface (5.6:1 on --vdb-bg) */
   --vdb-muted: #6b6255;
+  /* a banner that warns (the mail allowance running low, an address
+     waiting to confirm, a snapshot) and one that says something is broken
+     (mail over its limit): a tinted box and the ink on it, in both modes,
+     so the four sites share one pair instead of Tailwind's tints */
+  --vdb-warn-bg: #fef3c7;
+  --vdb-warn-ink: #78350f;
+  --vdb-crit-bg: #fee2e2;
+  --vdb-crit-ink: #7f1d1d;
 
   --vdb-graph-team: #a5573e;
   --vdb-graph-team-label: #fdf6e3;
@@ -62,6 +70,10 @@ body.body--dark {
   --vdb-header-bg: #2a2622;
   --vdb-warn: #e08a72;
   --vdb-muted: #a89e8f;
+  --vdb-warn-bg: #3a2e1e;
+  --vdb-warn-ink: #e5c08a;
+  --vdb-crit-bg: #3d2424;
+  --vdb-crit-ink: #f2b8ad;
 
   --vdb-graph-team: #c97b5d;
   --vdb-graph-team-label: #1c1917;
@@ -492,6 +504,24 @@ a.vdb-quiet .vdb-stat-chip:hover {
 .q-table th[data-vdb-drop] {
   background-color: var(--vdb-row-hover);
   box-shadow: inset 0 -3px 0 var(--vdb-heading);
+}
+
+/* ---------- the warning and the critical banner (tokens above) ---------- */
+
+.vdb-warn-box {
+  background-color: var(--vdb-warn-bg);
+}
+
+.vdb-warn-ink {
+  color: var(--vdb-warn-ink);
+}
+
+.vdb-crit-box {
+  background-color: var(--vdb-crit-bg);
+}
+
+.vdb-crit-ink {
+  color: var(--vdb-crit-ink);
 }
 
 /* ---------- readability remaps for fixed Tailwind tints ----------

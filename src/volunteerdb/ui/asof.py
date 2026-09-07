@@ -65,13 +65,13 @@ def asof_banner(as_of: datetime, base_path: str) -> None:
     settings menu, but a snapshot must never be silent -- nor end silently:
     the line says which pages show today, since the header's links to them
     drop the date."""
-    with ui.row().classes("w-full bg-amber-100 rounded p-2 items-center gap-2"):
+    with ui.row().classes("w-full vdb-warn-box rounded p-2 items-center gap-2"):
         ui.icon("history")
         with ui.column().classes("gap-0"):
             ui.label(
                 f"Read-only snapshot as of {timefmt.when_short(as_of, current_env().tz)}"
-            ).classes("text-amber-900 font-medium")
-            ui.label(SHOW_TODAY).classes("text-sm text-amber-800")
+            ).classes("vdb-warn-ink font-medium")
+            ui.label(SHOW_TODAY).classes("text-sm vdb-warn-ink")
         ui.space()
         ui.button("Back to now").props(f'dense color=warning href="{base_path}"')
 

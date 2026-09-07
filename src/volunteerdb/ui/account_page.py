@@ -234,7 +234,7 @@ def _email_card(
         ).classes("text-sm text-gray-500")
         if pending is not None:
             with ui.row().classes("items-center gap-2 w-full no-wrap"):
-                ui.icon("mark_email_unread").classes("text-amber-700")
+                ui.icon("mark_email_unread").classes("vdb-warn-ink")
                 ui.label(
                     f"Waiting for {pending} to confirm"
                     + (
@@ -242,7 +242,7 @@ def _email_card(
                         if pending_until is not None
                         else ""
                     )
-                ).classes("text-sm text-amber-800")
+                ).classes("text-sm vdb-warn-ink")
                 ui.space()
                 ui.button("Cancel", on_click=_drop_email_change).props(
                     "flat dense color=negative"
