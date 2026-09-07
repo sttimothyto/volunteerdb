@@ -69,7 +69,6 @@ You see the message *Photo saved*. Your photo now shows beside your name on your
 
 - If *Upload* stays grey, you have not ticked the checkbox.
 - To take the photo away later, open the same dialog and click *Remove photo*, then *Remove the photo*.
-- The page *Your account*, in the account menu, has the card *Your photo* with the same dialog.
 
 ## What you learned
 
