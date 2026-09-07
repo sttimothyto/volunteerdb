@@ -83,11 +83,12 @@ async def test_admin_sees_every_tier(database):
         await user.should_not_see(LEADERSHIP_TILE)
         # no volunteer record behind this account, so no own-service section
         await user.should_not_see(PERSONAL_TILE)
-        # the guides accumulate with reach: an admin gets every group but the
-        # one that needs a volunteer record of their own
-        await user.should_see("For administrators")
-        await user.should_see("For leaders and seconds")
-        await user.should_not_see("For team members")
+        # the guides are three for the highest role -- an admin's -- and the
+        # way into the rest
+        await user.should_see("Administer the parish")
+        await user.should_see("Manage accounts")
+        await user.should_see("All guides")
+        await user.should_not_see("Lead a team")
 
 
 async def test_leader_sees_leadership_but_not_the_parish(database):
@@ -103,8 +104,8 @@ async def test_leader_sees_leadership_but_not_the_parish(database):
         await user.should_see("Without a leader", retries=SLOW)
         await user.should_see(PERSONAL_TILE)
         await user.should_not_see(PARISH_TILE)
-        await user.should_see("For leaders and seconds")
-        await user.should_not_see("For administrators")
+        await user.should_see("Lead a team")  # the leaders' tutorial
+        await user.should_not_see("Administer the parish")
 
 
 async def test_core_member_sees_reach_without_coverage_or_workload(database):
@@ -120,8 +121,8 @@ async def test_core_member_sees_reach_without_coverage_or_workload(database):
         await user.should_not_see(PARISH_TILE)
         await user.should_not_see("Without a leader")
         await user.should_not_see("Workload:")
-        await user.should_see("For core members")
-        await user.should_not_see("For leaders and seconds")
+        await user.should_see("Read the full roster of your team")
+        await user.should_not_see("Lead a team")
 
 
 async def test_plain_member_sees_only_their_own_service(database):
@@ -149,6 +150,7 @@ async def test_plain_member_sees_only_their_own_service(database):
         graph = only(user.find(marker="graph-panel"))
         assert teams_head.id < service_head.id < guides_head.id < graph.id
 
-        # a plain member gets the two groups anybody with a volunteer record gets
-        await user.should_see("For team members")
-        await user.should_not_see("For core members")
+        # a plain member gets the members' three, and none of a core member's
+        await user.should_see("Your teams and your service")
+        await user.should_see("Update your contact details")
+        await user.should_not_see("Read the full roster of your team")

@@ -336,7 +336,7 @@ screens that changed, and ends with the full suite green in its own commit.
   layout (`cytoscape_graph.js:220-237`) runs only when opened; the caption is rewritten
   for touch ("tap a node"). The focus select and fit button move inside it. On the
   phone the same. The "Active teams" tile and the team page keep their links to it.
-- [ ] **25. Guides are three, not forty.** The band shows the tutorial and the two
+- [x] **25. Guides are three, not forty.** The band shows the tutorial and the two
   how-tos for the reader's highest role, plus "All guides" (the manual's sidebar). The
   rest is a `?` away on each page (step 11).
 - [ ] **26. The reader first.** For a linked volunteer the order is My service, My

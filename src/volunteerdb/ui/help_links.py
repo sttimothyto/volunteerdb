@@ -190,6 +190,24 @@ def page_help_href(slug: str) -> str:
     return GUIDE + PAGE_HELP[slug]
 
 
+def featured_for(actor: Actor) -> list[HelpLink]:
+    """Three pages for the reader's highest role: its tutorial and its first
+    two how-tos, walking down the groups (highest reach first) for what a
+    group lacks -- a core member's group has no tutorial, so they get the
+    members' one; a voter's has one how-to. The dashboard's Guides band
+    shows these three and a way into the rest; the "?" beside each page
+    title holds the page for that screen (PAGE_HELP)."""
+    tutorial: HelpLink | None = None
+    how_tos: list[HelpLink] = []
+    for group in reversed(groups_for(actor)):
+        for link in group.links:
+            if link.tutorial:
+                tutorial = tutorial or link
+            elif len(how_tos) < 2 and not link.path.startswith("/"):
+                how_tos.append(link)
+    return [link for link in (tutorial, *how_tos) if link is not None]
+
+
 def groups_for(actor: Actor) -> list[HelpGroup]:
     """The groups this reader can act on, widest audience first -- the order
     the dashboard's own statistics run in."""

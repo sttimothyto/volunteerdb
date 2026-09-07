@@ -122,9 +122,9 @@ Shown when your account is linked to a volunteer, and not on a past date.
 
 ### Guides
 
-- The last band, *Guides*, lists the pages of this manual for what you can do. Each link opens in a new tab.
-- The groups: *For everyone*, *For team members*, *For voters*, *For core members*, *For leaders and seconds*, *For administrators*. *For team members* needs a linked volunteer record; *For voters* needs a place on a roll.
-- The badge *Tutorial* marks a tutorial. The last link for administrators, *The technical manual*, opens the manual with the technical pages shown.
+- The band *Guides* shows 3 pages of this manual for your highest role: a tutorial, with the badge *Tutorial*, and 2 how-tos. Each link opens in a new tab.
+- *All guides* opens the front page of the manual, with every guide in its sidebar.
+- The *?* beside the title of each screen opens the page of this manual for that screen.
 
 ## Teams
 

@@ -66,6 +66,50 @@ def test_the_groups_accumulate_with_reach():
     ]
 
 
+def _featured(actor: Actor) -> list[str]:
+    return [link.title for link in help_links.featured_for(actor)]
+
+
+def test_three_pages_for_the_highest_role():
+    """The tutorial and two how-tos of the reader's highest group, walking
+    down for what the group lacks."""
+    assert _featured(_actor(volunteer_id=None)) == [
+        "Sign in for the first time",
+        "Sign in with an emailed code",
+        "Change your password",
+    ]
+    assert _featured(_actor()) == [
+        "Your teams and your service",
+        "Update your contact details",
+        "Add or change your photo",
+    ]
+    # a voter's group has one how-to and no tutorial: the members' fill in
+    assert _featured(_actor(voter=frozenset({1}))) == [
+        "Your teams and your service",
+        "Vote in an election",
+        "Update your contact details",
+    ]
+    assert _featured(_actor(full_view={3})) == [
+        "Your teams and your service",
+        "Read the full roster of your team",
+        "Invite a volunteer to create an account",
+    ]
+    assert _featured(_actor(managed={3})) == [
+        "Lead a team",
+        "Add or remove a member",
+        "Change the role of a member",
+    ]
+    assert _featured(_actor(admin=True, volunteer_id=None)) == [
+        "Administer the parish",
+        "Manage accounts",
+        "Send an invite again",
+    ]
+    for actor in (_actor(), _actor(managed={3}), _actor(admin=True)):
+        featured = help_links.featured_for(actor)
+        assert featured[0].tutorial
+        assert not any(link.tutorial for link in featured[1:])
+
+
 def test_every_link_lands_on_a_page_of_the_guide():
     missing = []
     for group in (

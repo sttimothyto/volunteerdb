@@ -444,26 +444,31 @@ def _my_service_section(mine: stats_service.PersonalStats) -> None:
 def _guides_section(actor: Actor) -> None:
     """The user guide, for what this reader can do -- the tail of the page,
     above the folded graph, where somebody who has run out of things to click
-    will look for what else there is. Tiers accumulate with reach (help_links);
-    each link is a real anchor into a new tab, like the Manual entry in the
-    settings menu, so the page they were on stays where it was."""
+    will look for what else there is. Three pages for the reader's highest
+    role (help_links.featured_for) and the way into all of them; the page
+    for each screen is behind the "?" beside its title. Each link is a real
+    anchor into a new tab, like the Manual entry in the settings menu, so
+    the page they were on stays where it was."""
     with stat_section(
-        "Guides", "Short pages on what you can do here. Each opens in a new tab."
+        "Guides",
+        "Three short pages for what you do here, and the rest of the manual. "
+        "Each opens in a new tab.",
     ):
-        for group in help_links.groups_for(actor):
-            with ui.column().classes("w-full gap-1").mark(f"guides-{group.title}"):
-                ui.label(group.title).classes("text-sm font-medium")
-                with ui.row().classes("items-center flex-wrap gap-x-4 gap-y-1"):
-                    for link in group.links:
-                        with ui.row().classes("items-center gap-1"):
-                            if link.tutorial:
-                                ui.badge("Tutorial").props("outline color=secondary")
-                            ui.link(link.title, link.href).classes(
-                                "text-sm vdb-quiet"
-                            ).props(
-                                'target="_blank" rel="noopener" '
-                                f'aria-label="{link.title} (opens in a new tab)"'
-                            )
+        with ui.row().classes("items-center flex-wrap gap-x-4 gap-y-1").mark("guides"):
+            for link in help_links.featured_for(actor):
+                with ui.row().classes("items-center gap-1"):
+                    if link.tutorial:
+                        ui.badge("Tutorial").props("outline color=secondary")
+                    ui.link(link.title, link.href).classes("text-sm vdb-quiet").props(
+                        'target="_blank" rel="noopener" '
+                        f'aria-label="{link.title} (opens in a new tab)"'
+                    )
+            ui.link("All guides", help_links.GUIDE_HOME).classes(
+                "text-sm vdb-quiet"
+            ).props(
+                'target="_blank" rel="noopener" '
+                'aria-label="All guides (opens in a new tab)"'
+            ).mark("guides-all")
 
 
 def _legend_entry(
