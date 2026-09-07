@@ -54,6 +54,10 @@ def required[F: ValidationElement](field: F) -> F:
     if isinstance(current, dict):
         rules.update(cast(dict[str, Callable[[Any], bool]], current))
     field.validation = rules
+    # the setter validates at once, which would open every form with
+    # "Required" under its blank fields: the rule speaks when the reader
+    # leaves the field empty, or on submit, not before they have begun
+    field.error = None
     return field
 
 

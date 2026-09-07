@@ -21,7 +21,7 @@ from .context import PageCtx, flash, info, page_ctx, run_command
 from .forms import actions, confirm, dialog_card, required, valid
 from .guards import deny_unless_admin
 from .layout import frame
-from .widgets import busy
+from .widgets import busy, empty_state
 
 # --- actions -------------------------------------------------------------------
 
@@ -336,6 +336,13 @@ async def users_page():
                 icon="person_add",
                 on_click=lambda: _new_account_dialog(volunteer_names, ctx.base_url),
             ).props("dense outline")
-        ui.label(f"{len(accounts)} accounts").classes("text-sm text-gray-500")
+        if accounts:
+            ui.label(f"{len(accounts)} accounts").classes("text-sm text-gray-500")
+        else:  # unreachable while the reader's own account is listed; kept honest
+            empty_state(
+                "No accounts yet.",
+                action="New account",
+                on_click=lambda: _new_account_dialog(volunteer_names, ctx.base_url),
+            )
         for account in accounts:
             _account_row(account, volunteer_names, ctx.base_url, now=ctx.now)

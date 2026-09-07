@@ -133,6 +133,7 @@ The table:
 - *Gaps* shows the badges *no leader* and *no second*.
 - A click on a column heading sorts. Drag a heading to move the column; the order stays until you sign out.
 - A click on a row opens the team page. Under the table: *N teams*, or *N of M teams* while a search is on.
+- With no teams: *No teams yet.*, and for *admin* the button *New team*.
 
 ## Team page
 
@@ -156,7 +157,7 @@ The sections, from the top:
 - The role is a badge. For *leaders* it is a list, and a new choice changes the role at once. They also see the icon *Remove from team* at the end of the row. It asks *Remove … from the … roster?* first.
 - Every member sees the account badge: *no account*, *disabled*, *invite sent*, *invite expired* or *account*. Next to it: *never signed in*, or *last login* with the date.
 - For *core*, the badges *no account* and *invite expired* turn into a button on hover: *invite to create account* or *send a new invite*.
-- A reader not on the team sees *You are not on this team, so its roster is not visible to you.* An empty roster says *Nobody on this team yet.*
+- A reader not on the team sees *You are not on this team, so its roster is not visible to you.* An empty roster says *Nobody on this team yet.* For *leaders*, the button *Add the first member* under it puts the cursor in *Volunteer*.
 - *Roster spreadsheet* (*leaders*, not on a past date). *Link a spreadsheet* opens the dialog *Roster spreadsheet*. The dialog has *Google Sheets link*, the choice *Overwrite it from the database* or *Import its rows into the database*, and *Save*. With a sheet linked, the section shows the link to the sheet, *Change spreadsheet*, *Sync now* and *Overwrite sheet*. It also shows *Roster template (Google Sheets)*. Under them: *Last synced …* or *Last sync failed: …*.
 - *Import a .csv* (*leaders*, in the same section): the box *Drop a .csv file here (validated before anything is written)*. A clean file gets the report *Dry run — nothing written yet.* and the button *Apply this import*. A file with problems gets *Not applied — fix the errors below and re-upload.* and 1 line per problem. After the apply: *Import applied ✔*.
 - *Sub-teams*: 1 button per sub-team.
@@ -179,7 +180,8 @@ The table:
 - *Workload* shows a badge with the band and the score, coloured by band, for the people whose workload you can read.
 - *Status* shows *inactive* for an archived volunteer. Only *admin* sees archived volunteers in the table.
 - 20 rows per page. A click on a row opens the side panel. Drag a heading to move a column.
-- Under the table: *N volunteers*.
+- Under the table: *N volunteers*. With a workload band chosen, the chip *Workload: …* shows it; its × clears it.
+- With no match: *Nobody matches “…”.* and the button *Clear search*.
 
 ## Volunteer page
 
@@ -245,7 +247,7 @@ The table:
 - The columns: *When*, *Event*, *Team*, *Location*, *Filled* (a bar and *N/M*; *∞* means unlimited), *You* (*serving*, *available* or *unavailable*).
 - A cancelled event carries *(cancelled)* after its name, in the past list only.
 - A click on a row opens the event page. The past list shows 20 rows per page. Under the table: *N events*.
-- With no events: *Nothing scheduled yet.*
+- With no events: *Nothing scheduled yet.*, and for *admin* and *leaders* the button *New event*. The search box stays. With *Show past* on and nothing past: *No past events yet.*
 
 ## Event page
 
@@ -293,7 +295,7 @@ Shown to *admin*, *leaders*, and anyone on the roll of an election. Others see *
 | *Vacancies* | 1 card per team with an empty seat: the team, the badges *no leader*, *no second-in-command* and *proposal open*, *N members*, and *Start proposal*. With no gaps: *Every team has a leader and a second-in-command. 🎉* | *admin*, *leaders* |
 | *Recently decided* | The 20 newest elections that were appointed or cancelled. | everyone on the page |
 
-- A voter with nothing open sees *No open proposals need you right now.*
+- A voter with nothing open sees *No open proposals need you right now.* A leader with nothing open sees *No election is open on your teams.*
 - The phase badges: *Nominating until* a date, *Voting until* a date, *Awaiting decision*, *Appointed*, *Cancelled*.
 
 The dialog *Propose for …*, opened by *Start proposal*:
@@ -347,7 +349,7 @@ Shown to *everyone*, from *Password & sign-in* in the settings menu. It has 4 ca
 
 ## Accounts
 
-Shown to *admin* only. Anyone else sees *Admins only.* The page lists every account, *N accounts*, 1 row each.
+Shown to *admin* only. Anyone else sees *Admins only.* The page lists every account, *N accounts*, 1 row each. With no accounts: *No accounts yet.* and the button *New account*.
 
 | Control | What it does |
 |---|---|
@@ -378,7 +380,7 @@ Shown to *admin* only, under the title *Custom fields*. Anyone else sees *Admins
 | The red bin icon | Asks *Delete the field “…”?*, then *Delete the field* removes it. The values stay in the history. |
 
 - 1 row per field: the label, a badge with the type, and the options of a *Choice* field. The badge *in list* marks a column on the *Volunteers* page; *inactive* marks a hidden field.
-- With no fields: *No custom fields defined yet.*
+- With no fields: *No custom fields defined yet.* and the button *New field*.
 - The types: *Text*, *Number*, *Choice*, *Date*, *Checkbox*, *Integer*, *Decimal*, *Timestamp*, *Timestamp (with zone)*, *Time*, *Duration*, *UUID*. See [Add a custom field](../how-to/add-a-custom-field.md).
 
 ## Workload

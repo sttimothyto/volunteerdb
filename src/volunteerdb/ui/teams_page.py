@@ -28,7 +28,7 @@ from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
-from .widgets import ROLE_OPTIONS, busy, inactive_badge, role_badge
+from .widgets import ROLE_OPTIONS, busy, empty_state, inactive_badge, role_badge
 
 
 def _hierarchy_rows(tree, coverage, actor) -> list[dict]:
@@ -156,8 +156,8 @@ async def teams_page(as_of: str = ""):
             ui.button("View Team Homepages", icon="public").props(
                 'dense outline href="/ministries/"'
             )
-            if actor.is_admin and at is None:
-                options = _parent_options(tree)
+            options = _parent_options(tree) if actor.is_admin and at is None else None
+            if options is not None:
                 ui.button(
                     "New team", icon="add", on_click=lambda: _team_dialog(options)
                 ).props("dense")
@@ -261,7 +261,11 @@ async def teams_page(as_of: str = ""):
             lambda e: ui.navigate.to(f"/teams/{e.args[1]['id']}{suffix}"),
         )
         if not tree.teams:
-            ui.label("No teams yet.").classes("text-gray-500")
+            empty_state(
+                "No teams yet.",
+                action="New team" if options is not None else None,
+                on_click=lambda: _team_dialog(options or {}),
+            )
         count = ui.label(count_text(len(rows), None, "team")).classes(
             "text-sm text-gray-500"
         )
@@ -907,7 +911,9 @@ def _subteams_row(children: list[Team]) -> None:
             ui.button(child.name).props(f'outline dense href="/teams/{child.id}"')
 
 
-def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> None:
+def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> ui.select:
+    """The picker is returned so an empty roster's button can put the cursor
+    in it."""
     ui.label("Add member").classes("text-lg font-medium")
     with ui.row().classes("items-center gap-2"):
         who = (
@@ -927,6 +933,7 @@ def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> None:
                 _add_member(team_id, who.value, role.value) if valid(who) else None
             ),
         ).props("dense").mark("add-member")
+    return who
 
 
 def _roster_row(
@@ -994,15 +1001,26 @@ def _roster_row(
 
 
 def _roster_section(
-    room: TeamRoom, panel: VolunteerPanel, base_url: str, *, reveal: bool
+    room: TeamRoom,
+    panel: VolunteerPanel,
+    base_url: str,
+    *,
+    reveal: bool,
+    picker: ui.select | None = None,
 ) -> None:
+    """`picker` is the add-member row's Volunteer box, when the reader has
+    one: an empty roster's button puts the cursor in it."""
     ui.label("Roster").classes("text-lg font-medium")
     if not room.can_names:
         ui.label(
             "You are not on this team, so its roster is not visible to you."
         ).classes("text-gray-500")
     elif not room.roster:
-        ui.label("Nobody on this team yet.").classes("text-gray-500")
+        empty_state(
+            "Nobody on this team yet.",
+            action="Add the first member" if picker is not None else None,
+            on_click=lambda: picker.run_method("focus") if picker else None,
+        )
     for membership, volunteer in room.roster:
         _roster_row(room, membership, volunteer, panel, base_url, reveal=reveal)
 
@@ -1056,9 +1074,12 @@ async def team_detail(team_id: int, as_of: str = ""):
             _home_page_section(room.team, room.page, team_id, room.slug, ctx.base_url)
         if room.children:
             _subteams_row(room.children)
-        if room.can_manage:
+        picker = (
             _add_member_row(team_id, room.volunteer_options)
-        _roster_section(room, panel, ctx.base_url, reveal=actor.is_admin)
+            if room.can_manage
+            else None
+        )
+        _roster_section(room, panel, ctx.base_url, reveal=actor.is_admin, picker=picker)
         if room.can_manage:
             _sheet_section(room.sheet, team_id, actor.is_admin)
         if room.upcoming_events:

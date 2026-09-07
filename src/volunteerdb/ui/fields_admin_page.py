@@ -8,7 +8,7 @@ from .context import PageCtx, page_ctx, run_command
 from .forms import actions, confirm, dialog_card, required, valid
 from .guards import deny_unless_admin
 from .layout import frame
-from .widgets import inactive_badge
+from .widgets import empty_state, inactive_badge
 
 TYPE_OPTIONS = {ft.value: FIELD_TYPE_LABELS[ft] for ft in FieldType}
 
@@ -35,7 +35,11 @@ async def fields_page():
         )
 
         if not defs:
-            ui.label("No custom fields defined yet.").classes("text-gray-500")
+            empty_state(
+                "No custom fields defined yet.",
+                action="New field",
+                on_click=lambda: _field_dialog(),
+            )
         for defn in defs:
             with ui.row().classes(
                 "w-full items-center gap-3 p-2 rounded hover:bg-gray-100"

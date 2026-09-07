@@ -32,7 +32,7 @@ from .context import PageCtx, flash, page_ctx, run_command, warn
 from .date_input import date_input
 from .forms import WIDE, actions, confirm, dialog_card, required, valid
 from .layout import frame
-from .widgets import ROLE_OPTIONS, phase_badge, role_badge, workload_badge
+from .widgets import ROLE_OPTIONS, empty_state, phase_badge, role_badge, workload_badge
 
 IGNATIAN_NOTE = (
     "Ignatian election: 1. pray separately, 2. vote separately, "
@@ -231,8 +231,17 @@ async def elections_page():
             with ui.column().classes("w-full gap-1"):
                 for s in open_rows:
                     _summary_row(s)
-        elif not can_create:
-            ui.label("No open proposals need you right now.").classes("text-gray-500")
+        elif can_create:
+            empty_state(
+                "No election is open on your teams.",
+                hint=(
+                    "Start one from a vacancy below."
+                    if vacancy_rows
+                    else "Every team you manage has a leader and a second."
+                ),
+            )
+        else:
+            empty_state("No open proposals need you right now.")
 
         if can_create:
             _vacancies_section(vacancy_rows, proposal_team_ids, volunteer_options)

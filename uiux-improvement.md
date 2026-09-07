@@ -220,7 +220,7 @@ screens that changed, and ends with the full suite green in its own commit.
   handlers call `.validate()` before the command; the ~20 post-submit toasts become
   field errors with focus moved to the first failing field. Date/time fields keep
   their pickers and add a format rule.
-- [ ] **6. Empty states offer the next thing.** `widgets.empty_state(text, *, action,
+- [x] **6. Empty states offer the next thing.** `widgets.empty_state(text, *, action,
   href)` for: `/volunteers` with no hits ("Nobody matches 'xyz'." + Clear search;
   the band filter shown as a chip so it cannot stay applied invisibly), `/events`
   (the search box stays when the list is empty, `events_page.py:677-685`), a roster

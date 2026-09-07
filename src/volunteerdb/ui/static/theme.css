@@ -507,6 +507,12 @@ body.body--dark .text-amber-900 { color: #e5c08a; }
 body.body--dark .bg-red-50 { background-color: #362222; }
 body.body--dark .bg-blue-50 { background-color: #26303a; }
 
+/* ---------- empty states (ui/widgets.py empty_state) ---------- */
+
+.vdb-empty {
+  padding: 0.5rem 0;
+}
+
 /* ---------- utilities ---------- */
 
 /* read by assistive technology, invisible otherwise (the calendar's caption,

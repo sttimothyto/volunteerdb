@@ -56,6 +56,7 @@ from .forms import WIDE, actions, answered, confirm, dialog_card, required, vali
 from .layout import frame
 from .tables import count_text, wire_search
 from .volunteer_panel import VolunteerPanel, volunteer_link
+from .widgets import empty_state
 
 # Substitute calls a single team may broadcast in a rolling day; the limit and
 # its reasons live with the other families in throttle.LIMITS. Past it the
@@ -649,31 +650,26 @@ def _event_rows(summaries: list[EventSummary], tz: ZoneInfo) -> list[dict]:
 def _listing_controls(
     listing: Listing,
     *,
-    has_rows: bool,
     visible_teams: dict[int, str],
     managed_options: dict[int, str],
     is_admin: bool,
-) -> ui.input | None:
+) -> ui.input:
     """The row above the table: its title, the search box (returned, for the
     table to wire), the team filter, the past/upcoming toggle and, for a
-    manager, the New event button."""
+    manager, the New event button. The search box stays when the list is
+    empty: the row keeps its shape, and the empty state below says why."""
     with ui.row().classes("w-full items-center mt-4"):
         ui.label(
             ("Past events" if listing.show_past else "Upcoming events")
             + (" (all teams)" if is_admin else " on your teams")
         ).classes("text-lg font-medium")
         # the search box grows into the free space and holds the buttons
-        # against the right edge (the teams-page idiom); with nothing to
-        # search the spacer takes over that job
+        # against the right edge (the teams-page idiom)
         search = (
             ui.input("Search events…")
             .props("outlined dense clearable debounce=200")
             .classes("grow")
-            if has_rows
-            else None
         )
-        if search is None:
-            ui.space()
         # one ministry at a time, for somebody who runs several. Offered only
         # when there is more than one team to choose between, and built from
         # the rows on screen rather than from every team the actor can see:
@@ -759,13 +755,18 @@ EVENT_COLUMNS = [
 def _events_table(rows: list[dict], *, show_past: bool, search: ui.input) -> None:
     """The listing itself, its count line, and the search box wired to it."""
     columns = column_order.apply_saved_order("events", EVENT_COLUMNS)
-    table = ui.table(
-        columns=columns,
-        rows=rows,
-        row_key="id",
-        # upcoming is one screen like before; the past list grows forever
-        pagination=20 if show_past else 0,
-    ).classes("w-full vdb-clickable-rows")
+    table = (
+        ui.table(
+            columns=columns,
+            rows=rows,
+            row_key="id",
+            # upcoming is one screen like before; the past list grows forever
+            pagination=20 if show_past else 0,
+        )
+        # the empty state under the table speaks, not Quasar's "No data"
+        .props("hide-no-data")
+        .classes("w-full vdb-clickable-rows")
+    )
     column_order.make_draggable(table, "events")
     # a real link in the title cell (the teams page idiom), so the row
     # is reachable by keyboard; the row click stays for the mouse
@@ -876,22 +877,20 @@ async def events_page(past: str = "", team: str = "", view: str = "", month: str
         )
         search = _listing_controls(
             listing,
-            has_rows=bool(rows),
             visible_teams=visible_teams,
             managed_options=managed_options,
             is_admin=actor.is_admin,
         )
-        if search is not None:
-            _events_table(rows, show_past=listing.show_past, search=search)
-        else:
-            ui.label(
-                "Nothing scheduled yet."
-                + (
-                    ""
-                    if not managed_options
-                    else " Create the first event with the button above."
+        _events_table(rows, show_past=listing.show_past, search=search)
+        if not rows:
+            if listing.show_past:
+                empty_state("No past events yet.")
+            else:
+                empty_state(
+                    "Nothing scheduled yet.",
+                    action="New event" if managed_options else None,
+                    on_click=lambda: _new_event_dialog(managed_options),
                 )
-            ).classes("text-gray-500")
 
 
 # --- the workroom's dialogs ----------------------------------------------------

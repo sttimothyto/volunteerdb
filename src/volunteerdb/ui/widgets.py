@@ -20,6 +20,33 @@ from ..services.elections import ProposalPhase
 ROLE_OPTIONS = {role.value: ROLE_LABELS[role] for role in TeamRole}
 
 
+def empty_state(
+    text: str,
+    *,
+    hint: str | None = None,
+    action: str | None = None,
+    href: str | None = None,
+    on_click: Callable[..., Any] | None = None,
+    marker: str = "empty-state",
+) -> None:
+    """A list with nothing in it says so, and offers the next thing.
+
+    `text` is the fact ("Nobody matches “xyz”."), `hint` a quieter line
+    under it, and `action` a button: a link when `href` is given, a
+    handler otherwise. A blank page with a count of 0 leaves the reader
+    guessing whether the search, the filter or the parish is empty."""
+    with ui.column().classes("items-start gap-1 vdb-empty").mark(marker):
+        ui.label(text).classes("text-gray-500")
+        if hint:
+            ui.label(hint).classes("text-sm text-gray-500")
+        if action and href:
+            ui.button(action).props(f'dense outline href="{href}"').mark("empty-action")
+        elif action and on_click is not None:
+            ui.button(action, on_click=on_click).props("dense outline").mark(
+                "empty-action"
+            )
+
+
 def busy(
     handler: Callable[..., Any],
 ) -> Callable[[ClickEventArguments], Awaitable[None]]:

@@ -41,6 +41,7 @@ from .timeline_chart import timeline_chart
 from .volunteer_panel import VolunteerPanel, format_custom
 from .widgets import (
     ROLE_OPTIONS,
+    empty_state,
     inactive_badge,
     phase_badge,
     role_badge,
@@ -95,11 +96,14 @@ async def volunteers_page(q: str = "", band: str = ""):
                 value=q,
             )
             if shows_workload:
+                bands = {b.label: b.label for b in config.bands}
                 band_select = (
                     ui.select(
-                        {b.label: b.label for b in config.bands},
+                        bands,
                         label="Workload",
-                        value=band or None,
+                        # a band the URL names but the parish does not is no
+                        # choice, not an error page
+                        value=band if band in bands else None,
                         clearable=True,
                     )
                     .props("outlined dense")
@@ -225,9 +229,39 @@ async def volunteers_page(q: str = "", band: str = ""):
                 """,
             )
         table.on("rowClick", lambda e: panel.open(e.args[1]["id"]))
-        ui.label(f"{len(rows)} volunteer{'s' if len(rows) != 1 else ''}").classes(
-            "text-sm text-gray-500"
-        )
+        if not rows:
+            _nobody(q, band)
+        with ui.row().classes("items-center gap-2"):
+            ui.label(f"{len(rows)} volunteer{'s' if len(rows) != 1 else ''}").classes(
+                "text-sm text-gray-500"
+            )
+            if band:
+                # the filter as a thing on the page, not only a value in a
+                # box: it cannot stay applied without being seen
+                ui.chip(f"Workload: {band}", removable=True, icon="filter_alt").mark(
+                    "band-chip"
+                ).on(
+                    "remove",
+                    lambda _: ui.navigate.to(
+                        f"/volunteers?q={quote_plus(q)}" if q else "/volunteers"
+                    ),
+                )
+
+
+def _nobody(q: str, band: str) -> None:
+    """The empty list, with what emptied it and the way back."""
+    who = f"Nobody in the {band} band" if band else "Nobody"
+    if q:
+        text = f"{who} matches “{q}”."
+    elif band:
+        text = f"{who}."
+    else:
+        text = "No volunteers yet."
+    empty_state(
+        text,
+        action="Clear search" if (q or band) else None,
+        href="/volunteers",
+    )
 
 
 def _new_volunteer_dialog() -> None:
