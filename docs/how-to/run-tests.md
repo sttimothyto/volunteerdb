@@ -125,7 +125,7 @@ uv run playwright show-trace test-results/*/trace.zip
 wall time went from about twelve minutes to about three. Every worker is a
 separate *process*, so the state the suite keeps in-process is per-worker and
 needs no coordination. That is the structlog configuration (`_quiet_structlog`,
-`log_records`), the throttle ledger and `SIM_CLOCK`. Two things did need it:
+`log_records`), the throttle ledger and `SIM_CLOCK`. Three things did need it:
 
 - **A database each.** `volunteerdb_test_gw0`, `_gw1`, and so on, named from
   `PYTEST_XDIST_WORKER` in `tests/conftest.py`. The suite truncates every table
@@ -135,6 +135,11 @@ needs no coordination. That is the structlog configuration (`_quiet_structlog`,
   tests `xdist_group("browser")`, and `--dist loadgroup` keeps a group on one
   worker. So the session-scoped `python -m volunteerdb.main` starts once, not
   once per worker that was handed a browser test.
+- **A NiceGUI storage directory each.** The user-simulation fixture clears its
+  storage directory after every test, and the default is the repo's own
+  `.nicegui/`. `tests/conftest.py` points each worker at a temporary directory
+  of its own, as NiceGUI's pytest plugin would. The browser tests' app process
+  gets one through `NICEGUI_STORAGE_PATH`.
 
 ```sh
 uv run pytest -n 4 --dist loadgroup    # what make test runs

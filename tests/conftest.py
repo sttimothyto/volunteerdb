@@ -11,9 +11,12 @@ session-scoped fixtures below already run once per worker.
 """
 
 import asyncio
+import atexit
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
@@ -24,6 +27,8 @@ import pytest
 import sqlalchemy as sa
 import structlog
 from fastapi import FastAPI
+from nicegui import app
+from nicegui.storage import Storage
 from nicegui.testing.user_simulation import user_simulation
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -68,6 +73,22 @@ _WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
 assert re.fullmatch(r"(gw\d+)?", _WORKER), f"unexpected xdist worker id: {_WORKER!r}"
 TEST_DB = "volunteerdb_test" + (f"_{_WORKER}" if _WORKER else "")
 TEST_URL = BASE_URL.rsplit("/", 1)[0] + "/" + TEST_DB
+
+# NiceGUI's per-session storage files. The user-simulation fixture clears the
+# storage directory after every test -- unlinks the files, removes the
+# directory -- and Storage.path defaults to the repo's own .nicegui/, which
+# belongs to `make dev` and, under -n, to every other worker at once: a worker
+# finishing a UI test deleted it under the others ("Directory not empty" on
+# one side, a missing storage-user-*.json on the other, pages answering 404).
+# NiceGUI's own pytest plugin gives each process a temporary directory, but
+# this suite imports the fixture rather than loading the plugin, so it does the
+# same here. The browser tests' app process gets its own through
+# NICEGUI_STORAGE_PATH (tests/e2e/conftest.py).
+Storage.path = Path(
+    tempfile.mkdtemp(prefix=f"nicegui-test-{_WORKER or 'serial'}-")
+).resolve()
+atexit.register(shutil.rmtree, Storage.path, ignore_errors=True)
+app.storage = Storage()  # rebuilt, so its persistent dicts pick up the path
 
 # NiceGUI "main file" for user_simulation; see its docstring for why page module
 # imports have to happen inside the simulation's reset context.
