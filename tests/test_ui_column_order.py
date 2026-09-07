@@ -281,14 +281,71 @@ async def test_signing_out_forgets_the_order_but_keeps_dark_mode(database):
             )
 
 
-async def test_the_header_cell_slot_is_wired_on_both_listings(database):
+async def test_the_header_cell_slot_is_wired_on_every_table(database):
+    """Every table on the site, not only the two listings it began on."""
     async with db_session() as session:
         ids = await _parish(session)
 
     async with user_simulation(main_file=SIM_MAIN) as user:
         await user.open(f"/login-dev/{ids['admin_u']}")
-        for path in ("/teams", "/volunteers"):
+        for path in (
+            "/teams",
+            "/volunteers",
+            "/events",
+            f"/teams/{ids['liturgy']}",
+            "/admin/users",
+            "/admin/workload",
+        ):
             await user.open(path)
             table = only(user.find(kind=ui.table))
             assert "header-cell" in table.slots, f"{path} has no draggable header"
             assert "data-vdb-col" in table.slots["header-cell"].template
+
+
+def _names(user) -> list[str]:
+    return [c["name"] for c in only(user.find(kind=ui.table)).columns]
+
+
+@pytest.mark.parametrize(
+    "path,moved,target,expected,pinned",
+    [
+        (
+            "/teams/{liturgy}",
+            "account",
+            "name",
+            ["account", "name", "role", "email", "phone", "since", "actions"],
+            "actions",
+        ),
+        (
+            "/admin/users",
+            "last_login",
+            "email",
+            ["last_login", "email", "status", "actions"],
+            "actions",
+        ),
+        ("/admin/workload", "weight", "ministry", ["weight", "ministry", "team"], None),
+    ],
+)
+async def test_the_other_tables_take_a_drop_and_keep_it(
+    database, path, moved, target, expected, pinned
+):
+    """The roster, the accounts and the weights: a drop lands, a reload keeps
+    it, and the Actions column -- a header only a screen reader meets -- stays
+    at the end of the row whatever the wire says."""
+    async with db_session() as session:
+        ids = await _parish(session)
+    path = path.format(**ids)
+
+    async with user_simulation(main_file=SIM_MAIN) as user:
+        await user.open(f"/login-dev/{ids['admin_u']}")
+        await user.open(path)
+        _drag(user, moved, target)
+        assert _names(user) == expected
+        await user.open(path)
+        assert _names(user) == expected, "and it survives a reload"
+        if pinned is not None:
+            _drag(user, pinned, moved)
+            _drag(user, moved, pinned)
+            assert _names(user) == expected, (
+                "the wire is untrusted: the pin has to hold server-side"
+            )

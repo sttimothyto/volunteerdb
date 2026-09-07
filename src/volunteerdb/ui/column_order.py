@@ -1,4 +1,4 @@
-"""Reader-chosen column order for the big listings, held for the session.
+"""Reader-chosen column order for every table, held for the session.
 
 Quasar renders columns in the order the `columns` list arrives in, so the whole
 feature is one permutation applied before ui.table() is built, plus a
@@ -7,9 +7,14 @@ header-cell slot that makes each <th> draggable and a delegated listener
 definition is edited: the same dicts, in a different order.
 
 What is saved is a list of column *names*, never indices. The column set is not
-fixed -- /teams hides the coverage counts from a plain member, and /volunteers
-grows one cf_<key> column per custom field an admin marks show_in_list -- so an
-index saved on one visit would mean a different column on the next.
+fixed -- /teams hides the coverage counts from a plain member, a roster shows
+the contact columns to its leaders only, and /volunteers grows one cf_<key>
+column per custom field an admin marks show_in_list -- so an index saved on one
+visit would mean a different column on the next.
+
+A column whose header is for screen readers only (the Actions column at the
+end of the roster and of the accounts table) is FIXED: nobody can see a header
+to take hold of, and the buttons belong at the end of the row.
 
 The order lives in app.storage.user and is dropped by context.clear_session(),
 so it survives reloads and navigation but not signing out.
@@ -125,8 +130,8 @@ def make_draggable(table: ui.table, key: str) -> None:
     """Let the reader drag this table's headers around, remembering the result
     under `key` until the session ends (see context.clear_session)."""
     # page-scoped like the dashboard's cytoscape preload, not shared like
-    # theme.css: two of fifteen pages want it, and the file guards itself
-    # against a second injection
+    # theme.css: the pages with a table want it and the rest do not, and the
+    # file guards itself against a second injection
     ui.add_head_html(f'<script defer src="{static_url("column_drag.js")}"></script>')
     table.add_slot("header-cell", HEADER_CELL)
 

@@ -171,7 +171,7 @@ The sections, from the top:
 - *Volunteer home page* (*core*, not on a past date): a panel under the roster. A click on its title opens or closes it. It is open when a doc is linked or the last fetch failed. The line under the title says which.
 - Inside the panel *Volunteer home page*: *Set home page doc* opens the dialog *Team home page doc*. The dialog has the field *Google Doc link*, *Clear* and *Save*. With a doc set, the section shows the links *Google Doc* and *Public page*. It also shows the buttons *Download QR Code to Public page*, *Fetch now* and *Change the doc*. Under them: *Not published yet — …*, *Refreshed nightly · last fetched …*, or *Last fetch failed: …*.
 - *Add member* (*leaders*): the lists *Volunteer* and *Role*, and the button *Add*.
-- *Roster* (*members*): a table with 1 row per person and the columns *Name*, *Role*, *Account* and *Since*. *core* also see *Email* and *Phone*. A click on a column heading sorts. *Search the roster…* narrows the table as you type. 25 rows per page; *All* shows every row.
+- *Roster* (*members*): a table with 1 row per person and the columns *Name*, *Role*, *Account* and *Since*. *core* also see *Email* and *Phone*. A click on a column heading sorts. Drag a heading to move a column. *Search the roster…* narrows the table as you type. 25 rows per page; *All* shows every row.
 - The name opens the side panel. *Since* is the day the person joined the team, as far as the site's records go. On a narrow screen the *Email*, *Phone* and *Since* columns are hidden; the side panel has the first two.
 - The role is a badge. For *leaders* it is a button: a click opens the dialog *Change the role of …*, with the list *Role* and *Save*. They also see the icon *Remove from team* at the end of the row. It asks *Remove … from the … roster?* first.
 - Every member sees the account badge: *no account*, *disabled*, *invite sent*, *invite expired* or *account*. Next to it: *never signed in*, or *last login* with the date.
@@ -268,7 +268,7 @@ The table:
 - The columns: *When*, *Event*, *Team*, *Location*, *Filled* (a bar and *N/M*; *∞* means unlimited), *You* (*serving*, *available* or *unavailable*).
 - A cancelled event carries *(cancelled)* after its name, in the past list only.
 - On a narrow screen only *When*, *Event* and *Filled* show. The team and the place sit under the event's name, and *serving* is a badge there.
-- A click on a row opens the event page. The past list shows 20 rows per page. Under the table: *N events*.
+- A click on a row opens the event page. Drag a heading to move a column. The past list shows 20 rows per page. Under the table: *N events*.
 - With no events: *Nothing scheduled yet.*, and for *admin* and *leaders* the button *New event*. The search box stays. With *Show past* on and nothing past: *No past events yet.*
 
 ## Event page
@@ -387,7 +387,7 @@ Shown to *admin* only. Anyone else sees *Admins only.* and the button *Dashboard
 | *Disable* / *Enable* | Switches the account off or on. A switched-off account cannot sign in. |
 | *New invite link (resets the password)* | Asks *Send … a new invite link?*, then makes a fresh invitation link, emails it, and removes the password. |
 
-The table has the columns *Account*, *Status* and *Last login*. A click on a column heading sorts. 25 rows per page; *All* shows every row. On a narrow screen *Status* and *Last login* are hidden, and the status badge sits under the address. Each row shows:
+The table has the columns *Account*, *Status* and *Last login*. A click on a column heading sorts. Drag a heading to move a column. 25 rows per page; *All* shows every row. On a narrow screen *Status* and *Last login* are hidden, and the status badge sits under the address. Each row shows:
 
 - A shield icon for an administrator, a grey person for everyone else.
 - The email address, and under it the linked volunteer's name or *not linked to a volunteer*.
@@ -416,7 +416,7 @@ Shown to *admin* only, under the title *Workload*. Anyone else sees *Admins only
 |---|---|
 | *Role multipliers* | 1 number per role: *Ministry leader*, *Second-in-command*, *Core team member*, *Member*. |
 | *Colour bands* | 1 row per band: *Label*, *Colour*, *badge text N:1* (how well the label reads on the colour), and *up to score*. The last band reads *everything above*. A note says that saving recolours the volunteers list, the graph and the dashboard chips. Under them: *Save settings*. |
-| *Team workload weights* | A table with the columns *Ministry*, *Team* and *Weight*, 1 row per team, and the box *Search teams…* above it. A cleared box is weight 0: the team does not count. *Save weights* stays at the foot of the card. |
+| *Team workload weights* | A table with the columns *Ministry*, *Team* and *Weight*, 1 row per team, and the box *Search teams…* above it. A click on a column heading sorts. Drag a heading to move a column. A cleared box is weight 0: the team does not count. *Save weights* stays at the foot of the card. |
 
 - After a save: *Workload settings saved* or *Updated N team weights*.
 - The number of bands cannot change on this page.

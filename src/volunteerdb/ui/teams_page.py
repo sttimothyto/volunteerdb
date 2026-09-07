@@ -1179,6 +1179,9 @@ def _roster_columns(room: TeamRoom) -> list[dict]:
                 "field": "id",
                 "align": "right",
                 "headerClasses": "sr-only",
+                # the Remove button stays at the end of every row: a header
+                # nobody can see is nothing to take hold of
+                column_order.FIXED: True,
             }
         )
     return columns
@@ -1226,7 +1229,9 @@ def _roster_table(
             )
         table = (
             SearchedTable(
-                columns=_roster_columns(room),
+                # one saved order for every team's roster: the column set is
+                # the reader's tier, not the team
+                columns=column_order.apply_saved_order("roster", _roster_columns(room)),
                 rows=rows,
                 row_key="id",
                 pagination={"rowsPerPage": 25},
@@ -1235,6 +1240,7 @@ def _roster_table(
             .classes("w-full vdb-clickable-rows")
             .mark("roster")
         )
+        column_order.make_draggable(table, "roster")
         table.add_slot("body-cell-name", _NAME_CELL)
         table.add_slot("body-cell-role", _ROLE_CELL)
         table.add_slot("body-cell-account", _ACCOUNT_CELL)

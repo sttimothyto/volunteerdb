@@ -9,6 +9,7 @@ from ..fp import Err, Ok
 from ..models import ROLE_LABELS, TeamRole
 from ..services import teams as team_service
 from ..services import workload as workload_service
+from . import column_order
 from .a11y import heading
 from .context import PageCtx, page_ctx, run_command, success
 from .guards import deny_unless_admin
@@ -213,7 +214,7 @@ def _weights_table(all_teams, paths: dict[int, str]) -> None:
         )
     table = (
         SearchedTable(
-            columns=WEIGHT_COLUMNS,
+            columns=column_order.apply_saved_order("weights", WEIGHT_COLUMNS),
             rows=_weight_rows(all_teams, paths),
             row_key="id",
             pagination=0,
@@ -222,6 +223,7 @@ def _weights_table(all_teams, paths: dict[int, str]) -> None:
         .classes("w-full vdb-weights")
         .mark("weights")
     )
+    column_order.make_draggable(table, "weights")
     table.add_slot("body-cell-weight", _WEIGHT_CELL)
     # the table copies the rows it is handed, so its own list is the one
     # state: the search narrows it to subsets of these dicts, a typed weight

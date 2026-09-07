@@ -17,7 +17,7 @@ from ..fp import Err, Ok, expect
 from ..models import AppUser
 from ..services import users as user_service
 from ..services import volunteers as volunteer_service
-from . import invites
+from . import column_order, invites
 from .context import PageCtx, flash, info, page_ctx, run_command
 from .forms import actions, confirm, dialog_card, required, valid
 from .guards import deny_unless_admin
@@ -329,6 +329,9 @@ ACCOUNT_COLUMNS = [
         "field": "id",
         "align": "right",
         "headerClasses": "sr-only",
+        # the "⋯" menu stays at the end of every row: a header nobody can
+        # see is nothing to take hold of
+        column_order.FIXED: True,
     },
 ]
 
@@ -440,7 +443,7 @@ def _accounts_table(
         )
     table = (
         SearchedTable(
-            columns=ACCOUNT_COLUMNS,
+            columns=column_order.apply_saved_order("accounts", ACCOUNT_COLUMNS),
             rows=rows,
             row_key="id",
             pagination={"rowsPerPage": 25},
@@ -449,6 +452,7 @@ def _accounts_table(
         .classes("w-full")
         .mark("accounts")
     )
+    column_order.make_draggable(table, "accounts")
     table.add_slot("body-cell-email", _EMAIL_CELL)
     table.add_slot("body-cell-status", _STATUS_CELL)
     table.add_slot(
