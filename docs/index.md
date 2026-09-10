@@ -179,6 +179,7 @@ how-to/run-tests
 :caption: Technical explanation
 
 explanation/architecture
+explanation/request-lifecycle
 explanation/permissions
 explanation/history
 explanation/auth

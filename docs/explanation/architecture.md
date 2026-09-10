@@ -172,7 +172,8 @@ The GUI is server-side, so a page interaction (say, a role change on a
 roster) follows one path. A websocket event calls `run_command(command)`.
 That runs the service call in a transaction, commits, and runs the effects.
 Then the page reloads from the database. There is no client-side data model
-to reconcile.
+to reconcile. [From a click to the database](request-lifecycle.md) follows
+that path step by step.
 
 Four sections redraw in place instead of reloading: the roster, an event's
 slots and its attendance, a proposal's roll and ballot. Each is drawn again
