@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from .. import query_lang
 from ..domain import AddressReplaced, Outcome
@@ -21,6 +22,23 @@ from ..models import (
     team_history,
 )
 from ..permissions import Actor, volunteer_team_ids
+
+
+def _listed(stmt: sa.Select, V: type[Volunteer]) -> sa.Select:
+    """A whole-parish list query, minus the column no list has ever shown.
+
+    `sys_period` is a tstzrange the versioning trigger maintains and nothing
+    renders: it is the row's validity period, and the only code that reads one
+    (timeline, role_runs) goes to the history tables by column, never through
+    an entity. Selecting it anyway costs the driver a range decode per row —
+    two timestamps and a bounds string built for every volunteer on the page,
+    5,000 of them at growth scale — for a value no caller then looks at.
+
+    raiseload, so a later caller that does want it is told to ask for it rather
+    than quietly emitting a SELECT per row (or, after this list has outlived its
+    session, failing somewhere less obvious).
+    """
+    return stmt.options(defer(V.sys_period, raiseload=True))
 
 
 async def get(
@@ -64,7 +82,7 @@ async def search(
     since the order is by name, that is the alphabetically first N matches.
     """
     V = entity(Volunteer, at)
-    stmt = sa.select(V).order_by(V.last_name, V.first_name)
+    stmt = _listed(sa.select(V).order_by(V.last_name, V.first_name), V)
     if query.strip():
         pattern = f"%{query.strip()}%"
         public_match = (V.first_name + " " + V.last_name).ilike(pattern)
@@ -138,7 +156,9 @@ async def search_or_query(
     compiled = query_lang.compile_volunteers(ast, V=V, M=M, T=T, defs=defs, actor=actor)
     if isinstance(compiled, Err):
         return compiled
-    stmt = sa.select(V).where(compiled.value).order_by(V.last_name, V.first_name)
+    stmt = _listed(
+        sa.select(V).where(compiled.value).order_by(V.last_name, V.first_name), V
+    )
     if not include_inactive:
         stmt = stmt.where(V.is_active)
     if limit is not None:

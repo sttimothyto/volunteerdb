@@ -1,5 +1,8 @@
 """Volunteer service: update sentinel semantics, search, normalization, impact."""
 
+import pytest
+import sqlalchemy as sa
+
 from volunteerdb import errors
 from volunteerdb.models import TeamRole
 from volunteerdb.permissions import SYSTEM
@@ -571,3 +574,31 @@ async def test_search_or_query_inactive_and_as_of(database):
             )
             == []
         ), "is_active cannot widen what include_inactive gates"
+
+
+async def test_a_listed_volunteer_carries_no_validity_period(database):
+    """The list never shows sys_period and nothing downstream reads it, so the
+    query does not ask for it — a tstzrange decode per row, for every person in
+    the parish, in aid of nothing. Asking for it anyway is an error rather than
+    a silent per-row SELECT, because these rows routinely outlive their session.
+    """
+    async with db_session() as session:
+        ok(await volunteers.create(session, SYSTEM, "Wanda", "Watcher"))
+
+    async with db_session() as session:
+        listed = await volunteers.search(session, "", actor=SYSTEM)
+        queried = ok(
+            await volunteers.search_or_query(
+                session, "first_name = 'Wanda'", actor=SYSTEM
+            )
+        )
+        for found in (listed, queried):
+            assert [v.full_name for v in found] == ["Wanda Watcher"]
+            assert "sys_period" in sa.inspect(found[0]).unloaded
+            with pytest.raises(sa.exc.InvalidRequestError):
+                found[0].sys_period
+
+        # the single-volunteer read is untouched: the profile page loads a whole
+        # row, and nothing about one person is worth a second loader option
+        one = await volunteers.get(session, listed[0].id)
+        assert one is not None and one.sys_period.upper is None
