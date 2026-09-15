@@ -32,7 +32,7 @@ from ..models import (
     ProposalVoter,
     Volunteer,
 )
-from ..permissions import Actor, team_ids_map
+from ..permissions import Actor, everyone_serving
 from . import elections as election_service
 from . import events as event_service
 from . import reports as report_service
@@ -281,16 +281,16 @@ async def _leadership(
 
         # --- workload spread ------------------------------------------------
         # visible_scores applies can_view_workload per volunteer, so this is
-        # the same permission the graph's coloured dots run through — and the
-        # same query pair. Kept independent of the graph on purpose: these
+        # the same permission the graph's coloured dots run through, and the
+        # same scores query. Kept independent of the graph on purpose: these
         # numbers must not move when someone narrows the graph to one team.
-        candidates_stmt = sa.select(sa.distinct(M.volunteer_id)).select_from(M)
-        if manage_scope is not None:
-            candidates_stmt = candidates_stmt.where(M.team_id.in_(manage_scope))
-        candidates = list((await session.execute(candidates_stmt)).scalars())
+        # One read of the membership table, not two: asking it for the distinct
+        # volunteers and then asking it again what teams those volunteers are on
+        # is the same scan twice over, and at parish scale the first answer is
+        # every row of the second (everyone_serving).
+        team_sets = await everyone_serving(session, manage_scope, at=at)
         tally: dict[str, int] = {}
-        if candidates:
-            team_sets = await team_ids_map(session, candidates, at=at)
+        if team_sets:
             scored = await workload_service.visible_scores(
                 session, actor, team_sets, at=at
             )

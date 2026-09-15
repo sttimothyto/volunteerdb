@@ -206,5 +206,36 @@ async def team_ids_map(
     return result
 
 
+async def everyone_serving(
+    session: AsyncSession,
+    on_teams: set[int] | None = None,
+    at: datetime | None = None,
+) -> dict[int, set[int]]:
+    """Every volunteer holding a membership -> ALL their team ids.
+
+    team_ids_map's answer for a caller that would otherwise ask the membership
+    table who the volunteers *are* and then ask it again what teams they are on
+    — two reads of the same table for one map (services/stats.py). `on_teams`
+    narrows who is counted, never what they are counted as: a leader's workload
+    spread covers the people on their teams, scored over every team those people
+    serve, so the second table reference is a subquery rather than a filter.
+    """
+    M = entity(Membership, at)
+    stmt = sa.select(M.volunteer_id, M.team_id)
+    if on_teams is not None:
+        if not on_teams:
+            return {}
+        inner = entity(Membership, at)
+        stmt = stmt.where(
+            M.volunteer_id.in_(
+                sa.select(inner.volunteer_id).where(inner.team_id.in_(on_teams))
+            )
+        )
+    result: dict[int, set[int]] = {}
+    for v_id, t_id in await session.execute(stmt):
+        result.setdefault(v_id, set()).add(t_id)
+    return result
+
+
 async def volunteer_team_ids(session: AsyncSession, volunteer_id: int) -> set[int]:
     return (await team_ids_map(session, [volunteer_id]))[volunteer_id]

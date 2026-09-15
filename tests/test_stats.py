@@ -6,6 +6,7 @@ service refuses to answer, not that the page hides an answer it holds.
 """
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from volunteerdb.actors import load_actor
 from volunteerdb.models import TeamRole
@@ -16,6 +17,7 @@ from volunteerdb.services import (
     teams,
     users,
     volunteers,
+    workload,
 )
 
 from tests import mint
@@ -286,3 +288,58 @@ async def test_as_of_before_the_parish_existed_counts_nothing(database):
         assert figures.parish is not None
         assert figures.parish.active_volunteers == 0
         assert figures.parish.assignments == 0
+
+
+async def test_a_leaders_workload_spread_answers_as_of_a_snapshot(database):
+    """The narrow case the live tests above never reach: a scope *and* a
+    snapshot. The spread counts the people on the actor's own teams but scores
+    them over every team they serve, so the membership table is read through
+    two references at once — and as-of, each of those is a union of live and
+    history rows rather than a table.
+
+    The snapshot is in the near future because that is what the page produces:
+    asof.parse_as_of bumps `?as_of=<today>` to the last microsecond of the day,
+    whose live∪history union reads the live rows.
+    """
+    async with db_session() as session:
+        p = await _parish(session)
+        actor = await _actor(session, "lea@example.org", volunteer_id=p["lea"].id)
+        at = datetime.now(UTC) + timedelta(minutes=1)
+
+        lead = (
+            await stats.dashboard(
+                session, actor, at=at, now=mint.now(), today=mint.today()
+            )
+        ).leadership
+
+        assert lead is not None and lead.bands is not None
+        assert sum(b.count for b in lead.bands) == 4, (
+            "Lea, Sam, Cora on Liturgy; Mel on Music — the live answer too"
+        )
+
+
+async def test_the_workload_spread_scores_service_outside_the_scope(database):
+    """Lea manages Liturgy and Music only, but her own Hospitality membership
+    still counts towards her score: the scope picks *who* is counted, never
+    what they are counted as. The one-query form must narrow only the first."""
+    async with db_session() as session:
+        p = await _parish(session)
+        ok(
+            await teams.update(
+                session, SYSTEM, p["hospitality"].id, workload_weight=Decimal("5")
+            )
+        )
+        actor = await _actor(session, "lea@example.org", volunteer_id=p["lea"].id)
+
+        lead = (
+            await stats.dashboard(session, actor, now=mint.now(), today=mint.today())
+        ).leadership
+        assert lead is not None and lead.bands is not None
+
+        # 1 × 5 for a plain Hospitality membership she does not manage; Liturgy
+        # and Music are unweighted, so the score is that membership alone
+        scored = await workload.visible_scores(
+            session, actor, {p["lea"].id: {p["liturgy"].id, p["hospitality"].id}}
+        )
+        assert scored[p["lea"].id][0] == Decimal("5")
+        assert {b.label: b.count for b in lead.bands}[scored[p["lea"].id][1].label] >= 1
