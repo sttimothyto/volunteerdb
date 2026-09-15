@@ -165,12 +165,36 @@ def validate_config(config: WorkloadConfig) -> Err[Invalid] | None:
     return None
 
 
+# session.info key for the memo below. audit.py owns "audit_txn"/"audit_writes"
+# and team_cache.py owns "team_tree"; this is the fourth. A parked None means
+# "this session has written the config — stop memoising it" (set_config).
+_MEMO = "workload_config"
+
+
 async def read_config(session: AsyncSession) -> WorkloadConfig:
     """The multipliers and bands, ungated: read on every page that renders a
     band — the legend, the volunteers table, the scores themselves — and those
-    already gate on who may see a band at all (visible_scores)."""
+    already gate on who may see a band at all (visible_scores).
+
+    Read at most once per session. Every one of those callers wants the same
+    two dozen numbers, and the common case is the *miss*: no app_setting row
+    exists until an admin changes something, and `session.get` caches a hit in
+    the identity map but not a miss — so each caller paid its own round trip to
+    be told again that there is no row. The dashboard paid four.
+
+    Unlike the team tree's memo (team_cache.py) this one needs no invalidating
+    listener, because it cannot outlive a write: set_config parks a None here,
+    and every read for the rest of that session goes back to the database. That
+    also means a rolled-back write leaves nothing stale behind — there is
+    nothing to leave.
+    """
+    if (hit := session.info.get(_MEMO)) is not None:
+        return hit
     setting = await session.get(AppSetting, SETTING_KEY)
-    return _from_json(setting.value) if setting else DEFAULT_CONFIG
+    config = _from_json(setting.value) if setting else DEFAULT_CONFIG
+    if _MEMO not in session.info:  # absent, not parked
+        session.info[_MEMO] = config
+    return config
 
 
 async def get_config(
@@ -204,6 +228,12 @@ async def set_config(
         set_={"value": stmt.excluded.value, "updated_at": now},
     )
     await session.execute(stmt)
+    # a Core upsert: no ORM object is flushed, so no after_flush listener would
+    # ever hear about it (which is why read_config's memo is disabled here
+    # rather than dropped by one). Parking None, not popping, because a later
+    # read in this same session must not re-memoise a value the transaction may
+    # still roll back.
+    session.info[_MEMO] = None
     return Ok(None)
 
 

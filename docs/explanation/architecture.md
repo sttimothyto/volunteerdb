@@ -233,6 +233,11 @@ volunteer's memberships. History twins shadow all 3 core tables
   any team row (`team_cache.py`). The argument is the same as for the
   history triggers: invalidation is not something a service has to
   remember, because nothing has to remember it.
+- **The workload configuration is read once per unit of work too.**
+  `services/workload.read_config()` memoizes it on the session. Every page
+  that paints a workload band asks for the same two dozen numbers. A
+  session that writes the configuration stops memoizing it, so this memo
+  needs no listener.
 - **Email** (`services/mail.py`) degrades gracefully. Without an SMTP2GO
   key it logs messages instead of a send, which keeps development and the
   [test suite](../how-to/run-tests.md) offline.

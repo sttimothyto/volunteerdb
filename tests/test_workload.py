@@ -9,9 +9,12 @@ from volunteerdb.permissions import SYSTEM
 from volunteerdb.services import graph as graph_service
 from volunteerdb.services import memberships, teams, users, volunteers, workload
 
-from tests import mint
-from tests.conftest import db_session
+from tests import conftest, mint
+from tests.conftest import count_sql, db_session
 from tests.fp_helpers import ok, refused
+
+# the config row read_config looks up; the memo below is counted against it
+WORKLOAD_CONFIG_SQL = r"FROM app_setting"
 
 
 def _config(multipliers=None, bands=None) -> workload.WorkloadConfig:
@@ -323,3 +326,65 @@ async def test_graph_colors_only_permitted_nodes(database):
         graph = volunteer_nodes(await graph_service.elements(session, core_actor))
         assert follower.id in graph and lead.id in graph
         assert all("color" not in d and "band" not in d for d in graph.values())
+
+
+async def test_the_config_is_read_once_per_session(database):
+    """Every page that paints a band asks for the config, and none of them
+    knows whether another already has: the legend asks, the table asks, and
+    visible_scores asks again on its way to band_for. The dashboard used to pay
+    four round trips for one answer — and the *miss* is the ordinary case,
+    since no app_setting row exists until an admin changes something and
+    session.get caches a hit but not a miss.
+
+    Counted rather than asserted behaviourally, for the reason
+    tests/test_team_cache.py gives: the numbers come out identical either way.
+    """
+    async with db_session() as session:
+        busy = ok(await volunteers.create(session, SYSTEM, "Busy", "Bee"))
+        team = ok(
+            await teams.create(session, SYSTEM, "Liturgy", workload_weight=Decimal("2"))
+        )
+        ok(await memberships.assign(session, SYSTEM, busy.id, team.id, TeamRole.leader))
+
+    async with db_session() as session:
+        # mirrors the data block of ui/volunteers_page.py
+        with count_sql(WORKLOAD_CONFIG_SQL) as seen:
+            await workload.read_config(session)
+            await workload.visible_scores(session, SYSTEM, {busy.id: {team.id}})
+        assert len(seen) == 1, f"the config was read {len(seen)} times, not once"
+
+    async with db_session() as session:
+        with count_sql(WORKLOAD_CONFIG_SQL) as seen:
+            await workload.read_config(session)
+        assert len(seen) == 1, "a new session must not inherit the previous memo"
+
+
+async def test_a_session_that_writes_the_config_stops_memoising_it(database):
+    """set_config goes in as a Core upsert, so no after_flush listener could
+    drop a memo the way team_cache.py's does. The memo is disabled for the rest
+    of the session instead — which is also what keeps a rolled-back write from
+    leaving a stale answer behind."""
+    custom = _config(
+        bands=[
+            workload.Band("ok", "#4caf50", Decimal("5")),
+            workload.Band("busy", "#c62828", None),
+        ]
+    )
+    async with db_session() as session:
+        assert await workload.read_config(session) == workload.DEFAULT_CONFIG
+        ok(await workload.set_config(session, SYSTEM, custom, now=mint.now()))
+        with count_sql(WORKLOAD_CONFIG_SQL) as seen:
+            assert await workload.read_config(session) == custom
+            assert await workload.read_config(session) == custom
+        assert len(seen) == 2, "a written config is re-read, never memoised"
+
+    # db_session() owns its transaction and rolling back inside its block closes
+    # it, so this drives a bare session, as tests/test_team_cache.py does
+    abandoned = _config(bands=[workload.Band("all", "#c62828", None)])
+    async with conftest.SESSIONS() as session:
+        ok(await workload.set_config(session, SYSTEM, abandoned, now=mint.now()))
+        assert await workload.read_config(session) == abandoned
+        await session.rollback()
+        assert await workload.read_config(session) == custom, (
+            "the rolled-back write must not survive in a memo"
+        )
