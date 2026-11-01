@@ -10,12 +10,14 @@ mid-test. Nothing else needs coordinating: a worker is a process, so the
 session-scoped fixtures below already run once per worker.
 """
 
+import ast
 import asyncio
 import atexit
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
@@ -325,6 +327,54 @@ def _sim_clock_at_now():
     SIM_CLOCK.reset()
     yield
     SIM_CLOCK.reset()
+
+
+def _page_modules() -> frozenset[str]:
+    """The ui/ modules whose import registers a module-level @ui.page."""
+    ui_dir = Path(__file__).resolve().parent.parent / "src" / "volunteerdb" / "ui"
+    return frozenset(
+        f"volunteerdb.ui.{path.stem}"
+        for path in ui_dir.glob("*.py")
+        if any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and any(ast.unparse(d).startswith("ui.page(") for d in node.decorator_list)
+            for node in ast.parse(path.read_text()).body
+        )
+    )
+
+
+PAGE_MODULES = _page_modules()
+
+
+@pytest.fixture(autouse=True)
+def _page_modules_load_inside_a_simulation():
+    """No page module outlives the test that imported it outside a simulation.
+
+    user_simulation's reset drops every module that registered a page from
+    sys.modules on the way out, so the next create_app() imports it afresh
+    against the fresh app; between tests none is loaded. One imported
+    anywhere else -- a pure test, a module-scope import, a helper that drags
+    one in -- stays cached with its routes on an app since wiped, and every
+    later simulation in that process answers 404 for its pages: a failure in
+    some other test, on whichever worker the scheduler sent it to. This puts
+    the failure on the importer, then evicts the module the way NiceGUI does
+    (parents too, or the package's stale attribute is found instead) so the
+    tests after it run clean."""
+    yield
+    leaked = sorted(PAGE_MODULES & sys.modules.keys())
+    if not leaked:
+        return
+    for name in leaked:
+        parts = name.split(".")
+        for i in range(len(parts)):
+            sys.modules.pop(".".join(parts[: i + 1]), None)
+    pytest.fail(
+        f"{', '.join(leaked)} imported outside user_simulation (in this test, "
+        "or at collection): its @ui.page routes would 404 in every later "
+        "simulation. Import it inside the `async with user_simulation(...)` "
+        "block, or move what you need into a module without pages.",
+        pytrace=False,
+    )
 
 
 @pytest.fixture(autouse=True)

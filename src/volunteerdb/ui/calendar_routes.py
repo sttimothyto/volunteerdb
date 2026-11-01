@@ -35,8 +35,7 @@ from ..services import events as event_service
 from ..services import gcal, ics
 from ..services import users as user_service
 from ..services.events import CalendarEntry
-from .context import get_actor
-from .login import safe_target
+from .context import get_actor, safe_target
 
 MEDIA_TYPE = "text/calendar; charset=utf-8"
 # a client re-fetches about hourly; a quarter of that keeps a fresh edit

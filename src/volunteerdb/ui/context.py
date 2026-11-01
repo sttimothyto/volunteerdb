@@ -116,6 +116,28 @@ def session_user_id() -> int | None:
     return user_id
 
 
+def safe_target(redirect_to: str) -> str:
+    """Where a `redirect_to` query parameter is allowed to send a browser: a
+    path on this site and nothing else. "//host" and "/\\host" are
+    scheme-relative URLs, not same-origin paths -- and so is "/<TAB>/host":
+    the WHATWG URL parser deletes every tab, CR and LF before it reads a
+    URL, and ui.navigate.to() hands the string to window.open() as it is.
+    Control characters and backslashes therefore refuse the target outright
+    rather than being matched as a prefix.
+
+    Here rather than in ui/login.py, its main reader, so the calendar routes
+    and pure tests can have it without importing a page module: one imported
+    outside a test simulation leaves the sign-in pages 404 in every later one
+    (tests/conftest.py, _page_modules_load_inside_a_simulation)."""
+    safe = (
+        redirect_to.startswith("/")
+        and not redirect_to.startswith("//")
+        and "\\" not in redirect_to
+        and not any(ord(c) < 0x20 or ord(c) == 0x7F for c in redirect_to)
+    )
+    return redirect_to if safe else "/"
+
+
 async def get_actor(session: AsyncSession, *, env: Env | None = None) -> Actor | None:
     """The signed-in actor, or None. With an `env`, an admin's actor also
     carries the mail-allowance gauge (the page frame shows it; the asset

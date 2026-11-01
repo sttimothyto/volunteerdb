@@ -388,6 +388,6 @@ def test_the_manuals_public_half_is_an_allowlist(path, public):
     ],
 )
 def test_a_redirect_target_is_a_path_on_this_site(target, kept):
-    from volunteerdb.ui.login import safe_target
+    from volunteerdb.ui.context import safe_target
 
     assert safe_target(target) == (target if kept else "/")
