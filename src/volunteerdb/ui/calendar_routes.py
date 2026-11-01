@@ -36,6 +36,7 @@ from ..services import gcal, ics
 from ..services import users as user_service
 from ..services.events import CalendarEntry
 from .context import get_actor
+from .login import safe_target
 
 MEDIA_TYPE = "text/calendar; charset=utf-8"
 # a client re-fetches about hourly; a quarter of that keeps a fresh edit
@@ -167,14 +168,14 @@ async def reset_personal(request: Request) -> Response:
                 session, actor.account.id, token=env.rng.token()
             )
         )
-    # back to the page the form was on — same origin only, or /events
+    # back to the page the form was on — same origin only, or /events. The
+    # remainder after the origin is held to the sign-in page's rule, so a
+    # Referer of "<origin>//elsewhere" cannot turn this into an open redirect
     referer = request.headers.get("referer", "")
-    target = (
-        referer[len(facts.base_url) :]
-        if referer.startswith(facts.base_url + "/")
-        else "/events"
-    )
-    return RedirectResponse(target or "/events", status_code=303)
+    rest = referer[len(facts.base_url) :]
+    same_origin = referer.startswith(facts.base_url + "/")
+    target = rest if same_origin and safe_target(rest) == rest else "/events"
+    return RedirectResponse(target, status_code=303)
 
 
 def register() -> None:

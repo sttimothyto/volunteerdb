@@ -106,7 +106,8 @@ Additional rules:
   - **Search honours the same line.** The search box and the
     [query language](query-language.md) match names for everyone. They match
     email, phone, notes and custom values only among volunteers that the
-    viewer can see unredacted.
+    viewer can see unredacted. For notes, that means the volunteers the
+    viewer can edit: a core member does not match a teammate's notes.
   - Otherwise `email LIKE 'j%'` walks an address out of a column the page
     renders as `•••`.
 - The team's **public home-page doc** and its **roster spreadsheet** look

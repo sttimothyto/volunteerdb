@@ -75,11 +75,20 @@ def help_menu() -> None:
                 ).classes("w-full")
 
 
-def _safe_target(redirect_to: str) -> str:
+def safe_target(redirect_to: str) -> str:
     """Where a `redirect_to` query parameter is allowed to send a browser: a
     path on this site and nothing else. "//host" and "/\\host" are
-    scheme-relative URLs, not same-origin paths."""
-    safe = redirect_to.startswith("/") and not redirect_to.startswith(("//", "/\\"))
+    scheme-relative URLs, not same-origin paths -- and so is "/<TAB>/host":
+    the WHATWG URL parser deletes every tab, CR and LF before it reads a
+    URL, and ui.navigate.to() hands the string to window.open() as it is.
+    Control characters and backslashes therefore refuse the target outright
+    rather than being matched as a prefix."""
+    safe = (
+        redirect_to.startswith("/")
+        and not redirect_to.startswith("//")
+        and "\\" not in redirect_to
+        and not any(ord(c) < 0x20 or ord(c) == 0x7F for c in redirect_to)
+    )
     return redirect_to if safe else "/"
 
 
@@ -147,12 +156,23 @@ async def _verify_code(
     addr: str, code: str, *, facts: RequestFacts, env: Env
 ) -> int | None:
     """The account's id when the code is right; None once the refusal has
-    been logged and toasted."""
+    been logged and toasted. Throttled per account across codes and per
+    address (throttle.LIMITS "otp-fail", "pw-ip"): the per-code attempt cap
+    alone resets with every code requested."""
     now = env.clock.now()
+    if denied := rate_limit(
+        f"otp-fail:{addr.lower()}", f"pw-ip:{facts.ip}", now=now, what="sign in"
+    ):
+        logger.warning("auth.throttled", method="otp", email=addr, ip=facts.ip)
+        toast(denied.error)
+        return None
     async with transaction(env, None) as session:
         verified = await user_service.verify_otp(session, addr, code, now=now)
     if isinstance(verified, Err):
         logger.warning("auth.login_failed", method="otp", email=addr, ip=facts.ip)
+        await perform(
+            [SignInFailed("otp", addr, facts.ip)], base_url=facts.base_url, now=now
+        )
         fail(
             "That code didn't work — it may be mistyped or expired. "
             "Resend to get a fresh one."
@@ -176,7 +196,7 @@ def login_page(request: Request, redirect_to: str = "/"):
     # A NiceGUI page builder may return a Response instead of building a page;
     # doing it here rather than over the websocket costs no round trip.
     if session_user_id() is not None:
-        return RedirectResponse(_safe_target(redirect_to))
+        return RedirectResponse(safe_target(redirect_to))
 
     apply_theme()
 
@@ -185,7 +205,7 @@ def login_page(request: Request, redirect_to: str = "/"):
 
     def finish(user_id: int, method: str) -> None:
         establish_session(user_id, remember=remember.value, method=method)
-        ui.navigate.to(_safe_target(redirect_to))
+        ui.navigate.to(safe_target(redirect_to))
 
     async def submit() -> None:
         if not valid(email):

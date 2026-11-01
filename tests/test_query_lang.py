@@ -135,6 +135,83 @@ def test_private_and_roster_leaves_are_scoped_for_members():
     assert "volunteer.id" not in sql, "admins skip the wrap"
 
 
+def test_notes_are_scoped_to_the_people_the_actor_may_edit():
+    """A core member views a teammate's phone but never their notes
+    (can_edit_volunteer), so `notes LIKE` must be scoped by people teams, not
+    full-view ones -- under the contact-details scope it walked the column
+    out a character at a time."""
+    core = Actor(
+        user=AppUser(is_admin=False),
+        volunteer_id=7,
+        managed_team_ids=set(),
+        people_team_ids=set(),
+        full_view_team_ids={3},
+        names_view_team_ids=set(),
+    )
+    compiled = ok(compile_v("notes LIKE 'a%'", core))
+    params = compiled.compile().params
+    assert "volunteer.id =" in str(compiled), "a core member still matches their own"
+    assert {3} not in [set(v) for v in params.values() if isinstance(v, list)], (
+        "notes matched among a core team's members: their notes are not the "
+        "core member's to read"
+    )
+    assert "EXISTS" not in str(compiled), "no people teams, so no membership arm"
+
+    # the phone leaf in the same filter keeps the wider scope
+    both = ok(compile_v("phone LIKE '5%' AND notes LIKE 'a%'", core))
+    assert str(both).count("EXISTS") == 1, "only the phone leaf reaches team 3"
+
+    leader = Actor(
+        user=AppUser(is_admin=False),
+        volunteer_id=7,
+        managed_team_ids={3},
+        people_team_ids={3},
+        full_view_team_ids={3},
+        names_view_team_ids=set(),
+    )
+    sql = str(ok(compile_v("notes LIKE 'a%'", leader)))
+    assert "EXISTS" in sql, "a leader matches the notes of the people they lead"
+
+
+@pytest.mark.parametrize(
+    ("pattern", "text", "ignore_case", "expected"),
+    [
+        ("abc", "abc", False, True),
+        ("abc", "abcd", False, False),
+        ("", "", False, True),
+        ("", "a", False, False),
+        ("%", "", False, True),
+        ("%", "anything", False, True),
+        ("a%", "a", False, True),
+        ("a%a", "a", False, False),  # the two ends may not share a character
+        ("a%a", "aa", False, True),
+        ("%usic", "Liturgy > Music", False, True),
+        ("L_turgy", "Liturgy", False, True),
+        ("_", "", False, False),
+        ("_", "\n", False, True),  # `_` is any character, newline included
+        ("%b%c", "abxbc", False, True),
+        ("%bc%d", "abcbcd", False, True),
+        ("m%", "Music", False, False),
+        ("m%", "Music", True, True),
+    ],
+)
+def test_like_matches_as_sql_does(pattern, text, ignore_case, expected):
+    assert query_lang._like_matcher(pattern, ignore_case)(text) is expected
+
+
+def test_like_does_not_backtrack():
+    """`%a%a%a…%b` as a regex is exponential in the wildcards on a field
+    that nearly matches -- sixteen seconds for a hundred characters, on the
+    event loop every reader shares. Here it is one pass per segment."""
+    import time
+
+    near_miss = "a" * 5_000
+    start = time.perf_counter()
+    for pattern in ("%a" * 40 + "%b", "%_" * 40 + "%#"):
+        assert not query_lang._like_matcher(pattern, False)(near_miss)
+    assert time.perf_counter() - start < 1.0
+
+
 ROWS = [
     {
         "name": "Liturgy",

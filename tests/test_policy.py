@@ -15,6 +15,7 @@ from volunteerdb.domain import (
     EventCancelled,
     NotifyMode,
     SelfRemoved,
+    SignInFailed,
     SlotHandedOver,
     SubClaimed,
     SubRequested,
@@ -224,3 +225,35 @@ def test_plan_keeps_event_order():
     effects = policy.plan([_handed_over(), _sub_requested()], _ctx())
     kinds = [type(e).__name__ for e in effects]
     assert kinds == ["Audit", "SendMail", "ThrottleHit", "SendMail", "SendMail"]
+
+
+def test_a_wrong_code_charges_the_accounts_code_bucket_and_the_address():
+    """The per-code attempt cap resets with every code requested, so the
+    account needs a bucket of its own across codes -- and not the password
+    one, or a guessing run at the code door would lock the password out."""
+    otp = policy.plan([SignInFailed("otp", "Mia@Example.org", "10.0.0.9")], _ctx())
+    assert otp == (
+        ThrottleHit("otp-fail:mia@example.org"),
+        ThrottleHit("pw-ip:10.0.0.9"),
+    )
+    password = policy.plan(
+        [SignInFailed("password", "mia@example.org", "10.0.0.9")], _ctx()
+    )
+    assert password == (
+        ThrottleHit("pw:mia@example.org"),
+        ThrottleHit("pw-ip:10.0.0.9"),
+    )
+
+
+def test_the_code_bucket_holds_an_account_to_a_few_guesses_a_day():
+    limit = throttle.LIMITS["otp-fail"]
+    ledger = throttle.Ledger()
+    for i in range(limit.hits):
+        ledger = throttle.hit(
+            ledger, "otp-fail:mia@example.org", NOW + timedelta(minutes=i)
+        )
+    later = NOW + timedelta(hours=12)
+    assert throttle.blocked(ledger, "otp-fail:mia@example.org", later)
+    assert not throttle.blocked(ledger, "otp-fail:noor@example.org", later)
+    # a million codes at this rate is centuries of guessing, not months
+    assert limit.hits * (timedelta(days=365) / limit.window) < 10_000

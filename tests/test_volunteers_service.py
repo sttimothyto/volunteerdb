@@ -602,3 +602,59 @@ async def test_a_listed_volunteer_carries_no_validity_period(database):
         # row, and nothing about one person is worth a second loader option
         one = await volunteers.get(session, listed[0].id)
         assert one is not None and one.sys_period.upper is None
+
+
+async def test_a_core_member_searches_contact_details_but_not_notes(database):
+    """Notes are shown only to whoever may edit the person (can_edit_volunteer):
+    a core member reads a teammate's phone, never their notes. Both the plain
+    search and the WHERE filter used to match notes over the wider full-view
+    scope, so `secret` -- or `notes LIKE 'k%'`, then `'ke%'`, ... -- read the
+    column out by which rows came back."""
+    from volunteerdb.actors import load_actor
+    from volunteerdb.services import users
+
+    async with db_session() as session:
+        choir = ok(await teams.create(session, SYSTEM, "Choir"))
+        alto = ok(
+            await volunteers.create(
+                session, SYSTEM, "Alto", "Voice", None, "555-0400", "keeps a secret"
+            )
+        )
+        core_v = ok(await volunteers.create(session, SYSTEM, "Cora", "Core"))
+        lead_v = ok(await volunteers.create(session, SYSTEM, "Lea", "Lead"))
+        for vid, role in (
+            (alto.id, TeamRole.member),
+            (core_v.id, TeamRole.core),
+            (lead_v.id, TeamRole.leader),
+        ):
+            ok(await memberships.assign(session, SYSTEM, vid, choir.id, role))
+
+        async def actor_for(email: str, volunteer_id: int):
+            user, _ = ok(
+                await users.create(
+                    session,
+                    email,
+                    volunteer_id=volunteer_id,
+                    invite=mint.fresh_invite(),
+                    actor=SYSTEM,
+                )
+            )
+            return await load_actor(session, user)
+
+        core = await actor_for("cora@example.org", core_v.id)
+        lead = await actor_for("lea@example.org", lead_v.id)
+
+        async def found(text, actor):
+            return {
+                v.id
+                for v in ok(
+                    await volunteers.search_or_query(session, text, actor=actor)
+                )
+            }
+
+        assert await found("555-0400", core) == {alto.id}, "the phone is theirs"
+        assert await found("secret", core) == set(), "the notes are not"
+        assert await found("notes LIKE 'keeps%'", core) == set()
+        assert await found("NOT (notes IS NULL)", core) == set()
+        assert await found("secret", lead) == {alto.id}
+        assert await found("notes LIKE 'keeps%'", lead) == {alto.id}

@@ -60,11 +60,16 @@ async def search(
 ) -> list[Volunteer]:
     """Substring search over every volunteer column.
 
-    Names match for everyone — they are shown to everyone. Email, phone, notes
-    and custom-field values match only among volunteers the actor can already
+    Names match for everyone — they are shown to everyone. Email, phone and
+    custom-field values match only among volunteers the actor can already
     view unredacted, mirroring can_view_volunteer: self, plus anyone on a team
-    in full_view_team_ids (an admin, SYSTEM included, skips the wrap). Matching a field a viewer cannot see leaks its
-    content by the row's mere presence.
+    in full_view_team_ids (an admin, SYSTEM included, skips the wrap). Notes
+    are one tier narrower, mirroring can_edit_volunteer: self, plus anyone on
+    a team in people_team_ids. A core member reads a teammate's phone but
+    never their notes (volunteer_panel, VolunteerOut.redacted, the exporter's
+    blank column), so a notes match among the people they merely view would
+    hand the column over a substring at a time. Matching a field a viewer
+    cannot see leaks its content by the row's mere presence.
 
     Email used to match for everyone, on the reasoning that you can only match
     an address you already hold. But the list renders that same address as
@@ -89,28 +94,29 @@ async def search(
         private_match = sa.or_(
             V.email.ilike(pattern),
             V.phone.ilike(pattern),
-            V.notes.ilike(pattern),
             # serialized JSONB: matches values (and keys) as text
             sa.cast(V.custom, sa.Text).ilike(pattern),
         )
+        notes_match = V.notes.ilike(pattern)
         if actor.is_admin:
-            stmt = stmt.where(sa.or_(public_match, private_match))
+            stmt = stmt.where(sa.or_(public_match, private_match, notes_match))
         else:
             M = entity(Membership, at)
-            visible_preds = []
-            if actor.volunteer_id is not None:
-                visible_preds.append(V.id == actor.volunteer_id)
-            if actor.full_view_team_ids:
-                visible_preds.append(
-                    sa.exists(
-                        sa.select(sa.literal(1)).where(
-                            M.volunteer_id == V.id,
-                            M.team_id.in_(actor.full_view_team_ids),
-                        )
-                    )
+            stmt = stmt.where(
+                sa.or_(
+                    public_match,
+                    sa.and_(
+                        private_match,
+                        query_lang.visible_to(
+                            actor, actor.full_view_team_ids, V=V, M=M
+                        ),
+                    ),
+                    sa.and_(
+                        notes_match,
+                        query_lang.visible_to(actor, actor.people_team_ids, V=V, M=M),
+                    ),
                 )
-            visible = sa.or_(*visible_preds) if visible_preds else sa.false()
-            stmt = stmt.where(sa.or_(public_match, sa.and_(private_match, visible)))
+            )
     if not include_inactive:
         stmt = stmt.where(V.is_active)
     if limit is not None:

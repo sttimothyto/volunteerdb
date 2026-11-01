@@ -353,9 +353,41 @@ async def test_every_page_opens_with_nothing_but_its_path(real_app_client):
         ("/manual/_sources/how-to/deploy.md.txt", False),
         ("/manual/guide", False),  # the directory, not a page under it
         ("/manualx", False),
+        # dot segments: StaticFiles resolves them on disk after this check, so
+        # the guide prefix must not carry a reader into the technical half
+        ("/manual/guide/../how-to/deploy.html", False),
+        ("/manual/_static/../searchindex.js", False),
+        ("/manual/./how-to/deploy.html", False),
+        ("/ministries/../volunteers", False),
         ("/login", True),
         ("/volunteers", False),
     ],
 )
 def test_the_manuals_public_half_is_an_allowlist(path, public):
     assert main.is_public(path) is public
+
+
+@pytest.mark.pure
+@pytest.mark.parametrize(
+    ("target", "kept"),
+    [
+        ("/volunteers", True),
+        ("/teams/3?q=role%20%3D%20%27leader%27", True),
+        ("/", True),
+        ("//evil.example", False),
+        ("/\\evil.example", False),
+        # the URL parser deletes tab, CR and LF before reading the address,
+        # so each of these is "//evil.example" by the time window.open sees it
+        ("/\t/evil.example", False),
+        ("/\n/evil.example", False),
+        ("/\r/evil.example", False),
+        ("/x\\..\\..\\/evil.example", False),
+        ("https://evil.example", False),
+        ("javascript:alert(1)", False),
+        ("", False),
+    ],
+)
+def test_a_redirect_target_is_a_path_on_this_site(target, kept):
+    from volunteerdb.ui.login import safe_target
+
+    assert safe_target(target) == (target if kept else "/")

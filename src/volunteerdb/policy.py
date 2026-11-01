@@ -97,6 +97,13 @@ def plan_one(event: DomainEvent, ctx: PolicyCtx) -> tuple[Effect, ...]:
             )
         case OtpIssued(email=email, code=code):
             return (SendMail(email, *mail.otp_email(code)),)
+        case SignInFailed(method="otp", email=email, ip=ip):
+            # a wrong code: the account's code bucket, not its password one,
+            # so a guessing run at the code door cannot lock the password out
+            return (
+                ThrottleHit(f"otp-fail:{email.lower()}"),
+                ThrottleHit(f"pw-ip:{ip}"),
+            )
         case SignInFailed(email=email, ip=ip):
             # the per-account bucket AND the per-IP flood bucket (SP 800-63B
             # §3.2.2): a spray across many accounts from one place is throttled too

@@ -30,6 +30,15 @@ LIMITS: Mapping[str, Limit] = {
     "pw-ip": Limit(30, timedelta(minutes=15)),
     # sign-in codes requested per device: each one is a message spent
     "otp-ip": Limit(10, timedelta(hours=1)),
+    # wrong sign-in codes per account, across codes. The per-code cap
+    # (users.OTP_MAX_ATTEMPTS) resets with every fresh code, and a fresh code
+    # is one request a minute from any address -- 7,200 guesses a day at a
+    # million-code space. This bounds the account itself: two codes' worth of
+    # typos a day, about 3,650 guesses a year. A rolling day of lockout from
+    # the code door is what an attacker can inflict in return; the password
+    # and the invite link stay open. Charged with pw-ip, so one address
+    # spraying codes across accounts is cut off there as well.
+    "otp-fail": Limit(10, timedelta(hours=24)),
     # address-change mails per account: what is worth abusing is the parish's
     # sender, one address at a time -- charged on every attempt, before the
     # service can reveal whether the address is taken

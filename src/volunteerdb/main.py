@@ -80,7 +80,16 @@ PUBLIC_MANUAL_PATHS = frozenset(
 
 def is_public(path: str) -> bool:
     """Whether an anonymous browser may have this path: the sign-in flows, the
-    API, the public ministry pages and the user guide."""
+    API, the public ministry pages and the user guide.
+
+    A path with a "." or ".." segment is never public. The prefixes are
+    matched on the path as sent, and neither uvicorn nor Starlette's router
+    resolves dot segments -- but the /manual StaticFiles mount does, on disk:
+    "/manual/guide/../how-to/deploy.html" passes the guide prefix and is then
+    served as the technical page behind it. Browsers resolve dot segments
+    before sending, so only a hand-made request ever carries one."""
+    if any(segment in (".", "..") for segment in path.split("/")):
+        return False
     return (
         any(path.startswith(prefix) for prefix in UNRESTRICTED_PREFIXES)
         or path in PUBLIC_MANUAL_PATHS

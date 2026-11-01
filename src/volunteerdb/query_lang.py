@@ -20,12 +20,15 @@ casts, arithmetic, or field-to-field comparisons.
 
 Access control mirrors services.volunteers.search's leak model, extended to
 negation. NOT is pushed to the leaves (De Morgan), then each leaf over a
-*private* field (email, phone, notes, custom values) is compiled as
+*private* field (email, phone, custom values) is compiled as
 ``AND(visible, comparison)`` where ``visible`` is self plus the actor's
 full-view teams: a private predicate is *false* for volunteers whose
 private fields the actor cannot see — in either polarity, so
 ``NOT (phone LIKE '555%')`` cannot leak by absence any more than the
-positive form can leak by presence. Membership fields (team, role) are
+positive form can leak by presence. ``notes`` is its own, narrower tier
+wrapped the same way, with ``visible`` drawn from the actor's people teams
+instead (can_edit_volunteer: a core member views teammates but does not
+read their notes). Membership fields (team, role) are
 *roster* tier: their EXISTS only considers teams whose roster the actor may
 view, and negation applies at the EXISTS (``team != 'X'`` means "holds no
 such visible membership"), so invisible memberships never influence the
@@ -54,7 +57,7 @@ from .fp import Err, Ok, Result
 from .models import CustomFieldDef, FieldType, TeamRole
 from .permissions import Actor
 
-_PUBLIC, _PRIVATE, _ROSTER = "public", "private", "roster"
+_PUBLIC, _PRIVATE, _NOTES, _ROSTER = "public", "private", "notes", "roster"
 
 # every search box says the same thing about what it takes, in the tail of
 # its label: "Search teams — text or a SQL 'WHERE' clause"
@@ -315,7 +318,10 @@ _VOLUNTEER_FIELDS: dict[str, _Field] = {
     "is_active": _Field(FieldType.checkbox, _PUBLIC, lambda b: b.V.is_active),
     "created": _Field(FieldType.timestamptz, _PUBLIC, lambda b: b.V.created_at),
     "phone": _Field(FieldType.text, _PRIVATE, lambda b: b.V.phone),
-    "notes": _Field(FieldType.text, _PRIVATE, lambda b: b.V.notes),
+    # _NOTES, not _PRIVATE: notes are shown only to whoever may edit the
+    # person (can_edit_volunteer), and a core member views teammates without
+    # that right -- under _PRIVATE, `notes LIKE 'a%'` walked them out.
+    "notes": _Field(FieldType.text, _NOTES, lambda b: b.V.notes),
     "team": _Field(FieldType.text, _ROSTER, lambda b: b.T.name),
     "role": _Field(FieldType.text, _ROSTER, lambda b: sa.cast(b.M.role, sa.String())),
 }
@@ -349,6 +355,26 @@ def _sql_cmp(e, op: str, vals: list, negate: bool):
     raise AssertionError(f"unsupported operator: {op}")  # _leaf_parts emits no other
 
 
+def visible_to(actor: Actor, team_ids: set[int], *, V, M):
+    """The volunteers whose fields of one tier `actor` may match on: self,
+    plus anyone holding a membership on `team_ids` -- full_view_team_ids for
+    contact details (can_view_volunteer), people_team_ids for notes
+    (can_edit_volunteer). Shared with services.volunteers.search, so the
+    substring search and the filters cannot disagree about a tier."""
+    preds = []
+    if actor.volunteer_id is not None:
+        preds.append(V.id == actor.volunteer_id)
+    if team_ids:
+        preds.append(
+            sa.exists(
+                sa.select(sa.literal(1)).where(
+                    M.volunteer_id == V.id, M.team_id.in_(team_ids)
+                )
+            )
+        )
+    return sa.or_(*preds) if preds else sa.false()
+
+
 class _SqlBackend:
     conj = staticmethod(sa.and_)
     disj = staticmethod(sa.or_)
@@ -363,7 +389,7 @@ class _SqlBackend:
             if self.scoped
             else None
         )
-        self._visible = None
+        self._visible: dict[str, Any] = {}
 
     def _resolve(self, col: exp.Column) -> Result[tuple[str, _Field], QueryError]:
         if col.args.get("db") or col.args.get("catalog"):
@@ -397,23 +423,18 @@ class _SqlBackend:
         known = sorted(_VOLUNTEER_FIELDS) + sorted(f"custom.{k}" for k in self.defs)
         return Err(QueryError(f"unknown field: {name} (fields: {', '.join(known)})"))
 
-    def _visible_pred(self):
-        """Self plus full-view teams — services.volunteers.search's scope."""
-        if self._visible is None:
-            preds = []
-            if self.actor.volunteer_id is not None:
-                preds.append(self.V.id == self.actor.volunteer_id)
-            if self.actor.full_view_team_ids:
-                preds.append(
-                    sa.exists(
-                        sa.select(sa.literal(1)).where(
-                            self.M.volunteer_id == self.V.id,
-                            self.M.team_id.in_(self.actor.full_view_team_ids),
-                        )
-                    )
-                )
-            self._visible = sa.or_(*preds) if preds else sa.false()
-        return self._visible
+    def _visible_pred(self, tier: str):
+        """Who the actor may match a `tier` field on -- the scopes
+        services.volunteers.search uses: self plus full-view teams for
+        contact details, self plus people teams for notes."""
+        if tier not in self._visible:
+            teams = (
+                self.actor.people_team_ids
+                if tier is _NOTES
+                else self.actor.full_view_team_ids
+            )
+            self._visible[tier] = visible_to(self.actor, teams, V=self.V, M=self.M)
+        return self._visible[tier]
 
     def _roster_leaf(self, name: str, spec: _Field, op, vals, negate: bool):
         where = [self.M.volunteer_id == self.V.id]
@@ -459,8 +480,8 @@ class _SqlBackend:
         if spec.tier is _ROSTER:
             return Ok(self._roster_leaf(name, spec, op, vals, negate))
         expr = _sql_cmp(spec.build(self), op, vals, negate)
-        if spec.tier is _PRIVATE and self.scoped:
-            return Ok(sa.and_(self._visible_pred(), expr))
+        if spec.tier in (_PRIVATE, _NOTES) and self.scoped:
+            return Ok(sa.and_(self._visible_pred(spec.tier), expr))
         return Ok(expr)
 
 
@@ -504,16 +525,58 @@ _TEAM_FIELDS: dict[str, tuple[FieldType, Callable[[dict], Any]]] = {
 }
 
 
-def _like_regex(pattern: str, ignore_case: bool) -> re.Pattern:
-    parts = [
-        ".*" if ch == "%" else "." if ch == "_" else re.escape(ch) for ch in pattern
-    ]
-    flags = re.DOTALL | (re.IGNORECASE if ignore_case else 0)
-    return re.compile("".join(parts), flags)
+def _like_matcher(pattern: str, ignore_case: bool) -> Callable[[str], bool]:
+    """SQL LIKE over a Python string: `%` any run, `_` any one character.
+
+    Not a regex. `%a%a%a%a%a%a%b` translated to `.*a.*a…` backtracks
+    exponentially on a field that nearly matches -- sixteen seconds for one
+    hundred characters, on the one event loop every reader shares, from
+    any signed-in search box. Splitting on `%` and placing each segment at
+    its leftmost fit is exact for this grammar (an earlier fit only leaves
+    more room for what follows) and costs O(len(text) * len(pattern)).
+    """
+    if ignore_case:
+
+        def same(a: str, b: str) -> bool:
+            return a == b or a.lower() == b.lower()
+    else:
+
+        def same(a: str, b: str) -> bool:
+            return a == b
+
+    def fits(text: str, segment: str, at: int) -> bool:
+        if at < 0 or len(text) - at < len(segment):
+            return False
+        return all(c == "_" or same(text[at + i], c) for i, c in enumerate(segment))
+
+    segments = pattern.split("%")
+    first, middle, last = segments[0], segments[1:-1], segments[-1]
+
+    def match(text: str) -> bool:
+        if len(segments) == 1:  # no `%`: the whole text, character for character
+            return len(text) == len(first) and fits(text, first, 0)
+        if not fits(text, first, 0):
+            return False
+        pos = len(first)
+        for segment in middle:
+            at = next(
+                (
+                    i
+                    for i in range(pos, len(text) - len(segment) + 1)
+                    if fits(text, segment, i)
+                ),
+                None,
+            )
+            if at is None:
+                return False
+            pos = at + len(segment)
+        return len(text) - pos >= len(last) and fits(text, last, len(text) - len(last))
+
+    return match
 
 
 def _py_cmp(getter: Callable, op: str, vals: list, negate: bool) -> Callable:
-    pattern = _like_regex(vals[0], op == "ilike") if op in ("like", "ilike") else None
+    pattern = _like_matcher(vals[0], op == "ilike") if op in ("like", "ilike") else None
 
     def test(row: dict) -> bool:
         v = getter(row)
@@ -535,7 +598,8 @@ def _py_cmp(getter: Callable, op: str, vals: list, negate: bool) -> Callable:
             case "lte":
                 res = v <= vals[0]
             case "like" | "ilike":
-                res = pattern.fullmatch(v) is not None
+                assert pattern is not None  # built above for these two ops
+                res = pattern(str(v))
             case "in":
                 res = v in vals
             case "between":

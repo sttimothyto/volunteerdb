@@ -23,6 +23,22 @@ from .assets import static_url
 
 CACHE_HEADERS = {"Cache-Control": "public, max-age=300"}
 
+# A page's body is HTML a team's core member pointed at, written by whoever
+# can edit that Google Doc, and served on the same origin as the signed-in
+# app. nh3 is the defence; this is what still holds if it ever lets
+# something through: no script runs, no form posts anywhere, and no other
+# site frames the page. Styles stay inline-capable (the doc's formatting is
+# a <style> block and style attributes); images may come from this origin,
+# from https hotlinks the doc keeps, and from data: (theme.css's meander).
+PAGE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; img-src 'self' https: data:; "
+        "style-src 'self' 'unsafe-inline'; font-src 'self'; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+}
+
 # The shell links /static/theme.css (the app's neo-greco theme: body font +
 # background, link colors, .vdb-header, .vdb-brand, .vdb-page-title with its
 # meander). Only public-shell-specific layout lives here, every color a theme
@@ -80,7 +96,9 @@ def _not_found() -> HTMLResponse:
         '<p>This ministry has no published home page. The <a href="/ministries/">'
         "ministries index</a> lists every published page.</p>"
     )
-    return HTMLResponse(_shell("Not found", body), status_code=404)
+    return HTMLResponse(
+        _shell("Not found", body), status_code=404, headers=PAGE_HEADERS
+    )
 
 
 def register() -> None:
@@ -119,7 +137,9 @@ async def ministries_index() -> HTMLResponse:
             f"{_title('Ministry home pages')}"
             "<p>No ministry has published a home page yet.</p>"
         )
-    return HTMLResponse(_shell("Ministries", body), headers=CACHE_HEADERS)
+    return HTMLResponse(
+        _shell("Ministries", body), headers={**CACHE_HEADERS, **PAGE_HEADERS}
+    )
 
 
 async def _resolve_slug(session, slug: str) -> tuple[Team | None, dict[int, str]]:
@@ -153,7 +173,10 @@ async def ministry_page(slug: str) -> HTMLResponse:
     # a reader who arrived from a QR code or a shared link needs a control
     back = '<p class="back"><a href="/ministries/">← All ministries</a></p>'
     body = f'{back}{_title(title)}{updated}<div class="doc">{page.html}</div>'
-    return HTMLResponse(_shell(f"{title} — Ministries", body), headers=CACHE_HEADERS)
+    return HTMLResponse(
+        _shell(f"{title} — Ministries", body),
+        headers={**CACHE_HEADERS, **PAGE_HEADERS},
+    )
 
 
 async def ministry_image(team_id: int, seq: int, v: str | None = None) -> Response:
@@ -167,7 +190,12 @@ async def ministry_image(team_id: int, seq: int, v: str | None = None) -> Respon
         row = await page_service.published_image(session, team_id, seq)
     if row is None:
         raise HTTPException(404, "no such image")
-    headers = (
-        {"Cache-Control": "public, max-age=31536000, immutable"} if v else CACHE_HEADERS
-    )
+    headers = {
+        **(
+            {"Cache-Control": "public, max-age=31536000, immutable"}
+            if v
+            else CACHE_HEADERS
+        ),
+        "X-Content-Type-Options": "nosniff",
+    }
     return Response(content=row.image, media_type=row.content_type, headers=headers)

@@ -238,12 +238,20 @@ budget: it is one more guess at the same secret. The throttle is in-process, a
 sliding window. That is exactly right for a single-process deployment, and it
 would be the first thing to revisit if the app ever scaled out.
 
-The app deliberately does not throttle code *entry* on its own. A code dies
-after 5 wrong guesses, and the app caps requests for a fresh one at 10 per IP
-per hour. The ceiling is therefore roughly 50 guesses an hour against a
-6-digit space. That is about 1 in 20,000 odds of a hit in each hour of
-sustained attack. A third limiter on the verify step would buy nothing, and it
-would give a wrong-code typo the power to lock a volunteer out.
+Code *entry* has a limiter of its own, per account and across codes. A code
+dies after 5 wrong guesses, but that cap starts again with each fresh code.
+The cap on requests for a fresh code (10 per IP per hour) is per IP, not per
+account. From one IP, that gave 50 guesses an hour against a 6-digit space.
+That is 1 in 20,000 for each hour, and about 1 in 3 over a year of attack.
+From many IPs, only the 60-second resend interval held: 5 guesses a minute.
+
+So a wrong code now spends from two more budgets. The first is
+`otp-fail:<email>`, 10 in a rolling day, which is about 3,650 guesses a year.
+The second is `pw-ip:<ip>`, the per-IP budget that password failures spend
+from. After 10 wrong codes in a day, a volunteer must wait for the window to
+move. That locks only the code door: the password and the invite link still
+work. The code budget is not the `pw:` budget, so code guesses cannot lock
+the password out.
 
 ## Sessions: remember-me with an app-side clock
 

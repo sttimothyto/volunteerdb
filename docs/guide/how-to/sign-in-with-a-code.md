@@ -29,6 +29,7 @@ Sign in without a password. The site emails you a 6-digit code, and you type it 
 
 - A code works for 10 minutes. After that, click *Resend code* and use the new code.
 - You have 5 tries for one code. After 5 wrong tries, click *Resend code*.
+- After 10 wrong codes in 1 day, the page tells you to wait. Sign in with your password, if you have one.
 - *Resend code* sends a new code only when the last one is more than 60 seconds old.
 - If the page says that the code did not work, the code is wrong or too old. Click *Resend code*.
 - If no message comes, look in your spam folder. Then check that you typed the address of your account.

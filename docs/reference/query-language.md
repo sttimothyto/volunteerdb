@@ -107,6 +107,10 @@ created > '2025-01-01'
   - You can view the private fields of yourself, plus of everyone on a team
     where you are leader, second, or core. That is the same scope as the
     plain search.
+  - `notes` is narrower: yourself, plus everyone on a team where you are
+    leader or second. A core member views a teammate's phone, but not their
+    notes, so a condition on `notes` does not count for that teammate. The
+    plain search scopes a notes match the same way.
   - That holds under `NOT` too: `NOT (phone LIKE '555%')` matches, at most,
     the people whose phones you can read.
   - `email` is private like the rest: a condition on it counts only for a

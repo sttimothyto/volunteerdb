@@ -37,7 +37,7 @@ import sys
 # ...` and then `a.attr`), SQL `IS NOT NULL` filters it cannot see, and a
 # handful of library stubs (DeclarativeBase.__table__ as FromClause, Starlette
 # add_middleware, NiceGUI async handlers, PIL getpixel).
-CEILING = 68
+CEILING = 67
 
 TARGET = "src/"
 # Warnings count too: an `unused-ignore-comment` is a suppression that has
