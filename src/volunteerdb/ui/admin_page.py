@@ -141,29 +141,30 @@ def _new_account_dialog(volunteer_names: dict[int, str], base_url: str) -> None:
     dialog.open()
 
 
-async def _toggle_admin(user_id: int, is_admin: bool) -> None:
+async def _set_flag(user_id: int, success: str, **flag: bool) -> None:
+    """Flip one of an account's switches (`is_admin=` or `is_active=`)."""
+
     async def command(ctx: PageCtx):
         return await user_service.set_flags(
-            ctx.session, user_id, actor=ctx.actor, is_admin=not is_admin
+            ctx.session, user_id, actor=ctx.actor, **flag
         )
 
-    await run_command(
-        command,
-        reload=True,
-        success="Admin right revoked" if is_admin else "Admin right granted",
+    await run_command(command, reload=True, success=success)
+
+
+async def _toggle_admin(user_id: int, is_admin: bool) -> None:
+    await _set_flag(
+        user_id,
+        "Admin right revoked" if is_admin else "Admin right granted",
+        is_admin=not is_admin,
     )
 
 
 async def _toggle_active(user_id: int, is_active: bool) -> None:
-    async def command(ctx: PageCtx):
-        return await user_service.set_flags(
-            ctx.session, user_id, actor=ctx.actor, is_active=not is_active
-        )
-
-    await run_command(
-        command,
-        reload=True,
-        success="Account disabled" if is_active else "Account enabled",
+    await _set_flag(
+        user_id,
+        "Account disabled" if is_active else "Account enabled",
+        is_active=not is_active,
     )
 
 

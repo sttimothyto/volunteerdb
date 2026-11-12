@@ -38,7 +38,6 @@ Usage: python -m volunteerdb.jobs.event_reminders [--today YYYY-MM-DD]
 
 from __future__ import annotations
 
-import argparse
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -46,7 +45,6 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import transaction
@@ -63,7 +61,7 @@ from ..models import (
 )
 from ..services import mail
 from ..services import teams as team_service
-from . import JobReport, run_locked, send_digests
+from . import JobReport, run_dated, send_digests, stamp
 
 WEEK_DAYS = 7
 DAY_DAYS = 1
@@ -243,21 +241,6 @@ def plan(
     ]
 
 
-def _stamp(digest: Digest):
-    """The stages this digest settles, as one insert. A stage recorded
-    between the read and here is fine: the notice went out either way."""
-    return (
-        pg_insert(Notification)
-        .values(
-            [
-                {"assignment_id": i, "volunteer_id": digest.volunteer_id, "stage": s}
-                for i, s in digest.stamps
-            ]
-        )
-        .on_conflict_do_nothing(constraint="uq_notification_assignment")
-    )
-
-
 async def execute(digests: Sequence[Digest], env: Env) -> JobReport:
     """Send each digest and, once it went, stamp its stages: a failed send
     stamps nothing and is retried the next night (jobs.send_digests)."""
@@ -267,7 +250,9 @@ async def execute(digests: Sequence[Digest], env: Env) -> JobReport:
         digests,
         env,
         render=lambda d: mail.event_digest_email(list(d.items), events_url, tz=env.tz),
-        stamp=_stamp,
+        stamp=lambda d: stamp(
+            d, subject="assignment_id", constraint="uq_notification_assignment"
+        ),
     )
 
 
@@ -285,15 +270,7 @@ async def main(env: Env, today: date | None = None) -> int:
 
 
 def cli(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--today",
-        type=date.fromisoformat,
-        default=None,
-        help="pretend today is this date (parish day); for manual runs and tests",
-    )
-    args = parser.parse_args(argv)
-    return run_locked("event_reminders", lambda env: main(env, today=args.today))
+    return run_dated("event_reminders", main, argv, description=__doc__)
 
 
 if __name__ == "__main__":

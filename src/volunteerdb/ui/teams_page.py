@@ -21,7 +21,7 @@ from ..services import volunteers as volunteer_service
 from ..services.readmodels import TeamRoom
 from ..sheets import importer
 from ..sheets.common import sheet_url
-from . import column_order, invites
+from . import column_order, invites, membership_actions
 from .a11y import heading
 from .account_status import account_state
 from .asof import parse_as_of
@@ -999,31 +999,6 @@ def _subteams_row(children: list[Team]) -> None:
             ui.button(child.name).props(f'outline dense href="/teams/{child.id}"')
 
 
-def _add_member_row(team_id: int, volunteer_options: dict[int, str]) -> ui.select:
-    """The picker is returned so an empty roster's button can put the cursor
-    in it."""
-    heading("Add member", level=2)
-    with ui.row().classes("items-center gap-2"):
-        who = (
-            required(ui.select(volunteer_options, label="Volunteer", with_input=True))
-            .props("outlined dense")
-            .classes("w-64")
-        )
-        role = (
-            ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
-            .props("outlined dense")
-            .classes("w-52")
-        )
-        ui.button(
-            "Add",
-            icon="person_add",
-            on_click=lambda: (
-                _add_member(team_id, who.value, role.value) if valid(who) else None
-            ),
-        ).props("dense").mark("add-member")
-    return who
-
-
 # The roster's rows sort by role first (the order the service lists them in)
 _ROLE_RANK = {role: rank for rank, role in enumerate(TeamRole)}
 
@@ -1265,7 +1240,9 @@ def _roster_table(
         )
         table.on(
             "remove",
-            lambda e: _remove_member(e.args["id"], e.args["name"], team, refresh),
+            lambda e: membership_actions.remove(
+                e.args["id"], e.args["name"], team, refresh
+            ),
         )
         count = ui.label(count_text(len(rows), None, "member")).classes(
             "text-sm text-gray-500"
@@ -1460,7 +1437,16 @@ async def team_detail(team_id: int, as_of: str = ""):
         if room.children:
             _subteams_row(room.children)
         picker = (
-            _add_member_row(team_id, room.volunteer_options)
+            membership_actions.add_row(
+                "Add member",
+                room.volunteer_options,
+                label="Volunteer",
+                icon="person_add",
+                add=lambda volunteer_id, role: membership_actions.add(
+                    volunteer_id, team_id, role, success="Added to the roster"
+                ),
+                marker="add-member",
+            )
             if room.can_manage
             else None
         )
@@ -1485,41 +1471,6 @@ async def team_detail(team_id: int, as_of: str = ""):
         if room.can_manage:
             _sheet_section(room.sheet, team_id, actor.is_admin, tz=tz)
             _sheet_import_block(actor.is_admin)
-
-
-async def _add_member(team_id: int, volunteer_id: int | None, role_value: str) -> None:
-    if not volunteer_id:  # the picker's own rule said so already (forms.valid)
-        return
-
-    async def command(ctx: PageCtx):
-        return await membership_service.assign(
-            ctx.session, ctx.actor, volunteer_id, team_id, TeamRole(role_value)
-        )
-
-    await run_command(command, reload=True, success="Added to the roster")
-
-
-async def _remove_member(
-    membership_id: int, name: str, team: str, refresh: Refresh
-) -> None:
-    """Take somebody off the roster, once the leader has said so twice: the
-    icon is small, the row is one of sixty, and the wrong one is a phone
-    call to make."""
-    if not await confirm(
-        f"Remove {name} from the {team} roster?",
-        detail=(
-            "They stay in the parish list and on their other teams. "
-            "The history keeps the membership."
-        ),
-        yes=f"Remove {name} from {team}",
-        danger=True,
-    ):
-        return
-    await run_command(
-        lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id),
-        refresh=refresh,
-        success=f"Removed from {team}",
-    )
 
 
 async def _delete_team(team_id: int, name: str, *, places: int) -> None:

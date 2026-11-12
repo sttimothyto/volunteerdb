@@ -30,6 +30,7 @@ moves on to the next one. Nothing here raises.
 
 import asyncio  # noqa: F401 -- the retry tests patch asyncio.sleep through this name
 import csv
+from collections.abc import Collection
 from io import StringIO
 
 import httpx
@@ -90,23 +91,27 @@ def _err(message: str) -> Err[External]:
     return Err(External(SERVICE, message))
 
 
-def _failed(what: str, resp: httpx.Response) -> Err[External]:
-    return google_api.failed(what, f"HTTP {resp.status_code}", service=SERVICE)
-
-
 async def _send(
     client: httpx.AsyncClient,
     method: str,
     url: str,
     *,
     what: str,
+    ok: Collection[int] | None = None,
     repeatable: bool = True,
     **kwargs,
 ) -> Result[httpx.Response, External]:
     """google_api.send under this module's name, so a transport failure is
     recorded against the team like any other sheet problem."""
     return await google_api.send(
-        client, method, url, what=what, repeatable=repeatable, service=SERVICE, **kwargs
+        client,
+        method,
+        url,
+        what=what,
+        ok=ok,
+        repeatable=repeatable,
+        service=SERVICE,
+        **kwargs,
     )
 
 
@@ -151,7 +156,7 @@ async def read_csv(client: httpx.AsyncClient, file_id: str) -> Result[bytes, Ext
             "link can edit” in Google Sheets’ Share dialog"
         )
     if resp.status_code != 200:
-        return _failed("export", resp)
+        return google_api.failed("export", f"HTTP {resp.status_code}", service=SERVICE)
     content = resp.content
     if len(content) > MAX_SHEET_BYTES:
         return _err("the spreadsheet is implausibly large for a roster")
@@ -188,26 +193,24 @@ async def write_rows(
         "POST",
         f"{API}/{file_id}/values/A1:ZZ:clear",
         what="clear",
+        ok=(200,),
         headers=_headers(token),
         json={},
     )
     if isinstance(clear, Err):
         return clear
-    if clear.value.status_code != 200:
-        return _failed("clear", clear.value)
     sent = await _send(
         client,
         "PUT",
         f"{API}/{file_id}/values/A1",
         what="write",
+        ok=(200,),
         headers=_headers(token),
         params={"valueInputOption": "RAW"},
         json={"values": values},
     )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code != 200:
-        return _failed("write", sent.value)
     return Ok(None)
 
 
@@ -225,6 +228,7 @@ async def create_sheet(
         "POST",
         DRIVE_API,
         what="create",
+        ok=(200, 201),
         repeatable=False,
         headers=_headers(token),
         json={
@@ -236,8 +240,6 @@ async def create_sheet(
     )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code not in (200, 201):
-        return _failed("create", sent.value)
     return Ok(sent.value.json()["id"])
 
 
@@ -253,13 +255,12 @@ async def share_anyone_writer(
         "POST",
         f"{DRIVE_API}/{file_id}/permissions",
         what="sharing",
+        ok=(200, 201),
         headers=_headers(token),
         json={"type": "anyone", "role": "writer"},
     )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code not in (200, 201):
-        return _failed("sharing", sent.value)
     return Ok(None)
 
 
@@ -427,13 +428,12 @@ async def decorate(
         "GET",
         f"{API}/{file_id}",
         what="read for decoration",
+        ok=(200,),
         headers=_headers(token),
         params={"ranges": "A1:H2", "fields": GET_FIELDS},
     )
     if isinstance(read, Err):
         return read
-    if read.value.status_code != 200:
-        return _failed("read for decoration", read.value)
     state = first_sheet_state(read.value.json())
     if is_decorated(state, team_values):
         return Ok(False)
@@ -442,12 +442,11 @@ async def decorate(
         "POST",
         f"{API}/{file_id}:batchUpdate",
         what="decoration",
+        ok=(200,),
         repeatable=False,
         headers=_headers(token),
         json={"requests": build_requests(state, team_values)},
     )
     if isinstance(batch, Err):
         return batch
-    if batch.value.status_code != 200:
-        return _failed("decoration", batch.value)
     return Ok(True)

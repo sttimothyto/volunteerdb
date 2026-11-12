@@ -403,16 +403,18 @@ async def page_status(
     return Ok(await session.get(TeamPage, team_id))
 
 
+# What "published" means, for a query that joins Team (and, for the page
+# itself, TeamPage): the team is live and still names a doc, and there is
+# cached html to serve. An errored refetch still publishes its last good html.
+_TEAM_PUBLISHES = (Team.is_active, Team.home_doc_url.is_not(None))
+_PUBLISHED = (*_TEAM_PUBLISHES, TeamPage.html.is_not(None))
+
+
 async def published_teams(session: AsyncSession) -> list[Team]:
     """Active teams with a home doc and cached html — the public page set.
-    An errored refetch still publishes its last good html. Team rows only:
-    the html (up to 2 MB per page) stays in the database."""
+    Team rows only: the html (up to 2 MB per page) stays in the database."""
     rows = await session.scalars(
-        sa.select(Team)
-        .join(TeamPage, TeamPage.team_id == Team.id)
-        .where(
-            Team.is_active, Team.home_doc_url.is_not(None), TeamPage.html.is_not(None)
-        )
+        sa.select(Team).join(TeamPage, TeamPage.team_id == Team.id).where(*_PUBLISHED)
     )
     return list(rows)
 
@@ -428,12 +430,7 @@ async def is_published(session: AsyncSession, team_id: int) -> bool:
         await session.scalar(
             sa.select(TeamPage.team_id)
             .join(Team, Team.id == TeamPage.team_id)
-            .where(
-                TeamPage.team_id == team_id,
-                Team.is_active,
-                Team.home_doc_url.is_not(None),
-                TeamPage.html.is_not(None),
-            )
+            .where(TeamPage.team_id == team_id, *_PUBLISHED)
         )
     ) is not None
 
@@ -450,8 +447,7 @@ async def published_image(
         .where(
             TeamPageImage.team_id == team_id,
             TeamPageImage.seq == seq,
-            Team.is_active,
-            Team.home_doc_url.is_not(None),
+            *_TEAM_PUBLISHES,
         )
     )
 
@@ -463,11 +459,6 @@ async def published_page(session: AsyncSession, team_id: int) -> TeamPage | None
         await session.execute(
             sa.select(TeamPage)
             .join(Team, Team.id == TeamPage.team_id)
-            .where(
-                TeamPage.team_id == team_id,
-                Team.is_active,
-                Team.home_doc_url.is_not(None),
-                TeamPage.html.is_not(None),
-            )
+            .where(TeamPage.team_id == team_id, *_PUBLISHED)
         )
     ).scalar_one_or_none()

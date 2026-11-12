@@ -31,6 +31,7 @@ an Err[External] carrying the sentence the job logs. Nothing here raises.
 
 import hashlib
 import json
+from collections.abc import Collection
 from datetime import datetime
 from urllib.parse import quote
 
@@ -55,10 +56,6 @@ TIMEOUT = google_api.TIMEOUT
 SETTING_KEY = "gcal"
 # Google's fixed rule id for the "anyone" scope
 PUBLIC_RULE_ID = "default"
-
-
-def _failed(what: str, resp: httpx.Response) -> Err[External]:
-    return google_api.failed(what, f"HTTP {resp.status_code}", service=SERVICE)
 
 
 def enabled(cfg: GoogleConfig) -> bool:
@@ -151,13 +148,48 @@ async def _call(
     method: str,
     url: str,
     *,
+    token: str,
     what: str,
+    ok: Collection[int] = (200,),
     repeatable: bool = True,
     **kwargs,
 ) -> Result[httpx.Response, External]:
+    """One authorised call to the Calendar API, under this module's name. An
+    answer outside `ok` is already the Err (google_api.send)."""
     return await google_api.send(
-        client, method, url, what=what, repeatable=repeatable, service=SERVICE, **kwargs
+        client,
+        method,
+        url,
+        what=what,
+        ok=ok,
+        repeatable=repeatable,
+        service=SERVICE,
+        headers=google_api.headers(token),
+        **kwargs,
     )
+
+
+async def _pages(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    token: str,
+    what: str,
+    params: dict[str, str],
+) -> Result[list[dict], External]:
+    """Every item of a listing, following nextPageToken to the end."""
+    items: list[dict] = []
+    params = {"maxResults": "250", **params}
+    while True:
+        sent = await _call(client, "GET", url, token=token, what=what, params=params)
+        if isinstance(sent, Err):
+            return sent
+        data = sent.value.json()
+        items.extend(data.get("items", []))
+        next_page = data.get("nextPageToken")
+        if not next_page:
+            return Ok(items)
+        params["pageToken"] = next_page
 
 
 def _calendar_url(calendar_id: str) -> str:
@@ -185,15 +217,14 @@ async def create_calendar(
         client,
         "POST",
         f"{API}/calendars",
+        token=token,
         what="calendar create",
+        ok=(200, 201),
         repeatable=False,
-        headers=google_api.headers(token),
         json={"summary": name, "timeZone": tz},
     )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code not in (200, 201):
-        return _failed("calendar create", sent.value)
     return Ok(sent.value.json()["id"])
 
 
@@ -206,42 +237,13 @@ async def calendar_exists(
         client,
         "GET",
         _calendar_url(calendar_id),
+        token=token,
         what="calendar get",
-        headers=google_api.headers(token),
+        ok=(200, 404, 410),
     )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code in (404, 410):
-        return Ok(False)
-    if sent.value.status_code != 200:
-        return _failed("calendar get", sent.value)
-    return Ok(True)
-
-
-async def _list_acl(
-    client: httpx.AsyncClient, token: str, calendar_id: str
-) -> Result[list[dict], External]:
-    items: list[dict] = []
-    params: dict[str, str] = {"maxResults": "250"}
-    while True:
-        sent = await _call(
-            client,
-            "GET",
-            _acl_url(calendar_id),
-            what="acl list",
-            headers=google_api.headers(token),
-            params=params,
-        )
-        if isinstance(sent, Err):
-            return sent
-        if sent.value.status_code != 200:
-            return _failed("acl list", sent.value)
-        data = sent.value.json()
-        items.extend(data.get("items", []))
-        next_page = data.get("nextPageToken")
-        if not next_page:
-            return Ok(items)
-        params["pageToken"] = next_page
+    return Ok(sent.value.status_code == 200)
 
 
 async def verify_readonly(
@@ -260,7 +262,9 @@ async def verify_readonly(
     the parish password, and deleting it would be this system deciding the
     parish's sharing for it. The scheduler's alert mail is the right voice.
     """
-    listed = await _list_acl(client, token, calendar_id)
+    listed = await _pages(
+        client, _acl_url(calendar_id), token=token, what="acl list", params={}
+    )
     if isinstance(listed, Err):
         return listed
     rules = listed.value
@@ -307,8 +311,9 @@ async def _publish(
             client,
             "POST",
             _acl_url(calendar_id),
+            token=token,
             what="publish",
-            headers=google_api.headers(token),
+            ok=(200, 201),
             json={"role": "reader", "scope": {"type": "default"}},
         )
     else:
@@ -316,14 +321,13 @@ async def _publish(
             client,
             "PATCH",
             f"{_acl_url(calendar_id)}/{quote(rule_id, safe='')}",
+            token=token,
             what="publish",
-            headers=google_api.headers(token),
+            ok=(200, 201),
             json={"role": "reader"},
         )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code not in (200, 201):
-        return _failed("publish", sent.value)
     log.info("gcal.published", calendar_id=calendar_id, repaired=rule_id is not None)
     return Ok(None)
 
@@ -367,15 +371,14 @@ async def insert(
         client,
         "POST",
         _events_url(calendar_id),
+        token=token,
         what="insert",
+        ok=(200, 201),
         repeatable=False,
-        headers=google_api.headers(token),
         json=payload,
     )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code not in (200, 201):
-        return _failed("insert", sent.value)
     return Ok(sent.value.json()["id"])
 
 
@@ -390,14 +393,12 @@ async def patch(
         client,
         "PATCH",
         f"{_events_url(calendar_id)}/{quote(google_event_id, safe='')}",
+        token=token,
         what="patch",
-        headers=google_api.headers(token),
         json=payload,
     )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code != 200:
-        return _failed("patch", sent.value)
     return Ok(None)
 
 
@@ -409,13 +410,12 @@ async def delete(
         client,
         "DELETE",
         f"{_events_url(calendar_id)}/{quote(google_event_id, safe='')}",
+        token=token,
         what="delete",
-        headers=google_api.headers(token),
+        ok=(200, 204, 404, 410),
     )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code not in (200, 204, 404, 410):
-        return _failed("delete", sent.value)
     return Ok(None)
 
 
@@ -426,33 +426,18 @@ async def _list_events(
     time_min: datetime,
     **extra: str,
 ) -> Result[list[dict], External]:
-    items: list[dict] = []
-    params: dict[str, str] = {
-        "timeMin": time_min.isoformat(),
-        "maxResults": "250",
-        "singleEvents": "true",
-        "showDeleted": "false",
-        **extra,
-    }
-    while True:
-        sent = await _call(
-            client,
-            "GET",
-            _events_url(calendar_id),
-            what="list",
-            headers=google_api.headers(token),
-            params=params,
-        )
-        if isinstance(sent, Err):
-            return sent
-        if sent.value.status_code != 200:
-            return _failed("list", sent.value)
-        data = sent.value.json()
-        items.extend(data.get("items", []))
-        next_page = data.get("nextPageToken")
-        if not next_page:
-            return Ok(items)
-        params["pageToken"] = next_page
+    return await _pages(
+        client,
+        _events_url(calendar_id),
+        token=token,
+        what="list",
+        params={
+            "timeMin": time_min.isoformat(),
+            "singleEvents": "true",
+            "showDeleted": "false",
+            **extra,
+        },
+    )
 
 
 async def list_managed(

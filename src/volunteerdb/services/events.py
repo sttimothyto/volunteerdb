@@ -1519,6 +1519,45 @@ async def request_sub(
     )
 
 
+async def _free_to_take(
+    session: AsyncSession,
+    event: Event,
+    assignment: EventAssignment,
+    volunteer_id: int | None,
+    *,
+    holds: str,
+    serves: str,
+) -> Result[int, DomainError]:
+    """The volunteer an assignment may pass to, by id: on the event's team
+    (_require_member), not the one who holds it now, and not at the event
+    already. `holds` and `serves` are the two refusals, in the caller's
+    grammatical person -- a claimant is "you", a hand-over names "they"."""
+    member = await _require_member(session, volunteer_id, event.team_id)
+    if isinstance(member, Err):
+        return member
+    vid = member.value
+    if assignment.volunteer_id == vid:
+        return invalid(holds)
+    already = await session.scalar(
+        sa.select(EventAssignment.id).where(
+            EventAssignment.event_id == event.id,
+            EventAssignment.volunteer_id == vid,
+        )
+    )
+    if already is not None:
+        return invalid(serves)
+    return Ok(vid)
+
+
+def _hand_to(assignment: EventAssignment, volunteer_id: int) -> None:
+    """Put a substitute on the assignment. The new person still needs the
+    reminders, on the app's defaults — not the outgoing volunteer's choices,
+    which were theirs and not this one's."""
+    assignment.volunteer_id = volunteer_id
+    assignment.kind = AssignmentKind.sub.value
+    assignment.notify_7d, assignment.notify_24h = False, True
+
+
 async def claim_sub(
     session: AsyncSession,
     actor: Actor,
@@ -1548,20 +1587,17 @@ async def claim_sub(
         return denied
     if closed := _require_open(event, "claim this slot", now):
         return closed
-    member = await _require_member(session, volunteer_id, event.team_id)
-    if isinstance(member, Err):
-        return member
-    vid = member.value
-    if assignment.volunteer_id == vid:
-        return invalid("this is your own slot")
-    already = await session.scalar(
-        sa.select(EventAssignment.id).where(
-            EventAssignment.event_id == event.id,
-            EventAssignment.volunteer_id == vid,
-        )
+    free = await _free_to_take(
+        session,
+        event,
+        assignment,
+        volunteer_id,
+        holds="this is your own slot",
+        serves="you already serve at this event",
     )
-    if already is not None:
-        return invalid("you already serve at this event")
+    if isinstance(free, Err):
+        return free
+    vid = free.value
     asker = await session.get(Volunteer, assignment.volunteer_id)
     assert asker is not None  # FK guarantees the row
     result = await session.execute(
@@ -1578,11 +1614,7 @@ async def claim_sub(
     )
     if result.rowcount == 0:
         return invalid("someone else already claimed this slot")
-    assignment.volunteer_id = vid
-    assignment.kind = AssignmentKind.sub.value
-    # the new person still needs the reminders, on the app's defaults — not
-    # the outgoing volunteer's choices, which were theirs and not this one's
-    assignment.notify_7d, assignment.notify_24h = False, True
+    _hand_to(assignment, vid)
     await session.flush()
     await _mark_notified(session, assignment, NotificationStage.event_scheduled)
     await session.refresh(sub)
@@ -1644,20 +1676,17 @@ async def substitute(
         return denied
     if closed := _require_open(event, "substitute on this event", now):
         return closed
-    member = await _require_member(session, new_volunteer_id, event.team_id)
-    if isinstance(member, Err):
-        return member
-    vid = member.value
-    if assignment.volunteer_id == vid:
-        return invalid("they already hold this slot")
-    already = await session.scalar(
-        sa.select(EventAssignment.id).where(
-            EventAssignment.event_id == event.id,
-            EventAssignment.volunteer_id == vid,
-        )
+    free = await _free_to_take(
+        session,
+        event,
+        assignment,
+        new_volunteer_id,
+        holds="they already hold this slot",
+        serves="they already serve at this event",
     )
-    if already is not None:
-        return invalid("they already serve at this event")
+    if isinstance(free, Err):
+        return free
+    vid = free.value
     outgoing = await session.get(Volunteer, assignment.volunteer_id)
     incoming = await session.get(Volunteer, vid)
     assert outgoing is not None and incoming is not None  # FKs guarantee the rows
@@ -1669,12 +1698,8 @@ async def substitute(
         )
         .values(status=SubRequestStatus.cancelled.value, resolved_at=now)
     )
-    assignment.volunteer_id = vid
-    assignment.kind = AssignmentKind.sub.value
+    _hand_to(assignment, vid)
     assignment.assigned_by = acted_by
-    # the new person still needs the reminders, on the app's defaults — not
-    # the outgoing volunteer's choices, which were theirs and not this one's
-    assignment.notify_7d, assignment.notify_24h = False, True
     await session.flush()
     if notify is NotifyMode.direct:
         # the caller mails the incoming volunteer right after commit, so the

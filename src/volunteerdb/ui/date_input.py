@@ -10,9 +10,11 @@ alone: the Quasar picker has one keyboard model and one look in both modes,
 where a native ``<input type=date>`` has one per browser.
 """
 
+from collections.abc import Callable
 from datetime import date, datetime, time
 
 from nicegui import ui
+from nicegui.elements.mixins.value_element import ValueElement
 
 from .a11y import icon_button
 
@@ -30,61 +32,80 @@ def iso_time(at: datetime) -> str:
     return f"{at:%H:%M}"
 
 
-def _is_date(value: str | None) -> bool:
-    """Blank is fine here (forms.required says otherwise when it must be)."""
-    if not value:
+def _parses(parse: Callable[[str], object]) -> Callable[[str | None], bool]:
+    """A field rule: the value is blank or `parse` takes it. Blank is fine
+    here (forms.required says otherwise when it must be)."""
+
+    def rule(value: str | None) -> bool:
+        if not value:
+            return True
+        try:
+            parse(value.strip())
+        except ValueError:
+            return False
         return True
-    try:
-        date.fromisoformat(value.strip())
-    except ValueError:
-        return False
-    return True
+
+    return rule
 
 
-def _is_time(value: str | None) -> bool:
-    if not value:
-        return True
-    try:
-        time.fromisoformat(value.strip())
-    except ValueError:
-        return False
-    return True
+_is_date = _parses(date.fromisoformat)
+_is_time = _parses(time.fromisoformat)
 
 
-def date_input(label: str, *, value: str = "", clearable: bool = False) -> ui.input:
-    """A ``ui.input`` whose appended calendar icon opens a ``ui.date`` picker.
+def _picker_input(
+    label: str,
+    value: str,
+    clearable: bool,
+    *,
+    rule: str,
+    check: Callable[[str | None], bool],
+    picker: Callable[[], ValueElement],
+    icon: str,
+    name: str,
+) -> ui.input:
+    """A ``ui.input`` whose appended button opens `picker` in a menu.
 
-    Returns the input so callers chain their own ``.classes(...)``; picking a
-    date closes the menu, typing one never opens it (``no-parent-event``).
-    A typed value that is not a date says so under the field (the rule is
-    the label's own words), before the form is submitted.
+    Picking a value closes the menu, typing one never opens it
+    (``no-parent-event``). A typed value that fails `check` says so under
+    the field (`rule`, the format in the label's own words), before the form
+    is submitted.
     """
     props = "outlined dense" + (" clearable" if clearable else "")
-    with ui.input(label, value=value, validation={DATE_RULE: _is_date}).props(
-        props
-    ) as field:
+    with ui.input(label, value=value, validation={rule: check}).props(props) as field:
         with ui.menu().props("no-parent-event") as menu:
-            ui.date().bind_value(field).on_value_change(menu.close)
+            picker().bind_value(field).on_value_change(menu.close)
         with field.add_slot("append"):
             # a real button, not an icon with a click handler: focusable,
             # named, and 32px to hit (WCAG 2.1.1, 4.1.2, 2.5.8)
-            icon_button("edit_calendar", "Choose a date", on_click=menu.open).props(
-                "flat dense round"
-            )
+            icon_button(icon, name, on_click=menu.open).props("flat dense round")
     return field
+
+
+def date_input(label: str, *, value: str = "", clearable: bool = False) -> ui.input:
+    """A ``ui.input`` whose appended calendar button opens a ``ui.date``
+    picker. Returns the input so callers chain their own ``.classes(...)``."""
+    return _picker_input(
+        label,
+        value,
+        clearable,
+        rule=DATE_RULE,
+        check=_is_date,
+        picker=ui.date,
+        icon="edit_calendar",
+        name="Choose a date",
+    )
 
 
 def time_input(label: str, *, value: str = "", clearable: bool = False) -> ui.input:
     """A ``ui.input`` whose appended clock button opens a 24-hour ``ui.time``
     picker; the value stays ``HH:MM``. Same shape as date_input."""
-    props = "outlined dense" + (" clearable" if clearable else "")
-    with ui.input(label, value=value, validation={TIME_RULE: _is_time}).props(
-        props
-    ) as field:
-        with ui.menu().props("no-parent-event") as menu:
-            ui.time().props("format24h").bind_value(field).on_value_change(menu.close)
-        with field.add_slot("append"):
-            icon_button("schedule", "Choose a time", on_click=menu.open).props(
-                "flat dense round"
-            )
-    return field
+    return _picker_input(
+        label,
+        value,
+        clearable,
+        rule=TIME_RULE,
+        check=_is_time,
+        picker=lambda: ui.time().props("format24h"),
+        icon="schedule",
+        name="Choose a time",
+    )

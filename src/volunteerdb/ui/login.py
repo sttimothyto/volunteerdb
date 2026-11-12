@@ -8,10 +8,13 @@ the nested handlers only read the widgets and move between the steps.
 """
 
 import html
+from collections.abc import Awaitable, Callable
+from datetime import datetime
 
 import structlog
 from fastapi import Request
 from nicegui import ui
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import RedirectResponse
 
 from .. import passwords
@@ -19,8 +22,8 @@ from ..api.deps import RequestFacts
 from ..db import transaction
 from ..domain import OtpRequested, SignedIn, SignInFailed
 from ..env import Env, current
-from ..errors import Invalid
-from ..fp import Err, Ok
+from ..errors import DomainError, Invalid
+from ..fp import Err, Ok, Result
 from ..models import AppUser
 from ..services import users as user_service
 from .a11y import heading
@@ -79,36 +82,62 @@ def help_menu() -> None:
 # --- the sign-in page's work -----------------------------------------------------
 
 
-async def _password_sign_in(
-    addr: str, password: str, *, facts: RequestFacts, env: Env
+async def _sign_in(
+    method: str,
+    addr: str,
+    *,
+    budget: str,
+    check: Callable[[AsyncSession, datetime], Awaitable[Result[AppUser, DomainError]]],
+    refusal: str,
+    facts: RequestFacts,
+    env: Env,
 ) -> int | None:
-    """The account's id when the password is right. A throttled or failed
-    attempt is charged, logged and toasted here, and answers None."""
+    """One attempt to sign in by `method`: the account's id when `check`
+    (the service's verdict on what was typed) accepts it. A throttled or
+    failed attempt is charged, logged and toasted here -- `refusal` is the
+    toast -- and answers None. `budget` names the per-account limit in
+    throttle.LIMITS; the per-address one ("pw-ip") is shared by every
+    method, so trying the other door does not reset it."""
     now = env.clock.now()
     if denied := rate_limit(
-        f"pw:{addr.lower()}", f"pw-ip:{facts.ip}", now=now, what="sign in"
+        f"{budget}:{addr.lower()}", f"pw-ip:{facts.ip}", now=now, what="sign in"
     ):
-        logger.warning("auth.throttled", method="password", email=addr, ip=facts.ip)
+        logger.warning("auth.throttled", method=method, email=addr, ip=facts.ip)
         toast(denied.error)
         return None
     async with transaction(env, None) as session:
-        signed = await user_service.authenticate(session, addr, password, now=now)
+        signed = await check(session, now)
     if isinstance(signed, Err):
-        logger.warning("auth.login_failed", method="password", email=addr, ip=facts.ip)
+        logger.warning("auth.login_failed", method=method, email=addr, ip=facts.ip)
         await perform(
-            [SignInFailed("password", addr, facts.ip)],
-            base_url=facts.base_url,
-            now=now,
+            [SignInFailed(method, addr, facts.ip)], base_url=facts.base_url, now=now
         )
-        fail("Invalid email or password")
+        fail(refusal)
         return None
     user = signed.value
     await perform(
-        [SignedIn(user.id, user.email, "password", facts.ip)],
+        [SignedIn(user.id, user.email, method, facts.ip)],
         base_url=facts.base_url,
         now=now,
     )
     return user.id
+
+
+async def _password_sign_in(
+    addr: str, password: str, *, facts: RequestFacts, env: Env
+) -> int | None:
+    """The account's id when the password is right (_sign_in)."""
+    return await _sign_in(
+        "password",
+        addr,
+        budget="pw",
+        check=lambda session, now: user_service.authenticate(
+            session, addr, password, now=now
+        ),
+        refusal="Invalid email or password",
+        facts=facts,
+        env=env,
+    )
 
 
 async def _request_code(addr: str, *, facts: RequestFacts, env: Env) -> bool:
@@ -139,36 +168,23 @@ async def _request_code(addr: str, *, facts: RequestFacts, env: Env) -> bool:
 async def _verify_code(
     addr: str, code: str, *, facts: RequestFacts, env: Env
 ) -> int | None:
-    """The account's id when the code is right; None once the refusal has
-    been logged and toasted. Throttled per account across codes and per
-    address (throttle.LIMITS "otp-fail", "pw-ip"): the per-code attempt cap
-    alone resets with every code requested."""
-    now = env.clock.now()
-    if denied := rate_limit(
-        f"otp-fail:{addr.lower()}", f"pw-ip:{facts.ip}", now=now, what="sign in"
-    ):
-        logger.warning("auth.throttled", method="otp", email=addr, ip=facts.ip)
-        toast(denied.error)
-        return None
-    async with transaction(env, None) as session:
-        verified = await user_service.verify_otp(session, addr, code, now=now)
-    if isinstance(verified, Err):
-        logger.warning("auth.login_failed", method="otp", email=addr, ip=facts.ip)
-        await perform(
-            [SignInFailed("otp", addr, facts.ip)], base_url=facts.base_url, now=now
-        )
-        fail(
+    """The account's id when the code is right (_sign_in). Throttled per
+    account across codes (throttle.LIMITS "otp-fail"): the per-code attempt
+    cap alone resets with every code requested."""
+    return await _sign_in(
+        "otp",
+        addr,
+        budget="otp-fail",
+        check=lambda session, now: user_service.verify_otp(
+            session, addr, code, now=now
+        ),
+        refusal=(
             "That code didn't work — it may be mistyped or expired. "
             "Resend to get a fresh one."
-        )
-        return None
-    user = verified.value
-    await perform(
-        [SignedIn(user.id, user.email, "otp", facts.ip)],
-        base_url=facts.base_url,
-        now=now,
+        ),
+        facts=facts,
+        env=env,
     )
-    return user.id
 
 
 @ui.page("/login")

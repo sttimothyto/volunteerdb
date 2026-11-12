@@ -23,6 +23,7 @@ integration names itself as the service so the two are told apart in a log.
 """
 
 import asyncio
+from collections.abc import Collection
 from dataclasses import dataclass
 
 import httpx
@@ -119,19 +120,26 @@ async def send(
     *,
     what: str,
     repeatable: bool = True,
+    ok: Collection[int] | None = None,
     service: str = SERVICE,
     **kwargs,
 ) -> Result[httpx.Response, External]:
     """One request, retried while Google says "later".
 
-    Returns the response rather than judging its status: every leg reports
-    failure differently -- read_csv turns a 403 into sharing advice -- and
-    centralising that would flatten the messages leaders actually read. The
-    last attempt's response comes back as-is, so an exhausted retry ends in
-    the caller's usual "... failed: HTTP 429" instead of a new error shape.
-    Only a request that never got an answer is an Err here: a reset or a read
-    timeout, named after the exception, so an interactive "Sync now" records
-    it against the team like any other sheet problem.
+    Left to itself this returns the response rather than judging its status:
+    a leg may report a failure in words of its own -- read_csv turns a 403
+    into sharing advice -- and centralising that would flatten the messages
+    leaders actually read. The last attempt's response comes back as-is, so
+    an exhausted retry ends in the caller's usual "... failed: HTTP 429"
+    instead of a new error shape. Only a request that never got an answer is
+    an Err: a reset or a read timeout, named after the exception, so an
+    interactive "Sync now" records it against the team like any other sheet
+    problem.
+
+    `ok` is for the legs with nothing of their own to say, which is most of
+    them: the statuses that count as done. Any other final status is then an
+    Err in the one shape there is, "<what> failed: HTTP <status>" (failed()),
+    so the caller has a single refusal to pass on.
 
     A throttling 403 (see is_rate_limited) is retried like a 429 whatever
     the call, since it too was refused rather than half-performed.
@@ -146,6 +154,25 @@ async def send(
     clients, and this is one nightly job -- a predictable delay is one a test
     can assert on.
     """
+    sent = await _attempts(
+        client, method, url, what=what, repeatable=repeatable, service=service, **kwargs
+    )
+    if isinstance(sent, Err) or ok is None or sent.value.status_code in ok:
+        return sent
+    return failed(what, f"HTTP {sent.value.status_code}", service=service)
+
+
+async def _attempts(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    what: str,
+    repeatable: bool,
+    service: str,
+    **kwargs,
+) -> Result[httpx.Response, External]:
+    """send()'s retry loop: the last response there was, whatever it says."""
     statuses = RETRY_STATUSES if repeatable else REFUSED
     backoff = RETRY_BASE_DELAY
     for _ in range(RETRY_ATTEMPTS - 1):
@@ -178,6 +205,7 @@ async def mint_token(
         "POST",
         TOKEN_URL,
         what="token mint",
+        ok=(200,),
         service=service,
         data={
             "client_id": cfg.client_id,
@@ -188,8 +216,6 @@ async def mint_token(
     )
     if isinstance(sent, Err):
         return sent
-    if sent.value.status_code != 200:
-        return failed("token mint", f"HTTP {sent.value.status_code}", service=service)
     return Ok(sent.value.json()["access_token"])
 
 

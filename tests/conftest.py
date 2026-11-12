@@ -282,8 +282,15 @@ def _drop_all_events(logger, method_name, event_dict):
 
 @pytest.fixture(scope="session", autouse=True)
 def _quiet_structlog():
-    """Silence the audit listeners' output; tests opt back in via log_records."""
+    """Silence the audit listeners' output; tests opt back in via log_records.
+
+    The process's own logging counts as set up from here on: every job's
+    main() calls log.init_logging(), which configures structlog once per
+    process -- and the first test to reach one would otherwise have its
+    log_records capture replaced under it, mid-test. Which test that is
+    depends on the order pytest-randomly picked."""
     structlog.configure(processors=[_drop_all_events], cache_logger_on_first_use=False)
+    log._configured = True
     yield
 
 

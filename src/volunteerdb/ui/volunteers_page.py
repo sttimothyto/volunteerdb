@@ -5,32 +5,26 @@ from zoneinfo import ZoneInfo
 from nicegui import app, ui
 
 from .. import query_lang
-from ..domain import EmailChangeAttempted
 from ..env import current as current_env
 from ..fp import Err
 from ..models import ROLE_LABELS, CustomFieldDef, FieldType, TeamRole
 from ..permissions import Actor, team_ids_map
 from ..services import custom_fields as custom_field_service
 from ..services import elections as elections_service
-from ..services import memberships as membership_service
 from ..services import readmodels
 from ..services import teams as team_service
-from ..services import users as user_service
 from ..services import volunteers as volunteer_service
 from ..services import workload as workload_service
 from ..services.readmodels import VolunteerProfile
 from ..services.volunteers import AddressChange
-from . import column_order, invites
+from . import column_order, email_change, invites, membership_actions
 from .a11y import heading
 from .account_status import invitable, last_login_text
 from .context import (
     PageCtx,
     flash,
     page_ctx,
-    perform,
-    rate_limit,
     run_command,
-    toast,
     warn,
 )
 from .date_input import date_input, time_input
@@ -41,7 +35,6 @@ from .search_box import search_box
 from .timeline_chart import timeline_chart
 from .volunteer_panel import VolunteerPanel, custom_field_lines, format_custom
 from .widgets import (
-    ROLE_OPTIONS,
     denied,
     detail,
     details,
@@ -430,36 +423,12 @@ def _serves_on_section(profile: VolunteerProfile, actor: Actor) -> None:
             if actor.can_manage_team(team.id):
                 ui.button(
                     icon="person_remove",
-                    on_click=lambda _, mid=membership.id, t=team.name: _unassign(
-                        mid, profile.volunteer.full_name, t
+                    on_click=lambda _, mid=membership.id, t=team.name: (
+                        membership_actions.remove(mid, profile.volunteer.full_name, t)
                     ),
                 ).props("dense flat color=negative").mark(
                     f"remove-member-{membership.id}"
                 ).tooltip("Remove from team")
-
-
-def _add_to_team_row(volunteer_id: int, assignable: dict[int, str]) -> None:
-    heading("Add to team", level=2)
-    with ui.row().classes("items-center gap-2"):
-        team_select = (
-            required(ui.select(assignable, label="Team", with_input=True))
-            .props("outlined dense")
-            .classes("w-64")
-        )
-        role_select = (
-            ui.select(ROLE_OPTIONS, label="Role", value=TeamRole.member.value)
-            .props("outlined dense")
-            .classes("w-52")
-        )
-        ui.button(
-            "Add",
-            icon="group_add",
-            on_click=lambda: (
-                _add_to_team(volunteer_id, team_select.value, role_select.value)
-                if valid(team_select)
-                else None
-            ),
-        ).props("dense")
 
 
 def _timeline_section(
@@ -549,24 +518,20 @@ async def volunteer_detail(volunteer_id: int):
         _profile_card(profile, actor, ctx.base_url, tz=tz)
         _serves_on_section(profile, actor)
         if profile.assignable:
-            _add_to_team_row(volunteer_id, profile.assignable)
+            membership_actions.add_row(
+                "Add to team",
+                profile.assignable,
+                label="Team",
+                icon="group_add",
+                add=lambda team_id, role: membership_actions.add(
+                    volunteer_id, team_id, role, success="Added to the team"
+                ),
+            )
         _timeline_section(profile, now=ctx.now, tz=tz)
         if profile.can_view:
             _impact_section(profile)
         if profile.involvements:
             _involvements_section(profile.involvements)
-
-
-async def _add_to_team(volunteer_id: int, team_id: int | None, role_value: str) -> None:
-    if not team_id:  # the picker's own rule said so already (forms.valid)
-        return
-
-    async def command(ctx: PageCtx):
-        return await membership_service.assign(
-            ctx.session, ctx.actor, volunteer_id, team_id, TeamRole(role_value)
-        )
-
-    await run_command(command, reload=True, success="Added to the team")
 
 
 def _custom_widget(defn: CustomFieldDef, value):
@@ -708,17 +673,12 @@ def _edit_dialog(
                 # charge the send budget the /account and API doors charge, on
                 # every attempt (before the service reveals whether the address
                 # is taken), so this door is not the loose one
-                now = current_env().clock.now()
-                if denied := rate_limit(
-                    f"email-change:{actor.account.id}",
-                    now=now,
-                    what="change your email address",
+                if not await email_change.charged(
+                    actor.account.id,
+                    base_url=base_url,
+                    now=current_env().clock.now(),
                 ):
-                    toast(denied.error)
                     return
-                await perform(
-                    [EmailChangeAttempted(actor.account.id)], base_url=base_url, now=now
-                )
             fields = {} if staged else {"email": email.value or None}
 
             # somebody else's address moving is worth a word to the address it
@@ -751,56 +711,20 @@ def _edit_dialog(
                 return
             flash("Details saved")
             if staged:
-                await _stage_own_email(staged)
+                # the page reloads just below, so the line waits for it
+                await email_change.stage(
+                    staged,
+                    sent=lambda pending: (
+                        f"Confirmation sent to {pending}. Your address changes "
+                        "when you open the link in it."
+                    ),
+                    reload=False,
+                )
             dialog.close()
             ui.navigate.reload()
 
         actions(dialog, "Save", save)
     dialog.open()
-
-
-async def _stage_own_email(address: str) -> None:
-    """Arm the confirmation link for the signed-in account; the policy mails
-    the address being claimed and warns the one being replaced, after the
-    commit. Same flow as the /account page."""
-
-    async def command(ctx: PageCtx):
-        return await user_service.start_email_change(
-            ctx.session,
-            ctx.actor.account.id,
-            address,
-            now=ctx.now,
-            token=ctx.env.rng.token(),
-        )
-
-    def done(value, _effects, _report) -> None:
-        account, _token = value
-        # the caller reloads once this is done, so the line waits for the page
-        flash(
-            f"Confirmation sent to {account.pending_email}. Your address changes "
-            "when you open the link in it.",
-            multi_line=True,
-        )
-
-    await run_command(command, on_ok=done, reload=False)
-
-
-async def _unassign(membership_id: int, name: str, team: str) -> None:
-    """The same question the roster asks (teams_page._remove_member)."""
-    if not await confirm(
-        f"Remove {name} from the {team} roster?",
-        detail=(
-            "They stay in the parish list and on their other teams. "
-            "The history keeps the membership."
-        ),
-        yes=f"Remove {name} from {team}",
-        danger=True,
-    ):
-        return
-    await run_command(
-        lambda ctx: membership_service.remove(ctx.session, ctx.actor, membership_id),
-        success=f"Removed from {team}",
-    )
 
 
 async def _delete_volunteer(volunteer_id: int) -> None:

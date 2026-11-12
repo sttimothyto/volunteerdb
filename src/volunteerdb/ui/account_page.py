@@ -27,16 +27,16 @@ from nicegui import ui
 
 from .. import passwords, timefmt
 from ..auth import async_verify_password
-from ..domain import EmailChangeAttempted, SignInFailed
+from ..domain import SignInFailed
 from ..env import current as current_env
 from ..fp import expect
 from ..services import users as user_service
+from . import email_change
 from .a11y import heading
 from .calendar_panel import subscribe_panel
 from .context import (
     PageCtx,
     fail,
-    flash,
     page_ctx,
     perform,
     rate_limit,
@@ -60,37 +60,17 @@ async def _request_email_change(address: str, *, user_id: int, base_url: str) ->
     if not addr:
         warn("Type the new address first")
         return
-    # The budget is on *sends*, not failures: what is worth abusing here is
-    # the parish's sender, one address at a time.
     now = current_env().clock.now()
-    if denied := rate_limit(
-        f"email-change:{user_id}", now=now, what="change your email address"
-    ):
-        toast(denied.error)
+    if not await email_change.charged(user_id, base_url=base_url, now=now):
         return
-    # charge every attempt, before the service can reveal whether the
-    # address is taken: a failed probe must count too, or it is an
-    # unthrottled account-existence oracle.
-    await perform([EmailChangeAttempted(user_id)], base_url=base_url, now=now)
-
-    async def command(ctx: PageCtx):
-        return await user_service.start_email_change(
-            ctx.session,
-            ctx.actor.account.id,
-            addr,
-            now=ctx.now,
-            token=ctx.env.rng.token(),
-        )
-
-    def done(value, _effects, _report) -> None:
-        account, _token = value
-        flash(
-            f"Confirmation sent to {account.pending_email}. Nothing changes "
-            "until the link in it is opened.",
-            multi_line=True,
-        )
-
-    await run_command(command, on_ok=done)
+    await email_change.stage(
+        addr,
+        sent=lambda pending: (
+            f"Confirmation sent to {pending}. Nothing changes "
+            "until the link in it is opened."
+        ),
+        reload=True,
+    )
 
 
 async def _drop_email_change() -> None:

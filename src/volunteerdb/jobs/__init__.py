@@ -10,24 +10,28 @@ stamps through the Env.
 
 Scheduler and CLI both take job_lock() around a run, so a manual run and the
 in-app scheduler can never work the same job concurrently: a job's cli() is
-`run_locked(name, main)`. The two nightly digests send through
-`send_digests`, which is the one place a digest is mailed and its stamps
-recorded.
+`run_locked(name, main)`, or `run_dated` for the two that can be told what
+day it is. Those two, the nightly digests, send through `send_digests`,
+which is the one place a digest is mailed and its stamps (`stamp`) recorded.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import date
 from typing import TYPE_CHECKING, Protocol
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .. import env as env_mod
 from ..db import transaction
+from ..models import Notification, NotificationStage
 
 if TYPE_CHECKING:
     from sqlalchemy.sql import Executable
@@ -78,10 +82,55 @@ def run_locked(name: str, main: Callable[[Env], Awaitable[int]]) -> int:
     return asyncio.run(locked())
 
 
+def run_dated(
+    name: str,
+    main: Callable[..., Awaitable[int]],
+    argv: list[str] | None,
+    *,
+    description: str | None,
+) -> int:
+    """run_locked for a job whose main() takes `today`: the command line of a
+    nightly digest, which a hand or a test can run as of another day."""
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "--today",
+        type=date.fromisoformat,
+        default=None,
+        help="pretend today is this date (parish day); for manual runs and tests",
+    )
+    args = parser.parse_args(argv)
+    return run_locked(name, lambda env: main(env, today=args.today))
+
+
 class Digest(Protocol):
     """What send_digests needs of a job's digest: whom it is for."""
 
     email: str
+
+
+class Settling(Protocol):
+    """A digest that settles notices: for whom, and which (subject id, stage)
+    pairs -- the subject being an assignment or a voter, as the job says."""
+
+    volunteer_id: int
+    stamps: tuple[tuple[int, NotificationStage], ...]
+
+
+def stamp(digest: Settling, *, subject: str, constraint: str) -> Executable:
+    """The notices a digest settles, as one insert. `subject` is the
+    Notification column its ids go in and `constraint` the unique that makes
+    a second record of the same notice a no-op: one recorded between the
+    job's read and here is fine, the notice went out either way."""
+    return (
+        pg_insert(Notification)
+        .values(
+            [
+                {subject: i, "volunteer_id": digest.volunteer_id, "stage": s}
+                for i, s in digest.stamps
+            ]
+        )
+        .on_conflict_do_nothing(constraint=constraint)
+    )
 
 
 async def send_digests[D: Digest](

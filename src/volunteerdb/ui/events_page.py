@@ -1065,86 +1065,50 @@ def _edit_event_dialog(event: Event) -> None:
     dialog.open()
 
 
-def _add_slot_dialog(event_id: int, refresh: Refresh) -> None:
-    with dialog_card("Add a slot") as dialog:
-        name = required(ui.input("Slot name")).props("outlined dense").classes("w-full")
-        capacity = (
-            ui.number("Capacity (blank = unlimited)", min=1, precision=0)
-            .props("outlined dense clearable")
-            .classes("w-full")
-        )
-        # the name is the series-wide identity a copy-forward matches on, so
-        # anything explanatory belongs here instead of in it
-        description = (
-            ui.input("Description (optional)")
-            .props("outlined dense")
-            .classes("w-full")
-            .mark("slot-add-description")
-        )
+def _slot_dialog(
+    event_id: int, refresh: Refresh, slot: EventSlot | None = None
+) -> None:
+    """Add a slot to the event, or -- given one -- rename it, change how many
+    it holds, or reword its description.
 
-        async def save() -> None:
-            if not valid(name):
-                return
-
-            async def command(ctx: PageCtx):
-                return await event_service.add_slot(
-                    ctx.session,
-                    ctx.actor,
-                    event_id,
-                    name=name.value or "",
-                    capacity=int(capacity.value) if capacity.value else None,
-                    description=description.value,
-                    now=ctx.now,
-                )
-
-            def done(_value, _effects, _report) -> None:
-                dialog.close()
-
-            await run_command(
-                command, on_ok=done, refresh=refresh, success="Slot added"
-            )
-
-        # marked like slot-edit-save: the button that opens this dialog
-        # carries the same label, so a test needs to name this one
-        actions(dialog, "Add slot", save, marker="slot-add-save")
-    dialog.open()
-
-
-def _edit_slot_dialog(slot: EventSlot, refresh: Refresh) -> None:
-    """Rename a slot, change how many it holds, or reword its description.
-
-    Reachable over the API (PATCH /events/{id}/slots/{sid}) and nowhere in the
-    GUI, so a mistyped slot name could only be fixed by deleting the slot —
-    which needs it empty, and so meant taking the roster off it first. The
-    description is here for the same reason: a note you can write once and
-    never correct is worse than no note. Shrinking below what is already
-    filled is refused by the service."""
-    with dialog_card("Edit slot") as dialog:
+    Editing is here because a mistyped slot name could otherwise only be
+    fixed by deleting the slot, which needs it empty, and so meant taking
+    the roster off it first. The description is editable for the same
+    reason: a note you can write once and never correct is worse than no
+    note. Shrinking below what is already filled is refused by the service."""
+    # the fields and the save button are marked per mode: the button that
+    # opens the add dialog carries its label, so a test needs to name this one
+    mark = "slot-edit" if slot else "slot-add"
+    with dialog_card("Edit slot" if slot else "Add a slot") as dialog:
         name = (
-            required(ui.input("Slot name", value=slot.name))
+            required(ui.input("Slot name", value=slot.name if slot else ""))
             .props("outlined dense")
             .classes("w-full")
-            .mark("slot-edit-name")
+            .mark(f"{mark}-name")
         )
         capacity = (
             ui.number(
                 "Capacity (blank = unlimited)",
-                value=slot.capacity,
+                value=slot.capacity if slot else None,
                 min=1,
                 precision=0,
             )
             .props("outlined dense clearable")
             .classes("w-full")
-            .mark("slot-edit-capacity")
+            .mark(f"{mark}-capacity")
         )
+        # the name is the series-wide identity a copy-forward matches on, so
+        # anything explanatory belongs here instead of in it
         description = (
             ui.input(
-                "Description (optional) i.e. Google Doc w/ details",
-                value=slot.description or "",
+                "Description (optional) i.e. Google Doc w/ details"
+                if slot
+                else "Description (optional)",
+                value=(slot.description or "") if slot else "",
             )
             .props("outlined dense")
             .classes("w-full")
-            .mark("slot-edit-description")
+            .mark(f"{mark}-description")
         )
 
         async def save() -> None:
@@ -1152,12 +1116,24 @@ def _edit_slot_dialog(slot: EventSlot, refresh: Refresh) -> None:
                 return
 
             async def command(ctx: PageCtx):
-                return await event_service.update_slot(
+                slot_name = name.value or ""
+                holds = int(capacity.value) if capacity.value else None
+                if slot:
+                    return await event_service.update_slot(
+                        ctx.session,
+                        ctx.actor,
+                        slot.id,
+                        name=slot_name,
+                        capacity=holds,
+                        description=description.value,
+                        now=ctx.now,
+                    )
+                return await event_service.add_slot(
                     ctx.session,
                     ctx.actor,
-                    slot.id,
-                    name=name.value or "",
-                    capacity=int(capacity.value) if capacity.value else None,
+                    event_id,
+                    name=slot_name,
+                    capacity=holds,
                     description=description.value,
                     now=ctx.now,
                 )
@@ -1166,10 +1142,13 @@ def _edit_slot_dialog(slot: EventSlot, refresh: Refresh) -> None:
                 dialog.close()
 
             await run_command(
-                command, on_ok=done, refresh=refresh, success="Slot saved"
+                command,
+                on_ok=done,
+                refresh=refresh,
+                success="Slot saved" if slot else "Slot added",
             )
 
-        actions(dialog, "Save", save, marker="slot-edit-save")
+        actions(dialog, "Save" if slot else "Add slot", save, marker=f"{mark}-save")
     dialog.open()
 
 
@@ -1708,7 +1687,7 @@ def _slot_card(
                 icon_button(
                     "edit",
                     f"Edit the slot {slot.name}",
-                    on_click=lambda _, s=slot: _edit_slot_dialog(s, refresh),
+                    on_click=lambda _, s=slot: _slot_dialog(s.event_id, refresh, s),
                 ).props("dense flat").mark(f"slot-edit-{slot.id}")
             if room.can_manage and room.upcoming and not sv.entries:
                 icon_button(
@@ -1769,7 +1748,7 @@ def _slots_section(
         ui.button(
             "Add slot",
             icon="add",
-            on_click=lambda: _add_slot_dialog(room.event.id, refresh),
+            on_click=lambda: _slot_dialog(room.event.id, refresh),
         ).props("dense flat no-caps")
 
 

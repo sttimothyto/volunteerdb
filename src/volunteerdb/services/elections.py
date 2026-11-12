@@ -676,19 +676,9 @@ async def remove_candidate(
     *,
     today: date,
 ) -> Result[None, DomainError]:
-    managed = await _managed(session, actor, proposal_id)
-    if isinstance(managed, Err):
-        return managed
-    if wrong := _require_phase(
-        managed.value, today, ProposalPhase.nominating, "remove a candidate"
-    ):
-        return wrong
-    candidate = await session.get(ProposalCandidate, candidate_id)
-    if candidate is None or candidate.proposal_id != proposal_id:
-        return not_found("candidate", candidate_id)
-    await session.delete(candidate)
-    await session.flush()
-    return Ok(None)
+    return await _strike(
+        session, actor, proposal_id, ProposalCandidate, candidate_id, "candidate", today
+    )
 
 
 async def add_voter(
@@ -725,17 +715,34 @@ async def remove_voter(
     *,
     today: date,
 ) -> Result[None, DomainError]:
+    return await _strike(
+        session, actor, proposal_id, ProposalVoter, voter_id, "voter", today
+    )
+
+
+async def _strike(
+    session: AsyncSession,
+    actor: Actor,
+    proposal_id: int,
+    model: type[ProposalCandidate] | type[ProposalVoter],
+    row_id: int,
+    noun: str,
+    today: date,
+) -> Result[None, DomainError]:
+    """Take one name off the candidate list or the roll: a manager's edit,
+    open only while nominating, like the additions. A row filed under some
+    other proposal is not found here, whatever the URL said."""
     managed = await _managed(session, actor, proposal_id)
     if isinstance(managed, Err):
         return managed
     if wrong := _require_phase(
-        managed.value, today, ProposalPhase.nominating, "remove a voter"
+        managed.value, today, ProposalPhase.nominating, f"remove a {noun}"
     ):
         return wrong
-    voter = await session.get(ProposalVoter, voter_id)
-    if voter is None or voter.proposal_id != proposal_id:
-        return not_found("voter", voter_id)
-    await session.delete(voter)
+    row = await session.get(model, row_id)
+    if row is None or row.proposal_id != proposal_id:
+        return not_found(noun, row_id)
+    await session.delete(row)
     await session.flush()
     return Ok(None)
 
